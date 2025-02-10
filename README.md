@@ -1,2 +1,10 @@
 # cesauth
-authentication and authorization web service: aims robustness, performance and scalability witten in rust
+Authentication and Authorization Web Service
+
+aims:
+
+- Robustness
+- Performance
+- Scalability
+
+witten in rust.

@@ -1,0 +1,12 @@
+[package]
+name = "cesauth"
+version = "0.1.0"
+edition = "2021"
+
+description = "Authentication and authorization web service aiming robustness, performance and scalability written in rust."
+authors = ["nabbisen <nabbisen@scqr.net>"]
+edition = "2021"
+
+[dependencies]
+axum = "0.8.1"
+tokio = { version = "1.43.0", features = ["full"] }
