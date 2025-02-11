@@ -1,12 +1,56 @@
+[workspace]
+
 [package]
 name = "cesauth"
 version = "0.1.0"
-edition = "2021"
 
 description = "Authentication and authorization web service aiming robustness, performance and scalability written in rust."
 authors = ["nabbisen <nabbisen@scqr.net>"]
 edition = "2021"
 
+publish = false
+default-run = "cesauth-cli"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[workspace.dependencies]
+loco-rs = { version = "0.14.0" }
+
 [dependencies]
-axum = "0.8.1"
-tokio = { version = "1.43.0", features = ["full"] }
+loco-rs = { workspace = true  }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
+tokio = { version = "1.33.0", default-features = false, features = [
+  "rt-multi-thread",
+] }
+async-trait = { version = "0.1.74" }
+axum = { version = "0.8.1" }
+tracing = { version = "0.1.40" }
+tracing-subscriber = { version = "0.3.17", features = ["env-filter", "json"] }
+regex = { version = "1.11.1" }
+migration = { path = "migration" }
+sea-orm = { version = "1.1.0", features = [
+  "sqlx-sqlite",
+  "sqlx-postgres",
+  "runtime-tokio-rustls",
+  "macros",
+] }
+chrono = { version = "0.4" }
+validator = { version = "0.19" }
+uuid = { version = "1.6.0", features = ["v4"] }
+include_dir = { version = "0.7" }
+# view engine i18n
+fluent-templates = { version = "0.8.0", features = ["tera"] }
+unic-langid = { version = "0.9.4" }
+# /view engine
+
+[[bin]]
+name = "cesauth-cli"
+path = "src/bin/main.rs"
+required-features = []
+
+[dev-dependencies]
+loco-rs = { workspace = true, features = ["testing"] }
+serial_test = { version = "3.1.1" }
+rstest = { version = "0.21.0" }
+insta = { version = "1.34.0", features = ["redactions", "yaml", "filters"] }
