@@ -1,4 +1,4 @@
-# Project Initiation
+# Project startup
 
 ```console
 $ cargo init

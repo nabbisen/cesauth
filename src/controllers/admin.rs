@@ -20,9 +20,13 @@ async fn load_item(ctx: &AppContext, id: i32) -> Result<Model> {
 
 #[debug_handler]
 pub async fn login(ViewEngine(v): ViewEngine<TeraView>) -> Result<impl IntoResponse> {
-    views::admin::login(v)
+    views::admin::login(&v)
 }
 
+/// login submit
+///
+/// # Errors
+/// returns auth error
 #[debug_handler]
 pub async fn login_submit(
     State(ctx): State<AppContext>,
@@ -30,12 +34,11 @@ pub async fn login_submit(
 ) -> Result<Response> {
     let user = users::Model::find_by_email(&ctx.db, &params.email).await;
 
-    if user.is_err() {
+    let Ok(user) = user else {
         return unauthorized("unauthorized!"); // todo
                                               // return Ok(axum::response::Json("Invalid user.").into_response());
-    }
+    };
 
-    let user = user.unwrap();
     let valid = user.verify_password(&params.password);
 
     if !valid {
