@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}
+Admin Login
+{% endblock title %}
+
+{% block content %}
+<h1>user</h1>
+<form hx-post="/" hx-ext="submitjson" hx-target="#error-message">
+    <div>
+        <label for="email">Email a@b.c</label>
+        <input type="email" id="email" name="email" required>
+    </div>
+    <div>
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required>
+    </div>
+    <div>
+        <button type="submit">Log in</button>
+    </div>
+</form>
+<div id="error-message" class="mt-4"></div>
+<hr>
+<label><strong>Users</strong> (Admins) management (dev)</label>
+<a href="/list">List</a>
+<a href="/register">Register</a>
+{% endblock content %}
+
+{% block js %}
+<script>
+    htmx.defineExtension('submitjson', {
+        onEvent: function (name, evt) {
+            if (name === "htmx:configRequest") {
+                evt.detail.headers['Content-Type'] = "application/json"
+            }
+        },
+        encodeParameters: function (xhr, parameters, elt) {
+            const json = {};
+            for (const [key, value] of Object.entries(parameters)) {
+                const inputType = elt.querySelector(`[name=${key}]`).type
+                if (inputType === 'number') {
+                    json[key] = parseFloat(value)
+                } else if (inputType === 'checkbox') {
+                    json[key] = elt.querySelector(`[name=${key}]`).checked
+                } else {
+                    json[key] = value
+                }
+            }
+            return JSON.stringify(json)
+        }
+    })
+    htmx.on("htmx:beforeSwap", function(evt) {
+        let xhr = evt.detail.xhr
+        console.log(xhr)
+
+        switch (xhr.status) {
+            // todo: redirect response has 200 status code...
+            // case 307: {
+            case 200: {
+                evt.preventDefault()
+                document.cookie = `jwt=${JSON.parse(xhr.responseText).token}; path=/; Secure; SameSite=Strict`;
+                window.location.href = "/members"
+                break
+            }
+        }
+    });
+    htmx.on("htmx:responseError", function(evt) {
+        let xhr = evt.detail.xhr
+
+        switch (xhr.status) {
+            case 401:
+            case 403: {
+                document.getElementById('error-message').textContent = "Invalid login."
+                break
+            }
+        }
+    });
+</script>
+{% endblock js %}
