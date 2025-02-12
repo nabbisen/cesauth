@@ -35,3 +35,12 @@ pub fn show(v: &impl ViewRenderer, item: &users::Model) -> Result<Response> {
 pub fn register(v: &impl ViewRenderer) -> Result<Response> {
     format::render().view(v, "admin/register.html", data!({}))
 }
+
+
+/// dashboard
+///
+/// # Errors
+/// returns db select error
+pub fn dashboard(v: &impl ViewRenderer) -> Result<Response> {
+    format::render().view(v, "admin/dashboard.html", data!({}))
+}

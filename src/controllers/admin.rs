@@ -115,6 +115,15 @@ pub async fn register_submit(
     views::admin::show(&v, &user)
 }
 
+#[debug_handler]
+pub async fn dashboard(
+    _auth: auth::JWT, 
+    ViewEngine(v): ViewEngine<TeraView>,
+    State(_ctx): State<AppContext>,
+) -> Result<Response> {
+    views::admin::dashboard(&v)
+}
+
 pub fn routes() -> Routes {
     Routes::new()
         .prefix("/")
@@ -124,4 +133,5 @@ pub fn routes() -> Routes {
         .add("show", get(show))
         .add("register", get(register))
         .add("register", post(register_submit))
+        .add("dashboard", get(dashboard))
 }

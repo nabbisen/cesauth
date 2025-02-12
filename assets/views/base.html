@@ -19,9 +19,25 @@
     {% block content %}
     {% endblock content %}
   </div>
+  <footer>
+    <a href="/">Log in</a>
+    <a href="/logout">Log out</a>
+    <a href="/dashboard">Dashboard</a>
+    <style>
+      footer {
+        margin-top: 0.7rem;
+        padding: 0.4rem 0.6rem;
+        background-color: #252525;
+        font-size: 0.72rem;
+      }
+      footer,
+      footer a {
+        color: #fcfcfc !important;
+      }
+    </style>
+  </footer>
 
   {% block js %}
-
   {% endblock js %}
 </body>
 
