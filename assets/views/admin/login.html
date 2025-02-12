@@ -58,8 +58,8 @@ Admin Login
             // case 307: {
             case 200: {
                 evt.preventDefault()
-                document.cookie = `jwt=${JSON.parse(xhr.responseText).token}; path=/; Secure; SameSite=Strict`;
-                window.location.href = "/members"
+                document.cookie = `mytoken=${JSON.parse(xhr.responseText).token}; path=/; Secure; SameSite=Strict`;
+                window.location.href = "/dashboard"
                 break
             }
         }

@@ -102,3 +102,6 @@ auth:
     secret: VsehOwrFUV30GjQNMSWl
     # Token expiration time in seconds
     expiration: 604800 # 7 days
+    location:
+      from: Cookie
+      name: mytoken
