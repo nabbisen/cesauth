@@ -1,0 +1,24 @@
+[package]
+name        = "cesauth-adapter-cloudflare"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+description = "Cloudflare adapter (Durable Objects, D1, KV, R2) for cesauth."
+
+[lib]
+# Short, unambiguous import name: `use cesauth_cf::...`.
+name = "cesauth_cf"
+path = "src/lib.rs"
+
+[dependencies]
+worker       = { workspace = true }
+serde        = { workspace = true }
+serde_json   = { workspace = true }
+thiserror    = { workspace = true }
+time         = { workspace = true }
+uuid         = { workspace = true }
+
+cesauth-core = { workspace = true }

@@ -1,0 +1,113 @@
+# --------------------------------------------------------------------------
+# cesauth - Cloudflare Workers configuration
+#
+# All bindings named here are the *contract* between `wrangler` and the
+# `worker` crate. Renaming a binding on either side without updating the
+# other is the most common cause of "undefined binding" at runtime.
+# --------------------------------------------------------------------------
+
+name               = "cesauth"
+main               = "crates/worker/build/worker/shim.mjs"
+compatibility_date = "2026-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+# --- Rust / WASM build ---------------------------------------------------
+# `worker-build` (installed via `cargo install worker-build`) produces the
+# glue mjs + wasm into <crate>/build/worker/. It must be pointed at a
+# crate directory containing a [package] Cargo.toml, NOT at the
+# workspace root (whose Cargo.toml is a virtual manifest - `worker-build`
+# would fail there with `missing field 'package'`). Output paths are
+# resolved relative to that crate path, which is why `main` above is
+# `crates/worker/build/worker/shim.mjs`.
+[build]
+command = "cargo install -q worker-build && worker-build --release crates/worker"
+
+# --- D1: long-lived relational data --------------------------------------
+# Keep only one primary DB. Everything tx-like goes through Durable Objects
+# and should not rely on D1 for serialization.
+[[d1_databases]]
+binding       = "DB"
+database_name = "cesauth"
+database_id   = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+# --- Durable Objects: strong-consistency state ---------------------------
+# Four DO classes, each with a single, narrow responsibility.
+[[durable_objects.bindings]]
+name       = "AUTH_CHALLENGE"
+class_name = "AuthChallenge"
+
+[[durable_objects.bindings]]
+name       = "REFRESH_TOKEN_FAMILY"
+class_name = "RefreshTokenFamily"
+
+[[durable_objects.bindings]]
+name       = "ACTIVE_SESSION"
+class_name = "ActiveSession"
+
+[[durable_objects.bindings]]
+name       = "RATE_LIMIT"
+class_name = "RateLimit"
+
+# Each DO class must be declared in `new_classes` for its first migration,
+# so the runtime knows it should create a new storage generation.
+[[migrations]]
+tag          = "v1"
+new_classes  = [
+  "AuthChallenge",
+  "RefreshTokenFamily",
+  "ActiveSession",
+  "RateLimit",
+]
+
+# --- KV: cache-only ------------------------------------------------------
+# Per SPEC 3.3, KV must never be the sole source of truth for auth state.
+[[kv_namespaces]]
+binding = "CACHE"
+id      = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# --- R2: audit / event logs / static assets ------------------------------
+[[r2_buckets]]
+binding     = "AUDIT"
+bucket_name = "cesauth-audit"
+
+[[r2_buckets]]
+binding     = "ASSETS"
+bucket_name = "cesauth-assets"
+
+# --- Secrets (set with `wrangler secret put`, never commit) -------------
+# JWT_SIGNING_KEY            : Ed25519 private key (PKCS#8 PEM).
+#                              Generated with:
+#                                openssl genpkey -algorithm ed25519 \
+#                                  | wrangler secret put JWT_SIGNING_KEY
+# SESSION_COOKIE_KEY         : HMAC-SHA256 key for signing session cookies.
+#                              At least 16 bytes; 32-64 recommended.
+#                              Generated with:
+#                                openssl rand -base64 48 \
+#                                  | wrangler secret put SESSION_COOKIE_KEY
+# MAGIC_LINK_MAIL_API_KEY    : transactional mail provider key
+# TURNSTILE_SECRET           : Cloudflare Turnstile server key (set when
+#                              TURNSTILE_SITEKEY below is also configured)
+#
+# Vars below are non-secret runtime configuration.
+[vars]
+ISSUER                  = "https://auth.example.com"
+JWT_KID                 = "cesauth-2026-01"
+ACCESS_TOKEN_TTL_SECS   = "600"
+REFRESH_TOKEN_TTL_SECS  = "2592000"    # 30 days
+MAGIC_LINK_TTL_SECS     = "600"
+WEBAUTHN_RP_ID          = "auth.example.com"
+WEBAUTHN_RP_NAME        = "cesauth"
+WEBAUTHN_RP_ORIGIN      = "https://auth.example.com"
+TURNSTILE_SITEKEY       = ""
+# --- Operational logging. See crates/worker/src/log.rs -----------------
+# LOG_LEVEL: one of "trace", "debug", "info", "warn", "error".
+# Lines below this level are dropped. Default: "info".
+LOG_LEVEL               = "info"
+# LOG_EMIT_SENSITIVE: "1" to emit log lines in the Auth, Session, and
+# Crypto categories (which may carry user ids and credential ids).
+# Leave at "0" in production. Default: "0".
+LOG_EMIT_SENSITIVE      = "0"
+# Dev surface toggle. Set to "1" ONLY in `.dev.vars` for local development.
+# When unset or any other value, the /__dev/* endpoints return 404.
+WRANGLER_LOCAL          = "0"

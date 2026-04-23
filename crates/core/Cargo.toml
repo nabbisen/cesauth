@@ -1,0 +1,48 @@
+[package]
+name        = "cesauth-core"
+version.workspace     = true
+edition.workspace     = true
+rust-version.workspace = true
+license.workspace     = true
+repository.workspace  = true
+authors.workspace     = true
+description = "Pure-Rust domain layer for cesauth: OIDC, WebAuthn, JWT, Magic Link."
+
+[lib]
+# Explicitly a library. No proc-macro or cdylib here - that's the worker crate's job.
+path = "src/lib.rs"
+
+[dependencies]
+serde        = { workspace = true }
+serde_json   = { workspace = true }
+thiserror    = { workspace = true }
+jsonwebtoken = { workspace = true }
+base64       = { workspace = true }
+sha2         = { workspace = true }
+hex          = { workspace = true }
+getrandom    = { workspace = true }
+rand_core    = { workspace = true }
+uuid         = { workspace = true }
+time         = { workspace = true }
+
+# HMAC for session cookie signing. Separate from the JWT signing key
+# (Ed25519) because cookies are a server-internal integrity concern;
+# JWTs are public-key consumer concerns. Mixing them would force either
+# a public-key verify on every cookie (expensive) or publishing the
+# HMAC secret via JWKS (nonsensical).
+hmac         = "0.12"
+
+# --- WebAuthn verification ---
+# `webauthn-rs-core` has a hard dependency on `openssl` which does not
+# build for wasm32-unknown-unknown. Instead we implement the subset of
+# the WebAuthn ceremony we need (packed / none attestation with Ed25519
+# / ES256 keys - the common passkey cases) on top of these pure-Rust
+# crates, which all build for wasm32 cleanly.
+ciborium        = { version = "0.2", default-features = false }
+ed25519-dalek   = { version = "2",   default-features = false, features = ["std"] }
+p256            = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
+
+[dev-dependencies]
+# Same dev-dep shape as adapter-test. Async test fns are nicer for
+# port-shaped code than hand-rolling `futures::executor::block_on`.
+tokio = { version = "1", features = ["macros", "rt"] }

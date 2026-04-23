@@ -1,56 +1,79 @@
 [workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/adapter-cloudflare",
+    "crates/adapter-test",
+    "crates/ui",
+    "crates/worker",
+]
+# Cloudflare-facing crates (adapter-cloudflare, worker) require
+# wasm32-unknown-unknown and the `worker-build` toolchain. When working
+# on the host-only portion of the codebase you can target the portable
+# crates explicitly:
+#     cargo test -p cesauth-core -p cesauth-adapter-test -p cesauth-ui
+# A full `cargo check --workspace` needs Rust 1.85+ (declared in
+# `[workspace.package].rust-version`) and the wasm32 target installed.
 
-[package]
-name = "cesauth"
-version = "0.1.0"
-
-description = "Authentication and authorization web service aiming robustness, performance and scalability written in rust."
-authors = ["nabbisen <nabbisen@scqr.net>"]
-edition = "2021"
-
-publish = false
-default-run = "cesauth-cli"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[workspace.package]
+version      = "0.2.0"
+edition      = "2024"
+rust-version = "1.85"
+license      = "Apache-2.0"
+repository   = "https://github.com/nabbisen/cesauth"
+authors      = ["nabbisen <nabbisen@scqr.net>"]
 
 [workspace.dependencies]
-loco-rs = { version = "^0.14" }
+# --- Cloudflare Workers ---
+# Bind once at workspace level so every crate sees the same version.
+# worker 0.8.x requires edition = "2024" through its transitive graph.
+worker  = { version = "0.8", features = ["d1", "http"] }
 
-[dependencies]
-loco-rs = { workspace = true  }
-serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1" }
-tokio = { version = "1", default-features = false, features = [
-  "rt-multi-thread",
-] }
-async-trait = { version = "^0.1" }
-axum = { version = "^0.8" }
-tracing = { version = "^0.1" }
-tracing-subscriber = { version = "^0.3", features = ["env-filter", "json"] }
-regex = { version = "1" }
-migration = { path = "migration" }
-sea-orm = { version = "1", features = [
-  "sqlx-sqlite",
-  "sqlx-postgres",
-  "runtime-tokio-rustls",
-  "macros",
-] }
-chrono = { version = "^0.4" }
-validator = { version = "^0.19" }
-uuid = { version = "1", features = ["v4"] }
-include_dir = { version = "^0.7" }
-# view engine i18n
-fluent-templates = { version = "^0.8", features = ["tera"] }
-unic-langid = { version = "^0.9" }
-# /view engine
+# --- Serde / JSON ---
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
 
-[[bin]]
-name = "cesauth-cli"
-path = "src/bin/main.rs"
-required-features = []
+# --- Errors ---
+thiserror = "2"
+anyhow    = "1"
 
-[dev-dependencies]
-loco-rs = { workspace = true, features = ["testing"] }
-serial_test = { version = "3" }
-rstest = { version = "^0.21" }
-insta = { version = "1", features = ["redactions", "yaml", "filters"] }
+# --- Crypto / Auth ---
+# jsonwebtoken 10.x supports EdDSA (Ed25519). `use_pem` lets us load
+# the signing key from a PKCS#8 PEM via `EncodingKey::from_ed_pem`.
+jsonwebtoken = { version = "10", default-features = false, features = ["use_pem", "rust_crypto"] }
+
+# webauthn-rs: deliberately NOT included in the initial build. The
+# `webauthn::registration::finish` and `webauthn::authentication::finish`
+# functions in `core` are stubs that return an error; the real
+# attestation / assertion verification is a follow-up that will re-add
+# `webauthn-rs-core` and `webauthn-rs-proto`. Keeping them out now
+# avoids a heavy transitive chain (icu4x, url, x509-parser) whose
+# recent releases push MSRV past what we want to pin.
+
+# --- Encoding / hashing ---
+base64     = "0.22"
+sha2       = "0.10"
+hex        = "0.4"
+# Pin `getrandom` to the 0.2 line. 0.3 is also in the graph via ring, but we
+# only ask for 0.2 ourselves - the `js` feature is only relevant here.
+getrandom  = { version = "0.2", features = ["js"] }
+rand_core  = { version = "0.6", features = ["getrandom"] }
+uuid       = { version = "1", features = ["v4", "serde", "js"] }
+
+# --- Time ---
+# `time` with `wasm-bindgen` gives us UTC inside Workers without std-time ops.
+time = { version = "0.3", features = ["serde", "wasm-bindgen"] }
+
+# --- Internal crates ---
+cesauth-core                = { path = "crates/core" }
+cesauth-adapter-cloudflare  = { path = "crates/adapter-cloudflare" }
+cesauth-adapter-test        = { path = "crates/adapter-test" }
+cesauth-ui                  = { path = "crates/ui" }
+
+[profile.release]
+# Workers is size-sensitive. opt-level = "z" + lto + 1 codegen-unit shrinks the WASM.
+opt-level     = "z"
+lto           = true
+codegen-units = 1
+strip         = true
+panic         = "abort"

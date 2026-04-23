@@ -1,0 +1,23 @@
+[package]
+name        = "cesauth-adapter-test"
+version.workspace     = true
+edition.workspace     = true
+rust-version.workspace = true
+license.workspace     = true
+repository.workspace  = true
+authors.workspace     = true
+description = "In-memory port implementations for host-side tests of cesauth domain logic."
+
+[lib]
+name = "cesauth_adapter_test"
+path = "src/lib.rs"
+
+[dependencies]
+serde        = { workspace = true }
+serde_json   = { workspace = true }
+uuid         = { workspace = true }
+
+cesauth-core = { workspace = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }

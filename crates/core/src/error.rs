@@ -1,0 +1,85 @@
+//! Error types for the core domain.
+//!
+//! Per spec §10.3, we separate **internal errors** (what went wrong) from
+//! **external responses** (what the client is told). The mapping to the
+//! standardized OAuth / HTTP error codes happens in `cesauth-worker`, so
+//! that `core` stays protocol-library-pure.
+
+use thiserror::Error;
+
+/// The canonical internal error enum for the core crate.
+///
+/// Variants are chosen to be *diagnostic* - each one carries enough
+/// information for logs to tell us what happened, but not so much that
+/// secrets leak into `Display`. Concretely: never put a full token or
+/// raw private key bytes into a variant's payload.
+#[derive(Debug, Error)]
+pub enum CoreError {
+    // --- Validation / input ------------------------------------------------
+    #[error("invalid request: {0}")]
+    InvalidRequest(&'static str),
+
+    #[error("invalid grant: {0}")]
+    InvalidGrant(&'static str),
+
+    #[error("invalid client")]
+    InvalidClient,
+
+    #[error("invalid scope: {0}")]
+    InvalidScope(&'static str),
+
+    #[error("unsupported grant type: {0}")]
+    UnsupportedGrantType(String),
+
+    // --- PKCE --------------------------------------------------------------
+    #[error("pkce verification failed")]
+    PkceMismatch,
+
+    // --- WebAuthn ---------------------------------------------------------
+    #[error("webauthn ceremony failed: {0}")]
+    WebAuthn(&'static str),
+
+    // --- JWT --------------------------------------------------------------
+    /// Covers signature failure, bad algorithm, expired, aud/iss/nonce mismatch.
+    #[error("jwt validation failed: {0}")]
+    JwtValidation(&'static str),
+
+    #[error("jwt signing failed")]
+    JwtSigning,
+
+    // --- Magic link / OTP -------------------------------------------------
+    #[error("magic link expired")]
+    MagicLinkExpired,
+
+    #[error("magic link verification failed")]
+    MagicLinkMismatch,
+
+    // --- OIDC interactive policy ------------------------------------------
+    /// `prompt=none` was requested but there is no usable active session,
+    /// or `max_age` has been exceeded and interaction is required. Per
+    /// OIDC §3.1.2.6 this maps to the `login_required` error code, and
+    /// per §3.1.2.1 the Authorization Server "MUST NOT display any
+    /// authentication or consent user interface pages".
+    #[error("login required")]
+    LoginRequired,
+
+    // --- Serialization ----------------------------------------------------
+    #[error("serialization error")]
+    Serialization,
+
+    // --- Unexpected -------------------------------------------------------
+    /// Use sparingly. Anything that hits this should be promoted to its own
+    /// variant as we understand more failure modes.
+    #[error("internal error")]
+    Internal,
+}
+
+impl From<serde_json::Error> for CoreError {
+    fn from(_: serde_json::Error) -> Self {
+        // Deliberately drop the underlying message - serde errors occasionally
+        // include snippets of the input, which for us could be credentials.
+        CoreError::Serialization
+    }
+}
+
+pub type CoreResult<T> = Result<T, CoreError>;

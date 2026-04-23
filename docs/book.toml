@@ -1,0 +1,31 @@
+[book]
+title       = "cesauth"
+description = "Headless-first IDaaS on Cloudflare Workers."
+authors     = ["nabbisen <nabbisen@scqr.net>"]
+language    = "en"
+src         = "src"
+
+[output.html]
+default-theme       = "light"
+preferred-dark-theme = "navy"
+git-repository-url  = ""     # set when the repo is published
+edit-url-template   = ""     # likewise
+additional-css      = []
+
+# We keep the generated book out of git; CI can rebuild it on demand.
+# `mdbook build` writes to ./book/ which is listed in .gitignore.
+[output.html.print]
+enable = true
+
+[output.html.fold]
+enable = true
+level  = 1
+
+[output.html.search]
+enable            = true
+limit-results     = 20
+use-boolean-and   = true
+boost-title       = 2
+boost-hierarchy   = 2
+boost-paragraph   = 1
+expand            = true

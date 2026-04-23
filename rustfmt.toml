@@ -1,0 +1,19 @@
+# cesauth :: rustfmt configuration
+#
+# The codebase uses hand-aligned columns in several places (struct
+# initializers, match arms, `use` lists) because the spec we're
+# implementing leans heavily on per-column commentary. Default rustfmt
+# would collapse those alignments. The settings below keep the default
+# behavior where it adds value (trailing commas, line width, imports
+# granularity) and leave the alignment-sensitive rules at their more
+# permissive forms.
+#
+# Re-run with `cargo fmt` after any edit that touches boilerplate;
+# don't re-run after an edit that was specifically chosen for
+# alignment. If you're unsure, eyeball `git diff` first.
+
+edition         = "2024"
+max_width       = 100
+tab_spaces      = 4
+newline_style   = "Unix"
+use_small_heuristics = "Max"
