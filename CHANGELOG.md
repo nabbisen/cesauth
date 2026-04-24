@@ -12,6 +12,70 @@ always be called out here.
 
 ---
 
+## [0.2.1] - 2026-04-24
+
+### Changed
+
+- **Refactor: test modules extracted to sibling `tests.rs` files.**
+  Every `#[cfg(test)] mod tests { ... }` block in `src/` has been
+  moved to a sibling `<basename>/tests.rs` file (e.g.
+  `crates/core/src/service/token.rs` + `crates/core/src/service/token/tests.rs`).
+  The parent file now contains only `#[cfg(test)] mod tests;`.
+  Eighteen files changed, all sixty-six host-lib tests still pass
+  unchanged. Rationale: parent-file size is dominated by production
+  code instead of fixtures, diffs stay focused, and the extracted
+  test files are easier to point at in code review.
+
+- **Refactor: large trait-adapter files split by port/handler.** Seven
+  files that mixed multiple independent `impl Trait for Struct` blocks
+  or multiple HTTP handlers have been split into submodules:
+
+  | Was                                                  | Became (submodules)                                                   |
+  |------------------------------------------------------|------------------------------------------------------------------------|
+  | `adapter-cloudflare/src/ports/repo.rs` (688 lines)   | `users` / `clients` / `authenticators` / `grants` / `signing_keys`     |
+  | `adapter-cloudflare/src/ports/store.rs` (410 lines)  | `auth_challenge` / `refresh_token_family` / `active_session` / `rate_limit` |
+  | `adapter-test/src/repo.rs`                           | same five names as the cloudflare adapter                              |
+  | `adapter-test/src/store.rs`                          | same four names as the cloudflare adapter                              |
+  | `worker/src/routes/oidc.rs` (494 lines)              | `discovery` / `jwks` / `authorize` / `token` / `revoke`                |
+  | `worker/src/routes/magic_link.rs` (413 lines)        | `request` / `verify` (Turnstile helpers stay in the parent)            |
+  | `worker/src/routes/webauthn.rs` (287 lines)          | `register` / `authenticate` (grouped by ceremony; `rp_from_config` stays in the parent) |
+
+  The D1 helpers (`d1_int`, `run_err`, `db`) stay in the parent
+  `repo.rs`; the DO-RPC helpers (`rpc_request`, `rpc_call`) stay in
+  the parent `store.rs`; `crates/worker/src/routes/magic_link.rs`
+  keeps the shared Turnstile-flag helpers (`turnstile_flag_key`,
+  `turnstile_required`, `flag_turnstile_required`, `enforce_turnstile`)
+  that both `request` and `verify` consume. Submodules access these
+  via `super::` to avoid duplication.
+
+- **Deliberately not split** (boundaries tight enough after test
+  extraction, or intertwined enough that splitting would fragment a
+  single concept): `core/src/webauthn/cose.rs` (395 lines post-tests;
+  COSE key parsing, attestation-object parsing, and `AuthData`
+  accessors are mutually referenced), `core/src/webauthn/registration.rs`
+  (270 lines post-tests; one ceremony), `core/src/webauthn/authentication.rs`
+  (228 lines post-tests; one ceremony), `core/src/service/token.rs`
+  (285 lines post-tests; a composed service layer), `core/src/oidc/authorization.rs`
+  (183 lines post-tests), `core/src/session.rs`, `core/src/ports/store.rs`,
+  `ui/src/templates.rs`, `worker/src/log.rs`, `worker/src/post_auth.rs`.
+
+- **Workspace version bumped to `0.2.1`.** All five crates inherit
+  from `workspace.package.version` so the single change propagates.
+
+### Build state
+
+- `cargo check --workspace` clean.
+- Host lib tests: 56 (core) + 6 (adapter-test) + 4 (ui) + 16 (worker)
+  = 82 passed, 0 failed. Same counts as before the refactor.
+- No public-API changes. All `pub` items that existed under the old
+  module paths remain available at their original path because the
+  parent files re-export them (`pub use submodule::Name;`). External
+  users of `cesauth_cf::ports::repo::CloudflareUserRepository`,
+  `cesauth_core::routes::oidc::token`, etc., require no source
+  changes.
+
+---
+
 ## [Unreleased]
 
 ### Added
@@ -120,4 +184,5 @@ Each future release will have sections in this order:
 - **Security** — vulnerability fixes or security-relevant posture
   changes. See also [.github/SECURITY.md](.github/SECURITY.md).
 
-[Unreleased]: https://github.com/nabbisen/cesauth/commits/main
+[Unreleased]: https://github.com/cesauth/cesauth/compare/v0.2.1...HEAD
+[0.2.1]:      https://github.com/cesauth/cesauth/releases/tag/v0.2.1

@@ -35,13 +35,4 @@ pub fn escape(s: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn escape_covers_common_payloads() {
-        let bad = r#"<script>"&'"#;
-        let out = escape(bad);
-        assert_eq!(out, "&lt;script&gt;&quot;&amp;&#x27;");
-    }
-}
+mod tests;
