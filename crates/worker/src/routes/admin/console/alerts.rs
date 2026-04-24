@@ -48,6 +48,6 @@ pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
             "alerts": alerts,
         }))
     } else {
-        render::html_response(ui::admin::alerts_page(now, &alerts))
+        render::html_response(ui::admin::alerts_page(&principal, now, &alerts))
     }
 }

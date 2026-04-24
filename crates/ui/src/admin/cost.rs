@@ -2,15 +2,16 @@
 
 use crate::escape;
 use cesauth_core::admin::policy::{format_change, format_metric};
-use cesauth_core::admin::types::{CostTrend, Role, ServiceId};
+use cesauth_core::admin::types::{AdminPrincipal, CostTrend, ServiceId};
 
 use super::frame::{admin_frame, Tab};
 
 /// Render the dashboard. Each entry is `(service, Ok(trend) | Err(msg))`
 /// so one service's failure doesn't erase the rest.
 pub fn cost_page(
-    now_unix: i64,
-    results:  &[(ServiceId, Result<CostTrend, String>)],
+    principal: &AdminPrincipal,
+    now_unix:  i64,
+    results:   &[(ServiceId, Result<CostTrend, String>)],
 ) -> String {
     let body: String = results.iter().map(|(svc, res)| render_service(*svc, res)).collect();
     let body = format!(
@@ -21,7 +22,13 @@ pub fn cost_page(
         now_unix = now_unix,
         body = body,
     );
-    admin_frame("Cost dashboard", Role::ReadOnly, None, Tab::Cost, &body)
+    admin_frame(
+        "Cost dashboard",
+        principal.role,
+        principal.name.as_deref(),
+        Tab::Cost,
+        &body,
+    )
 }
 
 fn render_service(service: ServiceId, res: &Result<CostTrend, String>) -> String {

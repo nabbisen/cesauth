@@ -24,14 +24,21 @@
 pub mod alerts;
 pub mod audit;
 pub mod config;
+pub mod config_edit;
 pub mod cost;
 pub mod frame;
 pub mod overview;
 pub mod safety;
+pub mod tokens;
 
 pub use alerts::alerts_page;
 pub use audit::audit_page;
 pub use config::config_page;
+pub use config_edit::{confirm_page as config_confirm_page, edit_form as config_edit_form};
 pub use cost::cost_page;
 pub use overview::overview_page;
 pub use safety::safety_page;
+pub use tokens::{created_page as token_created_page, list_page as tokens_list_page, new_form as token_new_form};
+
+#[cfg(test)]
+mod tests;

@@ -323,3 +323,63 @@ async fn cost_snapshot_repo_dedups_within_hour() {
     let all = repo.recent(ServiceId::R2, 10).await.unwrap();
     assert_eq!(all.len(), 2);
 }
+
+// -------------------------------------------------------------------------
+// Admin token CRUD (v0.3.1)
+// -------------------------------------------------------------------------
+
+#[tokio::test]
+async fn token_create_list_disable_roundtrip() {
+    use cesauth_core::admin::ports::AdminTokenRepository;
+    use crate::admin::tokens::InMemoryAdminTokenRepository;
+
+    let repo = InMemoryAdminTokenRepository::default();
+
+    // Empty to start.
+    assert!(repo.list().await.unwrap().is_empty());
+
+    // Create three with distinct hashes.
+    let alice = repo.create("hash-a", Role::Operations, Some("alice"), 100).await.unwrap();
+    let bob   = repo.create("hash-b", Role::Security,   Some("bob"),   101).await.unwrap();
+    let cron  = repo.create("hash-c", Role::ReadOnly,   None,          102).await.unwrap();
+
+    assert_eq!(alice.role, Role::Operations);
+    assert_eq!(bob.role,   Role::Security);
+    assert_eq!(cron.role,  Role::ReadOnly);
+    assert_eq!(cron.name,  None);
+
+    let listed = repo.list().await.unwrap();
+    assert_eq!(listed.len(), 3);
+
+    // Disabling removes from the active list but keeps the row.
+    repo.disable(&bob.id, 200).await.unwrap();
+    let after = repo.list().await.unwrap();
+    assert_eq!(after.len(), 2, "disabled token must not appear in list");
+    assert!(after.iter().all(|p| p.id != bob.id));
+}
+
+#[tokio::test]
+async fn token_hash_uniqueness_is_enforced() {
+    use cesauth_core::admin::ports::AdminTokenRepository;
+    use cesauth_core::ports::PortError;
+    use crate::admin::tokens::InMemoryAdminTokenRepository;
+
+    let repo = InMemoryAdminTokenRepository::default();
+    repo.create("same-hash", Role::ReadOnly, Some("a"), 0).await.unwrap();
+
+    // Second insert with the same hash is a Conflict, not an upsert.
+    let err = repo.create("same-hash", Role::ReadOnly, Some("b"), 1).await.unwrap_err();
+    assert!(matches!(err, PortError::Conflict),
+        "duplicate token_hash must be rejected with Conflict, got {err:?}");
+}
+
+#[tokio::test]
+async fn token_disable_on_unknown_id_is_not_found() {
+    use cesauth_core::admin::ports::AdminTokenRepository;
+    use cesauth_core::ports::PortError;
+    use crate::admin::tokens::InMemoryAdminTokenRepository;
+
+    let repo = InMemoryAdminTokenRepository::default();
+    let err = repo.disable("nope", 0).await.unwrap_err();
+    assert!(matches!(err, PortError::NotFound));
+}

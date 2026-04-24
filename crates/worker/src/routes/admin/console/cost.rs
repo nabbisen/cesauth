@@ -73,6 +73,6 @@ pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
             results.into_iter()
                 .map(|(svc, r)| (svc, r.map_err(|e| e.to_string())))
                 .collect();
-        render::html_response(ui::admin::cost_page(now, &view))
+        render::html_response(ui::admin::cost_page(&principal, now, &view))
     }
 }

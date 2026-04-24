@@ -1,11 +1,11 @@
 //! Alert Center page (§4.6).
 
 use crate::escape;
-use cesauth_core::admin::types::{Alert, AlertLevel, Role};
+use cesauth_core::admin::types::{AdminPrincipal, Alert, AlertLevel};
 
 use super::frame::{admin_frame, Tab};
 
-pub fn alerts_page(now_unix: i64, alerts: &[Alert]) -> String {
+pub fn alerts_page(principal: &AdminPrincipal, now_unix: i64, alerts: &[Alert]) -> String {
     let body = if alerts.is_empty() {
         format!(
             r##"<section aria-label="All clear">
@@ -26,7 +26,13 @@ pub fn alerts_page(now_unix: i64, alerts: &[Alert]) -> String {
             i = render_block("Info",     "muted",    &info),
         )
     };
-    admin_frame("Alert center", Role::ReadOnly, None, Tab::Alerts, &body)
+    admin_frame(
+        "Alert center",
+        principal.role,
+        principal.name.as_deref(),
+        Tab::Alerts,
+        &body,
+    )
 }
 
 fn split_by_level<'a>(alerts: &'a [Alert]) -> (Vec<&'a Alert>, Vec<&'a Alert>, Vec<&'a Alert>) {

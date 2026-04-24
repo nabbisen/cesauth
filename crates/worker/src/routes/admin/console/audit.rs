@@ -67,6 +67,6 @@ pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
             "results": entries,
         }))
     } else {
-        render::html_response(ui::admin::audit_page(&q, &entries))
+        render::html_response(ui::admin::audit_page(&principal, &q, &entries))
     }
 }

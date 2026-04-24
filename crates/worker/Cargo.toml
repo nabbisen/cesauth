@@ -25,6 +25,8 @@ base64       = { workspace = true }
 uuid         = { workspace = true }
 time         = { workspace = true }
 getrandom    = { workspace = true }
+# SHA-256 for hashing admin-token plaintext before storage (v0.3.1).
+sha2         = { workspace = true }
 # Used explicitly for `form_urlencoded` parsing in the token endpoint.
 # Present transitively via worker/idna as well, but declaring our own
 # direct dep prevents silent breakage if the transitive path changes.

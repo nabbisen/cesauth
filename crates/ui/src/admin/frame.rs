@@ -24,6 +24,10 @@ pub enum Tab {
     Audit,
     Config,
     Alerts,
+    /// Super-only. Hidden from the nav when `role != Role::Super`;
+    /// still accessible by direct URL (the route itself enforces the
+    /// 403).
+    Tokens,
 }
 
 impl Tab {
@@ -35,6 +39,7 @@ impl Tab {
             Tab::Audit    => "/admin/console/audit",
             Tab::Config   => "/admin/console/config",
             Tab::Alerts   => "/admin/console/alerts",
+            Tab::Tokens   => "/admin/console/tokens",
         }
     }
     fn label(self) -> &'static str {
@@ -45,12 +50,21 @@ impl Tab {
             Tab::Audit    => "Audit",
             Tab::Config   => "Config",
             Tab::Alerts   => "Alerts",
+            Tab::Tokens   => "Tokens",
+        }
+    }
+    /// Visible in the nav for this role? Tokens is Super-only; the
+    /// others are fine for any authenticated role.
+    fn visible_to(self, role: Role) -> bool {
+        match self {
+            Tab::Tokens => role == Role::Super,
+            _           => true,
         }
     }
 }
 
-const TABS_ORDER: [Tab; 6] = [
-    Tab::Overview, Tab::Cost, Tab::Safety, Tab::Audit, Tab::Config, Tab::Alerts,
+const TABS_ORDER: [Tab; 7] = [
+    Tab::Overview, Tab::Cost, Tab::Safety, Tab::Audit, Tab::Config, Tab::Alerts, Tab::Tokens,
 ];
 
 /// Top-level admin page scaffold.
@@ -75,7 +89,9 @@ pub fn admin_frame(
     };
     let name_esc = role_name.map(escape).unwrap_or_default();
 
-    let nav: String = TABS_ORDER.iter().map(|t| {
+    let nav: String = TABS_ORDER.iter()
+        .filter(|t| t.visible_to(role))
+        .map(|t| {
         let current = if *t == active_tab { r#" aria-current="page""# } else { "" };
         format!(
             r#"<li><a href="{href}"{current}>{label}</a></li>"#,
@@ -172,7 +188,7 @@ pub fn admin_frame(
 <h1>{title_esc}</h1>
 {body}
 </main>
-<footer>cesauth Cost &amp; Data Safety Admin Console — v0.3.0</footer>
+<footer>cesauth Cost &amp; Data Safety Admin Console — v0.3.1</footer>
 </body>
 </html>
 "##,

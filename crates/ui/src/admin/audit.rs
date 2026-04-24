@@ -1,17 +1,23 @@
 //! Audit Log search page (§4.4).
 
 use crate::escape;
-use cesauth_core::admin::types::{AdminAuditEntry, AuditQuery, Role};
+use cesauth_core::admin::types::{AdminAuditEntry, AdminPrincipal, AuditQuery};
 
 use super::frame::{admin_frame, Tab};
 
-pub fn audit_page(q: &AuditQuery, entries: &[AdminAuditEntry]) -> String {
+pub fn audit_page(principal: &AdminPrincipal, q: &AuditQuery, entries: &[AdminAuditEntry]) -> String {
     let body = format!(
         "{form}\n{results}",
         form    = render_search_form(q),
         results = render_results(entries),
     );
-    admin_frame("Audit log", Role::ReadOnly, None, Tab::Audit, &body)
+    admin_frame(
+        "Audit log",
+        principal.role,
+        principal.name.as_deref(),
+        Tab::Audit,
+        &body,
+    )
 }
 
 fn render_search_form(q: &AuditQuery) -> String {

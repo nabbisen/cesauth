@@ -11,7 +11,8 @@
 //! path.
 
 use crate::escape;
-use cesauth_core::admin::types::{AdminPrincipal, DataSafetyReport, Threshold};
+use cesauth_core::admin::policy::role_allows;
+use cesauth_core::admin::types::{AdminAction, AdminPrincipal, DataSafetyReport, Threshold};
 
 use super::frame::{admin_frame, Tab};
 
@@ -20,9 +21,10 @@ pub fn config_page(
     report:     &DataSafetyReport,
     thresholds: &[Threshold],
 ) -> String {
+    let may_edit = role_allows(principal.role, AdminAction::EditBucketSafety);
     let body = format!(
         "{safety}\n{thresholds}\n{how}",
-        safety     = render_safety(report),
+        safety     = render_safety(report, may_edit),
         thresholds = render_thresholds(thresholds),
         how        = render_howto(),
     );
@@ -35,11 +37,25 @@ pub fn config_page(
     )
 }
 
-fn render_safety(r: &DataSafetyReport) -> String {
+fn render_safety(r: &DataSafetyReport, may_edit: bool) -> String {
+    let header_cells = if may_edit {
+        r#"<th scope="col">Notes</th><th scope="col">Action</th>"#
+    } else {
+        r#"<th scope="col">Notes</th>"#
+    };
     let rows: String = if r.buckets.is_empty() {
-        r#"<tr><td colspan="7" class="empty">No attestation rows.</td></tr>"#.to_owned()
+        let span = if may_edit { 8 } else { 7 };
+        format!(r#"<tr><td colspan="{span}" class="empty">No attestation rows.</td></tr>"#)
     } else {
         r.buckets.iter().map(|b| {
+            let action_cell = if may_edit {
+                format!(
+                    r#"<td><a href="/admin/console/config/{bucket}/edit">edit</a></td>"#,
+                    bucket = escape(&b.bucket),
+                )
+            } else {
+                String::new()
+            };
             format!(
                 r##"<tr>
   <td><code>{bucket}</code></td>
@@ -49,6 +65,7 @@ fn render_safety(r: &DataSafetyReport) -> String {
   <td>{lifecycle}</td>
   <td>{events}</td>
   <td class="muted">{notes}</td>
+  {action_cell}
 </tr>"##,
                 bucket    = escape(&b.bucket),
                 public    = if b.public { r#"<span class="critical">public</span>"# } else { r#"<span class="ok">private</span>"# },
@@ -57,6 +74,7 @@ fn render_safety(r: &DataSafetyReport) -> String {
                 lifecycle = if b.lifecycle_configured { "✓" } else { "—" },
                 events    = if b.event_notifications  { "✓" } else { "—" },
                 notes     = escape(b.notes.as_deref().unwrap_or("")),
+                action_cell = action_cell,
             )
         }).collect::<Vec<_>>().join("\n")
     };
@@ -71,7 +89,7 @@ fn render_safety(r: &DataSafetyReport) -> String {
       <th scope="col">Lock</th>
       <th scope="col">Lifecycle</th>
       <th scope="col">Events</th>
-      <th scope="col">Notes</th>
+      {header_cells}
     </tr>
   </thead><tbody>
 {rows}
@@ -124,8 +142,8 @@ fn render_thresholds(thresholds: &[Threshold]) -> String {
 fn render_howto() -> String {
     r##"<section aria-label="How to edit">
   <h2>Editing</h2>
-  <p class="muted">In 0.3.0 the HTML edit forms are intentionally deferred — these are the "重要設定" the spec (§7) singles out for two-step confirmation, and the edit UI is slated for 0.3.1 alongside the confirm flow.</p>
-  <p class="muted">For now, Operations+ principals use the JSON API:</p>
+  <p class="muted">Operations+ principals can edit bucket-safety attestations directly in the UI via the <em>edit</em> link in each row above. Every edit goes through a two-step confirmation: the form submission shows a before/after diff, and the &quot;Apply&quot; button on the diff page performs the write.</p>
+  <p class="muted">The same operations are available as a scripted JSON API:</p>
   <pre style="background:#f4f4f4; padding:12px; border-radius:4px; overflow-x:auto;"><code># Update a threshold (Operations+)
 curl -X POST -H "Authorization: Bearer $ADMIN_API_KEY" \
   -H "Content-Type: application/json" \

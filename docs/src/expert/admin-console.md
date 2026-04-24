@@ -40,24 +40,40 @@ send `Accept: application/json` get the underlying JSON. Every view
 emits an `AdminConsoleViewed` audit event with the page name in
 `reason`, matching the spec's "監視失敗自体も監査対象" expectation.
 
-## The three write endpoints
+## The write endpoints
 
-| URL                                          | Audit kind                   | Minimum role |
-|----------------------------------------------|------------------------------|--------------|
-| `POST /admin/console/safety/:bucket/verify`  | `AdminBucketSafetyVerified`  | Security     |
-| `POST /admin/console/config/:bucket/preview` | *(read — no event)*          | Operations   |
-| `POST /admin/console/config/:bucket/apply`   | `AdminBucketSafetyChanged`   | Operations   |
-| `POST /admin/console/thresholds/:name`       | `AdminThresholdUpdated`      | Operations   |
+**Bucket-safety writes** (under `/admin/console/safety` and
+`/admin/console/config`):
 
-The `preview`/`apply` split is the spec's §7 "two-step confirmation".
-`apply` requires `{"confirm": true, ...}` in the body; the HTML
-confirmation screen that wraps this as a form is deferred to 0.3.1.
+| URL                                          | Audit kind                   | Minimum role | Client  |
+|----------------------------------------------|------------------------------|--------------|---------|
+| `POST /admin/console/safety/:bucket/verify`  | `AdminBucketSafetyVerified`  | Security     | form    |
+| `POST /admin/console/config/:bucket/preview` | *(read — no event)*          | Operations   | JSON    |
+| `POST /admin/console/config/:bucket/apply`   | `AdminBucketSafetyChanged`   | Operations   | JSON    |
+| `GET  /admin/console/config/:bucket/edit`    | `AdminConsoleViewed`         | Operations   | HTML    |
+| `POST /admin/console/config/:bucket/edit`    | `AdminBucketSafetyChanged`   | Operations   | HTML    |
+
+The `preview`/`apply` JSON pair and the `edit`/`edit` HTML pair reach
+the same underlying service function; pick whichever fits the caller
+(operator in a browser vs. script). Both are the spec's §7 "two-step
+confirmation": `apply` requires `"confirm": true` in JSON; the HTML
+flow requires `confirm=yes` in the second POST's form body.
 
 The `verify` endpoint deserves its own note: it does NOT change the
 attested booleans. It just stamps `last_verified_at` /
 `last_verified_by`. The spec calls this out because re-attestation
 has to be cheap enough that operators actually do it on a regular
 cadence; nothing changes, only "I checked" is recorded.
+
+**Thresholds and admin tokens** (Super-only for the token surface):
+
+| URL                                          | Audit kind             | Minimum role |
+|----------------------------------------------|------------------------|--------------|
+| `POST /admin/console/thresholds/:name`       | `AdminThresholdUpdated`| Operations   |
+| `GET  /admin/console/tokens`                 | `AdminConsoleViewed`   | Super        |
+| `GET  /admin/console/tokens/new`             | *(read — no event)*    | Super        |
+| `POST /admin/console/tokens`                 | `AdminTokenCreated`    | Super        |
+| `POST /admin/console/tokens/:id/disable`     | `AdminTokenDisabled`   | Super        |
 
 ---
 
@@ -108,7 +124,19 @@ curl -H "Authorization: Bearer $ADMIN_API_KEY" \
 
 Every other principal is a row in `admin_tokens`, storing
 `token_hash` = SHA-256(plaintext) as 64-char lower hex. Plaintext is
-never stored; you mint it, hand it to the operator, then forget it.
+never stored; the server mints it, hands it to the operator exactly
+once, then forgets it.
+
+**Via the UI (v0.3.1+, recommended).** Sign in as a Super principal
+(the `ADMIN_API_KEY` bootstrap bearer qualifies on a fresh
+deployment), navigate to `/admin/console/tokens`, click "+ create new".
+Pick a role and a label; the server responds with a one-shot page
+showing the plaintext bearer. Copy it; close the tab when done. The
+server never stores or re-renders the plaintext.
+
+**Via `wrangler` (fallback for out-of-band bootstrap).** Still works
+and is the only path available before a Super token exists that is
+*not* the `ADMIN_API_KEY` bootstrap:
 
 ```bash
 # 1. Generate 32 random bytes, base64url-encode. This is the plaintext
@@ -134,6 +162,14 @@ wrangler d1 execute cesauth --remote --command "
 
 ### Disabling a token
 
+**Via the UI.** Sign in as Super, go to `/admin/console/tokens`, click
+"Disable" on the row. Emits an `AdminTokenDisabled` audit event with
+the disabling principal's id in `reason`. The handler refuses to
+disable the token that authenticated the current request — a guard
+against accidental self-lockout of the only active Super.
+
+**Via `wrangler`:**
+
 ```bash
 wrangler d1 execute cesauth --remote --command "
   UPDATE admin_tokens
@@ -143,7 +179,8 @@ wrangler d1 execute cesauth --remote --command "
 ```
 
 Disabled rows stay in the table for audit continuity; the resolver
-treats them as unknown (401 with reason `disabled_token`).
+treats them as unknown (401 with reason `disabled_token`). Re-enabling
+is not supported from the UI — create a new token instead.
 
 ### Failed-auth audit trail
 
@@ -178,15 +215,19 @@ informational rather than authoritative.
 | Turnstile        | Sum of self-maintained per-day counters, 7-day   | **Proxy**          | CF dashboard is authoritative          |
 | Durable Objects  | *(empty)*                                        | Not available      | Workers cannot enumerate DO instances  |
 
-### Why the Worker/Turnstile counters read as zero in 0.3.0
+### Why the Worker/Turnstile counters read as zero
 
 `CloudflareUsageMetricsSource::sum_kv_counter_last_7d` reads
 `counter:workers:requests:YYYY-MM-DD` and
 `counter:turnstile:{verified,rejected}:YYYY-MM-DD`. Those keys are
-**read** in 0.3.0 but are **not yet written** — the hot-path
-increments are tracked as a 0.3.1 follow-up (priority 8 in the spec
-landed; this is a separate concern). A brand-new deployment legitimately
-shows zero here until the instrumentation ships.
+**read** but not yet **written** — the hot-path instrumentation is
+deferred to 0.3.2 pending a design decision on counting granularity
+(see the "What's still deferred" section below and `ROADMAP.md`). A
+brand-new deployment legitimately shows zero here. The metric is
+labeled "Proxy" in the table above because even once the
+instrumentation lands, KV has no atomic increment, so concurrent
+requests will lose some increments under load — the Cloudflare
+dashboard remains authoritative.
 
 ### Why Durable Objects is blank
 
@@ -236,7 +277,32 @@ operator dismiss, and remember rather than silently pass.
 
 ## Change-op protocol (§7 two-step confirmation)
 
-The JSON flow today:
+Two equivalent flows reach the same underlying `apply_bucket_safety_change`
+service function: a form-driven HTML flow (new in v0.3.1) and the
+scripted JSON pair (unchanged since v0.3.0). Both audit the attempt
+before the write and the outcome after.
+
+### HTML flow (v0.3.1, Operations+)
+
+1. From Configuration Review, click **edit** next to a bucket row.
+   That navigates to `GET /admin/console/config/:bucket/edit`, which
+   renders a form pre-populated with the currently-attested state.
+2. Tick / untick the checkboxes, edit the notes field, submit.
+   Same URL, `POST /admin/console/config/:bucket/edit`. With no
+   `confirm=yes` field present, the handler re-renders that URL as a
+   **confirmation page**: a before/after table with the changed
+   fields marked `<span class="badge warn">changed</span>`.
+3. The confirmation page's "Apply the change" button re-POSTs to the
+   same URL with `confirm=yes` and the hidden fields carrying the
+   proposal. The handler now commits, audits the outcome, and
+   303-redirects to `/admin/console/config` so the operator's reload
+   button cannot re-submit.
+
+If no fields differ between the form and the current state, the
+confirmation page short-circuits with "no change" and does not render
+an Apply button; nothing is written.
+
+### JSON flow (v0.3.0, still supported)
 
 ```bash
 # 1. Preview the proposed change. No write occurs.
@@ -277,11 +343,19 @@ curl -X POST \
 # -> { "ok": true, "before": { ... }, "after": { ... } }
 ```
 
-The `apply` handler audits the attempt *before* performing the write,
-then audits the outcome. If the write fails, the attempt event
-remains. This matches the spec's §11 "監視失敗自体も監査対象": the act
-of trying to make a change is itself audit-worthy, independent of
-whether the change succeeded.
+### Audit ordering
+
+Whichever path the operator takes, the `apply` step:
+
+1. Emits `AdminBucketSafetyChanged` with `reason = "attempt:BUCKET"`
+2. Performs the D1 write
+3. On success, emits `AdminBucketSafetyChanged` with
+   `reason = "ok:BUCKET"`; on failure the attempt row stays but no
+   ok row appears
+
+This matches the spec's §11 "監視失敗自体も監査対象": the act of trying
+to make a change is itself audit-worthy, independent of whether the
+change succeeded.
 
 ### Threshold updates
 
@@ -342,19 +416,32 @@ not allowed to do *this*.
 
 ---
 
-## What's deferred to 0.3.1
+## What shipped when
 
-- **HTML edit forms with two-step confirmation UI.** The preview/apply
-  pair today is JSON-scripted. The UI wrapper is priority 8 in the
-  spec.
-- **Admin-token management UI.** The D1 table, port
-  (`AdminTokenRepository`), and in-memory adapter exist; the routes
-  and UI templates are priority 7.
+- **v0.3.0** — the six dashboard pages, JSON-scripted preview+apply
+  API, alert engine, D1 schema, `ADMIN_API_KEY` bootstrap, wrangler
+  token-insert recipe.
+- **v0.3.1** — HTML two-step confirmation UI for bucket-safety edits,
+  admin-token CRUD UI (Super-only), Tokens tab conditional on role,
+  role-badge propagation fix on Cost/Audit/Alerts pages.
+
+## What's still deferred (0.3.2+)
+
 - **Workers-request and Turnstile-verify hot-path counters.** The
-  admin console already reads these KV keys; 0.3.1 starts incrementing
-  them.
-- **Durable Objects enumeration.** Blocked on Cloudflare shipping a
-  runtime API.
+  admin console already reads these KV keys; writing them has a
+  residual design question — at what granularity do we count? Every
+  fetch (including 404s, preflight)? Only successful handlers? By
+  HTTP method or response class? The answer shapes what operators
+  see, and the spec is silent on it. A secondary question is how to
+  handle the read-modify-write race (KV has no atomic increment —
+  concurrent requests will lose increments). Likely acceptable for
+  a "proxy" metric but worth recording before implementing. See
+  `ROADMAP.md`.
+- **Durable Objects enumeration.** Still blocked on Cloudflare
+  shipping a runtime API for listing / inspecting DO instances. When
+  that lands the policy-layer `note` in `admin::metrics` gets
+  replaced with real numbers; no changes to the dashboard are
+  required — only the adapter.
 
 ---
 

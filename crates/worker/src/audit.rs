@@ -34,6 +34,9 @@ pub enum EventKind {
     AdminBucketSafetyVerified,
     AdminBucketSafetyChanged,
     AdminThresholdUpdated,
+    // Admin token management (v0.3.1)
+    AdminTokenCreated,
+    AdminTokenDisabled,
     // Token lifecycle
     TokenIssued,
     TokenRefreshed,

@@ -61,7 +61,13 @@ impl Role {
 }
 
 /// The resolved identity carried through an admin request.
-#[derive(Debug, Clone)]
+///
+/// `Serialize` is derived so the token-management JSON endpoint can
+/// return a `Vec<AdminPrincipal>` as-is. Kept `Deserialize`-free on
+/// purpose: adapters construct these from their own row shapes, and
+/// nothing on the wire should be reviving an `AdminPrincipal` from
+/// a client-provided blob.
+#[derive(Debug, Clone, Serialize)]
 pub struct AdminPrincipal {
     /// Opaque id. For the `ADMIN_API_KEY` bootstrap secret this is the
     /// sentinel `"super-bootstrap"`; for rows in `admin_tokens` this is

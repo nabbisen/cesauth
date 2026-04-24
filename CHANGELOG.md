@@ -12,6 +12,108 @@ always be called out here.
 
 ---
 
+## [0.3.1] - 2026-04-24
+
+### Added
+
+- **HTML two-step confirmation UI for bucket-safety edits.** The
+  pre-0.3.1 preview/apply JSON API is unchanged; 0.3.1 adds a
+  form-based wrapper that the Configuration Review page now links to
+  per bucket (Operations+ only). The flow:
+  1. `GET /admin/console/config/:bucket/edit` renders an edit form
+     pre-populated with the current attested state.
+  2. `POST` submits the proposed values; the handler re-renders the
+     same URL as a confirmation page showing a before/after diff with
+     the changed fields highlighted.
+  3. Submitting the "Apply" button on the confirmation page re-POSTs
+     with `confirm=yes` and the handler commits the change, auditing
+     both the attempt (`attempt:BUCKET`) and the outcome
+     (`ok:BUCKET`), then 303-redirects back to the review page.
+  Corresponds to spec §7's "二段階確認" for dangerous operations.
+
+- **Admin-token CRUD UI (Super-only).** New screens at
+  `/admin/console/tokens`:
+  - `GET  /admin/console/tokens` — table of non-disabled rows in
+    `admin_tokens` (id, role, name, disable button).
+  - `GET  /admin/console/tokens/new` — form to mint a new token.
+  - `POST /admin/console/tokens` — server mints 256 bits of
+    getrandom-sourced plaintext (two `Uuid::new_v4()` concatenated),
+    SHA-256-hashes it for storage, inserts the row, and renders the
+    plaintext **exactly once** with a prominent one-shot warning.
+    Emits `AdminTokenCreated`.
+  - `POST /admin/console/tokens/:id/disable` — flips `disabled_at`;
+    refuses to disable the caller's own token to prevent accidental
+    self-lockout. Emits `AdminTokenDisabled`.
+  Per spec §14 ("provisional simple implementation" until tenant
+  boundaries land), the list shows only `id`/`role`/`name`; richer
+  `created_at` / `last_used_at` / `disabled_at` metadata is a
+  post-tenant decision.
+
+- **Conditional Tokens tab in the admin nav.** Visible only when the
+  current principal's role is `Super`. Other roles still get a 403
+  from the route if they navigate there directly — the tab
+  visibility is a UX convenience, not a security boundary.
+
+- **New audit event kinds**: `AdminTokenCreated`, `AdminTokenDisabled`.
+
+- **Test coverage** (+10 tests, total 103):
+  - `adapter-test`: token-CRUD roundtrip, hash uniqueness →
+    `PortError::Conflict`, disable-unknown → `PortError::NotFound`.
+  - `ui`: role-badge rendering, Tokens-tab visibility matrix,
+    HTML-escape on untrusted notes, HTML-escape on displayed
+    plaintext bearer, changed-fields marker correctness,
+    no-change short-circuit on the confirm page, empty-list
+    bootstrap-fallback hint.
+
+### Changed
+
+- **Fix: admin pages now show the caller's actual role in the header
+  badge.** `cost_page`, `audit_page`, and `alerts_page` were
+  hardcoding `Role::ReadOnly` and omitting the operator name; they
+  now take an `&AdminPrincipal` like the other pages and propagate
+  the role and label through to the header.
+
+- **`AdminPrincipal` gained `Serialize`.** Needed so
+  `GET /admin/console/tokens?Accept=application/json` can return the
+  list as-is. `Deserialize` is deliberately *not* derived —
+  adapters build these from their own row shapes, and nothing on the
+  wire should revive one from a client blob.
+
+- **Configuration Review's "Editing" section rewritten.** Pre-0.3.1
+  it pointed operators at the JSON API only; it now describes the
+  in-UI edit flow first and keeps the JSON recipes as a scripted
+  alternative.
+
+### Security
+
+- **Token plaintext is touched for exactly one request path.** The
+  server holds the plaintext only long enough to (a) SHA-256 it for
+  storage and (b) render it once on the created-token page; no logs,
+  no DO state, no error paths mention it. If the operator closes
+  that tab without copying, they disable the token and create a new
+  one.
+
+- **Self-disable guard on `/admin/console/tokens/:id/disable`.** The
+  handler refuses to disable the same principal id that
+  authenticated the request. Not a security issue (the operator is
+  already authorized to do it), but an accidental lockout of the
+  only active Super is painful enough to catch here. The
+  `ADMIN_API_KEY` bootstrap path is unaffected: `super-bootstrap`
+  has no row and cannot be disabled from the UI at all.
+
+### Deferred (tracked for 0.3.2+)
+
+- **Workers-request and Turnstile-verify hot-path counters.** The
+  admin console already reads these KV keys; writing them has a
+  residual design question (at what request granularity do we
+  count — every fetch, only successful handlers, by path?) that is
+  not settled by the spec. See `ROADMAP.md`.
+- **Durable Objects enumeration.** Still blocked on a Cloudflare
+  runtime API that does not exist.
+
+
+---
+
 ## [0.3.0] - 2026-04-24
 
 ### Added
