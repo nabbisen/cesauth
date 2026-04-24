@@ -30,6 +30,7 @@
 - [CSRF model](./expert/csrf.md)
 - [Operational logging](./expert/logging.md)
 - [Turnstile integration](./expert/turnstile.md)
+- [Admin console](./expert/admin-console.md)
 - [Security considerations](./expert/security.md)
 
 ---

@@ -14,3 +14,11 @@ path = "src/lib.rs"
 [dependencies]
 # No templating engine on purpose: the pages are small enough that a
 # `format!` is clearer and ships zero extra dependencies.
+#
+# The admin-console templates (v0.3.0 and later) read domain types
+# straight out of `cesauth-core::admin::types`. Going through `core`
+# rather than redeclaring the shapes here keeps the UI and the handlers
+# honestly in sync. `core` itself has no Cloudflare deps (see its
+# module-level comment), so this does NOT pull worker/wasm code into
+# the UI build.
+cesauth-core = { path = "../core" }

@@ -28,6 +28,12 @@ pub enum EventKind {
     AdminUserCreated,
     AdminSessionRevoked,
     AdminClientCreated,
+    // Admin console (v0.3.0)
+    AdminLoginFailed,
+    AdminConsoleViewed,
+    AdminBucketSafetyVerified,
+    AdminBucketSafetyChanged,
+    AdminThresholdUpdated,
     // Token lifecycle
     TokenIssued,
     TokenRefreshed,

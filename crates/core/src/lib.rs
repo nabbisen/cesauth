@@ -25,6 +25,7 @@
 // here because the worker runtime is single-threaded per request.
 #![allow(async_fn_in_trait)]
 
+pub mod admin;
 pub mod error;
 pub mod jwt;
 pub mod magic_link;

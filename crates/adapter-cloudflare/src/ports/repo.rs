@@ -35,7 +35,7 @@ pub use grants::CloudflareGrantRepository;
 pub use signing_keys::CloudflareSigningKeyRepository;
 pub use users::CloudflareUserRepository;
 
-fn db<'a>(env: &'a Env) -> PortResult<D1Database> {
+pub(crate) fn db<'a>(env: &'a Env) -> PortResult<D1Database> {
     env.d1("DB").map_err(|_| PortError::Unavailable)
 }
 
@@ -47,7 +47,7 @@ fn db<'a>(env: &'a Env) -> PortResult<D1Database> {
 /// comfortably within `Number.MAX_SAFE_INTEGER` (2^53 - 1), so the
 /// cast is lossless for every value we actually bind.
 #[inline]
-fn d1_int(v: i64) -> JsValue {
+pub(crate) fn d1_int(v: i64) -> JsValue {
     JsValue::from_f64(v as f64)
 }
 
@@ -62,7 +62,7 @@ fn d1_int(v: i64) -> JsValue {
 /// `map_err(|_| PortError::Unavailable)` because a failing read is
 /// usually the route handler's first clue anyway.
 #[inline]
-fn run_err(context: &'static str, e: worker::Error) -> PortError {
+pub(crate) fn run_err(context: &'static str, e: worker::Error) -> PortError {
     worker::console_error!("d1 {}: {}", context, e);
     PortError::Unavailable
 }

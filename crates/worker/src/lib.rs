@@ -73,6 +73,17 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         // --- Admin API ------------------------------------------------
         .post_async("/admin/users",          |req, ctx| async move { routes::admin::create_user(req, ctx).await })
         .delete_async("/admin/sessions/:id", |req, ctx| async move { routes::admin::revoke_session(req, ctx).await })
+        // --- Admin Console (v0.3.0) ----------------------------------
+        .get_async ("/admin/console",                          |req, ctx| async move { routes::admin::console::overview::page(req, ctx).await })
+        .get_async ("/admin/console/cost",                     |req, ctx| async move { routes::admin::console::cost::page(req, ctx).await })
+        .get_async ("/admin/console/safety",                   |req, ctx| async move { routes::admin::console::safety::page(req, ctx).await })
+        .post_async("/admin/console/safety/:bucket/verify",    |req, ctx| async move { routes::admin::console::safety::verify(req, ctx).await })
+        .get_async ("/admin/console/audit",                    |req, ctx| async move { routes::admin::console::audit::page(req, ctx).await })
+        .get_async ("/admin/console/config",                   |req, ctx| async move { routes::admin::console::config::page(req, ctx).await })
+        .post_async("/admin/console/config/:bucket/preview",   |req, ctx| async move { routes::admin::console::config::preview(req, ctx).await })
+        .post_async("/admin/console/config/:bucket/apply",     |req, ctx| async move { routes::admin::console::config::apply(req, ctx).await })
+        .get_async ("/admin/console/alerts",                   |req, ctx| async move { routes::admin::console::alerts::page(req, ctx).await })
+        .post_async("/admin/console/thresholds/:name",         |req, ctx| async move { routes::admin::console::actions::threshold(req, ctx).await })
         // --- UI -------------------------------------------------------
         .get_async("/",         |req, ctx| async move { routes::ui::login(req, ctx).await })
         .get_async("/login",    |req, ctx| async move { routes::ui::login(req, ctx).await })

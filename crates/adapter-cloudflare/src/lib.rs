@@ -33,6 +33,7 @@
 //! collapse that indirection without verifying DO classes still load.
 
 pub mod active_session;
+pub mod admin;
 pub mod auth_challenge;
 pub mod ports;
 pub mod rate_limit;

@@ -12,6 +12,157 @@ always be called out here.
 
 ---
 
+## [0.3.0] - 2026-04-24
+
+### Added
+
+- **Cost & Data Safety Admin Console.** A new operator-facing surface
+  under `/admin/console/*`, separate from the user-authentication body.
+  Six server-rendered HTML pages plus a small JSON-write surface:
+
+  | Path                                    | Min role    | Purpose                                        |
+  |-----------------------------------------|-------------|------------------------------------------------|
+  | `GET  /admin/console`                   | ReadOnly    | Overview: alert counts, recent events, last verifications |
+  | `GET  /admin/console/cost`              | ReadOnly    | Cost dashboard — per-service metrics & trend  |
+  | `GET  /admin/console/safety`            | ReadOnly    | Data-safety dashboard — per-bucket attestation |
+  | `POST /admin/console/safety/:b/verify`  | Security+   | Stamp a bucket-safety attestation as re-verified |
+  | `GET  /admin/console/audit`             | ReadOnly    | Audit-log search (prefix / kind / subject filters) |
+  | `GET  /admin/console/config`            | ReadOnly    | Configuration review (attested settings + thresholds) |
+  | `POST /admin/console/config/:b/preview` | Operations+ | Preview a bucket-safety change (diff, no commit) |
+  | `POST /admin/console/config/:b/apply`   | Operations+ | Commit a bucket-safety change (requires `confirm:true`) |
+  | `GET  /admin/console/alerts`            | ReadOnly    | Alert center — rolled-up cost + safety alerts   |
+  | `POST /admin/console/thresholds/:name`  | Operations+ | Update an operator-editable threshold            |
+
+  Every GET is `Accept`-aware: browsers get HTML, `Accept: application/json`
+  gets the same payload as JSON — so curl and the browser share one
+  URL surface.
+
+- **Four-role admin authorization model.** `ReadOnly` / `Security` /
+  `Operations` / `Super`, enforced by a single pure function
+  `core::admin::policy::role_allows(role, action)`. Each handler
+  declares its `AdminAction` and the policy layer decides. Role
+  matrix:
+
+  | Action                  | RO | Sec | Ops | Super |
+  |-------------------------|----|-----|-----|-------|
+  | `ViewConsole`           | ✓  | ✓   | ✓   | ✓     |
+  | `VerifyBucketSafety`    |    | ✓   | ✓   | ✓     |
+  | `RevokeSession`         |    | ✓   | ✓   | ✓     |
+  | `EditBucketSafety`      |    |     | ✓   | ✓     |
+  | `EditThreshold`         |    |     | ✓   | ✓     |
+  | `CreateUser`            |    |     | ✓   | ✓     |
+  | `ManageAdminTokens`     |    |     |     | ✓     |
+
+  The pre-existing `ADMIN_API_KEY` secret becomes the Super bootstrap:
+  a fresh deployment with only that secret set still has console
+  access at the Super tier. Additional principals live in the new
+  `admin_tokens` D1 table (SHA-256-hashed, never plaintext). See
+  [Admin Console — Expert chapter](docs/src/expert/admin-console.md).
+
+- **Honest edge-native metrics.** The dashboard is deliberately
+  truthful about what a Worker can and cannot see at runtime. D1 row
+  counts come from `COUNT(*)` on tracked tables. R2 object counts and
+  bytes come from `bucket.list()` summation. Workers and Turnstile
+  counts come from a self-maintained `counter:<service>:<YYYY-MM-DD>`
+  pattern in KV. Durable-Object metrics are deliberately empty — the
+  Workers runtime cannot enumerate DO instances, so the dashboard
+  surfaces a note pointing operators at the Cloudflare dashboard
+  rather than fabricating numbers.
+
+- **Bucket safety = operator attestation.** Workers runtime cannot
+  read Cloudflare's R2 control-plane (is-public / CORS / lifecycle /
+  bucket-lock state). We therefore record what the operator last
+  confirmed the bucket to be, with a `last_verified_at` stamp and a
+  configurable staleness threshold. Stale attestations raise a `warn`
+  alert; any bucket attested public raises a `critical` alert
+  regardless of which bucket it is.
+
+- **Audit-log search over R2.** New `CloudflareAuditQuerySource`
+  walks the date-partitioned `audit/YYYY/MM/DD/<uuid>.ndjson` tree,
+  parses each object, and applies `kind_contains` / `subject_contains`
+  filters in the adapter. Hard-capped at 200 objects per call so one
+  console view can never fan out to thousands of R2 GETs.
+
+- **Five new `EventKind` variants.**
+  `AdminLoginFailed`, `AdminConsoleViewed`, `AdminBucketSafetyVerified`,
+  `AdminBucketSafetyChanged`, `AdminThresholdUpdated`. Every console
+  view is audited — §11 of the extension spec asks that monitoring
+  failures themselves be audit-visible, and logging views captures
+  the intent side of that.
+
+- **Migration `0002_admin_console.sql`.** Four tables:
+  `admin_tokens`, `bucket_safety_state`, `cost_snapshots`,
+  `admin_thresholds`. Five default thresholds seeded; rows for the
+  two shipped R2 buckets (`AUDIT`, `ASSETS`) seeded with conservative
+  defaults. `INSERT OR IGNORE` throughout so the migration is
+  re-runnable.
+
+- **Expert chapter `docs/src/expert/admin-console.md`.** Covers the
+  role model, the permission matrix, the change-operation protocol
+  (preview → apply), the metrics-source fidelity matrix, and the
+  bootstrap / token-provisioning curl recipes.
+
+### Changed
+
+- **`routes::admin` refactored into a submodule tree.** What used to
+  be one 145-line file is now:
+  - `routes/admin.rs` — parent, re-exports legacy `create_user` /
+    `revoke_session` so `lib.rs`'s wiring didn't have to change.
+  - `routes/admin/auth.rs` — bearer → principal resolution +
+    `ensure_role_allows` helper.
+  - `routes/admin/legacy.rs` — existing user-management endpoints,
+    now role-gated (`CreateUser` requires Operations+,
+    `RevokeSession` requires Security+; previously both required the
+    single `ADMIN_API_KEY`).
+  - `routes/admin/console.rs` + `routes/admin/console/*` — the v0.3.0
+    console.
+
+- **UI crate now depends on `cesauth-core`.** The admin templates
+  read domain types directly from `core::admin::types` rather than
+  redeclaring them, which would have drifted. `core` has no
+  Cloudflare deps (enforced by its module-level comment), so this
+  does not pull worker/wasm code into the UI build.
+
+- **ROADMAP: "Audit retention policy tooling" moved from Planned to
+  Shipped** as part of the admin console (the console's
+  Configuration Review page surfaces each bucket's lifecycle
+  attestation; the Alert Center flags staleness).
+
+### Deferred (for 0.3.1)
+
+None of these block §13 of the extension spec — the initial
+completion criteria are met. They are recorded here so the scope
+of 0.3.0 is unambiguous:
+
+- **HTML edit forms with two-step confirmation UI.** 0.3.0 ships the
+  preview → apply pair as a JSON API. The HTML confirm-screen flow
+  (preview page → nonce-gated apply) is priority 8 in the spec; the
+  scripted pair satisfies §7 (danger-operation preview + audit) in
+  the meantime.
+- **Admin-token CRUD UI.** 0.3.0 requires operators to INSERT rows
+  into `admin_tokens` via a `wrangler d1 execute` command
+  (documented in the expert chapter). A Super-only `/admin/tokens`
+  HTML surface lands in 0.3.1.
+- **Workers-request counter hot-path instrumentation.** 0.3.0 reads
+  the `counter:workers:requests:*` KV keys and will report whatever
+  is there; the actual `.increment()` call on every request is the
+  0.3.1 work. Fresh deployments see zeros.
+- **DO-instance enumeration.** Blocked on the Cloudflare Workers
+  runtime API, which does not expose DO listing. Shipped as
+  "unavailable — see CF dashboard" with a note; wired once CF
+  ships the capability.
+
+### Test counts
+
+- `core`            — 72 passed (56 pre-admin + 16 admin policy / service)
+- `adapter-test`    — 17 passed (6  pre-admin + 11 admin in-memory adapters)
+- `ui`              — 4 passed (unchanged; admin templates exercised by
+  `cargo check` rather than unit tests — their contract is HTML shape,
+  which breaks visibly)
+- **Total**: 93 host lib tests pass; `cargo-1.91 check --workspace` clean.
+
+---
+
 ## [0.2.1] - 2026-04-24
 
 ### Changed

@@ -33,8 +33,9 @@ zero remaining issues.
 | CSRF protection (double-submit cookie) | ✅       | Form POSTs; JSON bypasses                          |
 | Operational logger (JSON Lines)        | ✅       | Categorized, level-gated, sensitivity-gated         |
 | Turnstile integration (flag-based)     | ✅       | Fires on `RateLimitDecision.escalate`              |
-| Admin API (`POST /admin/users`, `DELETE /admin/sessions/:id`) | ✅ | Bearer auth                 |
-| Audit log (R2, NDJSON per event)       | ✅       | Covered by `/__dev/audit` browser                   |
+| Admin API (`POST /admin/users`, `DELETE /admin/sessions/:id`) | ✅ | Role-gated (0.3.0), bearer auth             |
+| Audit log (R2, NDJSON per event)       | ✅       | Covered by `/__dev/audit` browser + searchable via admin console (0.3.0) |
+| **Cost &amp; Data Safety Admin Console** | ✅     | `/admin/console/*` — Overview, Cost, Safety, Audit, Config, Alerts (0.3.0) |
 | Dev-only routes (`/__dev/*`)           | ✅       | Gated on `WRANGLER_LOCAL="1"`                      |
 | mdBook documentation                   | ✅       | `docs/`                                            |
 
@@ -64,9 +65,19 @@ started.
 - **Conditional UI for WebAuthn** (`mediation: "conditional"`) —
   autofill-assisted sign-in.
 
-- **Audit retention policy tooling.** R2 lifecycle rules are
-  configured per-bucket today; a CLI or admin endpoint to verify
-  the rules exist would catch misconfigurations.
+- **Admin Console follow-ups (0.3.1).** The initial drop in 0.3.0
+  ships the read surface and a JSON-scripted write API; these finish
+  the write-side UI:
+  - HTML two-step confirmation screens for dangerous bucket-safety
+    edits (spec priority 8). The preview/apply pair exists as JSON;
+    0.3.1 wraps it in forms with a side-by-side before/after.
+  - Admin-token management UI (spec priority 7, Super-only). Table,
+    port, and resolver are in place today; 0.3.1 adds the CRUD
+    screens.
+  - Hot-path instrumentation for the Workers-request and
+    Turnstile-verify KV counters the Cost Dashboard already reads.
+    The counters exist and are summed correctly; they are just never
+    incremented in 0.3.0.
 
 ### Later
 
