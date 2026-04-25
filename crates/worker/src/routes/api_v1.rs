@@ -1,4 +1,4 @@
-//! tenancy API routes (v0.4.2).
+//! Tenancy service API routes (v0.4.2).
 //!
 //! These routes wire the v0.4.0/0.4.1 service layer + adapters to a
 //! JSON HTTP surface under `/api/v1/`. Authentication is the same

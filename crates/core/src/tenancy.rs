@@ -1,7 +1,7 @@
 //! Multi-tenancy domain model (v0.4.0).
 //!
 //! This module implements the top-level boundary concepts from the
-//! users, roles, tenants, organizations, groups data model + authz extension spec §3:
+//! tenancy service extension spec §3:
 //!
 //!   * [`Tenant`] — the outermost logical boundary. Every piece of
 //!     user-facing data that is not a shared catalog (plans, system
@@ -21,7 +21,8 @@
 //!
 //! The spec is deliberate about separating concerns: `tenancy` covers
 //! who-is-in-what; [`crate::authz`] covers what-can-they-do;
-//! [`crate::billing`] covers what-does-the-tenant-pay-for.
+//! [`crate::billing`] covers what-does-the-tenant-pay-for. Those three
+//! modules form the tenancy service together.
 //!
 //! # What's in 0.4.0
 //!

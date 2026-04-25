@@ -93,7 +93,17 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async ("/admin/console/tokens/new",               |req, ctx| async move { routes::admin::console::tokens::new_form(req, ctx).await })
         .post_async("/admin/console/tokens",                   |req, ctx| async move { routes::admin::console::tokens::create(req, ctx).await })
         .post_async("/admin/console/tokens/:id/disable",       |req, ctx| async move { routes::admin::console::tokens::disable(req, ctx).await })
-        // --- tenancy API (v0.4.2) ----------------------------
+        // --- SaaS console (v0.4.3, read-only HTML) -------------------
+        // Operator-facing inspection of the v0.4.x tenancy service
+        // state. Every route is read-only; mutations remain on the
+        // JSON API at `/api/v1/...`. See `routes/admin/saas.rs`.
+        .get_async("/admin/saas",                                            |req, ctx| async move { routes::admin::saas::overview::page(req, ctx).await })
+        .get_async("/admin/saas/tenants",                                    |req, ctx| async move { routes::admin::saas::tenants::page(req, ctx).await })
+        .get_async("/admin/saas/tenants/:tid",                               |req, ctx| async move { routes::admin::saas::tenant_detail::page(req, ctx).await })
+        .get_async("/admin/saas/tenants/:tid/subscription/history",          |req, ctx| async move { routes::admin::saas::subscription::page(req, ctx).await })
+        .get_async("/admin/saas/organizations/:oid",                         |req, ctx| async move { routes::admin::saas::organizations::page(req, ctx).await })
+        .get_async("/admin/saas/users/:uid/role_assignments",                |req, ctx| async move { routes::admin::saas::role_assignments::page(req, ctx).await })
+        // --- Tenancy service API (v0.4.2) ----------------------------
         // JSON-only surface for operator-driven tenant / org / group /
         // role-assignment / subscription provisioning. Gated through
         // the same admin-bearer auth as `/admin/console/*`. See

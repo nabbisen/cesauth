@@ -12,6 +12,106 @@ always be called out here.
 
 ---
 
+## [0.4.3] - 2026-04-25
+
+A read-only HTML console at `/admin/saas/*` for cesauth's operator
+staff to inspect tenancy / billing state. Sits parallel to (and
+visually distinct from) the v0.3.x cost / data-safety console at
+`/admin/console/*`. Mutation continues to flow through the v0.4.2
+JSON API; the HTML preview/confirm flow that wraps those mutations
+is slated for v0.4.4 with the same two-step pattern v0.3.1
+introduced for bucket safety edits.
+
+### Added
+
+- **SaaS console UI module** in `cesauth-ui`
+  (`crates/ui/src/saas/`): `frame` + 5 page templates.
+  - `Overview` — deployment-wide counters (tenants by status,
+    org/group counts, active plan count) plus a per-plan
+    subscriber breakdown via `LEFT JOIN`.
+  - `Tenants` — list of every non-deleted tenant with status
+    badges and drill-through to detail.
+  - `Tenant detail` — summary, current subscription with plan
+    label, organization list, member list. Links out to org
+    detail and per-user role assignments.
+  - `Organization detail` — summary, org-scoped groups, members.
+  - `Subscription history` — append-only log per tenant,
+    reverse-chronological (newest first — operators most often
+    ask "what changed last").
+  - `User role assignments` — every assignment held by one user,
+    across every scope, with rendered scope links and
+    role-label-with-display-name.
+
+- **Worker route handlers** in `crates/worker/src/routes/admin/saas/`:
+  one handler per page above. Each delegates to the existing
+  `crate::routes::admin::auth::resolve_or_respond` for bearer
+  resolution and `ensure_role_allows(AdminAction::ViewTenancy)`
+  for capability gating. Response shaping (CSP / cache-control /
+  frame-deny) reuses
+  `crate::routes::admin::console::render::html_response`.
+
+- **6 new HTML routes** wired in `lib.rs`:
+  - `GET /admin/saas`
+  - `GET /admin/saas/tenants`
+  - `GET /admin/saas/tenants/:tid`
+  - `GET /admin/saas/tenants/:tid/subscription/history`
+  - `GET /admin/saas/organizations/:oid`
+  - `GET /admin/saas/users/:uid/role_assignments`
+
+- **Distinct nav frame** (`SaasTab`). Two top-level tabs
+  (`Overview`, `Tenants`); the `UserRoleAssignments` tab is a
+  drill-in destination only and is filtered out of the nav even
+  when active. Footer bears a `read-only` marker so operators
+  cannot mistake this surface for the writable v0.4.4 follow-up.
+
+- **Tests** (+22 over 0.4.2's 144, total 166):
+  - `ui::saas::tests` (4) — frame role badge, active-tab
+    `aria-current`, drill-in tab not in nav, footer read-only
+    marker.
+  - `ui::saas::overview::tests` (4) — counter rendering, empty
+    plan-breakdown empty state, plan rows, read-only disclaimer
+    presence.
+  - `ui::saas::tenants::tests` (4) — empty list call-to-action,
+    drill-link href shape, suspended status badge, HTML escape
+    of untrusted display_name.
+  - `ui::saas::tenant_detail::tests` (4) — summary + no-sub case,
+    organization list, subscription with plan, member→user link.
+  - `ui::saas::subscription::tests` (3) — empty history, reverse-
+    chronological ordering, back link.
+  - `ui::saas::role_assignments::tests` (3) — empty state, scope
+    drill-links + system badge, dangling-role-id resilience.
+
+### Changed
+
+No breaking changes. The 0.4.2 JSON API at `/api/v1/...` continues
+to work identically. The 0.4.3 console only **reads** through the
+existing service-layer ports + D1 adapters.
+
+### Deferred — still tracked for 0.4.4+
+
+The 0.4.3 console is read-only by design. The mutation surface
+(create / update / delete forms with the v0.3.1 preview/confirm
+pattern) is the headline 0.4.4 feature. Other still-deferred items
+are unchanged from 0.4.2:
+
+- **HTML mutation forms with two-step confirmation** (0.4.4) —
+  same preview-then-confirm pattern v0.3.1 introduced for bucket
+  safety edits, applied to tenant create / update, org create /
+  status change, role grant / revoke, subscription plan/status
+  change.
+- **Tenant-scoped admins** — tenant admins administering their
+  own tenant rather than the cesauth operator administering
+  every tenant. Requires user-as-bearer auth and login → tenant
+  resolution UX, both of which are open design questions.
+- **`check_permission` integration on the API surface** —
+  blocked on user-as-bearer.
+- **`max_users` quota enforcement** — waits on a user-create
+  surface that respects tenancy.
+- **Anonymous-trial promotion**.
+- **External IdP federation**.
+
+---
+
 ## [0.4.2] - 2026-04-25
 
 The HTTP API surface for the tenancy service data model. v0.4.0
@@ -48,7 +148,7 @@ outside.
     at archived (`active = false`) plans. Every plan / status
     change appends a `subscription_history` entry.
 
-- **27 routes wired** into `lib.rs` under a `// --- tenancy
+- **27 routes wired** into `lib.rs` under a `// --- tenancy service
   API (v0.4.2)` block, contiguous with the existing
   `/admin/console/...` routes.
 
@@ -249,8 +349,9 @@ deferred (see "Deferred" below).
 
 ## [0.4.0] - 2026-04-25
 
-Implements the data model and core authorization engine from
-`Tenancy service + authz 拡張開発指示書.md` §3-§5 and §16.1,
+The tenancy service foundation. Implements the data model and core
+authorization engine from
+`cesauth-Tenancy service + authz 拡張開発指示書.md` §3-§5 and §16.1,
 §16.3, §16.6. Routes / UI / multi-tenant admin console are deferred
 to 0.4.1 by design (see "Deferred" below).
 

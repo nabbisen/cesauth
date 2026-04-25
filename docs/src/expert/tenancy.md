@@ -23,13 +23,21 @@ repository root; this chapter implements §3-§5 and §16.1, §16.3,
 > associated to the bootstrap tenant; email uniqueness becomes
 > per-tenant.
 >
-> v0.4.2 ships the **`/api/v1/...` HTTP API** for tenant /
+> v0.4.2 shipped the **`/api/v1/...` HTTP API** for tenant /
 > organization / group / membership / role-assignment / subscription
 > CRUD, with plan-quota enforcement on the create paths. The API is
 > gated through the existing 0.3.x admin-bearer mechanism with two
-> new capabilities (`ViewTenancy` / `ManageTenancy`); the
-> tenant-scoped HTML console and the user-as-bearer auth path are
-> deferred to **v0.4.3** with the multi-tenant admin console.
+> new capabilities (`ViewTenancy` / `ManageTenancy`).
+>
+> v0.4.3 ships a **read-only HTML SaaS console** at `/admin/saas/*`
+> for cesauth's operator staff to inspect tenancy state without
+> curling the JSON API. Five pages — overview, tenants list, tenant
+> detail, organization detail, subscription history, user role
+> assignments — all read-only by design. Mutation forms (the HTML
+> wrapper around the v0.4.2 JSON API) ship in **v0.4.4**, and the
+> tenant-scoped admin surface (where tenant admins administer their
+> own tenant rather than the cesauth operator administering every
+> tenant) is **0.4.5+**.
 
 ---
 
@@ -133,7 +141,7 @@ Five values, none of which imply administrative capability:
 | `human_user`              | Ordinary end-user, password / passkey, self-registered.          |
 | `service_account`         | Machine principal for API integrations. Bearer / mTLS.            |
 | `system_operator`         | cesauth's own operators (separate from a tenant's admins).        |
-| `anonymous`               | Bounded trial principal. Promotion flow is a 0.4.3 follow-up.     |
+| `anonymous`               | Bounded trial principal. Promotion flow is a 0.4.6 follow-up.     |
 | `external_federated_user` | Identity in an external IdP, role assignments local to cesauth. Federation wiring is a follow-up. |
 
 Spec §5 is explicit: "user_type のみで admin 判定を行わない".
@@ -335,23 +343,57 @@ relying on log archaeology.
   mutating route emits one with actor (admin token id), subject
   (created/affected row id), and a structured `reason` field.
 
+### Added in 0.4.3
+
+- **Read-only HTML SaaS console** at `/admin/saas/*`, parallel to
+  (and visually distinct from) the v0.3.x cost / data-safety
+  console at `/admin/console/*`. Five pages:
+  - `/admin/saas` — overview with deployment-wide counters and a
+    per-plan subscriber breakdown.
+  - `/admin/saas/tenants` — list of every non-deleted tenant.
+  - `/admin/saas/tenants/:tid` — single tenant view (summary,
+    subscription with plan label, organization list, member list).
+  - `/admin/saas/organizations/:oid` — single organization view
+    (groups, members).
+  - `/admin/saas/tenants/:tid/subscription/history` — append-only
+    change log, reverse-chronological.
+  - `/admin/saas/users/:uid/role_assignments` — every assignment
+    held by one user, across every scope, with rendered scope
+    drill-links.
+- **Distinct nav frame** (`SaasTab`) with two top-level tabs
+  (Overview, Tenants); the User-roles tab is a drill-in
+  destination only and is filtered out of the nav even when
+  active. Footer carries a `read-only` marker.
+- The console is read-only **by design**. Mutations continue to
+  flow through the v0.4.2 JSON API. The HTML preview/confirm
+  forms (the v0.3.1-style two-step pattern, applied to tenancy
+  mutations) ship in v0.4.4. The split mirrors the 0.3.0 → 0.3.1
+  split and lets the read pages settle before the write surface
+  arrives.
+
 ### Does NOT ship in v0.4.x (yet)
 
 The CHANGELOG `Deferred` sections and `ROADMAP.md` track each item.
 Headlines:
 
-- **Multi-tenant admin console**. The 0.3.x console assumes a
-  single deployment-wide operator. The HTML surface for tenant-
-  scoped admins, the user-as-bearer auth path, login → tenant
-  resolution, and Accept negotiation arrive together as the
-  0.4.3 release.
+- **HTML mutation forms** wrapping the v0.4.2 API. Two-step
+  preview/confirm pattern from v0.3.1, applied to tenant create /
+  update / status, organization create / status, group create /
+  delete, membership add / remove, role grant / revoke, and
+  subscription plan/status changes. **0.4.4.**
+- **Tenant-scoped admin surface**. The v0.4.3 console serves the
+  cesauth deployment's operator staff — one console, every tenant.
+  A tenant-scoped surface (where tenant admins administer their
+  own tenant rather than every tenant) is a parallel UI reachable
+  from a tenant-side login, gated through user-as-bearer plus
+  `check_permission`. **0.4.5+.**
 - **`check_permission` integration on the API surface.** v0.4.2
   routes go through `ensure_role_allows` (admin-side capability)
   rather than `check_permission` because admin tokens have no row
   in `users` to feed into the spec-§9.1 scope-walk. The two
-  converge in 0.4.3+ when user bearers exist.
+  converge once user-as-bearer arrives.
 - **Anonymous-trial promotion.** The account type exists; the
-  promotion lifecycle is unspecified.
+  promotion lifecycle is unspecified. **0.4.6.**
 - **External IdP federation.** `AccountType::ExternalFederatedUser`
   is reserved; no IdP wiring exists yet.
 
@@ -399,8 +441,9 @@ wrangler d1 execute cesauth --remote \
 
 ### Promoting an operator to system_admin
 
-The proper admin-console UI lands with v0.4.3's multi-tenant
-console; in the meantime use wrangler:
+The HTML form for granting roles lands with v0.4.4's mutation
+console; in the meantime — and for emergency recoveries — use
+wrangler:
 
 ```bash
 # Replace USER_ID with an existing row from `users`.
@@ -447,6 +490,39 @@ bootstrap tenant seeded by 0003) with `account_type = 'human_user'`,
 and inserts a matching `user_tenant_memberships` row.
 For single-tenant deployments this is the entire story — keep
 running, no operator action required.
+
+### Inspecting tenancy state in the browser (v0.4.3+)
+
+The SaaS console at `/admin/saas/*` is the read-only HTML view of
+the same data the API surface exposes. Use the same admin bearer
+as the API:
+
+```bash
+# Browser: paste this URL after loading any /admin/console/* page
+# (which establishes the admin bearer in the browser session via
+# the existing session-cookie path), or curl with the bearer header.
+
+curl -sS -H "Authorization: Bearer $ADMIN_API_KEY" \
+     https://cesauth.example/admin/saas
+```
+
+Pages:
+
+| URL                                                           | Shows                                                                     |
+|---------------------------------------------------------------|---------------------------------------------------------------------------|
+| `/admin/saas`                                                 | Counters + per-plan subscriber breakdown                                  |
+| `/admin/saas/tenants`                                         | Every non-deleted tenant                                                  |
+| `/admin/saas/tenants/{id}`                                    | One tenant: summary, subscription, organizations, members                 |
+| `/admin/saas/tenants/{id}/subscription/history`               | Append-only change log for that tenant's subscription                     |
+| `/admin/saas/organizations/{id}`                              | One organization: groups, members                                         |
+| `/admin/saas/users/{id}/role_assignments`                     | Every role assignment held by one user, across every scope                |
+
+Every page is gated through `AdminAction::ViewTenancy`, which is
+open to **all four roles** (ReadOnly, Security, Operations, Super).
+Mutating the underlying state still requires `ManageTenancy`
+(Operations+), and the only way to trigger that capability today
+is via the v0.4.2 JSON API or a wrangler shell. The HTML mutation
+console is v0.4.4.
 
 ### API smoke-test (v0.4.2+)
 

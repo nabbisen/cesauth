@@ -13,6 +13,7 @@
 #![warn(missing_debug_implementations, rust_2018_idioms)]
 
 pub mod admin;
+pub mod saas;
 pub mod templates;
 
 /// Minimal HTML attribute-value escaper. Covers the five characters

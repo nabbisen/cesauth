@@ -37,7 +37,7 @@ zero remaining issues.
 | Audit log (R2, NDJSON per event)       | ✅       | Covered by `/__dev/audit` browser + searchable via admin console (0.3.0) |
 | **Cost &amp; Data Safety Admin Console** | ✅     | `/admin/console/*` — Overview, Cost, Safety, Audit, Config, Alerts (0.3.0); HTML two-step edit UI for bucket-safety + admin-token CRUD (0.3.1) |
 | Dev-only routes (`/__dev/*`)           | ✅       | Gated on `WRANGLER_LOCAL="1"`                      |
-| **Tenancy service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.4.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.4.1). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.4.2). Multi-tenant admin console UI deferred to 0.4.3. |
+| **Tenancy service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.4.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.4.1). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.4.2). Read-only HTML SaaS console at `/admin/saas/*` (0.4.3). Mutation forms with preview/confirm deferred to 0.4.4. |
 | mdBook documentation                   | ✅       | `docs/`                                            |
 
 ---
@@ -96,17 +96,39 @@ started.
   `check_permission`. The two converge in 0.4.3+ when user-as-bearer
   arrives.
 
-- **Multi-tenant admin console (0.4.3).** The 0.3.x admin console
-  assumes a deployment-wide operator. A multi-tenant deployment
-  needs a tenant-scoped admin surface that reuses the same console
-  shell but filters its data and audit views to the caller's
-  tenant. Open design questions:
-  - URL shape for tenant-scoped console
-    (`/admin/t/<slug>/console` vs subdomain).
-  - How to surface system-admin operations without leaking tenant
-    boundaries.
+- **Read-only SaaS console (shipped in 0.4.3).** The
+  `/admin/saas/*` HTML surface gives cesauth's operator staff a
+  navigable view of tenancy state — tenants, organizations,
+  members, subscriptions, role assignments — without having to
+  curl the JSON API. Five pages, all read-only by design;
+  mutations remain on `/api/v1/...`. The footer carries an
+  explicit "read-only" marker so operators don't mistake this
+  surface for the writable v0.4.4 follow-up.
 
-- **Anonymous trial → human user promotion (0.4.4).** Spec §3.3
+- **SaaS console mutation forms (0.4.4).** Wraps the v0.4.2 JSON
+  API in HTML forms with the same two-step preview/confirm
+  pattern v0.3.1 introduced for bucket safety. Operations+ for
+  mutations; ReadOnly continues to see the read-only views from
+  0.4.3. Targets:
+  - Tenant create / update / status change.
+  - Organization create / status change.
+  - Group create / delete.
+  - Membership add / remove (per scope).
+  - Role assignment grant / revoke.
+  - Subscription plan / status change (these are the highest-risk
+    mutations and most need confirm screens).
+
+- **Tenant-scoped admin surface (0.4.5+).** The v0.4.3 console
+  serves the cesauth deployment's operator staff — one console,
+  every tenant. A tenant-scoped admin surface is a parallel UI
+  reachable from a tenant-side login, gated through user-as-bearer
+  + `check_permission`, and filtered to the caller's tenant.
+  Three open design questions: URL shape (`/admin/t/<slug>/...`
+  vs subdomain), user-as-bearer mechanism (admin token mapping vs
+  session cookie vs JWT), and how to surface system-admin
+  operations without leaking tenant boundaries.
+
+- **Anonymous trial → human user promotion (0.4.6).** Spec §3.3
   introduces `Anonymous` as an account type and §11 priority 5
   asks for a promotion flow. The promotion lifecycle (token issuance
   for anonymous principals, retention window, conversion ceremony,
