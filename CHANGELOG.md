@@ -12,6 +12,108 @@ always be called out here.
 
 ---
 
+## [0.4.1] - 2026-04-25
+
+The runtime backing for v0.4.0's service data model.
+Implements the Cloudflare D1 adapters for every port the 0.4.0 core
+defined, and migrates the existing `users` table to be tenant-aware.
+Routes / multi-tenant admin console / login-tenant resolution remain
+deferred (see "Deferred" below).
+
+### Added
+
+- **Cloudflare D1 adapters for every 0.4.0 port** (10 adapters
+  in `cesauth-adapter-cloudflare`):
+  - `tenancy::{CloudflareTenantRepository,
+    CloudflareOrganizationRepository, CloudflareGroupRepository,
+    CloudflareMembershipRepository}`.
+  - `authz::{CloudflarePermissionRepository,
+    CloudflareRoleRepository, CloudflareRoleAssignmentRepository}`.
+  - `billing::{CloudflarePlanRepository,
+    CloudflareSubscriptionRepository,
+    CloudflareSubscriptionHistoryRepository}`.
+  Each follows the existing CF-adapter pattern: `pub struct
+  CloudflareXRepository<'a> { env: &'a Env }`, manual `Debug` impl,
+  Serde row struct → domain via `into_domain`. UNIQUE-violation
+  errors are mapped to `PortError::Conflict` by string-matching on
+  `"unique"` / `"constraint"` (worker-rs gives no structured error
+  code; this is the same pattern the 0.3.x admin adapters use).
+
+- **Schema decisions made explicit** in the role/plan adapters:
+  - `roles.permissions` is stored as a comma-separated string. D1
+    has no JSON1 extension; a `role_permissions` join table would
+    require an N+1 read on the authz hot path. Permission names are
+    `[a-z:]+` (no commas), making a comma-list safe.
+  - `plans.features` is a comma-separated list; `plans.quotas` is
+    `name=value,name=value`. Same trade-off; the catalog data is
+    static enough that an extra table is overkill.
+
+- **Migration `0004_user_tenancy_backfill.sql`** (101 lines).
+  Adds `tenant_id` (NOT NULL, REFERENCES `tenants`) and
+  `account_type` (TEXT, CHECK enumerating spec §5's five values) to
+  `users`. Uses the SQLite-standard "rename, recreate, copy" pattern
+  because D1 cannot ADD COLUMN with a foreign key in one step.
+  Backfills every pre-0.4.1 user into `tenant-default` with
+  `account_type = 'human_user'`. Also auto-inserts a
+  `user_tenant_memberships` row so every user has a membership in
+  their bootstrap tenant — no orphaned users post-migration.
+
+- **`User` struct gains `tenant_id` and `account_type`** in
+  `cesauth_core::types`. Both fields use `serde(default = ...)` so
+  pre-0.4.1 cached payloads continue to deserialize cleanly. The
+  defaults are `tenancy::DEFAULT_TENANT_ID` and
+  `tenancy::AccountType::HumanUser`, matching the migration's
+  backfill values exactly. New core tests
+  `user_serializes_with_tenant_and_account_type` and
+  `user_deserializes_pre_0_4_1_payload_with_defaults` pin the
+  forward- and backward-compat shape.
+
+- **Email uniqueness becomes per-tenant.** The 0001 migration's
+  `UNIQUE(email)` is replaced in 0004 with `UNIQUE(tenant_id, email)`.
+  `find_by_email` adds an explicit `LIMIT 1` and a comment about
+  the contract change; the spec'd `find_by_email_in_tenant`
+  variant arrives with the multi-tenant login flow in 0.4.2+.
+
+### Changed
+
+- **User construction sites updated.**
+  `routes/admin/legacy.rs::create_user` and
+  `routes/magic_link/verify.rs` (auto-signup at first verification)
+  now stamp `tenant_id = tenant-default` and
+  `account_type = HumanUser` when creating users. A multi-tenant
+  signup path will land alongside the multi-tenant routes.
+
+### Tests
+
+- Total: **136 passing** (+3 over 0.4.0's 133).
+  - core: 93 (was 90) — three new `User` serde tests covering
+    forward, backward, and default-value behavior.
+  - adapter-test: 32 (unchanged).
+  - ui: 11 (unchanged).
+- The Cloudflare D1 adapters are not exercised by host tests
+  (they require a Workers runtime). The host tests in
+  `adapter-test` cover the same trait surface against the
+  in-memory adapters; the CF adapters' contract correctness is
+  verified at deploy time via `wrangler dev`.
+
+### Deferred — still tracked for 0.4.2+
+
+- **HTTP routes** for tenant / organization / group / role-assignment
+  CRUD. The service layer + adapters are now both ready; what
+  remains is the bearer-extension that carries
+  `(user_id, tenant_id?, organization_id?)` context through the
+  router, the Accept-aware HTML/JSON rendering, and the integration
+  with `check_permission`. This is its own design pass — see
+  ROADMAP for the open questions on URL shape and admin-bearer vs
+  session-cookie auth.
+- **Multi-tenant admin console**.
+- **Login → tenant resolution** UX.
+- **Plan-quota enforcement** at user-create / org-create / group-create.
+- **Anonymous-trial promotion**.
+- **External IdP federation**.
+
+---
+
 ## [0.4.0] - 2026-04-25
 
 Implements the data model and core

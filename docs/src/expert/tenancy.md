@@ -11,14 +11,22 @@ fits together. The matching domain spec is
 repository root; this chapter implements §3-§5 and §16.1, §16.3,
 §16.6.
 
-> **Status of v0.4.0.** What ships in 0.4.0 is the data model
+> **Status of v0.4.x.**
+> v0.4.0 shipped the data model
 > (`crates/core/src/{tenancy,authz,billing}/`), the in-memory
 > adapters for host tests, the central `check_permission` function,
-> and the D1 schema in migration `0003_tenancy.sql`. The HTTP routes
-> for tenant / org / group / role CRUD and the Cloudflare D1
-> adapters land in 0.4.1. The existing 0.3.x routes (auth flows,
-> single-deployment admin console) continue to work using only the
-> single bootstrap tenant.
+> and the D1 schema in migration `0003_tenancy.sql`.
+>
+> v0.4.1 added the **Cloudflare D1 adapters** for every port and
+> made the existing `users` table tenant-aware via migration
+> `0004_user_tenancy_backfill.sql`. Every existing user is now
+> associated to the bootstrap tenant; email uniqueness becomes
+> per-tenant.
+>
+> HTTP routes for tenant / organization / group / role CRUD land
+> in **v0.4.2**. Until then the new domain is reachable only from
+> the service layer; the 0.3.x routes (auth flows, single-deployment
+> admin console) continue to work against the bootstrap tenant.
 
 ---
 
@@ -271,7 +279,7 @@ relying on log archaeology.
 
 ---
 
-## What v0.4.0 ships and what it does not
+## What ships in v0.4.x and what does not
 
 ### Ships in 0.4.0
 
@@ -280,47 +288,77 @@ relying on log archaeology.
   `SubscriptionHistoryEntry`).
 - All membership types and the unified `MembershipRepository` port.
 - The full `check_permission` engine.
-- In-memory adapters for every new port.
+- In-memory adapters for every new port (host-test layer).
 - D1 schema in `migrations/0003_tenancy.sql` — seeded with one
   bootstrap tenant, six system roles, four built-in plans, and 25
   catalog permissions.
-- 30 new host tests pinning the model behavior (133 total).
 
-### Does NOT ship in 0.4.0
+### Added in 0.4.1
 
-The CHANGELOG `[0.4.0] → Deferred` and `ROADMAP.md` track each item
-explicitly. Headlines:
+- **Cloudflare D1 adapters** for all ten new ports
+  (`tenancy::Cloudflare{Tenant,Organization,Group,Membership}Repository`,
+  `authz::Cloudflare{Permission,Role,RoleAssignment}Repository`,
+  `billing::Cloudflare{Plan,Subscription,SubscriptionHistory}Repository`).
+- **`User` table tenant-aware** via
+  `migrations/0004_user_tenancy_backfill.sql`. Every pre-0.4.1 user
+  is migrated into the `tenant-default` bootstrap tenant. Email
+  uniqueness becomes per-tenant: two tenants may both have an
+  `alice@example.com`. The `User` struct gains
+  `tenant_id` + `account_type` (with `serde(default)` for
+  forward/back compat with cached payloads).
+- **Auto-membership backfill**: every existing user gets a
+  `user_tenant_memberships` row in the bootstrap tenant with role
+  `member`, so post-migration there are zero tenant-less users.
 
-- **HTTP routes** for tenant / org / group / role CRUD. Service
-  functions exist; the route layer needs a bearer-extension carrying
-  `(user, tenant?, org?)` context that is its own design pass.
-- **Cloudflare D1 adapters** for the new ports. The schema is in
-  place; mapping each port to D1 statements is mechanical but
-  voluminous.
-- **Multi-tenant admin console**. The 0.3.x console assumes a single
-  deployment-wide operator; tenant-scoped admins need new tab structure
-  and tenancy-aware route guards.
+### Does NOT ship in v0.4.x (yet)
+
+The CHANGELOG `Deferred` sections and `ROADMAP.md` track each item.
+Headlines:
+
+- **HTTP routes** for tenant / org / group / role-assignment CRUD.
+  The service layer exists, the D1 adapters exist; what's missing is
+  the bearer-extension that carries
+  `(user_id, tenant_id?, organization_id?)` context through the
+  router and the Accept-aware HTML/JSON rendering. **0.4.2.**
+- **Multi-tenant admin console**. The 0.3.x console assumes a
+  single deployment-wide operator. **0.4.3.**
 - **Login → tenant resolution.** Today `users.email` is globally
-  unique. Multi-tenant deployments need either tenant-scoped email
-  uniqueness or a tenant-picker step. UX is open.
+  queried (with a `LIMIT 1` fallback). Multi-tenant deployments
+  need either tenant-scoped email login or a tenant-picker step.
+  UX is open.
+- **Plan-quota enforcement at runtime.** The plan numbers are
+  recorded; the runtime checks at user-create / org-create /
+  group-create arrive with the route layer.
 - **Anonymous-trial promotion.** The account type exists; the
-  promotion lifecycle (token issuance, retention, conversion) is
-  unspecified.
+  promotion lifecycle is unspecified.
 - **External IdP federation.** `AccountType::ExternalFederatedUser`
   is reserved; no IdP wiring exists yet.
 
 ---
 
-## Operator runbook (v0.4.0 baseline)
+## Operator runbook (v0.4.x)
 
-### Running the migration
+### Running the migrations
+
+A 0.3.x → 0.4.1 upgrade runs two migrations:
 
 ```bash
+# 0003 — adds tenancy / authz / billing schema. Idempotent
+# (INSERT OR IGNORE throughout); safe to re-run.
 wrangler d1 execute cesauth --remote --file migrations/0003_tenancy.sql
+
+# 0004 — adds tenant_id + account_type to the users table and
+# backfills every existing row into the bootstrap tenant. Uses
+# SQLite "rename, recreate, copy"; not safe to run against a live
+# writer (same caveat as the 0001 baseline).
+wrangler d1 execute cesauth --remote --file migrations/0004_user_tenancy_backfill.sql
 ```
 
-The migration is idempotent (`INSERT OR IGNORE` throughout); it is
-safe to run on a database that has it partially applied.
+After 0004, every user has `tenant_id = 'tenant-default'`,
+`account_type = 'human_user'`, and a matching row in
+`user_tenant_memberships` with role `member`. Re-grade owners /
+admins / service-accounts out-of-band — the migration cannot infer
+those from pre-0.4 data.
 
 ### Inspecting the seeded catalog
 
@@ -340,7 +378,8 @@ wrangler d1 execute cesauth --remote \
 
 ### Promoting an operator to system_admin
 
-(While v0.4.1 ships the proper UI, this is the wrangler recipe.)
+The proper admin-console UI lands with v0.4.3's multi-tenant
+console; in the meantime use wrangler:
 
 ```bash
 # Replace USER_ID with an existing row from `users`.
@@ -360,15 +399,33 @@ After this, calling code that goes through `check_permission`
 with `ScopeRef::System` (or any narrower scope) will see this user
 as Allowed.
 
+### Re-grading an account type
+
+`account_type` is updatable through the standard
+`UserRepository::update` path (the v0.4.1 D1 adapter writes the
+column). To convert an end-user row into a service account
+out-of-band:
+
+```bash
+wrangler d1 execute cesauth --remote --command "
+  UPDATE users SET account_type = 'service_account', updated_at = strftime('%s','now')
+  WHERE id = 'USER_ID';
+"
+```
+
+`tenant_id` is NOT updatable via the repository; moving a user
+between tenants is destructive (it orphans every membership and
+role assignment) and requires its own dedicated path. None ships
+in 0.4.x.
+
 ### What about existing users?
 
-The pre-0.4.0 `users` table is unchanged. New users, roles, tenants,
-organizations, groups data model + authz rows
-reference `users.id` by string but no foreign key was added (so the
-migration order doesn't matter). The 0.4.1 schema work that
-backfills `tenant_id` onto existing rows will be its own migration
-(0004), and will preserve every current row by associating it with
-`tenant-default`.
+Pre-0.4.1, the `users` table had no tenancy concept. Migration
+0004 retroactively places every user in `tenant-default` (the
+bootstrap tenant seeded by 0003) with `account_type = 'human_user'`,
+and inserts a matching `user_tenant_memberships` row.
+For single-tenant deployments this is the entire story — keep
+running, no operator action required.
 
 ---
 

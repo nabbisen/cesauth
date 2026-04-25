@@ -9,9 +9,11 @@ use cesauth_core::types::{User, UserStatus};
 fn u(id: &str, email: Option<&str>) -> User {
     User {
         id: id.into(),
+        tenant_id: cesauth_core::tenancy::DEFAULT_TENANT_ID.to_owned(),
         email: email.map(str::to_owned),
         email_verified: false,
         display_name: None,
+        account_type: cesauth_core::tenancy::AccountType::HumanUser,
         status: UserStatus::Active,
         created_at: 0,
         updated_at: 0,

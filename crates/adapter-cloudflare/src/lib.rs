@@ -35,9 +35,12 @@
 pub mod active_session;
 pub mod admin;
 pub mod auth_challenge;
+pub mod authz;
+pub mod billing;
 pub mod ports;
 pub mod rate_limit;
 pub mod refresh_token_family;
+pub mod tenancy;
 
 pub use active_session::ActiveSession;
 pub use auth_challenge::AuthChallenge;

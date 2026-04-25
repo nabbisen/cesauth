@@ -61,11 +61,16 @@ pub async fn create_user<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Re
 
     let body: CreateUserBody = req.json().await.unwrap_or_default();
     let now  = OffsetDateTime::now_utc().unix_timestamp();
+    // The legacy admin API creates users in the bootstrap tenant. A
+    // multi-tenant create endpoint will land alongside the v0.4.2
+    // routes; for now this matches pre-0.4 behavior verbatim.
     let user = User {
         id:             Uuid::new_v4().to_string(),
+        tenant_id:      cesauth_core::tenancy::DEFAULT_TENANT_ID.to_owned(),
         email:          body.email.clone(),
         email_verified: false,
         display_name:   body.display_name,
+        account_type:   cesauth_core::tenancy::AccountType::HumanUser,
         status:         UserStatus::Active,
         created_at:     now,
         updated_at:     now,

@@ -19,15 +19,44 @@ pub type UnixSeconds = i64;
 /// A user as stored in D1. `email` is optional to support username-less
 /// passkey-first registration: a user can exist with a pure WebAuthn
 /// credential and no email at all.
+///
+/// Starting in v0.4.1 every user belongs to exactly one tenant
+/// (`tenant_id`). The default tenant id is
+/// [`crate::tenancy::DEFAULT_TENANT_ID`] (`"tenant-default"`); pre-0.4.0
+/// rows are migrated into that tenant by `0004_user_tenancy_backfill.sql`.
+/// `email` uniqueness is per-tenant (not global) starting with that
+/// migration.
+///
+/// `account_type` follows spec §5 and the [`crate::tenancy::AccountType`]
+/// enum. It is purely descriptive — `SystemOperator` confers no
+/// privileges by itself. All authorization runs through
+/// [`crate::authz::check_permission`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
     pub id:             Id,
+    /// New in 0.4.1. Defaults to [`crate::tenancy::DEFAULT_TENANT_ID`]
+    /// when constructed in code that hasn't been updated.
+    #[serde(default = "default_tenant_id")]
+    pub tenant_id:      Id,
     pub email:          Option<String>,
     pub email_verified: bool,
     pub display_name:   Option<String>,
+    /// New in 0.4.1. Defaults to `HumanUser` for code paths that do
+    /// not yet specify; `serde(default)` ensures pre-existing JSON
+    /// payloads still deserialize.
+    #[serde(default = "default_account_type")]
+    pub account_type:   crate::tenancy::AccountType,
     pub status:         UserStatus,
     pub created_at:     UnixSeconds,
     pub updated_at:     UnixSeconds,
+}
+
+fn default_tenant_id() -> Id {
+    crate::tenancy::DEFAULT_TENANT_ID.to_owned()
+}
+
+fn default_account_type() -> crate::tenancy::AccountType {
+    crate::tenancy::AccountType::HumanUser
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -37,7 +37,7 @@ zero remaining issues.
 | Audit log (R2, NDJSON per event)       | ✅       | Covered by `/__dev/audit` browser + searchable via admin console (0.3.0) |
 | **Cost &amp; Data Safety Admin Console** | ✅     | `/admin/console/*` — Overview, Cost, Safety, Audit, Config, Alerts (0.3.0); HTML two-step edit UI for bucket-safety + admin-token CRUD (0.3.1) |
 | Dev-only routes (`/__dev/*`)           | ✅       | Gated on `WRANGLER_LOCAL="1"`                      |
-| **users, roles, tenants, organizations, groups data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.4.0). Routes / UI deferred to 0.4.1. |
+| **users, roles, tenants, organizations, groups data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.4.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.4.1). HTTP routes / multi-tenant admin console deferred to 0.4.2. |
 | mdBook documentation                   | ✅       | `docs/`                                            |
 
 ---
@@ -82,22 +82,25 @@ started.
   increments). Likely acceptable for a "proxy" metric, but worth
   recording explicitly.
 
-- **users, roles, tenants, organizations, groups data model + authz, routes &amp; D1 adapters (0.4.1).** v0.4.0 ships
-  the data model, the authz engine, and migration 0003. v0.4.1
-  finishes the integration:
-  - Cloudflare D1 adapters for the new ports
-    (`TenantRepository`, `OrganizationRepository`, `GroupRepository`,
-    `MembershipRepository`, `RoleRepository`, `RoleAssignmentRepository`,
-    `PermissionRepository`, `PlanRepository`,
-    `SubscriptionRepository`, `SubscriptionHistoryRepository`).
-  - HTTP routes for tenant / org / group / role-assignment CRUD,
-    each gated through `check_permission` at the natural scope.
-  - Bearer-extension carrying `(user_id, tenant_id?, org_id?)` so
-    handlers don't have to re-derive context per request.
-  - Plan-quota enforcement hooks at user-create, org-create,
-    group-create.
+- **Tenancy HTTP routes (0.4.2).** v0.4.0 shipped the data
+  model (users, roles, tenants, organizations, groups) + authz engine; v0.4.1 shipped the Cloudflare D1 adapters
+  and made the `users` table tenant-aware via migration 0004. The
+  remaining integration work is the route layer:
+  - HTTP routes for tenant / organization / group / role-assignment
+    CRUD, each gated through `check_permission` at the natural
+    scope.
+  - Bearer-extension carrying `(user_id, tenant_id?, organization_id?)`
+    so handlers don't re-derive context per request. Open design
+    question: do tenant-scoped operations identify via session
+    cookie + tenant slug in the URL, or via an admin bearer with
+    explicit tenant claim? The 0.3.x admin console answered this
+    with a bearer; a multi-tenant operator surface might prefer
+    cookies. Pick one before wiring.
+  - Plan-quota enforcement hooks at user-create / org-create /
+    group-create. The plan numbers exist in 0.4.1; reading them
+    on the create path is mechanical once the route layer is in.
 
-- **Multi-tenant admin console (0.4.2).** The 0.3.x admin console
+- **Multi-tenant admin console (0.4.3).** The 0.3.x admin console
   assumes a deployment-wide operator. A multi-tenant deployment
   needs a tenant-scoped admin surface that reuses the same console
   shell but filters its data and audit views to the caller's
@@ -107,7 +110,7 @@ started.
   - How to surface system-admin operations without leaking tenant
     boundaries.
 
-- **Anonymous trial → human user promotion (0.4.3).** Spec §3.3
+- **Anonymous trial → human user promotion (0.4.4).** Spec §3.3
   introduces `Anonymous` as an account type and §11 priority 5
   asks for a promotion flow. The promotion lifecycle (token issuance
   for anonymous principals, retention window, conversion ceremony,

@@ -27,9 +27,11 @@ impl<'a> CloudflareUserRepository<'a> {
 #[derive(Deserialize)]
 struct UserRow {
     id:              String,
+    tenant_id:       String,
     email:           Option<String>,
     email_verified:  i64,
     display_name:    Option<String>,
+    account_type:    String,
     status:          String,
     created_at:      i64,
     updated_at:      i64,
@@ -43,11 +45,15 @@ impl UserRow {
             "deleted"  => UserStatus::Deleted,
             _          => return Err(PortError::Serialization),
         };
+        let account_type = cesauth_core::tenancy::AccountType::from_str(&self.account_type)
+            .ok_or(PortError::Serialization)?;
         Ok(User {
             id:             self.id,
+            tenant_id:      self.tenant_id,
             email:          self.email,
             email_verified: self.email_verified != 0,
             display_name:   self.display_name,
+            account_type,
             status,
             created_at:     self.created_at,
             updated_at:     self.updated_at,
@@ -58,7 +64,7 @@ impl UserRow {
 impl UserRepository for CloudflareUserRepository<'_> {
     async fn find_by_id(&self, id: &str) -> PortResult<Option<User>> {
         let db   = db(self.env)?;
-        let stmt = db.prepare("SELECT id, email, email_verified, display_name, status, created_at, updated_at FROM users WHERE id = ?1")
+        let stmt = db.prepare("SELECT id, tenant_id, email, email_verified, display_name, account_type, status, created_at, updated_at FROM users WHERE id = ?1")
             .bind(&[id.into()])
             .map_err(|_| PortError::Unavailable)?;
         match stmt.first::<UserRow>(None).await {
@@ -72,8 +78,16 @@ impl UserRepository for CloudflareUserRepository<'_> {
         // The column is `COLLATE NOCASE` so a direct equality compares
         // case-insensitively. We still lowercase in the adapter-test
         // impl for parity; here the DB handles it.
+        //
+        // Note: post-0.4.1 email is unique PER TENANT, not globally.
+        // This method's contract — "find any user with this email" —
+        // becomes ambiguous in a multi-tenant deployment. For 0.4.1
+        // we keep the global lookup (returning the first match) so
+        // existing magic-link / OIDC flows continue to work for the
+        // single bootstrap tenant. A `find_by_email_in_tenant`
+        // variant lands with the multi-tenant login flow (deferred).
         let db   = db(self.env)?;
-        let stmt = db.prepare("SELECT id, email, email_verified, display_name, status, created_at, updated_at FROM users WHERE email = ?1")
+        let stmt = db.prepare("SELECT id, tenant_id, email, email_verified, display_name, account_type, status, created_at, updated_at FROM users WHERE email = ?1 LIMIT 1")
             .bind(&[email.into()])
             .map_err(|_| PortError::Unavailable)?;
         match stmt.first::<UserRow>(None).await {
@@ -91,14 +105,16 @@ impl UserRepository for CloudflareUserRepository<'_> {
             UserStatus::Deleted  => "deleted",
         };
         let result = db.prepare(
-            "INSERT INTO users (id, email, email_verified, display_name, status, created_at, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
+            "INSERT INTO users (id, tenant_id, email, email_verified, display_name, account_type, status, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"
         )
             .bind(&[
                 user.id.clone().into(),
+                user.tenant_id.clone().into(),
                 user.email.clone().map(Into::into).unwrap_or(JsValue::NULL),
                 d1_int(user.email_verified as i64),
                 user.display_name.clone().map(Into::into).unwrap_or(JsValue::NULL),
+                user.account_type.as_str().into(),
                 status_s.into(),
                 d1_int(user.created_at),
                 d1_int(user.updated_at),
@@ -108,19 +124,11 @@ impl UserRepository for CloudflareUserRepository<'_> {
             .await;
         match result {
             Ok(_)  => Ok(()),
-            // D1 returns a generic error on UNIQUE violations; we can't
-            // distinguish conflict from other failure modes without
-            // inspecting the error string. Do so narrowly.
             Err(e) => {
                 let msg = e.to_string();
                 if msg.contains("UNIQUE") || msg.contains("constraint failed") {
                     Err(PortError::Conflict)
                 } else {
-                    // Surface the underlying message once here - the
-                    // worker-side `log` module doesn't reach into the
-                    // adapter, and `PortError::Unavailable` carries no
-                    // payload. Without this, operators see only
-                    // "storage error" at the HTTP layer.
                     worker::console_error!("d1 users.create: {msg}");
                     Err(PortError::Unavailable)
                 }
@@ -135,8 +143,13 @@ impl UserRepository for CloudflareUserRepository<'_> {
             UserStatus::Disabled => "disabled",
             UserStatus::Deleted  => "deleted",
         };
+        // tenant_id is intentionally NOT updatable — moving a user
+        // between tenants is a destructive operation that needs its
+        // own dedicated path with audit trail. account_type IS
+        // updatable (operators may re-grade an account from
+        // `human_user` to `service_account`).
         let result = db.prepare(
-            "UPDATE users SET email = ?2, email_verified = ?3, display_name = ?4, status = ?5, updated_at = ?6 \
+            "UPDATE users SET email = ?2, email_verified = ?3, display_name = ?4, account_type = ?5, status = ?6, updated_at = ?7 \
              WHERE id = ?1"
         )
             .bind(&[
@@ -144,6 +157,7 @@ impl UserRepository for CloudflareUserRepository<'_> {
                 user.email.clone().map(Into::into).unwrap_or(JsValue::NULL),
                 d1_int(user.email_verified as i64),
                 user.display_name.clone().map(Into::into).unwrap_or(JsValue::NULL),
+                user.account_type.as_str().into(),
                 status_s.into(),
                 d1_int(user.updated_at),
             ])
