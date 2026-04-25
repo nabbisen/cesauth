@@ -26,13 +26,30 @@ pub fn user_role_assignments_page(
     input:     &UserRoleAssignmentsInput<'_>,
 ) -> String {
     let title = format!("Role assignments: user {}", input.user_id);
-    let body = render_table(input);
+    let actions = render_actions(principal, input.user_id);
+    let body = format!("{actions}\n{table}", table = render_table(principal, input));
     saas_frame(&title, principal.role, principal.name.as_deref(), SaasTab::UserRoleAssignments, &body)
 }
 
-fn render_table(input: &UserRoleAssignmentsInput<'_>) -> String {
+fn render_actions(principal: &AdminPrincipal, user_id: &str) -> String {
+    if !principal.role.can_manage_tenancy() {
+        return String::new();
+    }
+    format!(
+        r##"<section aria-label="Actions">
+  <div class="action-row">
+    <a class="action" href="/admin/saas/users/{uid}/role_assignments/new">+ Grant role</a>
+  </div>
+</section>"##,
+        uid = escape(user_id),
+    )
+}
+
+fn render_table(principal: &AdminPrincipal, input: &UserRoleAssignmentsInput<'_>) -> String {
+    let manage = principal.role.can_manage_tenancy();
     let body: String = if input.assignments.is_empty() {
-        r#"<tr><td colspan="5" class="empty">No role assignments.</td></tr>"#.to_owned()
+        let cols = if manage { 6 } else { 5 };
+        format!(r#"<tr><td colspan="{cols}" class="empty">No role assignments.</td></tr>"#)
     } else {
         input.assignments.iter().map(|a| {
             let role_label = input.role_labels.iter()
@@ -47,6 +64,15 @@ fn render_table(input: &UserRoleAssignmentsInput<'_>) -> String {
                 Some(t) => format!("{t}"),
                 None    => r#"<span class="muted">none</span>"#.to_owned(),
             };
+            let action_cell = if manage {
+                format!(
+                    r##"<td><a class="action danger" href="/admin/saas/role_assignments/{aid}/delete?user_id={uid}" style="font-size: 0.85em; padding: 4px 10px;">Revoke</a></td>"##,
+                    aid = escape(&a.id),
+                    uid = escape(&input.user_id),
+                )
+            } else {
+                String::new()
+            };
             format!(
                 r##"<tr>
   <td>{role_label}</td>
@@ -54,6 +80,7 @@ fn render_table(input: &UserRoleAssignmentsInput<'_>) -> String {
   <td><code>{granted_by}</code></td>
   <td class="muted">{granted}</td>
   <td>{expires}</td>
+  {action_cell}
 </tr>"##,
                 role_label = role_label,
                 scope      = scope_html,
@@ -63,6 +90,7 @@ fn render_table(input: &UserRoleAssignmentsInput<'_>) -> String {
             )
         }).collect::<Vec<_>>().join("\n")
     };
+    let action_th = if manage { r#"<th scope="col"></th>"# } else { "" };
     format!(
         r##"<section aria-label="Assignments">
   <p class="muted"><a href="/admin/saas/tenants">← Back to tenants</a></p>
@@ -73,6 +101,7 @@ fn render_table(input: &UserRoleAssignmentsInput<'_>) -> String {
       <th scope="col">Granted by</th>
       <th scope="col">Granted (unix)</th>
       <th scope="col">Expires</th>
+      {action_th}
     </tr>
   </thead><tbody>
 {body}
@@ -162,5 +191,43 @@ mod tests {
         };
         let html = user_role_assignments_page(&p(), &input);
         assert!(html.contains("role-ghost"));
+    }
+
+    // ---------------------------------------------------------------------
+    // v0.4.5: affordance gating for grant / revoke
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn read_only_does_not_see_grant_or_revoke() {
+        let p = AdminPrincipal { id: "x".into(), name: None, role: Role::ReadOnly };
+        let assignments = vec![RoleAssignment {
+            id: "a-1".into(), user_id: "u".into(), role_id: "role-x".into(),
+            scope: Scope::System,
+            granted_by: "x".into(), granted_at: 0, expires_at: None,
+        }];
+        let input = UserRoleAssignmentsInput {
+            user_id: "u-alice", assignments: &assignments, role_labels: &[],
+        };
+        let html = user_role_assignments_page(&p, &input);
+        assert!(!html.contains("/role_assignments/new"),
+            "ReadOnly must not see + Grant role");
+        assert!(!html.contains("/role_assignments/a-1/delete"),
+            "ReadOnly must not see Revoke per-row link");
+    }
+
+    #[test]
+    fn operations_sees_grant_and_per_row_revoke() {
+        let p = AdminPrincipal { id: "x".into(), name: None, role: Role::Operations };
+        let assignments = vec![RoleAssignment {
+            id: "a-1".into(), user_id: "u".into(), role_id: "role-x".into(),
+            scope: Scope::Tenant { tenant_id: "t".into() },
+            granted_by: "x".into(), granted_at: 0, expires_at: None,
+        }];
+        let input = UserRoleAssignmentsInput {
+            user_id: "u-alice", assignments: &assignments, role_labels: &[],
+        };
+        let html = user_role_assignments_page(&p, &input);
+        assert!(html.contains(r#"href="/admin/saas/users/u-alice/role_assignments/new""#));
+        assert!(html.contains(r#"href="/admin/saas/role_assignments/a-1/delete?user_id=u-alice""#));
     }
 }

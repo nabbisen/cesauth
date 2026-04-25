@@ -49,6 +49,6 @@ fn frame_does_not_show_drill_in_tab_in_nav() {
 fn frame_footer_carries_version_marker() {
     let p = AdminPrincipal { id: "x".into(), name: None, role: Role::Super };
     let html = saas_frame("Test", p.role, p.name.as_deref(), SaasTab::Overview, "");
-    assert!(html.contains("v0.4.4"),
+    assert!(html.contains("v0.4.5"),
         "footer should carry the version marker so operators can tell which build they're on");
 }

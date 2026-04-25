@@ -127,6 +127,26 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .post_async("/admin/saas/tenants/:tid/subscription/plan",             |req, ctx| async move { routes::admin::saas::forms::subscription_set_plan::submit(req, ctx).await })
         .get_async ("/admin/saas/tenants/:tid/subscription/status",           |req, ctx| async move { routes::admin::saas::forms::subscription_set_status::form(req, ctx).await })
         .post_async("/admin/saas/tenants/:tid/subscription/status",           |req, ctx| async move { routes::admin::saas::forms::subscription_set_status::submit(req, ctx).await })
+        // --- SaaS console mutations (v0.4.5: memberships + role assignments) ---
+        // Three flavors of membership add/remove (one-click submit
+        // for add, single-step confirm for remove) plus role
+        // assignment grant/revoke. Gated through `ManageTenancy`.
+        .get_async ("/admin/saas/tenants/:tid/memberships/new",                       |req, ctx| async move { routes::admin::saas::forms::membership_add::form_tenant(req, ctx).await })
+        .post_async("/admin/saas/tenants/:tid/memberships/new",                       |req, ctx| async move { routes::admin::saas::forms::membership_add::submit_tenant(req, ctx).await })
+        .get_async ("/admin/saas/tenants/:tid/memberships/:uid/delete",               |req, ctx| async move { routes::admin::saas::forms::membership_remove::confirm_tenant(req, ctx).await })
+        .post_async("/admin/saas/tenants/:tid/memberships/:uid/delete",               |req, ctx| async move { routes::admin::saas::forms::membership_remove::submit_tenant(req, ctx).await })
+        .get_async ("/admin/saas/organizations/:oid/memberships/new",                 |req, ctx| async move { routes::admin::saas::forms::membership_add::form_org(req, ctx).await })
+        .post_async("/admin/saas/organizations/:oid/memberships/new",                 |req, ctx| async move { routes::admin::saas::forms::membership_add::submit_org(req, ctx).await })
+        .get_async ("/admin/saas/organizations/:oid/memberships/:uid/delete",         |req, ctx| async move { routes::admin::saas::forms::membership_remove::confirm_org(req, ctx).await })
+        .post_async("/admin/saas/organizations/:oid/memberships/:uid/delete",         |req, ctx| async move { routes::admin::saas::forms::membership_remove::submit_org(req, ctx).await })
+        .get_async ("/admin/saas/groups/:gid/memberships/new",                        |req, ctx| async move { routes::admin::saas::forms::membership_add::form_group(req, ctx).await })
+        .post_async("/admin/saas/groups/:gid/memberships/new",                        |req, ctx| async move { routes::admin::saas::forms::membership_add::submit_group(req, ctx).await })
+        .get_async ("/admin/saas/groups/:gid/memberships/:uid/delete",                |req, ctx| async move { routes::admin::saas::forms::membership_remove::confirm_group(req, ctx).await })
+        .post_async("/admin/saas/groups/:gid/memberships/:uid/delete",                |req, ctx| async move { routes::admin::saas::forms::membership_remove::submit_group(req, ctx).await })
+        .get_async ("/admin/saas/users/:uid/role_assignments/new",                    |req, ctx| async move { routes::admin::saas::forms::role_assignment_create::form(req, ctx).await })
+        .post_async("/admin/saas/users/:uid/role_assignments/new",                    |req, ctx| async move { routes::admin::saas::forms::role_assignment_create::submit(req, ctx).await })
+        .get_async ("/admin/saas/role_assignments/:id/delete",                        |req, ctx| async move { routes::admin::saas::forms::role_assignment_delete::confirm(req, ctx).await })
+        .post_async("/admin/saas/role_assignments/:id/delete",                        |req, ctx| async move { routes::admin::saas::forms::role_assignment_delete::submit(req, ctx).await })
         // --- Tenancy service API (v0.4.2) ----------------------------
         // JSON-only surface for operator-driven tenant / org / group /
         // role-assignment / subscription provisioning. Gated through

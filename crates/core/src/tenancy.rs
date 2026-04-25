@@ -22,7 +22,7 @@
 //! The spec is deliberate about separating concerns: `tenancy` covers
 //! who-is-in-what; [`crate::authz`] covers what-can-they-do;
 //! [`crate::billing`] covers what-does-the-tenant-pay-for. Those three
-//! modules form the tenancy service together.
+//! modules form the tenancy service foundation together.
 //!
 //! # What's in 0.4.0
 //!

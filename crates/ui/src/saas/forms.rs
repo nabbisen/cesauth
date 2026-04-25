@@ -28,20 +28,25 @@
 //! no CSRF token because the bearer header is already a same-origin
 //! credential a third-party site cannot forge.
 //!
-//! ## What's NOT here (still deferred)
+//! ## What's NOT here (still deferred to 0.4.5+)
 //!
-//! - Role grant / revoke forms.
-//! - Membership add / remove forms.
-//! - Subscription history filtering forms.
+//! - Tenant-scoped admin surface (where tenant admins administer
+//!   their own tenant rather than the cesauth operator
+//!   administering every tenant). Requires user-as-bearer auth +
+//!   login → tenant resolution + cookie auth. **0.4.5+.**
 //!
-//! These ship with the next iteration. The 0.4.2 JSON API continues
-//! to handle them; operators script through curl until the HTML
-//! catches up.
+//! 0.4.5 added the membership add/remove and role grant/revoke
+//! forms that 0.4.4 had carved out — the 0.4.4 docstring listed
+//! them as deferred; they are now available.
 
 pub mod group_create;
 pub mod group_delete;
+pub mod membership_add;
+pub mod membership_remove;
 pub mod organization_create;
 pub mod organization_set_status;
+pub mod role_assignment_create;
+pub mod role_assignment_delete;
 pub mod subscription_set_plan;
 pub mod subscription_set_status;
 pub mod tenant_create;

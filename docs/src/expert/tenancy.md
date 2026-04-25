@@ -33,16 +33,24 @@ repository root; this chapter implements §3-§5 and §16.1, §16.3,
 > `/admin/saas/*` for cesauth's operator staff to inspect tenancy
 > state without curling the JSON API.
 >
-> v0.4.4 adds the **mutation surface**: HTML forms wrapping the
+> v0.4.4 added the **mutation surface**: HTML forms wrapping the
 > v0.4.2 JSON API with a risk-graded preview/confirm pattern.
 > Eight forms: tenant / organization / group create, tenant /
 > organization status change, group delete, subscription plan /
 > status change. Affordance buttons gate on
 > `Role::can_manage_tenancy()` so ReadOnly operators don't see
-> broken-link buttons. Membership / role-assignment forms are
-> deferred to **0.4.5**; the tenant-scoped admin surface (where
-> tenant admins administer their own tenant rather than the
-> cesauth operator administering every tenant) is **0.4.5+**.
+> broken-link buttons.
+>
+> v0.4.5 completes the SaaS console mutation surface with the
+> additive forms 0.4.4 carved out — three flavors of membership
+> add/remove (tenant / organization / group) and role assignment
+> grant/revoke. With this release the HTML console reaches feature
+> parity with the v0.4.2 JSON API for operator-driven mutations.
+> The tenant-scoped admin surface (where tenant admins administer
+> their own tenant rather than the cesauth operator administering
+> every tenant) is **0.4.6+** — it has unresolved design questions
+> on URL shape, user-as-bearer mechanism, and tenant-boundary
+> leakage that deserve their own design pass.
 
 ---
 
@@ -146,7 +154,7 @@ Five values, none of which imply administrative capability:
 | `human_user`              | Ordinary end-user, password / passkey, self-registered.          |
 | `service_account`         | Machine principal for API integrations. Bearer / mTLS.            |
 | `system_operator`         | cesauth's own operators (separate from a tenant's admins).        |
-| `anonymous`               | Bounded trial principal. Promotion flow is a 0.4.6 follow-up.     |
+| `anonymous`               | Bounded trial principal. Promotion flow is a 0.4.7 follow-up.     |
 | `external_federated_user` | Identity in an external IdP, role assignments local to cesauth. Federation wiring is a follow-up. |
 
 Spec §5 is explicit: "user_type のみで admin 判定を行わない".
@@ -328,7 +336,7 @@ relying on log archaeology.
 
 ### Added in 0.4.2
 
-- **`/api/v1/...` HTTP API** for the tenancy data model.
+- **`/api/v1/...` HTTP API** for the tenancy service data model.
   Tenants, organizations, groups, three flavors of membership,
   role assignments, subscriptions — full CRUD for each, JSON-only,
   gated through the existing admin-bearer mechanism. See the
@@ -427,27 +435,73 @@ relying on log archaeology.
 - **Footer marker** updated from "v0.4.3 (read-only)" to
   "v0.4.4 (mutation forms enabled for Operations+)".
 
+### Added in 0.4.5
+
+- **Five new HTML form templates** completing the SaaS console
+  mutation surface. With this release the console reaches feature
+  parity with the v0.4.2 JSON API for operator-driven mutations.
+  - **Membership add** — three entry points (tenant /
+    organization / group). Tenant form has a 3-option role select
+    (owner / admin / member); org form has a 2-option select
+    (admin / member); group form omits the role field. One-click
+    submit; no preview.
+  - **Membership remove** — three entry points. One-step confirm
+    with a "user loses access; data is not destroyed" warning.
+  - **Role assignment grant** at
+    `/admin/saas/users/:uid/role_assignments/new` with full
+    structured Scope picker (system / tenant / organization /
+    group / user) plus optional `expires_at`. Re-renders with
+    sticky values + helpful messages on validation failure.
+  - **Role assignment revoke** with a one-step confirm screen
+    that shows the role label, scope, granted_by/at, and a
+    warning that "session is not invalidated" — operators get
+    the right mental model for what revoke does.
+
+- **16 new routes** under `/admin/saas/...` (8 GET form + 8 POST
+  submit). All gated through `AdminAction::ManageTenancy`
+  (Operations+).
+
+- **Affordance buttons on existing read pages**:
+  - Tenant detail grows "+ Add tenant member" + per-row "Remove"
+    on members table.
+  - Organization detail grows "+ Add organization member" +
+    per-row "Remove" on members table.
+  - User role assignments grows "+ Grant role" + per-row
+    "Revoke" on each assignment.
+  All gate on `Role::can_manage_tenancy()` — ReadOnly operators
+  see no buttons.
+
+- **Defensive lookup of role assignment by id**. The
+  `RoleAssignmentRepository` was designed for `list_for_user`-
+  driven paths and does not expose `get_by_id`. The delete
+  handler walks the user's list to find the matching row;
+  the confirm-page URL carries `?user_id=...` and the POST
+  form carries it as a hidden field. Handler-local
+  `fetch_assignment` helper localizes the pattern.
+
+- **Footer marker** updated from
+  "v0.4.4 (mutation forms enabled for Operations+)" to
+  "v0.4.5 (full mutation surface for Operations+)".
+
 ### Does NOT ship in v0.4.x (yet)
 
 The CHANGELOG `Deferred` sections and `ROADMAP.md` track each item.
 Headlines:
 
-- **Membership / role-assignment forms** — three flavors of
-  membership add/remove (tenant / organization / group) plus
-  role grant/revoke. These are additive and lower-risk than the
-  shipped destructive operations, so they were carved out of
-  0.4.4 to keep its scope contained. The v0.4.2 JSON API at
-  `/api/v1/role_assignments` and `/api/v1/.../memberships`
-  handles them today. **0.4.5.**
-- **Tenant-scoped admin surface**. The v0.4.3-0.4.4 console
+- **Tenant-scoped admin surface**. The v0.4.3-0.4.5 console
   serves the cesauth deployment's operator staff — one console,
   every tenant. A tenant-scoped surface (where tenant admins
   administer their own tenant rather than every tenant) is a
   parallel UI reachable from a tenant-side login, gated through
-  user-as-bearer plus `check_permission`. **0.4.5+.**
+  user-as-bearer plus `check_permission`. **0.4.6+.** Three open
+  design questions deserve their own pass: URL shape (path-based
+  vs subdomain), user-as-bearer mechanism (admin-token mapping
+  vs session cookie vs JWT), and how to surface system-admin
+  operations from inside the tenant view without leaking
+  other-tenant boundaries.
 - **Cookie-based auth for admin forms.** Today forms POST with
   the bearer in the `Authorization` header — operators must use
-  curl/extension. A cookie-auth path lands with the v0.4.5+
+  curl/extension. A cookie-auth path lands with the v0.4.6+
   user-as-bearer design pass.
 - **`check_permission` integration on the API surface.** v0.4.2
   routes go through `ensure_role_allows` (admin-side capability)
@@ -455,7 +509,7 @@ Headlines:
   in `users` to feed into the spec-§9.1 scope-walk. The two
   converge once user-as-bearer arrives.
 - **Anonymous-trial promotion.** The account type exists; the
-  promotion lifecycle is unspecified. **0.4.6.**
+  promotion lifecycle is unspecified. **0.4.7.**
 - **External IdP federation.** `AccountType::ExternalFederatedUser`
   is reserved; no IdP wiring exists yet.
 
@@ -608,16 +662,24 @@ operators use one of:
 
 Risk-graded confirm pattern:
 
-| Operation                          | Pattern              |
-|-----------------------------------|----------------------|
-| Tenant create                      | One-click submit     |
-| Organization create                | One-click submit     |
-| Group create                       | One-click submit     |
-| Tenant set-status                  | Preview / confirm    |
-| Organization set-status            | Preview / confirm    |
-| Group delete                       | Confirm screen       |
-| Subscription set-plan              | Preview / confirm    |
-| Subscription set-status            | Preview / confirm    |
+| Operation                          | Pattern              | Released |
+|-----------------------------------|----------------------|----------|
+| Tenant create                      | One-click submit     | 0.4.4    |
+| Organization create                | One-click submit     | 0.4.4    |
+| Group create                       | One-click submit     | 0.4.4    |
+| Tenant set-status                  | Preview / confirm    | 0.4.4    |
+| Organization set-status            | Preview / confirm    | 0.4.4    |
+| Group delete                       | Confirm screen       | 0.4.4    |
+| Subscription set-plan              | Preview / confirm    | 0.4.4    |
+| Subscription set-status            | Preview / confirm    | 0.4.4    |
+| Tenant membership add              | One-click submit     | 0.4.5    |
+| Tenant membership remove           | Confirm screen       | 0.4.5    |
+| Organization membership add        | One-click submit     | 0.4.5    |
+| Organization membership remove     | Confirm screen       | 0.4.5    |
+| Group membership add               | One-click submit     | 0.4.5    |
+| Group membership remove            | Confirm screen       | 0.4.5    |
+| Role assignment grant              | One-click submit     | 0.4.5    |
+| Role assignment revoke             | Confirm screen       | 0.4.5    |
 
 Destructive operations re-render with a diff banner and a
 separate "Apply" button. The confirm step records the same

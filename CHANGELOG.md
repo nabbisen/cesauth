@@ -12,6 +12,174 @@ always be called out here.
 
 ---
 
+## [0.4.5] - 2026-04-25
+
+Completes the SaaS console mutation surface. v0.4.4 covered the
+high-risk operations (status changes, plan changes, group delete);
+v0.4.5 fills in the additive ones that were carved out of 0.4.4 to
+keep its scope contained — three flavors of membership add/remove
+and role-assignment grant/revoke. With this release the HTML
+console reaches feature parity with the v0.4.2 JSON API for
+operator-driven mutations.
+
+The larger "tenant-scoped admin surface" item (where tenant admins
+administer their own tenant rather than every tenant) is **not**
+in this release — it has unresolved design questions on URL
+shape, user-as-bearer mechanism, and tenant-boundary leakage that
+deserve their own design pass. **0.4.6+** picks it up.
+
+### Added
+
+- **Five new HTML form templates** in `cesauth-ui::saas::forms`:
+  - **`membership_add`** with three entry points (tenant /
+    organization / group). Tenant form renders a 3-option role
+    select (owner / admin / member); organization form renders
+    a 2-option select (admin / member — no owner at org scope);
+    group form omits the role field entirely (group memberships
+    have no role).
+  - **`membership_remove`** with three entry points. One-step
+    confirm — there's no diff to render, just a yes/no decision
+    with a "user loses access; data is not destroyed" warning.
+  - **`role_assignment_create`** reachable from the user's
+    role-assignments drill-in page. Renders a select for
+    `role_id` (populated from the system role catalog), a 5-radio
+    scope picker (system / tenant / organization / group / user),
+    a free-text `scope_id` field with required-vs-optional rules
+    documented in the help section, and an optional
+    `expires_at` field.
+  - **`role_assignment_delete`** confirm page. Shows the
+    role label, scope, granted_by, granted_at, and a warning
+    that the user "immediately loses any permission granted by
+    this assignment" but that "session is not invalidated" —
+    operators get the right mental model for what revoke does.
+
+- **Five worker handler modules** in
+  `crates/worker/src/routes/admin/saas/forms/`:
+  `membership_add` (3 GET/POST pairs),
+  `membership_remove` (3 GET/POST pairs),
+  `role_assignment_create` (1 GET/POST pair),
+  `role_assignment_delete` (1 GET/POST pair).
+  Each handler delegates to the existing v0.4.0/0.4.1
+  service-layer adapters and emits the appropriate audit event
+  (`MembershipAdded`, `MembershipRemoved`, `RoleGranted`,
+  `RoleRevoked`) with the `via=saas-console` reason marker.
+
+- **16 new routes** wired in `lib.rs` under a new
+  `// SaaS console mutations (v0.4.5: memberships + role assignments)`
+  block:
+  - `GET/POST /admin/saas/tenants/:tid/memberships/new`
+  - `GET/POST /admin/saas/tenants/:tid/memberships/:uid/delete`
+  - `GET/POST /admin/saas/organizations/:oid/memberships/new`
+  - `GET/POST /admin/saas/organizations/:oid/memberships/:uid/delete`
+  - `GET/POST /admin/saas/groups/:gid/memberships/new`
+  - `GET/POST /admin/saas/groups/:gid/memberships/:uid/delete`
+  - `GET/POST /admin/saas/users/:uid/role_assignments/new`
+  - `GET/POST /admin/saas/role_assignments/:id/delete`
+  All gated through `AdminAction::ManageTenancy` (Operations+).
+
+- **Affordance buttons on read pages** (gated on
+  `Role::can_manage_tenancy()`, ReadOnly sees nothing):
+  - Tenant detail: new "+ Add tenant member" action button +
+    per-row "Remove" link in the members table.
+  - Organization detail: new "+ Add organization member" action
+    button + per-row "Remove" link in the members table.
+  - User role assignments: new "+ Grant role" action button +
+    per-row "Revoke" link on each assignment.
+
+- **Defensive look-up of role-assignment by id**. The
+  `RoleAssignmentRepository` does not expose `get_by_id`; the
+  delete handler walks `list_for_user(user_id)` to find the
+  matching row. The query string and hidden form field carry
+  the `user_id` so this lookup is always possible. A new
+  `fetch_assignment` helper in
+  `routes/admin/saas/forms/role_assignment_delete.rs` localizes
+  this pattern.
+
+### Changed
+
+- **Frame footer** updated from
+  "v0.4.4 (mutation forms enabled for Operations+)" to
+  "v0.4.5 (full mutation surface for Operations+)".
+
+### Tests
+
+- Total: **216 passing** (+20 over 0.4.4's 196).
+  - core: 102 (unchanged).
+  - adapter-test: 32 (unchanged).
+  - ui: 82 (was 62) — 18 new tests across the four new form
+    templates (action URL shape, role-option count parity with
+    spec §5, group form omits role field, sticky values
+    preserved on re-render, HTML escape defense for user_id,
+    confirm-yes hidden field carried, system-scope critical
+    badge color, session-handoff warning copy) plus 2 new
+    affordance gating tests on the existing
+    `role_assignments` page (ReadOnly does not see grant /
+    revoke; Operations does).
+
+### Auth caveat (unchanged from 0.3.x and 0.4.4)
+
+Forms POST same-origin and the bearer rides on the
+`Authorization` header. Operators still need a tool that sets
+the header (curl, browser extension). Cookie-based admin auth
+remains a 0.4.6+ design pass alongside user-as-bearer.
+
+### Design decisions worth recording
+
+- **No preview/confirm on membership add.** Memberships are
+  additive and reversible; adding a friction step for what is
+  arguably the most-frequent mutation in a multi-tenant
+  deployment is operator-hostile. The same logic applies to
+  role grant — but role grant *can* widen a user's effective
+  permissions, so the form does collect a reason-equivalent
+  audit trail (`granted_by` + `granted_at`) and shows the role
+  label clearly.
+- **One-step confirm on membership remove and role revoke.**
+  These are mildly destructive — the user immediately loses
+  access through that path. We show a confirm page (one screen,
+  one yes/no button) but don't render a diff because there's
+  nothing structural to diff.
+- **Form's scope picker is structured, not free-text.** The
+  v0.4.2 JSON API takes a tagged Scope enum. Asking operators
+  to write JSON in a textarea is a footgun — the radio +
+  conditional id field encodes the same shape with no syntax to
+  get wrong.
+- **Defensive `fetch_assignment` lookup.** The role-assignment
+  repository was designed for `list_for_user`-driven paths and
+  does not expose `get_by_id`. Rather than add a port method
+  for a UI-specific need, the handler walks the list. This
+  costs at most one extra DB read per revoke and keeps the
+  port surface narrow.
+- **Helpful, not cute, error messages.** "User is already a
+  member of this tenant" rather than "Conflict (409)";
+  "Scope id required for tenant scope" rather than "validation
+  failed". The form re-renders preserving sticky values so the
+  operator only fixes the failed field.
+
+### Deferred — still tracked for 0.4.6+
+
+- **Tenant-scoped admin surface**. The v0.4.3-0.4.5 console
+  serves the cesauth deployment's operator staff — one console,
+  every tenant. A tenant-scoped admin surface (where tenant
+  admins administer their own tenant rather than every tenant)
+  is a parallel UI reachable from a tenant-side login, gated
+  through user-as-bearer plus `check_permission`, and filtered
+  to the caller's tenant. **0.4.6+.** Three open design
+  questions deserve their own pass:
+  1. URL shape — `/admin/t/<slug>/...` vs subdomain
+     `<slug>.cesauth.example`.
+  2. User-as-bearer mechanism — admin-token mapping vs session
+     cookie vs JWT.
+  3. How to surface system-admin operations from inside the
+     tenant view without leaking other-tenant boundaries.
+- **Cookie-based auth for admin forms** — lands with the
+  user-as-bearer design pass.
+- **`check_permission` integration on the API surface** —
+  blocked on user-as-bearer.
+- **Anonymous-trial promotion.** **0.4.7.**
+- **External IdP federation.**
+
+---
+
 ## [0.4.4] - 2026-04-25
 
 The mutation surface for the SaaS console. v0.4.3 shipped the read
@@ -318,7 +486,7 @@ outside.
     at archived (`active = false`) plans. Every plan / status
     change appends a `subscription_history` entry.
 
-- **27 routes wired** into `lib.rs` under a `// --- tenancy service
+- **27 routes wired** into `lib.rs` under a `// --- Tenancy service
   API (v0.4.2)` block, contiguous with the existing
   `/admin/console/...` routes.
 

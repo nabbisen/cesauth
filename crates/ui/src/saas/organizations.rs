@@ -26,7 +26,7 @@ pub fn organization_detail_page(
         "{actions}\n{summary}\n{groups}\n{members}",
         summary = render_summary(input.organization),
         groups  = render_groups_section(principal, &input.organization.id, input.groups),
-        members = render_members(input.members),
+        members = render_members_with_actions(Some(principal), &input.organization.id, input.members),
     );
     saas_frame(&title, principal.role, principal.name.as_deref(), SaasTab::Tenants, &body)
 }
@@ -41,6 +41,7 @@ fn render_actions(principal: &AdminPrincipal, org_id: &str) -> String {
   <p class="muted">Mutations available to your role:</p>
   <div class="action-row">
     <a class="action" href="/admin/saas/organizations/{oid}/groups/new">+ New group</a>
+    <a class="action" href="/admin/saas/organizations/{oid}/memberships/new">+ Add organization member</a>
     <a class="action danger" href="/admin/saas/organizations/{oid}/status">Change organization status</a>
   </div>
 </section>"##,
@@ -121,20 +122,36 @@ fn render_summary(o: &Organization) -> String {
     )
 }
 
-fn render_members(members: &[OrganizationMembership]) -> String {
+fn render_members_with_actions(
+    principal: Option<&AdminPrincipal>,
+    org_id:    &str,
+    members:   &[OrganizationMembership],
+) -> String {
+    let manage = principal.map(|p| p.role.can_manage_tenancy()).unwrap_or(false);
     let body: String = if members.is_empty() {
-        r#"<tr><td colspan="3" class="empty">No members.</td></tr>"#.to_owned()
+        let cols = if manage { 4 } else { 3 };
+        format!(r#"<tr><td colspan="{cols}" class="empty">No members.</td></tr>"#)
     } else {
         members.iter().map(|m| {
             let badge = match m.role {
                 OrganizationRole::Admin  => r#"<span class="badge warn">admin</span>"#,
                 OrganizationRole::Member => r#"<span class="badge">member</span>"#,
             };
+            let action_cell = if manage {
+                format!(
+                    r##"<td><a class="action danger" href="/admin/saas/organizations/{oid}/memberships/{uid}/delete" style="font-size: 0.85em; padding: 4px 10px;">Remove</a></td>"##,
+                    oid = escape(org_id),
+                    uid = escape(&m.user_id),
+                )
+            } else {
+                String::new()
+            };
             format!(
                 r##"<tr>
   <td><a href="/admin/saas/users/{uid}/role_assignments"><code>{uid}</code></a></td>
   <td>{badge}</td>
   <td class="muted">{joined}</td>
+  {action_cell}
 </tr>"##,
                 uid    = escape(&m.user_id),
                 badge  = badge,
@@ -142,11 +159,17 @@ fn render_members(members: &[OrganizationMembership]) -> String {
             )
         }).collect::<Vec<_>>().join("\n")
     };
+    let action_th = if manage { r#"<th scope="col"></th>"# } else { "" };
     format!(
         r##"<section aria-label="Members">
   <h2>Members</h2>
   <table><thead>
-    <tr><th scope="col">User id</th><th scope="col">Role</th><th scope="col">Joined (unix)</th></tr>
+    <tr>
+      <th scope="col">User id</th>
+      <th scope="col">Role</th>
+      <th scope="col">Joined (unix)</th>
+      {action_th}
+    </tr>
   </thead><tbody>
 {body}
   </tbody></table>

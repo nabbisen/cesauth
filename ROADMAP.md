@@ -37,7 +37,7 @@ zero remaining issues.
 | Audit log (R2, NDJSON per event)       | ✅       | Covered by `/__dev/audit` browser + searchable via admin console (0.3.0) |
 | **Cost &amp; Data Safety Admin Console** | ✅     | `/admin/console/*` — Overview, Cost, Safety, Audit, Config, Alerts (0.3.0); HTML two-step edit UI for bucket-safety + admin-token CRUD (0.3.1) |
 | Dev-only routes (`/__dev/*`)           | ✅       | Gated on `WRANGLER_LOCAL="1"`                      |
-| **Tenancy service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.4.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.4.1). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.4.2). Read-only HTML SaaS console at `/admin/saas/*` (0.4.3). Mutation forms with preview/confirm pattern (0.4.4) for tenant create/status, organization create/status, group create/delete, subscription plan/status. Role/membership forms + tenant-scoped admin surface deferred to 0.4.5+. |
+| **Tenancy service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.4.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.4.1). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.4.2). Read-only HTML SaaS console at `/admin/saas/*` (0.4.3). Mutation forms with preview/confirm pattern (0.4.4) for tenant / organization / group / subscription. Membership add/remove + role grant/revoke forms (0.4.5) bring the HTML console to feature parity with the v0.4.2 JSON API. Tenant-scoped admin surface deferred to 0.4.6+. |
 | mdBook documentation                   | ✅       | `docs/`                                            |
 
 ---
@@ -119,27 +119,40 @@ started.
   the header (curl, browser extension, or the future cookie-auth
   path).
 
-- **Membership / role-assignment forms (0.4.5).** Three flavors of
-  membership add/remove forms (tenant / organization / group)
-  plus role grant/revoke forms reachable from
-  `/admin/saas/users/:uid/role_assignments`. These were carved
-  out of 0.4.4 because they're additive and lower-risk than the
-  shipped destructive operations; the JSON API at
-  `/api/v1/role_assignments` and `/api/v1/.../memberships`
-  continues to handle them in the meantime.
+- **Membership / role-assignment forms (shipped in 0.4.5).** The
+  HTML console reaches feature parity with the v0.4.2 JSON API:
+  three flavors of membership add (one-click submit) and remove
+  (one-step confirm), plus role-assignment grant (full Scope
+  picker) and revoke (one-step confirm). Reachable from the
+  affordance buttons on tenant detail, organization detail, and
+  user role-assignments pages. Operations+ only — ReadOnly
+  continues to see the read pages with no mutation buttons.
 
-- **Tenant-scoped admin surface (0.4.5+).** The v0.4.3-0.4.4
+- **Tenant-scoped admin surface (0.4.6+).** The v0.4.3-0.4.5
   console serves the cesauth deployment's operator staff — one
   console, every tenant. A tenant-scoped admin surface is a
   parallel UI reachable from a tenant-side login, gated through
   user-as-bearer + `check_permission`, and filtered to the
-  caller's tenant. Three open design questions: URL shape
-  (`/admin/t/<slug>/...` vs subdomain), user-as-bearer mechanism
-  (admin token mapping vs session cookie vs JWT), and how to
-  surface system-admin operations without leaking tenant
-  boundaries.
+  caller's tenant. Three open design questions:
+  1. **URL shape** — path-based (`/admin/t/<slug>/...`) keeps
+     the existing single-domain deployment story but bakes
+     tenant identity into every URL; subdomain-based
+     (`<slug>.cesauth.example`) gives tenants a more "their
+     own deployment" feel but adds wildcard-cert and
+     same-origin-cookie complexity.
+  2. **User-as-bearer mechanism** — extend `admin_tokens` to
+     carry an optional `user_id` (simplest path, but conflates
+     two concepts), introduce session cookies (familiar but
+     adds CSRF defense to think about), or issue short-lived
+     JWTs (composes with the existing `jsonwebtoken` dep but
+     needs key-rotation discipline).
+  3. **System-admin from inside a tenant view** — how do
+     operators promote / suspend tenants without leaving the
+     tenant-scoped console? Likely a separate "switch to
+     operator mode" affordance with a re-authentication step;
+     details TBD.
 
-- **Anonymous trial → human user promotion (0.4.6).** Spec §3.3
+- **Anonymous trial → human user promotion (0.4.7).** Spec §3.3
   introduces `Anonymous` as an account type and §11 priority 5
   asks for a promotion flow. The promotion lifecycle (token issuance
   for anonymous principals, retention window, conversion ceremony,

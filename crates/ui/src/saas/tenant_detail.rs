@@ -32,7 +32,7 @@ pub fn tenant_detail_page(principal: &AdminPrincipal, input: &TenantDetailInput<
         summary      = render_summary(input.tenant),
         subscription = render_subscription(input.subscription, input.plan, &input.tenant.id),
         orgs         = render_organizations_section(principal, &input.tenant.id, input.organizations),
-        members      = render_members(input.members),
+        members      = render_members_with_actions(Some(principal), &input.tenant.id, input.members),
     );
     saas_frame(&title, principal.role, principal.name.as_deref(), SaasTab::Tenants, &body)
 }
@@ -57,6 +57,7 @@ fn render_actions(principal: &AdminPrincipal, tenant_id: &str, has_subscription:
   <div class="action-row">
     <a class="action" href="/admin/saas/tenants/{tid}/organizations/new">+ New organization</a>
     <a class="action" href="/admin/saas/tenants/{tid}/groups/new">+ New tenant-scoped group</a>
+    <a class="action" href="/admin/saas/tenants/{tid}/memberships/new">+ Add tenant member</a>
     <a class="action danger" href="/admin/saas/tenants/{tid}/status">Change tenant status</a>{sub_actions}
   </div>
 </section>"##,
@@ -176,27 +177,37 @@ fn render_organizations(orgs: &[Organization]) -> String {
     )
 }
 
-fn render_members(members: &[TenantMembership]) -> String {
+fn render_members_with_actions(
+    principal: Option<&AdminPrincipal>,
+    tenant_id: &str,
+    members:   &[TenantMembership],
+) -> String {
+    let manage = principal.map(|p| p.role.can_manage_tenancy()).unwrap_or(false);
     let body: String = if members.is_empty() {
-        r#"<tr><td colspan="3" class="empty">No members.</td></tr>"#.to_owned()
+        let cols = if manage { 4 } else { 3 };
+        format!(r#"<tr><td colspan="{cols}" class="empty">No members.</td></tr>"#)
     } else {
         members.iter().map(|m| {
-            let role_str = match m.role {
-                TenantMembershipRole::Owner  => "owner",
-                TenantMembershipRole::Admin  => "admin",
-                TenantMembershipRole::Member => "member",
-            };
             let role_badge = match m.role {
                 TenantMembershipRole::Owner => r#"<span class="badge critical">owner</span>"#,
                 TenantMembershipRole::Admin => r#"<span class="badge warn">admin</span>"#,
                 TenantMembershipRole::Member => r#"<span class="badge">member</span>"#,
             };
-            let _ = role_str;  // kept for grep; the badge encodes the same info
+            let action_cell = if manage {
+                format!(
+                    r##"<td><a class="action danger" href="/admin/saas/tenants/{tid}/memberships/{uid}/delete" style="font-size: 0.85em; padding: 4px 10px;">Remove</a></td>"##,
+                    tid = escape(tenant_id),
+                    uid = escape(&m.user_id),
+                )
+            } else {
+                String::new()
+            };
             format!(
                 r##"<tr>
   <td><a href="/admin/saas/users/{uid}/role_assignments"><code>{uid_short}</code></a></td>
   <td>{badge}</td>
   <td class="muted">{joined}</td>
+  {action_cell}
 </tr>"##,
                 uid       = escape(&m.user_id),
                 uid_short = escape(&m.user_id),
@@ -205,11 +216,17 @@ fn render_members(members: &[TenantMembership]) -> String {
             )
         }).collect::<Vec<_>>().join("\n")
     };
+    let action_th = if manage { r#"<th scope="col"></th>"# } else { "" };
     format!(
         r##"<section aria-label="Members">
   <h2>Tenant members</h2>
   <table><thead>
-    <tr><th scope="col">User id</th><th scope="col">Role</th><th scope="col">Joined (unix)</th></tr>
+    <tr>
+      <th scope="col">User id</th>
+      <th scope="col">Role</th>
+      <th scope="col">Joined (unix)</th>
+      {action_th}
+    </tr>
   </thead><tbody>
 {body}
   </tbody></table>

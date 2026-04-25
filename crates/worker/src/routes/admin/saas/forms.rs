@@ -10,8 +10,12 @@ pub mod common;
 
 pub mod group_create;
 pub mod group_delete;
+pub mod membership_add;
+pub mod membership_remove;
 pub mod organization_create;
 pub mod organization_set_status;
+pub mod role_assignment_create;
+pub mod role_assignment_delete;
 pub mod subscription_set_plan;
 pub mod subscription_set_status;
 pub mod tenant_create;

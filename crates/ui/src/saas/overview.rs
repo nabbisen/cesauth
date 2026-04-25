@@ -105,7 +105,7 @@ fn render_howto() -> String {
     commit, mirroring the v0.3.1 bucket-safety flow.</p>
   <p class="muted">For the JSON API equivalents (often easier for
     automation), see <code>/api/v1/...</code>. For the full operator
-    runbook, see the <em>Tenancy &amp; tenancy service</em> chapter
+    runbook, see the <em>Tenancy &amp; commercial SaaS</em> chapter
     of the operator documentation.</p>
 </section>"##.to_owned()
 }

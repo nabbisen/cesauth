@@ -135,7 +135,7 @@ pub fn saas_frame(
     <h2>{title_esc}</h2>
 {body}
   </main>
-  <footer>cesauth SaaS console — v0.4.4 (mutation forms enabled for Operations+)</footer>
+  <footer>cesauth SaaS console — v0.4.5 (full mutation surface for Operations+)</footer>
 </body>
 </html>"##,
         name_html = if name_esc.is_empty() {
