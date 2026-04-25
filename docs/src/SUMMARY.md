@@ -31,6 +31,7 @@
 - [Operational logging](./expert/logging.md)
 - [Turnstile integration](./expert/turnstile.md)
 - [Admin console](./expert/admin-console.md)
+- [Tenancy](./expert/tenancy.md)
 - [Security considerations](./expert/security.md)
 
 ---

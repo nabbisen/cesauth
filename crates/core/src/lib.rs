@@ -26,6 +26,8 @@
 #![allow(async_fn_in_trait)]
 
 pub mod admin;
+pub mod authz;
+pub mod billing;
 pub mod error;
 pub mod jwt;
 pub mod magic_link;
@@ -33,6 +35,7 @@ pub mod oidc;
 pub mod ports;
 pub mod service;
 pub mod session;
+pub mod tenancy;
 pub mod turnstile;
 pub mod types;
 pub mod webauthn;

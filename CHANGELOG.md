@@ -12,6 +12,145 @@ always be called out here.
 
 ---
 
+## [0.4.0] - 2026-04-25
+
+Implements the data model and core
+authorization engine from
+`users, roles, tenants, organizations, groups` §3-§5 and §16.1,
+§16.3, §16.6. Routes / UI / multi-tenant admin console are deferred
+to 0.4.1 by design (see "Deferred" below).
+
+### Added
+
+- **Tenancy domain** (`cesauth_core::tenancy`). New entities:
+  - `Tenant` — top-level boundary (§3.1). States: pending, active,
+    suspended, deleted.
+  - `Organization` — business unit within a tenant (§3.2).
+    `parent_organization_id` column reserved for future hierarchy;
+    flat in 0.4.0.
+  - `Group` — membership/authz unit (§3.3) with `GroupParent`
+    explicit enum: `Tenant` (tenant-wide group) or
+    `Organization { organization_id }` (org-scoped). The CHECK in
+    migration 0003 enforces exactly one parent flavor at the DB
+    level.
+  - `AccountType` (§5) — `Anonymous`, `HumanUser`, `ServiceAccount`,
+    `SystemOperator`, `ExternalFederatedUser`. Deliberately
+    separate from role/permission per §5 ("user_type のみで admin
+    判定を行わない").
+  - Membership relations: `TenantMembership`, `OrganizationMembership`,
+    `GroupMembership`. Three tables, one
+    `MembershipRepository` port. Spec §2 principle 4 ("所属は属性
+    ではなく関係として表現する") is the structural reason for the
+    split.
+
+- **Authorization domain** (`cesauth_core::authz`).
+  - `Permission` (atomic capability string) + `PermissionCatalog`
+    constant listing the 25 permissions cesauth ships with.
+  - `Role` — named bundle of permissions; system role
+    (`tenant_id IS NULL`) or tenant-local role.
+  - `RoleAssignment` — one user, one role, one `Scope`. Scopes
+    are `System`, `Tenant`, `Organization`, `Group`, `User` (§9.1).
+  - `SystemRole` constants for the six built-in roles seeded by
+    the migration: `system_admin`, `system_readonly`, `tenant_admin`,
+    `tenant_readonly`, `organization_admin`, `organization_member`.
+  - **`check_permission`** — the single authorization entry point
+    (§9.2 "権限判定関数を単一のモジュールに集約する"). Pure
+    function over `(RoleAssignmentRepository, RoleRepository, user,
+    permission, scope, now_unix)`. Handles expiration explicitly,
+    surfacing `DenyReason::Expired` separately from
+    `ScopeMismatch`/`PermissionMissing` so audit logs can distinguish
+    "grant ran out" from "wrong scope".
+  - Scope-covering lattice: a `System` grant covers every scope; a
+    same-id `Tenant`/`Organization`/`Group`/`User` grant covers
+    the matching `ScopeRef`. Cross-tier coverage ("my tenant grant
+    applies to this org") is tagged as a follow-up — for 0.4.0 the
+    caller is expected to query at the natural scope of the
+    operation, which it always knows.
+
+- **Billing domain** (`cesauth_core::billing`).
+  - `Plan` and `Subscription` are strictly separated (§8.6 "Plan と
+    Subscription を分離する"). Plans live in a global catalog;
+    subscriptions reference plans by id and carry only the
+    tenant-specific state.
+  - `SubscriptionLifecycle` (`trial`/`paid`/`grace`) and
+    `SubscriptionStatus` (`active`/`past_due`/`cancelled`/`expired`)
+    are orthogonal axes per §8.6 ("試用状態と本契約状態を分ける").
+    Test `subscription_lifecycle_and_status_are_orthogonal` pins
+    the separation as a documentation-style assertion.
+  - `SubscriptionHistoryEntry` — append-only log of plan/state
+    transitions; one row per event so "when did this tenant move
+    plans?" has a deterministic answer.
+  - Four built-in plans: Free, Trial, Pro, Enterprise.
+    Quotas use `-1` to mean unlimited (`Quota::UNLIMITED`); features
+    are free-form strings keyed on a stable name.
+
+- **Migration `0003_tenancy.sql`** (281 lines): adds 11 tables — one
+  for each entity above plus the three membership relations. Seeds:
+  one bootstrap tenant with id `tenant-default` (matches
+  `tenancy::DEFAULT_TENANT_ID`), the 25 permissions, the 6 system
+  roles, and the 4 built-in plans. `INSERT OR IGNORE` throughout so
+  the migration is re-runnable.
+
+- **In-memory adapters** in `cesauth-adapter-test`:
+  `tenancy::{InMemoryTenantRepository, InMemoryOrganizationRepository,
+  InMemoryGroupRepository, InMemoryMembershipRepository}`,
+  `authz::{InMemoryPermissionRepository, InMemoryRoleRepository,
+  InMemoryRoleAssignmentRepository}`,
+  `billing::{InMemoryPlanRepository, InMemorySubscriptionRepository,
+  InMemorySubscriptionHistoryRepository}`. All ten implement the
+  shipped ports.
+
+- **Tests** (+30 over 0.3.1's 103, total 133):
+  - core: 18 new (5 tenancy types, 7 authz scope-covering / catalog /
+    deny-reason, 5 billing types, 1 dangling-role-id resilience).
+  - adapter-test: 12 new — end-to-end tenant→org→group flow, slug
+    validation edges, duplicate-slug conflict, suspended-tenant
+    org rejection, full-catalog round-trip, plan & subscription &
+    history round-trip, single-active-subscription invariant,
+    purge-expired roles.
+
+### Changed
+
+- `cesauth_core::lib.rs` exports three new modules: `tenancy`,
+  `authz`, `billing`. No existing module changes.
+
+### Deferred — not in 0.4.0, tracked for 0.4.1+
+
+The spec's §16 receive criteria are broad. 0.4.0 ships the data
+model and the central authz engine; the items below are
+prerequisites for a fully-receivable v0.4 but each carries enough
+design surface to deserve its own release:
+
+- **HTTP routes** for tenant / organization / group / role CRUD.
+  The service layer has one function per operation; the route layer
+  needs an admin-bearer extension carrying `(user, tenant?, org?)`
+  context that a 0.4.1 design pass should specify before wiring.
+- **Cloudflare D1 adapters** for the new ports. The schema is in
+  place; mapping each port to D1 statements is mechanical but
+  voluminous.
+- **Multi-tenant admin console**. The 0.3.x admin console assumes
+  a single deployment-wide operator; tenant-scoped admins need a
+  new tab structure and tenancy-aware route guards.
+- **Login → tenant resolution**. Today `email` is globally unique
+  in `users`. Multi-tenant deployments need either tenant-scoped
+  email uniqueness or a tenant-picker step in the login flow. Spec
+  §6.1 mentions tenant-scoped auth policies; the precise UX is open.
+- **Anonymous trial → human user promotion** (§3.3 of spec, §11
+  priority 5). The `Anonymous` account type exists; the lifecycle
+  (token issuance, retention window, conversion flow) is unspecified
+  and will be its own design pass.
+- **Subscription enforcement at runtime**. `Plan.quotas` are
+  recorded but no code reads them at user-create / org-create time.
+  Enforcement hooks land alongside the routes.
+- **External IdP federation** (§3.3 of spec, §11 priority 8).
+  `AccountType::ExternalFederatedUser` is reserved; the wiring is
+  follow-up.
+- **Tenant-scoped audit log filtering**. The 0.3.x audit search is
+  global. A tenant-aware filter is small but requires the
+  multi-tenant admin console to land first.
+
+---
+
 ## [0.3.1] - 2026-04-24
 
 ### Added

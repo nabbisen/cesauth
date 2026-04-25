@@ -23,6 +23,9 @@
 
 pub mod admin;
 pub mod audit;
+pub mod authz;
+pub mod billing;
 pub mod cache;
 pub mod repo;
 pub mod store;
+pub mod tenancy;
