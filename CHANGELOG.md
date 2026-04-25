@@ -12,6 +12,176 @@ always be called out here.
 
 ---
 
+## [0.4.4] - 2026-04-25
+
+The mutation surface for the SaaS console. v0.4.3 shipped the read
+pages; v0.4.4 wraps the v0.4.2 JSON API in HTML forms with a
+preview/confirm flow for destructive operations, mirroring the
+v0.3.1 pattern used for bucket safety edits. Operations+ only;
+ReadOnly continues to see the read pages from v0.4.3 with mutation
+buttons hidden.
+
+### Added
+
+- **Eight HTML mutation forms** in `cesauth-ui::saas::forms`,
+  surfaced through 16 worker routes (8 GET + 8 POST):
+  - **One-click submit** (additive, isolated changes):
+    `tenant_create`, `organization_create`, `group_create`
+    (tenant- and org-rooted variants).
+  - **Two-step preview/confirm** (destructive — status changes,
+    plan changes, deletes):
+    `tenant_set_status`, `organization_set_status`,
+    `group_delete`, `subscription_set_plan`,
+    `subscription_set_status`.
+  - The pattern is the same one v0.3.1 introduced: first POST
+    (without `confirm=yes`) re-renders the page with a diff
+    banner and an Apply button; the Apply button POSTs again
+    with `confirm=yes` and commits.
+
+- **Affordance buttons on read pages.** Tenants list grows a
+  "+ New tenant" link; tenant detail grows
+  "+ New organization", "+ New tenant-scoped group",
+  "Change tenant status", "Change plan", and
+  "Change subscription status" (the last two only when a
+  subscription is on file); organization detail grows
+  "+ New group", "Change organization status", and a per-row
+  "Delete" link in the groups table. Every button renders
+  conditionally on `Role::can_manage_tenancy()`; ReadOnly
+  operators see no button (so a click cannot lead to a 403
+  page).
+
+- **`Role::can_manage_tenancy()`** helper on
+  `cesauth_core::admin::types::Role`. Documented as a
+  presentation-layer hint only — the authoritative gate is on
+  the route handler. A new core test
+  `role_can_manage_tenancy_helper_matches_policy` pins the
+  helper's parity with `role_allows(_, ManageTenancy)`, so a
+  policy change cannot drift the UI gating without a test
+  failure.
+
+- **Worker forms helper module**
+  `crates/worker/src/routes/admin/saas/forms/common.rs`:
+  - `require_manage` — bearer resolve + `ManageTenancy` gate.
+    Returns the principal or a `Response` to short-circuit.
+  - `parse_form` — `application/x-www-form-urlencoded` →
+    flat `HashMap<String, String>`.
+  - `confirmed` — checks the `confirm` field for `"yes"`/`"1"`/
+    `"true"`. Used by the preview/confirm dispatch.
+  - `redirect_303` — `303 See Other` to a destination URL.
+    Browsers follow GET on 303, dropping the form body, so
+    page refreshes don't re-submit.
+
+- **HTML escape defense** on every operator-supplied field
+  (slug, display_name, owner_user_id, reason). Test coverage
+  added: `tenant_create::tests::untrusted_input_is_html_escaped`
+  and `tenant_set_status::tests::reason_is_html_escaped_on_confirm_page`.
+
+- **Quota delta visualization** on subscription plan change.
+  The confirm page renders a quota-by-quota table comparing
+  current vs target plan, with `⚠` markers on quotas that
+  *decrease* — the operator's most common "wait, let me check"
+  case. Existing usage above the new limit is documented as
+  not auto-pruned but blocking new creates.
+
+- **Destructive-operation warnings** baked into the confirm
+  pages. Tenant suspend warns "refuses sign-ins for every user
+  in this tenant"; tenant delete warns "Recovery requires
+  manual SQL"; subscription expire warns "plan-quota
+  enforcement falls through to no-plan allow-all"; subscription
+  cancel notes "current period continues to be honored".
+
+- **Sticky form values on re-render.** A failed submit (slug
+  collision, missing field, quota exceeded) re-renders the
+  form with the operator's existing inputs preserved so they
+  only fix the failed field. Test coverage added.
+
+- **Footer marker** updated from "v0.4.3 (read-only)" to
+  "v0.4.4 (mutation forms enabled for Operations+)".
+
+### Tests
+
+- Total: **196 passing** (+30 over 0.4.3's 166).
+  - core: 102 (was 101) — 1 new test:
+    `role_can_manage_tenancy_helper_matches_policy`.
+  - adapter-test: 32 (unchanged).
+  - ui: 62 (was 33) — 29 new tests:
+    - 4 each for `tenant_create`, `tenant_set_status`,
+      `subscription_set_plan`.
+    - 2-3 for each of `organization_create`,
+      `organization_set_status`, `group_create`,
+      `group_delete`, `subscription_set_status`.
+    - 5 affordance-gating tests on the existing read
+      pages (ReadOnly hides buttons, Operations+ sees them,
+      subscription buttons appear only when a subscription
+      exists).
+- Worker form handlers themselves require a Workers runtime;
+  their service-layer delegation is covered by the existing
+  host tests.
+
+### Auth caveat (unchanged from 0.3.x and 0.4.3)
+
+Forms POST same-origin and the bearer rides on the
+`Authorization: Bearer ...` header — same as the read pages
+and same as the v0.3.x edit forms. The `Authorization` header
+is not auto-forged by browsers across origins, which is the
+CSRF defense; but it also means operators must use a tool
+that sets the header (curl, browser extension, or once it
+lands, the v0.4.5+ user-as-bearer cookie path). This is the
+existing 0.3.x limitation; v0.4.4 inherits rather than
+relaxes it. The v0.4.5+ cookie-based auth design pass is
+where this changes.
+
+### Design decisions worth recording
+
+- **Risk-graded preview/confirm.** Not every mutation needs a
+  preview screen — adding a friction step for low-risk
+  additive operations (creates, role grants within a single
+  tenant, membership add) is operator hostile. The preview
+  pattern is reserved for destructive or expensive operations
+  (status changes, group deletes, plan changes).
+
+- **POST/Redirect/GET via 303 See Other.** After a successful
+  mutation the handler redirects to the relevant read page
+  (e.g. `/admin/saas/tenants/:tid` after a status change),
+  not back to the form. This means a browser refresh on the
+  landing page does not re-submit the mutation.
+
+- **`Role::can_manage_tenancy()` not on `AdminPrincipal`.** The
+  helper is on `Role` so UI templates can check it without
+  importing the principal type, and so a future tenant-scoped
+  admin (with a different bearer model) can introduce its own
+  helper without conflating the two.
+
+- **Pure presentation-layer hint, with a test-locked parity
+  invariant.** The helper documents itself as a presentation-
+  layer hint; the new
+  `role_can_manage_tenancy_helper_matches_policy` test ensures
+  it cannot drift from the authoritative policy. Together
+  these prevent the failure mode where a refactor changes the
+  policy but leaves a stale UI gate.
+
+### Deferred — still tracked for 0.4.5+
+
+The 0.4.4 surface focuses on the mutations operators do most
+often. Items still pending:
+
+- **Role grant / revoke forms.** Today these go through the
+  v0.4.2 JSON API or wrangler. A "Grant role" form on a user's
+  role assignments page is the natural fit. Slated for the
+  next iteration.
+- **Membership add / remove forms.** Same as above — frequent,
+  low-risk; the JSON API handles them today.
+- **Tenant-scoped admin surface.** Tenant admins administering
+  their own tenant rather than every tenant. **0.4.5+.** This
+  is the user-as-bearer / login → tenant resolution / cookie-
+  auth design pass.
+- **`check_permission` integration on the API surface.**
+  Blocked on user-as-bearer.
+- **Anonymous-trial promotion.** **0.4.6.**
+- **External IdP federation.**
+
+---
+
 ## [0.4.3] - 2026-04-25
 
 A read-only HTML console at `/admin/saas/*` for cesauth's operator

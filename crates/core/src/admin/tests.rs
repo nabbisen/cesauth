@@ -73,6 +73,22 @@ fn manage_tenancy_is_operations_plus() {
 }
 
 #[test]
+fn role_can_manage_tenancy_helper_matches_policy() {
+    // The presentation-layer helper on `Role` must agree with the
+    // authoritative `role_allows(_, ManageTenancy)`. UI templates
+    // use the helper to decide whether to render mutation buttons;
+    // a mismatch would let a ReadOnly admin click a button that
+    // 403s on POST, or hide a button from an Operations admin.
+    for r in [Role::ReadOnly, Role::Security, Role::Operations, Role::Super] {
+        assert_eq!(
+            r.can_manage_tenancy(),
+            role_allows(r, AdminAction::ManageTenancy),
+            "Role::{r:?}::can_manage_tenancy diverged from role_allows policy",
+        );
+    }
+}
+
+#[test]
 fn role_roundtrips_through_str() {
     for r in [Role::ReadOnly, Role::Security, Role::Operations, Role::Super] {
         assert_eq!(Role::from_str(r.as_str()), Some(r));

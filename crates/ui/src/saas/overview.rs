@@ -96,16 +96,17 @@ fn render_plan_breakdown(rows: &[PlanBreakdownRow]) -> String {
 fn render_howto() -> String {
     r##"<section aria-label="How to mutate">
   <h2>Making changes</h2>
-  <p class="muted">This console is <strong>read-only</strong>. Tenant
-    / organization / group / role-assignment / subscription mutations
-    go through the JSON API at <code>/api/v1/...</code> (v0.4.2). The
-    HTML preview/confirm flow that wraps those calls is slated for
-    v0.4.4 — see the changelog and roadmap.</p>
-  <p class="muted">For the full operator runbook
-    (<code>wrangler</code> recipes for promoting a system_admin,
-    re-grading account types, etc.), see the
-    <em>Tenancy &amp; tenancy service</em> chapter of the operator
-    documentation.</p>
+  <p class="muted">Tenants, organizations, groups, role assignments,
+    and subscriptions can be mutated through this console for
+    operators with the <code>Operations</code> or <code>Super</code>
+    role. Drill into a tenant or organization to see the available
+    actions; destructive actions (status changes, group deletes,
+    plan changes) go through a preview/confirm step before they
+    commit, mirroring the v0.3.1 bucket-safety flow.</p>
+  <p class="muted">For the JSON API equivalents (often easier for
+    automation), see <code>/api/v1/...</code>. For the full operator
+    runbook, see the <em>Tenancy &amp; tenancy service</em> chapter
+    of the operator documentation.</p>
 </section>"##.to_owned()
 }
 
@@ -160,9 +161,12 @@ mod tests {
     }
 
     #[test]
-    fn read_only_disclaimer_is_present() {
+    fn read_only_role_sees_no_action_disclaimer() {
+        // Ops staff need to know mutations exist; read-only-role
+        // visitors see the JSON-API hint instead. Either way the
+        // overview carries some how-to-mutate guidance.
         let html = overview_page(&test_principal(), &OverviewCounts::default(), &[]);
-        assert!(html.contains("read-only"),
-            "0.4.3 console must clearly mark itself as read-only");
+        assert!(html.contains("/api/v1") || html.contains("Operations"),
+            "overview page must guide operators on how to mutate");
     }
 }

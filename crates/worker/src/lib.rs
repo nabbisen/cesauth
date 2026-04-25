@@ -93,16 +93,40 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async ("/admin/console/tokens/new",               |req, ctx| async move { routes::admin::console::tokens::new_form(req, ctx).await })
         .post_async("/admin/console/tokens",                   |req, ctx| async move { routes::admin::console::tokens::create(req, ctx).await })
         .post_async("/admin/console/tokens/:id/disable",       |req, ctx| async move { routes::admin::console::tokens::disable(req, ctx).await })
-        // --- SaaS console (v0.4.3, read-only HTML) -------------------
+        // --- SaaS console (v0.4.3 read pages) ------------------------
         // Operator-facing inspection of the v0.4.x tenancy service
-        // state. Every route is read-only; mutations remain on the
-        // JSON API at `/api/v1/...`. See `routes/admin/saas.rs`.
+        // state. Every read route is open to ViewTenancy (every
+        // valid role); see `routes/admin/saas.rs`.
         .get_async("/admin/saas",                                            |req, ctx| async move { routes::admin::saas::overview::page(req, ctx).await })
         .get_async("/admin/saas/tenants",                                    |req, ctx| async move { routes::admin::saas::tenants::page(req, ctx).await })
         .get_async("/admin/saas/tenants/:tid",                               |req, ctx| async move { routes::admin::saas::tenant_detail::page(req, ctx).await })
         .get_async("/admin/saas/tenants/:tid/subscription/history",          |req, ctx| async move { routes::admin::saas::subscription::page(req, ctx).await })
         .get_async("/admin/saas/organizations/:oid",                         |req, ctx| async move { routes::admin::saas::organizations::page(req, ctx).await })
         .get_async("/admin/saas/users/:uid/role_assignments",                |req, ctx| async move { routes::admin::saas::role_assignments::page(req, ctx).await })
+        // --- SaaS console mutations (v0.4.4) -------------------------
+        // HTML forms wrapping the v0.4.2 JSON API. All gated through
+        // `AdminAction::ManageTenancy` (Operations+); see
+        // `routes/admin/saas/forms.rs`. Destructive mutations
+        // (status changes, group delete, plan/status changes) go
+        // through the v0.3.1-style preview/confirm flow.
+        .get_async ("/admin/saas/tenants/new",                                |req, ctx| async move { routes::admin::saas::forms::tenant_create::form(req, ctx).await })
+        .post_async("/admin/saas/tenants/new",                                |req, ctx| async move { routes::admin::saas::forms::tenant_create::submit(req, ctx).await })
+        .get_async ("/admin/saas/tenants/:tid/status",                        |req, ctx| async move { routes::admin::saas::forms::tenant_set_status::form(req, ctx).await })
+        .post_async("/admin/saas/tenants/:tid/status",                        |req, ctx| async move { routes::admin::saas::forms::tenant_set_status::submit(req, ctx).await })
+        .get_async ("/admin/saas/tenants/:tid/organizations/new",             |req, ctx| async move { routes::admin::saas::forms::organization_create::form(req, ctx).await })
+        .post_async("/admin/saas/tenants/:tid/organizations/new",             |req, ctx| async move { routes::admin::saas::forms::organization_create::submit(req, ctx).await })
+        .get_async ("/admin/saas/organizations/:oid/status",                  |req, ctx| async move { routes::admin::saas::forms::organization_set_status::form(req, ctx).await })
+        .post_async("/admin/saas/organizations/:oid/status",                  |req, ctx| async move { routes::admin::saas::forms::organization_set_status::submit(req, ctx).await })
+        .get_async ("/admin/saas/tenants/:tid/groups/new",                    |req, ctx| async move { routes::admin::saas::forms::group_create::form_tenant(req, ctx).await })
+        .post_async("/admin/saas/tenants/:tid/groups/new",                    |req, ctx| async move { routes::admin::saas::forms::group_create::submit_tenant(req, ctx).await })
+        .get_async ("/admin/saas/organizations/:oid/groups/new",              |req, ctx| async move { routes::admin::saas::forms::group_create::form_org(req, ctx).await })
+        .post_async("/admin/saas/organizations/:oid/groups/new",              |req, ctx| async move { routes::admin::saas::forms::group_create::submit_org(req, ctx).await })
+        .get_async ("/admin/saas/groups/:gid/delete",                         |req, ctx| async move { routes::admin::saas::forms::group_delete::confirm(req, ctx).await })
+        .post_async("/admin/saas/groups/:gid/delete",                         |req, ctx| async move { routes::admin::saas::forms::group_delete::submit(req, ctx).await })
+        .get_async ("/admin/saas/tenants/:tid/subscription/plan",             |req, ctx| async move { routes::admin::saas::forms::subscription_set_plan::form(req, ctx).await })
+        .post_async("/admin/saas/tenants/:tid/subscription/plan",             |req, ctx| async move { routes::admin::saas::forms::subscription_set_plan::submit(req, ctx).await })
+        .get_async ("/admin/saas/tenants/:tid/subscription/status",           |req, ctx| async move { routes::admin::saas::forms::subscription_set_status::form(req, ctx).await })
+        .post_async("/admin/saas/tenants/:tid/subscription/status",           |req, ctx| async move { routes::admin::saas::forms::subscription_set_status::submit(req, ctx).await })
         // --- Tenancy service API (v0.4.2) ----------------------------
         // JSON-only surface for operator-driven tenant / org / group /
         // role-assignment / subscription provisioning. Gated through

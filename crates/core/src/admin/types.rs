@@ -58,6 +58,19 @@ impl Role {
             Role::Super      => "Super admin",
         }
     }
+
+    /// Whether this role may invoke the SaaS-console mutation forms
+    /// (v0.4.4+). Mirrors `policy::role_allows(role, ManageTenancy)`
+    /// — kept on `Role` itself so UI templates don't have to import
+    /// the policy module just to decide whether to render an
+    /// "Edit" button.
+    ///
+    /// Implementation note: this is a presentation-layer hint only.
+    /// The authoritative gate is on the route handler. Showing or
+    /// hiding the button never substitutes for `ensure_role_allows`.
+    pub fn can_manage_tenancy(self) -> bool {
+        matches!(self, Role::Operations | Role::Super)
+    }
 }
 
 /// The resolved identity carried through an admin request.

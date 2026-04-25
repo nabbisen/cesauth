@@ -14,6 +14,7 @@
 //! `crate::routes::admin::console::render::html_response`; both
 //! consoles want identical baseline security headers.
 
+pub mod forms;
 pub mod organizations;
 pub mod overview;
 pub mod role_assignments;

@@ -25,6 +25,7 @@
 //! - **Mutation forms / preview-confirm flow.** Same release.
 //! - **Login → tenant resolution** for tenant-side users.
 
+pub mod forms;
 pub mod frame;
 pub mod overview;
 pub mod organizations;

@@ -29,15 +29,20 @@ repository root; this chapter implements §3-§5 and §16.1, §16.3,
 > gated through the existing 0.3.x admin-bearer mechanism with two
 > new capabilities (`ViewTenancy` / `ManageTenancy`).
 >
-> v0.4.3 ships a **read-only HTML SaaS console** at `/admin/saas/*`
-> for cesauth's operator staff to inspect tenancy state without
-> curling the JSON API. Five pages — overview, tenants list, tenant
-> detail, organization detail, subscription history, user role
-> assignments — all read-only by design. Mutation forms (the HTML
-> wrapper around the v0.4.2 JSON API) ship in **v0.4.4**, and the
-> tenant-scoped admin surface (where tenant admins administer their
-> own tenant rather than the cesauth operator administering every
-> tenant) is **0.4.5+**.
+> v0.4.3 shipped a **read-only HTML SaaS console** at
+> `/admin/saas/*` for cesauth's operator staff to inspect tenancy
+> state without curling the JSON API.
+>
+> v0.4.4 adds the **mutation surface**: HTML forms wrapping the
+> v0.4.2 JSON API with a risk-graded preview/confirm pattern.
+> Eight forms: tenant / organization / group create, tenant /
+> organization status change, group delete, subscription plan /
+> status change. Affordance buttons gate on
+> `Role::can_manage_tenancy()` so ReadOnly operators don't see
+> broken-link buttons. Membership / role-assignment forms are
+> deferred to **0.4.5**; the tenant-scoped admin surface (where
+> tenant admins administer their own tenant rather than the
+> cesauth operator administering every tenant) is **0.4.5+**.
 
 ---
 
@@ -371,22 +376,79 @@ relying on log archaeology.
   split and lets the read pages settle before the write surface
   arrives.
 
+### Added in 0.4.4
+
+- **Eight HTML mutation forms** wrapping the v0.4.2 JSON API.
+  Risk-graded: one-click submit for additive operations,
+  v0.3.1-style preview/confirm for destructive ones.
+  - **One-click**: tenant create, organization create, group
+    create (tenant- and org-rooted variants).
+  - **Preview/confirm**: tenant set-status, organization
+    set-status, group delete, subscription set-plan,
+    subscription set-status.
+- **16 new routes** (8 GET form + 8 POST submit) at
+  `/admin/saas/tenants/new`, `/admin/saas/tenants/:tid/status`,
+  `/admin/saas/tenants/:tid/organizations/new`,
+  `/admin/saas/organizations/:oid/status`,
+  `/admin/saas/tenants/:tid/groups/new`,
+  `/admin/saas/organizations/:oid/groups/new`,
+  `/admin/saas/groups/:gid/delete`,
+  `/admin/saas/tenants/:tid/subscription/plan`,
+  `/admin/saas/tenants/:tid/subscription/status`. All gated on
+  `AdminAction::ManageTenancy` (Operations+).
+- **Affordance buttons** on the read pages, conditional on
+  `Role::can_manage_tenancy()`. Tenants list grows
+  "+ New tenant"; tenant detail grows
+  "+ New organization", "+ New tenant-scoped group",
+  "Change tenant status", and (when a subscription is on file)
+  "Change plan" + "Change subscription status"; organization
+  detail grows "+ New group", "Change organization status", and
+  per-row "Delete" links in the groups table. ReadOnly operators
+  see no buttons — clicking a button cannot lead to a 403 page.
+- **Quota delta visualization** on the subscription plan-change
+  confirm page. Each quota in the target plan renders as a
+  current → target row, with `⚠` markers on quotas that
+  *decrease*. Existing usage above the new limit is documented
+  as not auto-pruned but blocking new creates.
+- **Destructive-operation warnings** baked into confirm pages:
+  tenant suspend warns "refuses sign-ins for every user in this
+  tenant"; tenant delete warns "Recovery requires manual SQL";
+  subscription expire warns "plan-quota enforcement falls
+  through to no-plan allow-all"; subscription cancel notes
+  "current period continues to be honored".
+- **Sticky form values on re-render.** A failed submit (slug
+  collision, missing field, quota exceeded) re-renders the
+  form with the operator's existing inputs preserved.
+- **POST/Redirect/GET via 303 See Other** after successful
+  mutations. Page refreshes don't re-submit.
+- **`Role::can_manage_tenancy()` helper** on
+  `cesauth_core::admin::types::Role`, with a parity test
+  pinning it to `role_allows(_, ManageTenancy)`.
+- **Footer marker** updated from "v0.4.3 (read-only)" to
+  "v0.4.4 (mutation forms enabled for Operations+)".
+
 ### Does NOT ship in v0.4.x (yet)
 
 The CHANGELOG `Deferred` sections and `ROADMAP.md` track each item.
 Headlines:
 
-- **HTML mutation forms** wrapping the v0.4.2 API. Two-step
-  preview/confirm pattern from v0.3.1, applied to tenant create /
-  update / status, organization create / status, group create /
-  delete, membership add / remove, role grant / revoke, and
-  subscription plan/status changes. **0.4.4.**
-- **Tenant-scoped admin surface**. The v0.4.3 console serves the
-  cesauth deployment's operator staff — one console, every tenant.
-  A tenant-scoped surface (where tenant admins administer their
-  own tenant rather than every tenant) is a parallel UI reachable
-  from a tenant-side login, gated through user-as-bearer plus
-  `check_permission`. **0.4.5+.**
+- **Membership / role-assignment forms** — three flavors of
+  membership add/remove (tenant / organization / group) plus
+  role grant/revoke. These are additive and lower-risk than the
+  shipped destructive operations, so they were carved out of
+  0.4.4 to keep its scope contained. The v0.4.2 JSON API at
+  `/api/v1/role_assignments` and `/api/v1/.../memberships`
+  handles them today. **0.4.5.**
+- **Tenant-scoped admin surface**. The v0.4.3-0.4.4 console
+  serves the cesauth deployment's operator staff — one console,
+  every tenant. A tenant-scoped surface (where tenant admins
+  administer their own tenant rather than every tenant) is a
+  parallel UI reachable from a tenant-side login, gated through
+  user-as-bearer plus `check_permission`. **0.4.5+.**
+- **Cookie-based auth for admin forms.** Today forms POST with
+  the bearer in the `Authorization` header — operators must use
+  curl/extension. A cookie-auth path lands with the v0.4.5+
+  user-as-bearer design pass.
 - **`check_permission` integration on the API surface.** v0.4.2
   routes go through `ensure_role_allows` (admin-side capability)
   rather than `check_permission` because admin tokens have no row
@@ -523,6 +585,46 @@ Mutating the underlying state still requires `ManageTenancy`
 (Operations+), and the only way to trigger that capability today
 is via the v0.4.2 JSON API or a wrangler shell. The HTML mutation
 console is v0.4.4.
+
+### Mutating tenancy state via the SaaS console (v0.4.4+)
+
+For Operations / Super operators, every read page now grows the
+appropriate mutation buttons. Drill into a tenant to see
+"+ New organization", "Change tenant status", etc. ReadOnly
+operators continue to see only the read views.
+
+The forms POST same-origin and the bearer rides on the
+`Authorization` header — same as the read pages. Browsers do not
+auto-set Authorization, so a bare browser cannot submit forms;
+operators use one of:
+
+- **curl with `--cookie` and a custom-Authorization extension**
+  (operator's own setup).
+- **A browser extension** that injects
+  `Authorization: Bearer $ADMIN_TOKEN` on the
+  `cesauth.example` origin.
+- **Cookie-based admin auth** (slated for 0.4.5+ alongside the
+  user-as-bearer design pass).
+
+Risk-graded confirm pattern:
+
+| Operation                          | Pattern              |
+|-----------------------------------|----------------------|
+| Tenant create                      | One-click submit     |
+| Organization create                | One-click submit     |
+| Group create                       | One-click submit     |
+| Tenant set-status                  | Preview / confirm    |
+| Organization set-status            | Preview / confirm    |
+| Group delete                       | Confirm screen       |
+| Subscription set-plan              | Preview / confirm    |
+| Subscription set-status            | Preview / confirm    |
+
+Destructive operations re-render with a diff banner and a
+separate "Apply" button. The confirm step records the same
+audit event (`TenantStatusChanged`, etc.) the JSON API does,
+plus a `via=saas-console` marker in the `reason` field so
+operators can split console-driven mutations from
+script-driven ones in the audit log.
 
 ### API smoke-test (v0.4.2+)
 

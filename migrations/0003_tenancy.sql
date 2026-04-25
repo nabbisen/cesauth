@@ -1,8 +1,7 @@
 -- ------------------------------------------------------------------------
 -- cesauth :: 0003_tenancy.sql
 --
--- Tenancy service data model + authz.
--- Adds the tables for:
+-- Tenancy service foundation. Adds the tables for:
 --
 --   * tenants / organizations / groups               (tenancy boundary)
 --   * user_*_memberships                              (relations, §2.4)

@@ -26,14 +26,41 @@ pub struct TenantDetailInput<'a> {
 
 pub fn tenant_detail_page(principal: &AdminPrincipal, input: &TenantDetailInput<'_>) -> String {
     let title = format!("Tenant: {}", input.tenant.slug);
+    let actions = render_actions(principal, &input.tenant.id, input.subscription.is_some());
     let body = format!(
-        "{summary}\n{subscription}\n{orgs}\n{members}",
+        "{actions}\n{summary}\n{subscription}\n{orgs}\n{members}",
         summary      = render_summary(input.tenant),
         subscription = render_subscription(input.subscription, input.plan, &input.tenant.id),
-        orgs         = render_organizations(input.organizations),
+        orgs         = render_organizations_section(principal, &input.tenant.id, input.organizations),
         members      = render_members(input.members),
     );
     saas_frame(&title, principal.role, principal.name.as_deref(), SaasTab::Tenants, &body)
+}
+
+fn render_actions(principal: &AdminPrincipal, tenant_id: &str, has_subscription: bool) -> String {
+    if !principal.role.can_manage_tenancy() {
+        return String::new();
+    }
+    let tid = escape(tenant_id);
+    let sub_actions = if has_subscription {
+        format!(
+            r##"
+  <a class="action" href="/admin/saas/tenants/{tid}/subscription/plan">Change plan</a>
+  <a class="action" href="/admin/saas/tenants/{tid}/subscription/status">Change subscription status</a>"##,
+        )
+    } else {
+        String::new()
+    };
+    format!(
+        r##"<section aria-label="Actions">
+  <p class="muted">Mutations available to your role:</p>
+  <div class="action-row">
+    <a class="action" href="/admin/saas/tenants/{tid}/organizations/new">+ New organization</a>
+    <a class="action" href="/admin/saas/tenants/{tid}/groups/new">+ New tenant-scoped group</a>
+    <a class="action danger" href="/admin/saas/tenants/{tid}/status">Change tenant status</a>{sub_actions}
+  </div>
+</section>"##,
+    )
 }
 
 fn render_summary(t: &Tenant) -> String {
@@ -112,6 +139,13 @@ fn render_subscription(s: Option<&Subscription>, p: Option<&Plan>, tenant_id: &s
             )
         }
     }
+}
+
+fn render_organizations_section(_principal: &AdminPrincipal, _tenant_id: &str, orgs: &[Organization]) -> String {
+    // _principal is reserved here for future per-row actions; the
+    // "+ New organization" button is rendered by render_actions
+    // above so this function stays read-only.
+    render_organizations(orgs)
 }
 
 fn render_organizations(orgs: &[Organization]) -> String {
@@ -270,5 +304,56 @@ mod tests {
         let html = tenant_detail_page(&p(), &input(&tenant, &members, &[]));
         assert!(html.contains("/admin/saas/users/u-alice/role_assignments"));
         assert!(html.contains("owner"));
+    }
+
+    #[test]
+    fn read_only_role_does_not_see_action_buttons() {
+        let html = tenant_detail_page(&p(), &input(&t(), &[], &[]));
+        // ReadOnly: no /new, no /status, no subscription/plan links.
+        assert!(!html.contains(r#"href="/admin/saas/tenants/t-acme/organizations/new""#),
+            "ReadOnly must not see + New organization");
+        assert!(!html.contains(r#"href="/admin/saas/tenants/t-acme/status""#),
+            "ReadOnly must not see Change tenant status");
+        assert!(!html.contains(r#"href="/admin/saas/tenants/t-acme/groups/new""#),
+            "ReadOnly must not see + New tenant-scoped group");
+    }
+
+    #[test]
+    fn operations_role_sees_action_buttons() {
+        let p = AdminPrincipal { id: "x".into(), name: None, role: Role::Operations };
+        let html = tenant_detail_page(&p, &input(&t(), &[], &[]));
+        assert!(html.contains(r#"href="/admin/saas/tenants/t-acme/organizations/new""#));
+        assert!(html.contains(r#"href="/admin/saas/tenants/t-acme/status""#));
+        assert!(html.contains(r#"href="/admin/saas/tenants/t-acme/groups/new""#));
+    }
+
+    #[test]
+    fn subscription_actions_appear_only_when_subscription_present() {
+        // Without a subscription, the "Change plan" / "Change
+        // subscription status" buttons should not render — there's
+        // nothing to change yet.
+        let p = AdminPrincipal { id: "x".into(), name: None, role: Role::Operations };
+        let tenant = t();
+        let html_no_sub = tenant_detail_page(&p, &input(&tenant, &[], &[]));
+        assert!(!html_no_sub.contains(r#"/subscription/plan""#),
+            "no subscription -> no Change plan button");
+
+        // With a subscription, buttons appear.
+        let sub = cesauth_core::billing::types::Subscription {
+            id: "s".into(), tenant_id: tenant.id.clone(), plan_id: "plan-pro".into(),
+            lifecycle: cesauth_core::billing::types::SubscriptionLifecycle::Paid,
+            status: cesauth_core::billing::types::SubscriptionStatus::Active,
+            started_at: 0, current_period_end: None, trial_ends_at: None,
+            status_changed_at: 0, updated_at: 0,
+        };
+        let inp = TenantDetailInput {
+            tenant: &tenant, members: &[], organizations: &[],
+            subscription: Some(&sub), plan: None,
+        };
+        let html_with_sub = tenant_detail_page(&p, &inp);
+        assert!(html_with_sub.contains(r#"/subscription/plan""#),
+            "with subscription -> Change plan button");
+        assert!(html_with_sub.contains(r#"/subscription/status""#),
+            "with subscription -> Change subscription status button");
     }
 }

@@ -46,9 +46,9 @@ fn frame_does_not_show_drill_in_tab_in_nav() {
 }
 
 #[test]
-fn frame_marks_console_as_read_only_in_footer() {
+fn frame_footer_carries_version_marker() {
     let p = AdminPrincipal { id: "x".into(), name: None, role: Role::Super };
     let html = saas_frame("Test", p.role, p.name.as_deref(), SaasTab::Overview, "");
-    assert!(html.contains("read-only"),
-        "0.4.3 console must clearly mark itself as read-only");
+    assert!(html.contains("v0.4.4"),
+        "footer should carry the version marker so operators can tell which build they're on");
 }

@@ -21,13 +21,74 @@ pub fn organization_detail_page(
     input:     &OrganizationDetailInput<'_>,
 ) -> String {
     let title = format!("Organization: {}", input.organization.slug);
+    let actions = render_actions(principal, &input.organization.id);
     let body = format!(
-        "{summary}\n{groups}\n{members}",
+        "{actions}\n{summary}\n{groups}\n{members}",
         summary = render_summary(input.organization),
-        groups  = render_groups(input.groups),
+        groups  = render_groups_section(principal, &input.organization.id, input.groups),
         members = render_members(input.members),
     );
     saas_frame(&title, principal.role, principal.name.as_deref(), SaasTab::Tenants, &body)
+}
+
+fn render_actions(principal: &AdminPrincipal, org_id: &str) -> String {
+    if !principal.role.can_manage_tenancy() {
+        return String::new();
+    }
+    let oid = escape(org_id);
+    format!(
+        r##"<section aria-label="Actions">
+  <p class="muted">Mutations available to your role:</p>
+  <div class="action-row">
+    <a class="action" href="/admin/saas/organizations/{oid}/groups/new">+ New group</a>
+    <a class="action danger" href="/admin/saas/organizations/{oid}/status">Change organization status</a>
+  </div>
+</section>"##,
+    )
+}
+
+fn render_groups_section(principal: &AdminPrincipal, _org_id: &str, groups: &[Group]) -> String {
+    // Per-row delete affordance.
+    let body: String = if groups.is_empty() {
+        r#"<tr><td colspan="4" class="empty">No groups in this organization.</td></tr>"#.to_owned()
+    } else {
+        groups.iter().map(|g| {
+            let delete_link = if principal.role.can_manage_tenancy() {
+                format!(
+                    r##"<a class="action danger" href="/admin/saas/groups/{id}/delete" style="font-size: 0.85em; padding: 4px 10px;">Delete</a>"##,
+                    id = escape(&g.id),
+                )
+            } else {
+                String::new()
+            };
+            format!(
+                r##"<tr>
+  <td><code>{slug}</code></td>
+  <td>{name}</td>
+  <td class="muted">{id}</td>
+  <td>{delete_link}</td>
+</tr>"##,
+                slug = escape(&g.slug),
+                name = escape(&g.display_name),
+                id   = escape(&g.id),
+            )
+        }).collect::<Vec<_>>().join("\n")
+    };
+    format!(
+        r##"<section aria-label="Groups">
+  <h2>Groups</h2>
+  <table><thead>
+    <tr>
+      <th scope="col">Slug</th>
+      <th scope="col">Display name</th>
+      <th scope="col">Id</th>
+      <th scope="col"></th>
+    </tr>
+  </thead><tbody>
+{body}
+  </tbody></table>
+</section>"##
+    )
 }
 
 fn render_summary(o: &Organization) -> String {
@@ -57,29 +118,6 @@ fn render_summary(o: &Organization) -> String {
         name      = escape(&o.display_name),
         status    = status_badge,
         created   = o.created_at,
-    )
-}
-
-fn render_groups(groups: &[Group]) -> String {
-    let body: String = if groups.is_empty() {
-        r#"<tr><td colspan="3" class="empty">No groups in this organization.</td></tr>"#.to_owned()
-    } else {
-        groups.iter().map(|g| format!(
-            "<tr><td><code>{slug}</code></td><td>{name}</td><td class=\"muted\">{id}</td></tr>",
-            slug = escape(&g.slug),
-            name = escape(&g.display_name),
-            id   = escape(&g.id),
-        )).collect::<Vec<_>>().join("\n")
-    };
-    format!(
-        r##"<section aria-label="Groups">
-  <h2>Groups</h2>
-  <table><thead>
-    <tr><th scope="col">Slug</th><th scope="col">Display name</th><th scope="col">Id</th></tr>
-  </thead><tbody>
-{body}
-  </tbody></table>
-</section>"##
     )
 }
 

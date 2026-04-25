@@ -110,6 +110,17 @@ pub fn saas_frame(
     .badge.warn     {{ background: #fff3cd; color: #856404; }}
     .badge.critical {{ background: #f8d7da; color: #721c24; }}
     code {{ font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9em; background: #f5f5f5; padding: 1px 4px; border-radius: 2px; }}
+    .action {{ display: inline-block; padding: 6px 14px; background: #2980b9; color: #fff; text-decoration: none; border-radius: 3px; font-weight: 600; }}
+    .action:hover {{ background: #1f6391; }}
+    .action.danger {{ background: #c0392b; }}
+    .action.danger:hover {{ background: #922b21; }}
+    .action-row {{ margin: 12px 0; display: flex; gap: 8px; flex-wrap: wrap; }}
+    form.danger button {{ background: #c0392b; color: #fff; border: none; padding: 8px 16px; border-radius: 3px; cursor: pointer; font-weight: 600; }}
+    form.danger button:hover {{ background: #922b21; }}
+    button {{ background: #2980b9; color: #fff; border: none; padding: 8px 16px; border-radius: 3px; cursor: pointer; font-weight: 600; }}
+    button:hover {{ background: #1f6391; }}
+    input[type="text"], select {{ padding: 6px 10px; border: 1px solid #ccc; border-radius: 3px; font-size: 1em; }}
+    fieldset {{ border: 1px solid #ddd; padding: 12px 16px; }}
     footer {{ text-align: center; color: #999; font-size: 0.8em; padding: 24px; }}
   </style>
 </head>
@@ -124,7 +135,7 @@ pub fn saas_frame(
     <h2>{title_esc}</h2>
 {body}
   </main>
-  <footer>cesauth SaaS console — v0.4.3 (read-only)</footer>
+  <footer>cesauth SaaS console — v0.4.4 (mutation forms enabled for Operations+)</footer>
 </body>
 </html>"##,
         name_html = if name_esc.is_empty() {

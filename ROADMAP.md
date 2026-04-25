@@ -37,7 +37,7 @@ zero remaining issues.
 | Audit log (R2, NDJSON per event)       | ✅       | Covered by `/__dev/audit` browser + searchable via admin console (0.3.0) |
 | **Cost &amp; Data Safety Admin Console** | ✅     | `/admin/console/*` — Overview, Cost, Safety, Audit, Config, Alerts (0.3.0); HTML two-step edit UI for bucket-safety + admin-token CRUD (0.3.1) |
 | Dev-only routes (`/__dev/*`)           | ✅       | Gated on `WRANGLER_LOCAL="1"`                      |
-| **Tenancy service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.4.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.4.1). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.4.2). Read-only HTML SaaS console at `/admin/saas/*` (0.4.3). Mutation forms with preview/confirm deferred to 0.4.4. |
+| **Tenancy service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.4.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.4.1). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.4.2). Read-only HTML SaaS console at `/admin/saas/*` (0.4.3). Mutation forms with preview/confirm pattern (0.4.4) for tenant create/status, organization create/status, group create/delete, subscription plan/status. Role/membership forms + tenant-scoped admin surface deferred to 0.4.5+. |
 | mdBook documentation                   | ✅       | `docs/`                                            |
 
 ---
@@ -105,28 +105,39 @@ started.
   explicit "read-only" marker so operators don't mistake this
   surface for the writable v0.4.4 follow-up.
 
-- **SaaS console mutation forms (0.4.4).** Wraps the v0.4.2 JSON
-  API in HTML forms with the same two-step preview/confirm
-  pattern v0.3.1 introduced for bucket safety. Operations+ for
-  mutations; ReadOnly continues to see the read-only views from
-  0.4.3. Targets:
-  - Tenant create / update / status change.
-  - Organization create / status change.
-  - Group create / delete.
-  - Membership add / remove (per scope).
-  - Role assignment grant / revoke.
-  - Subscription plan / status change (these are the highest-risk
-    mutations and most need confirm screens).
+- **SaaS console mutation forms (shipped in 0.4.4).** Wraps the
+  v0.4.2 JSON API in HTML forms following a risk-graded preview/
+  confirm pattern: one-click submit for additive operations
+  (creates), v0.3.1-style preview/confirm for destructive ones
+  (status changes, group deletes, plan changes). Eight forms ship:
+  tenant create / set-status, organization create / set-status,
+  group create / delete, subscription set-plan / set-status.
+  Affordance buttons gate on `Role::can_manage_tenancy()` so
+  ReadOnly operators don't see broken-link buttons. Auth caveat:
+  forms POST same-origin and the bearer rides on the
+  `Authorization` header — operators must use a tool that sets
+  the header (curl, browser extension, or the future cookie-auth
+  path).
 
-- **Tenant-scoped admin surface (0.4.5+).** The v0.4.3 console
-  serves the cesauth deployment's operator staff — one console,
-  every tenant. A tenant-scoped admin surface is a parallel UI
-  reachable from a tenant-side login, gated through user-as-bearer
-  + `check_permission`, and filtered to the caller's tenant.
-  Three open design questions: URL shape (`/admin/t/<slug>/...`
-  vs subdomain), user-as-bearer mechanism (admin token mapping vs
-  session cookie vs JWT), and how to surface system-admin
-  operations without leaking tenant boundaries.
+- **Membership / role-assignment forms (0.4.5).** Three flavors of
+  membership add/remove forms (tenant / organization / group)
+  plus role grant/revoke forms reachable from
+  `/admin/saas/users/:uid/role_assignments`. These were carved
+  out of 0.4.4 because they're additive and lower-risk than the
+  shipped destructive operations; the JSON API at
+  `/api/v1/role_assignments` and `/api/v1/.../memberships`
+  continues to handle them in the meantime.
+
+- **Tenant-scoped admin surface (0.4.5+).** The v0.4.3-0.4.4
+  console serves the cesauth deployment's operator staff — one
+  console, every tenant. A tenant-scoped admin surface is a
+  parallel UI reachable from a tenant-side login, gated through
+  user-as-bearer + `check_permission`, and filtered to the
+  caller's tenant. Three open design questions: URL shape
+  (`/admin/t/<slug>/...` vs subdomain), user-as-bearer mechanism
+  (admin token mapping vs session cookie vs JWT), and how to
+  surface system-admin operations without leaking tenant
+  boundaries.
 
 - **Anonymous trial → human user promotion (0.4.6).** Spec §3.3
   introduces `Anonymous` as an account type and §11 priority 5

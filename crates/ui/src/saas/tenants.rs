@@ -7,7 +7,12 @@ use cesauth_core::tenancy::types::{Tenant, TenantStatus};
 use super::frame::{saas_frame, SaasTab};
 
 pub fn tenants_page(principal: &AdminPrincipal, rows: &[Tenant]) -> String {
-    let body = render_table(rows);
+    let actions = if principal.role.can_manage_tenancy() {
+        r##"<p><a class="action" href="/admin/saas/tenants/new">+ New tenant</a></p>"##
+    } else {
+        ""
+    };
+    let body = format!("{actions}\n{table}", table = render_table(rows));
     saas_frame("Tenants", principal.role, principal.name.as_deref(), SaasTab::Tenants, &body)
 }
 
@@ -109,5 +114,23 @@ mod tests {
             "display_name must be escaped; got {html:?}");
         assert!(html.contains("&lt;script&gt;"),
             "expected escaped form");
+    }
+
+    #[test]
+    fn read_only_role_does_not_see_new_tenant_button() {
+        // ReadOnly cannot mutate; the affordance must be hidden so
+        // a click doesn't lead to a blank 403 page.
+        let p = AdminPrincipal { id: "x".into(), name: None, role: Role::ReadOnly };
+        let html = tenants_page(&p, &[]);
+        assert!(!html.contains(r#"href="/admin/saas/tenants/new""#),
+            "ReadOnly must not see the New tenant link");
+    }
+
+    #[test]
+    fn operations_role_sees_new_tenant_button() {
+        let p = AdminPrincipal { id: "x".into(), name: None, role: Role::Operations };
+        let html = tenants_page(&p, &[]);
+        assert!(html.contains(r#"href="/admin/saas/tenants/new""#),
+            "Operations must see the New tenant link");
     }
 }
