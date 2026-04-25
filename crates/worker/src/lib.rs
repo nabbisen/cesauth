@@ -93,6 +93,41 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async ("/admin/console/tokens/new",               |req, ctx| async move { routes::admin::console::tokens::new_form(req, ctx).await })
         .post_async("/admin/console/tokens",                   |req, ctx| async move { routes::admin::console::tokens::create(req, ctx).await })
         .post_async("/admin/console/tokens/:id/disable",       |req, ctx| async move { routes::admin::console::tokens::disable(req, ctx).await })
+        // --- tenancy API (v0.4.2) ----------------------------
+        // JSON-only surface for operator-driven tenant / org / group /
+        // role-assignment / subscription provisioning. Gated through
+        // the same admin-bearer auth as `/admin/console/*`. See
+        // `routes/api_v1.rs` for the full route catalogue and the
+        // design rationale (admin-bearer vs user-as-bearer).
+        .post_async  ("/api/v1/tenants",                                     |req, ctx| async move { routes::api_v1::tenants::create(req, ctx).await })
+        .get_async   ("/api/v1/tenants",                                     |req, ctx| async move { routes::api_v1::tenants::list(req, ctx).await })
+        .get_async   ("/api/v1/tenants/:tid",                                |req, ctx| async move { routes::api_v1::tenants::get(req, ctx).await })
+        .patch_async ("/api/v1/tenants/:tid",                                |req, ctx| async move { routes::api_v1::tenants::update(req, ctx).await })
+        .post_async  ("/api/v1/tenants/:tid/status",                         |req, ctx| async move { routes::api_v1::tenants::set_status(req, ctx).await })
+        .post_async  ("/api/v1/tenants/:tid/organizations",                  |req, ctx| async move { routes::api_v1::organizations::create(req, ctx).await })
+        .get_async   ("/api/v1/tenants/:tid/organizations",                  |req, ctx| async move { routes::api_v1::organizations::list(req, ctx).await })
+        .get_async   ("/api/v1/tenants/:tid/organizations/:oid",             |req, ctx| async move { routes::api_v1::organizations::get(req, ctx).await })
+        .patch_async ("/api/v1/tenants/:tid/organizations/:oid",             |req, ctx| async move { routes::api_v1::organizations::update(req, ctx).await })
+        .post_async  ("/api/v1/tenants/:tid/organizations/:oid/status",      |req, ctx| async move { routes::api_v1::organizations::set_status(req, ctx).await })
+        .post_async  ("/api/v1/tenants/:tid/groups",                         |req, ctx| async move { routes::api_v1::groups::create(req, ctx).await })
+        .get_async   ("/api/v1/tenants/:tid/groups",                         |req, ctx| async move { routes::api_v1::groups::list(req, ctx).await })
+        .delete_async("/api/v1/groups/:gid",                                 |req, ctx| async move { routes::api_v1::groups::delete(req, ctx).await })
+        .post_async  ("/api/v1/tenants/:tid/memberships",                    |req, ctx| async move { routes::api_v1::memberships::add_tenant(req, ctx).await })
+        .get_async   ("/api/v1/tenants/:tid/memberships",                    |req, ctx| async move { routes::api_v1::memberships::list_tenant(req, ctx).await })
+        .delete_async("/api/v1/tenants/:tid/memberships/:uid",               |req, ctx| async move { routes::api_v1::memberships::remove_tenant(req, ctx).await })
+        .post_async  ("/api/v1/organizations/:oid/memberships",              |req, ctx| async move { routes::api_v1::memberships::add_org(req, ctx).await })
+        .get_async   ("/api/v1/organizations/:oid/memberships",              |req, ctx| async move { routes::api_v1::memberships::list_org(req, ctx).await })
+        .delete_async("/api/v1/organizations/:oid/memberships/:uid",         |req, ctx| async move { routes::api_v1::memberships::remove_org(req, ctx).await })
+        .post_async  ("/api/v1/groups/:gid/memberships",                     |req, ctx| async move { routes::api_v1::memberships::add_group(req, ctx).await })
+        .get_async   ("/api/v1/groups/:gid/memberships",                     |req, ctx| async move { routes::api_v1::memberships::list_group(req, ctx).await })
+        .delete_async("/api/v1/groups/:gid/memberships/:uid",                |req, ctx| async move { routes::api_v1::memberships::remove_group(req, ctx).await })
+        .post_async  ("/api/v1/role_assignments",                            |req, ctx| async move { routes::api_v1::role_assignments::create(req, ctx).await })
+        .delete_async("/api/v1/role_assignments/:id",                        |req, ctx| async move { routes::api_v1::role_assignments::delete(req, ctx).await })
+        .get_async   ("/api/v1/users/:uid/role_assignments",                 |req, ctx| async move { routes::api_v1::role_assignments::list_for_user(req, ctx).await })
+        .get_async   ("/api/v1/tenants/:tid/subscription",                   |req, ctx| async move { routes::api_v1::subscriptions::get(req, ctx).await })
+        .post_async  ("/api/v1/tenants/:tid/subscription/plan",              |req, ctx| async move { routes::api_v1::subscriptions::set_plan(req, ctx).await })
+        .post_async  ("/api/v1/tenants/:tid/subscription/status",            |req, ctx| async move { routes::api_v1::subscriptions::set_status(req, ctx).await })
+        .get_async   ("/api/v1/tenants/:tid/subscription/history",           |req, ctx| async move { routes::api_v1::subscriptions::list_history(req, ctx).await })
         // --- UI -------------------------------------------------------
         .get_async("/",         |req, ctx| async move { routes::ui::login(req, ctx).await })
         .get_async("/login",    |req, ctx| async move { routes::ui::login(req, ctx).await })

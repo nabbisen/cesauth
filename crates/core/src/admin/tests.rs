@@ -44,9 +44,32 @@ fn read_only_cannot_change_anything() {
         AdminAction::CreateUser,
         AdminAction::RevokeSession,
         AdminAction::ManageAdminTokens,
+        AdminAction::ManageTenancy,
     ] {
         assert!(!role_allows(Role::ReadOnly, a), "ReadOnly should not be allowed {a:?}");
     }
+}
+
+// -------------------------------------------------------------------------
+// v0.4.2: tenancy API capabilities
+// -------------------------------------------------------------------------
+
+#[test]
+fn every_valid_role_may_view_tenancy() {
+    for r in [Role::ReadOnly, Role::Security, Role::Operations, Role::Super] {
+        assert!(role_allows(r, AdminAction::ViewTenancy),
+            "{r:?} must be allowed to view tenancy state");
+    }
+}
+
+#[test]
+fn manage_tenancy_is_operations_plus() {
+    // Mirrors the EditBucketSafety / EditThreshold / CreateUser tier.
+    // Security alone does NOT get to provision tenants.
+    assert!(!role_allows(Role::ReadOnly,   AdminAction::ManageTenancy));
+    assert!(!role_allows(Role::Security,   AdminAction::ManageTenancy));
+    assert!( role_allows(Role::Operations, AdminAction::ManageTenancy));
+    assert!( role_allows(Role::Super,      AdminAction::ManageTenancy));
 }
 
 #[test]

@@ -30,7 +30,10 @@
 //!   changes arrives with the multi-tenant admin console.
 
 pub mod ports;
+pub mod quota;
 pub mod types;
+
+pub use quota::{quota_decision, QuotaDecision};
 
 pub use ports::{PlanRepository, SubscriptionHistoryRepository, SubscriptionRepository};
 pub use types::{

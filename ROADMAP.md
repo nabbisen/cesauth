@@ -37,7 +37,7 @@ zero remaining issues.
 | Audit log (R2, NDJSON per event)       | ✅       | Covered by `/__dev/audit` browser + searchable via admin console (0.3.0) |
 | **Cost &amp; Data Safety Admin Console** | ✅     | `/admin/console/*` — Overview, Cost, Safety, Audit, Config, Alerts (0.3.0); HTML two-step edit UI for bucket-safety + admin-token CRUD (0.3.1) |
 | Dev-only routes (`/__dev/*`)           | ✅       | Gated on `WRANGLER_LOCAL="1"`                      |
-| **users, roles, tenants, organizations, groups data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.4.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.4.1). HTTP routes / multi-tenant admin console deferred to 0.4.2. |
+| **Tenancy service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.4.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.4.1). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.4.2). Multi-tenant admin console UI deferred to 0.4.3. |
 | mdBook documentation                   | ✅       | `docs/`                                            |
 
 ---
@@ -82,23 +82,19 @@ started.
   increments). Likely acceptable for a "proxy" metric, but worth
   recording explicitly.
 
-- **Tenancy HTTP routes (0.4.2).** v0.4.0 shipped the data
-  model (users, roles, tenants, organizations, groups) + authz engine; v0.4.1 shipped the Cloudflare D1 adapters
-  and made the `users` table tenant-aware via migration 0004. The
-  remaining integration work is the route layer:
-  - HTTP routes for tenant / organization / group / role-assignment
-    CRUD, each gated through `check_permission` at the natural
-    scope.
-  - Bearer-extension carrying `(user_id, tenant_id?, organization_id?)`
-    so handlers don't re-derive context per request. Open design
-    question: do tenant-scoped operations identify via session
-    cookie + tenant slug in the URL, or via an admin bearer with
-    explicit tenant claim? The 0.3.x admin console answered this
-    with a bearer; a multi-tenant operator surface might prefer
-    cookies. Pick one before wiring.
-  - Plan-quota enforcement hooks at user-create / org-create /
-    group-create. The plan numbers exist in 0.4.1; reading them
-    on the create path is mechanical once the route layer is in.
+- **Tenancy service HTTP routes (shipped in 0.4.2).** The
+  `/api/v1/...` surface ships JSON CRUD for tenants, organizations,
+  groups, memberships, role assignments, and subscriptions. Plan-
+  quota enforcement (max_users / max_organizations / max_groups)
+  runs on org-create and group-create paths. The remaining design
+  question — admin bearer vs session cookie for the tenant-scoped
+  console — is now scoped to the v0.4.3 admin console, since the
+  0.4.2 surface uses the existing 0.3.x admin-bearer model
+  exclusively. The `check_permission` integration is also still
+  pending: 0.4.2 routes go through `ensure_role_allows` (admin-side
+  capability) because admin tokens have no `users` row to feed into
+  `check_permission`. The two converge in 0.4.3+ when user-as-bearer
+  arrives.
 
 - **Multi-tenant admin console (0.4.3).** The 0.3.x admin console
   assumes a deployment-wide operator. A multi-tenant deployment

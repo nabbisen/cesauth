@@ -12,9 +12,142 @@ always be called out here.
 
 ---
 
+## [0.4.2] - 2026-04-25
+
+The HTTP API surface for the tenancy service data model. v0.4.0
+shipped the data model and central authz function; v0.4.1 shipped
+the Cloudflare D1 adapters and made `users` tenant-aware; v0.4.2
+ships the routes operators use to drive that machinery from the
+outside.
+
+### Added
+
+- **`/api/v1/...` route module** (`crates/worker/src/routes/api_v1/`):
+  - **Tenants**: `POST /api/v1/tenants` (create with owner
+    membership), `GET /api/v1/tenants` (list active),
+    `GET /api/v1/tenants/:tid`, `PATCH /api/v1/tenants/:tid`
+    (display name), `POST /api/v1/tenants/:tid/status`.
+  - **Organizations**: `POST/GET /api/v1/tenants/:tid/organizations`,
+    `GET/PATCH /api/v1/tenants/:tid/organizations/:oid`,
+    `POST /api/v1/tenants/:tid/organizations/:oid/status`. The
+    GET handler verifies the org's `tenant_id` matches the URL
+    `:tid` — defense in depth against id-guessing across tenants.
+  - **Groups**: `POST/GET /api/v1/tenants/:tid/groups`
+    (the GET takes `?organization_id=...` to narrow to org-scoped
+    groups), `DELETE /api/v1/groups/:gid`.
+  - **Memberships** — three flavors under a unified handler shape:
+    `POST/GET/DELETE /api/v1/tenants/:tid/memberships[/:uid]`,
+    `.../organizations/:oid/memberships[/:uid]`,
+    `.../groups/:gid/memberships[/:uid]`.
+  - **Role assignments**: `POST /api/v1/role_assignments`,
+    `DELETE /api/v1/role_assignments/:id`,
+    `GET /api/v1/users/:uid/role_assignments`.
+  - **Subscriptions**: `GET /api/v1/tenants/:tid/subscription`,
+    `POST .../subscription/plan`, `POST .../subscription/status`,
+    `GET .../subscription/history`. Plan changes refuse to point
+    at archived (`active = false`) plans. Every plan / status
+    change appends a `subscription_history` entry.
+
+- **27 routes wired** into `lib.rs` under a `// --- tenancy
+  API (v0.4.2)` block, contiguous with the existing
+  `/admin/console/...` routes.
+
+- **Two new admin capabilities** in
+  `cesauth_core::admin::types::AdminAction`:
+  - `ViewTenancy` — read tenancy data; granted to every valid
+    role (admin tokens already pass a trust boundary).
+  - `ManageTenancy` — mutate tenancy data; Operations+ only,
+    matching the existing tier with `EditBucketSafety` /
+    `EditThreshold` / `CreateUser`. Security alone does not get
+    to provision tenants.
+
+- **Plan-quota enforcement** (spec §6.7) at create time for
+  organizations and groups. The pure decision logic lives in
+  `cesauth_core::billing::quota_decision`:
+  - `None` plan → `Allowed` (operator-provisioned tenants without
+    a subscription).
+  - Quota row absent → `Allowed`.
+  - Quota value `-1` (`Quota::UNLIMITED`) → `Allowed` at any count.
+  - Otherwise compares `current` vs `limit`, returning
+    `Denied { name, limit, current }` when the next insert
+    would exceed.
+  The worker side (`routes::api_v1::quota::check_quota`) reads the
+  current count via `SELECT COUNT(*) FROM <table> WHERE
+  tenant_id = ? AND status != 'deleted'` and feeds it to
+  `quota_decision`. A `quota_exceeded:<name>` 409 surfaces to the
+  caller.
+
+- **14 new audit `EventKind` variants** for tenancy mutations:
+  `TenantCreated`, `TenantUpdated`, `TenantStatusChanged`,
+  `OrganizationCreated`, `OrganizationUpdated`,
+  `OrganizationStatusChanged`, `GroupCreated`, `GroupDeleted`,
+  `MembershipAdded`, `MembershipRemoved`, `RoleGranted`,
+  `RoleRevoked`, `SubscriptionPlanChanged`,
+  `SubscriptionStatusChanged`. Every mutating route emits one with
+  the actor (admin principal id), subject (created/affected row
+  id), and a structured `reason` field.
+
+### Tests
+
+- Total: **144 passing** (+8 over 0.4.1's 136).
+  - core: 101 (was 93) — 2 new admin-policy tests
+    (`every_valid_role_may_view_tenancy`,
+    `manage_tenancy_is_operations_plus`) + 6 new
+    `quota_decision` tests covering no-plan, missing quota row,
+    unlimited sentinel, below-limit allow, at-limit deny, and
+    above-limit deny edge cases.
+  - adapter-test: 32 (unchanged).
+  - ui: 11 (unchanged).
+- The route handlers are not exercised by host tests — they
+  require a Workers runtime — but every route delegates to the
+  service layer or the D1 adapters, both of which are covered by
+  the host tests above. Route-handler contract is verified at
+  deploy time via `wrangler dev` or curl-against-deploy.
+
+### Design decisions worth recording
+
+- **Admin-bearer, not user-as-bearer.** `cesauth_core::authz::
+  check_permission` expects a `user_id` and a scope. Admin tokens
+  are operator credentials with no row in `users`, and the
+  user-as-bearer path (issuing a JWT/session bearer that the
+  gateway parses into a tenant-scoped request) is part of the
+  multi-tenant admin console (0.4.3). So 0.4.2 ships an API
+  surface for *cesauth's operator staff* to provision tenants.
+  Self-service tenant operations are deferred. The route handlers
+  go through `ensure_role_allows` (admin-side capability) rather
+  than `check_permission` (tenancy-side capability); the two
+  converge in 0.4.3+ when user bearers arrive.
+
+- **JSON-only, no Accept negotiation.** HTML belongs in 0.4.3 with
+  the multi-tenant admin console.
+
+- **URL hierarchy is the natural tree** (`/api/v1/tenants/:tid/
+  organizations`, `/api/v1/tenants/:tid/organizations/:oid/...`)
+  for tenant-rooted operations. Operations on a single non-tenant
+  scoped resource (one group, one role-assignment) take the direct
+  form `/api/v1/groups/:gid` so callers don't need to know the
+  parent path.
+
+- **Quota count by `SELECT COUNT(*)`, not by cached counter.** This
+  is a low-volume admin API; the COUNT on an indexed column is
+  cheaper than the cache-invalidation discipline a counter
+  would require. When self-signup lands, we will need to migrate
+  to a counter-with-occasional-reconcile pattern; until then the
+  simple read wins.
+
+### Deferred — still tracked for 0.4.3+
+
+- **Multi-tenant admin console** (0.4.3) — HTML surface for
+  tenant-scoped admins. Opens user-as-bearer, login → tenant
+  resolution, and Accept negotiation as one design pass.
+- **Anonymous-trial promotion** (0.4.4).
+- **External IdP federation**.
+
+---
+
 ## [0.4.1] - 2026-04-25
 
-The runtime backing for v0.4.0's service data model.
+The runtime backing for v0.4.0's tenancy service data model.
 Implements the Cloudflare D1 adapters for every port the 0.4.0 core
 defined, and migrates the existing `users` table to be tenant-aware.
 Routes / multi-tenant admin console / login-tenant resolution remain
@@ -116,9 +249,8 @@ deferred (see "Deferred" below).
 
 ## [0.4.0] - 2026-04-25
 
-Implements the data model and core
-authorization engine from
-`users, roles, tenants, organizations, groups` §3-§5 and §16.1,
+Implements the data model and core authorization engine from
+`Tenancy service + authz 拡張開発指示書.md` §3-§5 and §16.1,
 §16.3, §16.6. Routes / UI / multi-tenant admin console are deferred
 to 0.4.1 by design (see "Deferred" below).
 

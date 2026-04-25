@@ -105,6 +105,22 @@ pub enum AdminAction {
     RevokeSession,
     /// Create / disable an admin token. Super-only per §6.1.
     ManageAdminTokens,
+
+    /// Read tenancy data (tenants / organizations / groups / role
+    /// assignments / subscriptions). New in v0.4.2; the API surface
+    /// at `/api/v1/...` gates list / get operations on this. Every
+    /// valid role can do this — admin tokens already pass a trust
+    /// boundary, so read-only inspection of the tenancy state is
+    /// freely available to operator staff.
+    ViewTenancy,
+
+    /// Mutate tenancy data (create / update / delete tenants,
+    /// organizations, groups; assign / revoke roles; change plans
+    /// or subscription status). Operations+ per the 4-role matrix
+    /// — Security alone does not get to provision new tenants. The
+    /// audit trail recorded by every mutation handler captures
+    /// who-did-what for forensic recovery.
+    ManageTenancy,
 }
 
 // -------------------------------------------------------------------------

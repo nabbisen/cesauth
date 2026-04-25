@@ -7,7 +7,7 @@ machinery is additive.
 
 This chapter is the operator-facing reference for how the new model
 fits together. The matching domain spec is
-`users, roles, tenants, organizations, groups data model + authz 拡張開発指示書` in the
+`Tenancy service + authz 拡張開発指示書` in the
 repository root; this chapter implements §3-§5 and §16.1, §16.3,
 §16.6.
 
@@ -23,16 +23,19 @@ repository root; this chapter implements §3-§5 and §16.1, §16.3,
 > associated to the bootstrap tenant; email uniqueness becomes
 > per-tenant.
 >
-> HTTP routes for tenant / organization / group / role CRUD land
-> in **v0.4.2**. Until then the new domain is reachable only from
-> the service layer; the 0.3.x routes (auth flows, single-deployment
-> admin console) continue to work against the bootstrap tenant.
+> v0.4.2 ships the **`/api/v1/...` HTTP API** for tenant /
+> organization / group / membership / role-assignment / subscription
+> CRUD, with plan-quota enforcement on the create paths. The API is
+> gated through the existing 0.3.x admin-bearer mechanism with two
+> new capabilities (`ViewTenancy` / `ManageTenancy`); the
+> tenant-scoped HTML console and the user-as-bearer auth path are
+> deferred to **v0.4.3** with the multi-tenant admin console.
 
 ---
 
 ## The four boundaries
 
-cesauth's service model layers four orthogonal concerns on
+cesauth's tenancy service model layers four orthogonal concerns on
 top of `users` / `sessions`:
 
 1. **Tenancy** (`crate::tenancy`) — *who is in what?* Tenants,
@@ -310,25 +313,43 @@ relying on log archaeology.
   `user_tenant_memberships` row in the bootstrap tenant with role
   `member`, so post-migration there are zero tenant-less users.
 
+### Added in 0.4.2
+
+- **`/api/v1/...` HTTP API** for the tenancy data model.
+  Tenants, organizations, groups, three flavors of membership,
+  role assignments, subscriptions — full CRUD for each, JSON-only,
+  gated through the existing admin-bearer mechanism. See the
+  CHANGELOG `[0.4.2]` entry for the route catalogue.
+- **Two new admin capabilities**: `ViewTenancy` (every valid role)
+  and `ManageTenancy` (Operations+ — same tier as `EditBucketSafety`
+  / `EditThreshold` / `CreateUser`).
+- **Plan-quota enforcement** at organization-create and group-create.
+  The pure decision logic is `cesauth_core::billing::quota_decision`;
+  the worker reads the current count via `SELECT COUNT(*)` and feeds
+  it in. A `quota_exceeded:max_organizations` (or `max_groups`) 409
+  surfaces to the caller. `max_users` enforcement waits for the
+  user-create surface to land in 0.4.3+ (today users are created
+  by the legacy admin route which bypasses quota).
+- **14 new audit `EventKind` variants** for tenancy mutations —
+  `TenantCreated` through `SubscriptionStatusChanged`. Every
+  mutating route emits one with actor (admin token id), subject
+  (created/affected row id), and a structured `reason` field.
+
 ### Does NOT ship in v0.4.x (yet)
 
 The CHANGELOG `Deferred` sections and `ROADMAP.md` track each item.
 Headlines:
 
-- **HTTP routes** for tenant / org / group / role-assignment CRUD.
-  The service layer exists, the D1 adapters exist; what's missing is
-  the bearer-extension that carries
-  `(user_id, tenant_id?, organization_id?)` context through the
-  router and the Accept-aware HTML/JSON rendering. **0.4.2.**
 - **Multi-tenant admin console**. The 0.3.x console assumes a
-  single deployment-wide operator. **0.4.3.**
-- **Login → tenant resolution.** Today `users.email` is globally
-  queried (with a `LIMIT 1` fallback). Multi-tenant deployments
-  need either tenant-scoped email login or a tenant-picker step.
-  UX is open.
-- **Plan-quota enforcement at runtime.** The plan numbers are
-  recorded; the runtime checks at user-create / org-create /
-  group-create arrive with the route layer.
+  single deployment-wide operator. The HTML surface for tenant-
+  scoped admins, the user-as-bearer auth path, login → tenant
+  resolution, and Accept negotiation arrive together as the
+  0.4.3 release.
+- **`check_permission` integration on the API surface.** v0.4.2
+  routes go through `ensure_role_allows` (admin-side capability)
+  rather than `check_permission` because admin tokens have no row
+  in `users` to feed into the spec-§9.1 scope-walk. The two
+  converge in 0.4.3+ when user bearers exist.
 - **Anonymous-trial promotion.** The account type exists; the
   promotion lifecycle is unspecified.
 - **External IdP federation.** `AccountType::ExternalFederatedUser`
@@ -427,6 +448,58 @@ and inserts a matching `user_tenant_memberships` row.
 For single-tenant deployments this is the entire story — keep
 running, no operator action required.
 
+### API smoke-test (v0.4.2+)
+
+The `/api/v1/...` surface is gated through the same admin-bearer
+mechanism as the `/admin/console/...` routes. A fresh deployment
+can use the `ADMIN_API_KEY` bootstrap secret directly; once a
+named Super token exists, prefer that for traceable audit lines.
+
+```bash
+ADMIN=$ADMIN_API_KEY  # or a minted Super token
+
+# 1. Provision a tenant + owner. The owner must already exist in
+#    `users`; this API does not auto-create users.
+curl -sS -X POST -H "Authorization: Bearer $ADMIN" \
+     -H "Content-Type: application/json" \
+     -d '{"slug":"acme","display_name":"Acme Corp","owner_user_id":"USER_ID"}' \
+     https://cesauth.example/api/v1/tenants
+
+# 2. Create an organization in that tenant.
+curl -sS -X POST -H "Authorization: Bearer $ADMIN" \
+     -H "Content-Type: application/json" \
+     -d '{"slug":"engineering","display_name":"Engineering"}' \
+     https://cesauth.example/api/v1/tenants/TENANT_ID/organizations
+
+# 3. Create a tenant-scoped group.
+curl -sS -X POST -H "Authorization: Bearer $ADMIN" \
+     -H "Content-Type: application/json" \
+     -d '{"parent_kind":"tenant","slug":"all-staff","display_name":"All Staff"}' \
+     https://cesauth.example/api/v1/tenants/TENANT_ID/groups
+
+# 4. Grant the owner the system tenant_admin role within their tenant.
+curl -sS -X POST -H "Authorization: Bearer $ADMIN" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "user_id": "USER_ID",
+           "role_id": "role-tenant-admin",
+           "scope":   { "scope": "tenant", "tenant_id": "TENANT_ID" }
+         }' \
+     https://cesauth.example/api/v1/role_assignments
+
+# 5. Move the tenant onto the Pro plan (subscription must already exist).
+curl -sS -X POST -H "Authorization: Bearer $ADMIN" \
+     -H "Content-Type: application/json" \
+     -d '{"plan_id":"plan-pro"}' \
+     https://cesauth.example/api/v1/tenants/TENANT_ID/subscription/plan
+```
+
+Plan-quota enforcement (`max_organizations`, `max_groups`) returns
+`409 Conflict` with body `{"error":"quota_exceeded:max_organizations"}`
+when the next create would exceed the plan's limit. Free-plan
+defaults are 1 organization and 10 groups; see the seeded `plans`
+table in `0003_tenancy.sql`.
+
 ---
 
 ## Further reading
@@ -434,7 +507,7 @@ running, no operator action required.
 - Source: `crates/core/src/tenancy/`, `crates/core/src/authz/`,
   `crates/core/src/billing/`. Each module has a one-paragraph
   doc-comment summarizing its slice of the model.
-- Spec: `users, roles, tenants, organizations, groups data model + authz 拡張開発指示書`
+- Spec: `Tenancy service + authz 拡張開発指示書`
   in the repo root. The implementation maps section-by-section to
   §3-§5 and §16.1, §16.3, §16.6.
 - Tests: `crates/adapter-test/src/tenancy/tests.rs` — the

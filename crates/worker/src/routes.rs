@@ -7,6 +7,7 @@
 //! transactional meaning belongs in a DO.
 
 pub mod admin;
+pub mod api_v1;
 pub mod dev;
 pub mod magic_link;
 pub mod oidc;
