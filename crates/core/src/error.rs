@@ -47,6 +47,29 @@ pub enum CoreError {
     #[error("invalid client")]
     InvalidClient,
 
+    /// **v0.37.0** — Rate-limit threshold exceeded (ADR-011
+    /// §Q1 resolution). Used by `rotate_refresh` when too
+    /// many attempts have been made against one
+    /// `family_id` in the configured window. `retry_after_secs`
+    /// is the number of seconds the caller should wait before
+    /// trying again — sourced from the rate-limit store's
+    /// `resets_in`.
+    ///
+    /// Distinct from `RefreshTokenReuse`: rate-limit bounds
+    /// rapid retry, reuse atomically burns the family. The
+    /// two can co-occur (an attacker rotating in a tight
+    /// loop with a leaked-then-rotated-out jti would hit
+    /// reuse on the first non-current jti they present); rate
+    /// limit fires earlier and is purely about request
+    /// volume.
+    ///
+    /// Maps to HTTP 429 with `Retry-After` header at the wire
+    /// layer.
+    #[error("rate limited (retry after {retry_after_secs} seconds)")]
+    RateLimited {
+        retry_after_secs: i64,
+    },
+
     #[error("invalid scope: {0}")]
     InvalidScope(&'static str),
 

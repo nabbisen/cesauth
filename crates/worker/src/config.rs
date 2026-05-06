@@ -43,6 +43,26 @@ pub struct Config {
     pub rp_name:                String,
     pub rp_origin:              String,
     pub turnstile_sitekey:      String,
+    /// **v0.37.0** — Per-family rate limit on `/token` refresh
+    /// (ADR-011 §Q1 resolution). Bounds rapid retry attempts
+    /// against a single refresh-token family. The check is
+    /// keyed on `family_id` so unrelated families don't
+    /// interfere — `user_id` would have unrelated apps pinging
+    /// each other; per-jti would not catch the leaked-token
+    /// rapid-replay case.
+    ///
+    /// Threshold defaults to 5 attempts per 60-second window.
+    /// Legitimate clients rotate ~once per family (the family
+    /// is single-current-jti by design), with retry margin for
+    /// transient failures. A real attacker rotating in tight
+    /// loop hits the threshold quickly; a real user just
+    /// browsing doesn't.
+    ///
+    /// Set `refresh_rate_limit_threshold = 0` to disable the
+    /// gate (the BCP atomic-revoke-on-reuse continues to
+    /// apply regardless).
+    pub refresh_rate_limit_threshold:   u32,
+    pub refresh_rate_limit_window_secs: i64,
     /// Operational logging. See `log::LogConfig`.
     pub log:                    LogConfig,
 }
@@ -87,6 +107,11 @@ impl Config {
             rp_name:                var("WEBAUTHN_RP_NAME")?,
             rp_origin:              var("WEBAUTHN_RP_ORIGIN")?,
             turnstile_sitekey:      var("TURNSTILE_SITEKEY").unwrap_or_default(),
+            // v0.37.0: 5 attempts per 60-sec window default
+            // (ADR-011 §Q1). Operators may tighten or set
+            // threshold to 0 to disable.
+            refresh_rate_limit_threshold:   var_parsed_default("REFRESH_RATE_LIMIT_THRESHOLD",   5)? as u32,
+            refresh_rate_limit_window_secs: var_parsed_default("REFRESH_RATE_LIMIT_WINDOW_SECS", 60)?,
             log:                    LogConfig::from_env(env),
         })
     }

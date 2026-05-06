@@ -119,9 +119,13 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
                 client_id:     g.client_id,
                 scope:         g.scope,
                 now_unix:      now,
+                // v0.37.0: per-family rate limit (ADR-011 §Q1).
+                rate_limit_threshold:   cfg.refresh_rate_limit_threshold,
+                rate_limit_window_secs: cfg.refresh_rate_limit_window_secs,
             };
+            let rates = cesauth_cf::ports::store::CloudflareRateLimitStore::new(&ctx.env);
             match token_service::rotate_refresh(
-                &clients, &families, &signer,
+                &clients, &families, &rates, &signer,
                 cfg.access_token_ttl_secs, cfg.refresh_token_ttl_secs, &input,
             ).await {
                 Ok(tr) => {
@@ -163,6 +167,28 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
                             }).to_string();
                             audit::write_owned(
                                 &ctx.env, EventKind::RefreshTokenReuseDetected,
+                                None, Some(g.client_id.to_owned()),
+                                Some(payload),
+                            ).await.ok();
+                        }
+                        cesauth_core::CoreError::RateLimited { retry_after_secs } => {
+                            // v0.37.0: distinct audit event for
+                            // rate-limit. Operators monitoring for
+                            // brute-force / scanning attacks
+                            // alert on this kind specifically; it
+                            // fires before the family DO is
+                            // consulted so it doesn't imply
+                            // reuse.
+                            let family_id = decode_family_id_lossy(g.refresh_token);
+                            let payload = serde_json::json!({
+                                "family_id":        family_id,
+                                "client_id":        g.client_id,
+                                "threshold":        cfg.refresh_rate_limit_threshold,
+                                "window_secs":      cfg.refresh_rate_limit_window_secs,
+                                "retry_after_secs": retry_after_secs,
+                            }).to_string();
+                            audit::write_owned(
+                                &ctx.env, EventKind::RefreshRateLimited,
                                 None, Some(g.client_id.to_owned()),
                                 Some(payload),
                             ).await.ok();

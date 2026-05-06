@@ -88,6 +88,14 @@ pub enum EventKind {
     /// revocation; only audit + Workers logs see the
     /// distinction (spec §10.3 internal/external separation).
     RefreshTokenReuseDetected,
+    /// **v0.37.0** — Per-family rate limit threshold exceeded
+    /// on `/token` refresh (ADR-011 §Q1 resolution). Payload
+    /// includes `family_id`, `client_id`, `count` (current
+    /// hits in window), `threshold`, `retry_after_secs`. This
+    /// fires *before* the family DO is consulted, so a hit on
+    /// this kind does NOT imply reuse — they're separable
+    /// signals.
+    RefreshRateLimited,
     RevocationRequested,
     // WebAuthn
     WebauthnRegistered,
@@ -173,6 +181,7 @@ impl EventKind {
             Self::TokenRefreshed               => "token_refreshed",
             Self::TokenRefreshRejected         => "token_refresh_rejected",
             Self::RefreshTokenReuseDetected    => "refresh_token_reuse_detected",
+            Self::RefreshRateLimited           => "refresh_rate_limited",
             Self::RevocationRequested          => "revocation_requested",
             Self::WebauthnRegistered           => "webauthn_registered",
             Self::WebauthnVerified             => "webauthn_verified",

@@ -32,6 +32,15 @@ pub(crate) fn oauth_error_code_status(err: &CoreError) -> (&'static str, u16) {
         // forensic detail; the wire sees the bare error code)
         // is exactly what spec §10.3 asks for.
         RefreshTokenReuse { .. } => ("invalid_grant",         400),
+        // v0.37.0: rate-limit gets HTTP 429. RFC 6749 doesn't
+        // define a `rate_limited` error code, so we use
+        // `invalid_request` as the closest spec-defined code
+        // (RFC 6749 §5.2 lists it as catch-all for "invalid"
+        // request shape). The 429 status conveys the actual
+        // semantics; a Retry-After header carries the wait
+        // time. Modern OAuth clients understand 429 + Retry-
+        // After regardless of the body code.
+        RateLimited { .. }       => ("invalid_request",       429),
         InvalidClient           => ("invalid_client",         401),
         InvalidScope(_)         => ("invalid_scope",          400),
         UnsupportedGrantType(_) => ("unsupported_grant_type", 400),
@@ -56,6 +65,16 @@ pub fn oauth_error_response(err: &CoreError) -> Result<Response> {
     let mut resp = Response::from_json(&body)?.with_status(status);
     let _ = resp.headers_mut().set("cache-control", "no-store");
     let _ = resp.headers_mut().set("pragma",        "no-cache");
+
+    // v0.37.0: on a rate-limit response, surface the
+    // `Retry-After` hint. RFC 7231 §7.1.3 says it can be a
+    // positive integer (seconds). Clamp at 1 to avoid the
+    // case where `resets_in` is 0 (the window has already
+    // rolled but the gate is still active for this request).
+    if let CoreError::RateLimited { retry_after_secs } = err {
+        let secs = std::cmp::max(1, *retry_after_secs);
+        let _ = resp.headers_mut().set("retry-after", &secs.to_string());
+    }
     Ok(resp)
 }
 
@@ -135,5 +154,67 @@ mod tests {
             was_retired: false,
         });
         assert_eq!(code, "invalid_grant");
+    }
+
+    // =================================================================
+    // v0.37.0 — Per-family rate limit on /token refresh (ADR-011 §Q1)
+    // =================================================================
+
+    /// **v0.37.0** — Rate-limit responses use HTTP 429.
+    /// RFC 7231 §6.6 reserves 429 for "Too Many Requests";
+    /// modern OAuth clients understand it. The body code is
+    /// `invalid_request` because RFC 6749 doesn't define a
+    /// rate-limit code; the 429 status carries the real
+    /// semantics and the Retry-After header carries the
+    /// wait time.
+    #[test]
+    fn rate_limited_maps_to_http_429() {
+        let (code, status) = oauth_error_code_status(&CoreError::RateLimited {
+            retry_after_secs: 30,
+        });
+        assert_eq!(status, 429,
+            "rate-limit response must use RFC 7231 §6.6 status code");
+        assert_eq!(code, "invalid_request",
+            "no spec-defined OAuth body code for rate-limit; \
+             invalid_request is the catch-all per RFC 6749 §5.2");
+    }
+
+    /// **v0.37.0** — Status is 429 regardless of the
+    /// `retry_after_secs` value. A client that submits
+    /// rapidly can encounter different retry-after values
+    /// across requests; the wire status is stable.
+    #[test]
+    fn rate_limited_status_is_independent_of_retry_after() {
+        let (_, status_short) = oauth_error_code_status(&CoreError::RateLimited {
+            retry_after_secs: 1,
+        });
+        let (_, status_long) = oauth_error_code_status(&CoreError::RateLimited {
+            retry_after_secs: 3600,
+        });
+        assert_eq!(status_short, status_long);
+        assert_eq!(status_short, 429);
+    }
+
+    /// **v0.37.0** — Rate-limit must NOT collide with the
+    /// other 4xx conditions on the `/token` endpoint. A
+    /// caller seeing 429 should know it's rate-limit, not
+    /// something else; a caller seeing 400 / 401 should
+    /// know it's not rate-limit. This pin catches an
+    /// accidental table-mapping change.
+    #[test]
+    fn rate_limited_status_distinct_from_other_4xx_oauth_errors() {
+        let rate_limited  = oauth_error_code_status(&CoreError::RateLimited {
+            retry_after_secs: 30,
+        });
+        let invalid_grant = oauth_error_code_status(&CoreError::InvalidGrant("x"));
+        let invalid_client = oauth_error_code_status(&CoreError::InvalidClient);
+        let reuse = oauth_error_code_status(&CoreError::RefreshTokenReuse {
+            reused_jti:  "x".into(),
+            was_retired: true,
+        });
+
+        assert_ne!(rate_limited.1, invalid_grant.1);
+        assert_ne!(rate_limited.1, invalid_client.1);
+        assert_ne!(rate_limited.1, reuse.1);
     }
 }

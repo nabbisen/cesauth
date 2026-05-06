@@ -242,14 +242,24 @@ lower urgency.
 
 ## Open questions
 
-- **Q1**: Rate-limit `/token` refresh attempts at the
-  family_id level. The current implementation has no
-  per-family rate limit; an attacker with a leaked refresh
-  token can drive rapid attempts in a tight loop. The
-  family revoke is still atomic on first reuse, so the
-  damage is bounded — but until-the-first-reuse the
-  attacker can also blast through the legitimate party's
-  rotation window. Schedule for a future hardening.
+- **Q1**: ~~Rate-limit `/token` refresh attempts at the
+  family_id level.~~ **Resolved in v0.37.0**. Implemented
+  via `Config::refresh_rate_limit_threshold` (default 5)
+  + `refresh_rate_limit_window_secs` (default 60) +
+  `CoreError::RateLimited { retry_after_secs }` + new
+  audit kind `EventKind::RefreshRateLimited`. The check
+  fires inside `rotate_refresh` against the existing
+  `RateLimitStore` port (bucket key shape
+  `refresh:<family_id>`), before consulting the family
+  DO. Wire response is HTTP 429 with `Retry-After`
+  header per RFC 7231 §6.6 and §7.1.3; body code is
+  `invalid_request` (RFC 6749 §5.2 catch-all, since
+  RFC 6749 doesn't define a rate-limit code). The
+  family revoke-on-reuse invariant continues to apply
+  regardless — rate limit is DoS bounding, not security.
+  Setting `REFRESH_RATE_LIMIT_THRESHOLD=0` disables the
+  gate (operator opt-out). See ROADMAP "Shipped"
+  v0.37.0 entry for the full detail.
 - **Q2**: Eventually surface a tenant admin view at
   something like `/admin/console/sessions/refresh-reuse`
   that aggregates `refresh_token_reuse_detected` events.

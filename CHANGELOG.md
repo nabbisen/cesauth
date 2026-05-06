@@ -14,6 +14,184 @@ changes will always be called out here.
 
 ---
 
+## [0.37.0] - 2026-05-03
+
+Per-family rate limit on `/token` refresh — security-track
+follow-on that resolves ADR-011 §Q1 (the open question
+deferred from v0.34.0). Bounds rapid retry attempts against
+a single refresh-token family without changing the
+atomic-revoke-on-reuse invariant from v0.4: rate limit is
+DoS bounding (request-volume gate), reuse detection is
+atomic security (token-leak response). The two are
+independent and each fires when its own gate is tripped.
+
+### Why this matters
+
+The v0.34.0 audit identified rate limiting as the gap
+between "we detect reuse atomically on first replay" and
+"an attacker with a leaked-but-current refresh token can
+still hammer the rotation endpoint until they win a race
+or exhaust the family's `retired_jtis` ring (size 16)".
+v0.34.0 deferred the fix because the structural invariant
+was already in place; v0.37.0 closes the gap.
+
+### What ships
+
+**`Config::refresh_rate_limit_threshold`** (default 5,
+env `REFRESH_RATE_LIMIT_THRESHOLD`) and
+**`refresh_rate_limit_window_secs`** (default 60, env
+`REFRESH_RATE_LIMIT_WINDOW_SECS`). Threshold = 0 disables
+the gate.
+
+**`CoreError::RateLimited { retry_after_secs }`** new
+variant. Distinct from `RefreshTokenReuse` because rate
+limit fires *before* the family DO is consulted —
+they're separable signals. The `retry_after_secs` is
+sourced from `RateLimitDecision::resets_in` and
+propagates to the wire's `Retry-After` header.
+
+**`rotate_refresh` signature change**: now takes a
+`RateLimitStore` generic + threshold + window in the
+input. The check happens after `decode_refresh` (we need
+`family_id` for the bucket key) but before
+`families.rotate(...)` so a tripped limit doesn't even
+touch the family DO. Bucket key shape: `refresh:<family_id>`.
+
+**Bucket key choice** (key namespace = family_id):
+
+| Granularity | Why rejected |
+|---|---|
+| Per-jti | Each rapid attempt may carry a different stale jti — wouldn't catch the leaked-token replay case. |
+| Per-user_id | A user with two devices (two families) would have one device's traffic affect the other. |
+| **Per-family_id** | Catches "rapid attempts against one logical session" exactly. ✅ |
+
+**Wire response**: HTTP **429 Too Many Requests** with
+`Retry-After: <secs>` header (RFC 7231 §6.6 + §7.1.3).
+Body code is `invalid_request` (RFC 6749 §5.2 catch-all;
+RFC 6749 doesn't define a rate-limit code, but the 429
+status is unambiguous to modern clients). `Retry-After`
+is clamped to a minimum of 1 second so the header is
+always actionable.
+
+**New audit event `EventKind::RefreshRateLimited`**.
+Snake-case `refresh_rate_limited`. Payload:
+
+```json
+{
+  "family_id":         "fam_...",
+  "client_id":         "...",
+  "threshold":         5,
+  "window_secs":       60,
+  "retry_after_secs":  42
+}
+```
+
+`family_id` decoded via the same audit-only
+`decode_family_id_lossy` introduced in v0.34.0; a
+malformed token doesn't fail-close the audit write.
+
+**Decision is independent of reuse detection.** A
+client that hits the rate limit gets `RateLimited`;
+the same client that subsequently presents a stale
+jti once the rate limit clears would see
+`RefreshTokenReuse`. Operators monitoring for
+brute-force / scanning attacks should alert on
+`refresh_rate_limited`; operators monitoring for
+token compromise alert on
+`refresh_token_reuse_detected`.
+
+### Tests
+
+833 → **839** (+6).
+
+- adapter-test: 114 → 117 (+3). Three rate-limit
+  integration tests pinning the bucket-key pattern that
+  `rotate_refresh` uses:
+  `refresh_rate_limit_first_5_within_window_allowed_6th_denied`,
+  `refresh_rate_limit_isolated_per_family_id` (key
+  namespacing — fam_A's saturated bucket must not
+  affect fam_B), `refresh_rate_limit_resets_after_window_rolls`.
+- worker: 162 → 165 (+3). Three error-mapper tests:
+  `rate_limited_maps_to_http_429`,
+  `rate_limited_status_is_independent_of_retry_after`,
+  `rate_limited_status_distinct_from_other_4xx_oauth_errors`.
+- core, ui, do, migrate, adapter-cloudflare: unchanged
+  (320, 208, 16, 13, 0).
+
+### Schema / wire / DO
+
+- Schema unchanged (still SCHEMA_VERSION 9). No
+  migration.
+- Wire format adds **HTTP 429** as a possible response
+  on `/token` refresh. Modern OAuth clients understand
+  this; pre-modern clients see a generic 4xx and
+  retry-with-backoff (which is the intended effect).
+- DO state unchanged.
+- No new dependencies.
+
+### Operator-visible changes
+
+- **Default 5 attempts per 60 sec** for `/token` refresh
+  per family. Operators with high-frequency rotation
+  patterns (long-running IoT sync, batch jobs) may need
+  to tune up; operators with high-security tenancies
+  may want to tune down.
+- Set `REFRESH_RATE_LIMIT_THRESHOLD=0` to disable.
+- **Audit dashboards**: add a panel for
+  `refresh_rate_limited` to monitor for brute-force /
+  scanning. The kind fires before the family DO is
+  consulted, so a high rate of these events without
+  matching `refresh_token_reuse_detected` events
+  indicates someone is probing without (yet) having a
+  valid jti.
+
+### ADR changes
+
+- **ADR-011 §Q1** marked **Resolved**. The decision +
+  rationale + wire mapping are documented inline in the
+  Q1 entry.
+- No new ADR — this is a follow-on to ADR-011, not a
+  separate decision tree. The design choices (bucket
+  key namespace, threshold default, RFC 7231 status
+  selection) are all small enough to record in the
+  resolved-Q1 paragraph.
+
+### Doc / metadata changes
+
+- `Cargo.toml` version 0.36.0 → 0.37.0.
+- UI footers + tests bumped to v0.37.0.
+- ROADMAP: ADR-011 §Q1 Shipped row added; future
+  security-track item list pruned.
+- This CHANGELOG entry.
+
+### Upgrade path 0.36.0 → 0.37.0
+
+1. `git pull` or extract this tarball over your working
+   tree.
+2. `cargo build --workspace --target wasm32-unknown-unknown
+   --release`. No new production dependencies.
+3. `wrangler deploy`. **No schema migration.** No
+   `wrangler.toml` change. No new bindings.
+4. (Optional) Set `REFRESH_RATE_LIMIT_THRESHOLD` and
+   `REFRESH_RATE_LIMIT_WINDOW_SECS` if the defaults (5
+   per 60 sec) don't suit your traffic pattern.
+5. Update audit dashboards to monitor
+   `refresh_rate_limited`.
+
+### Forward roadmap
+
+- **Feature track candidate next**: RFC 7662 Token
+  Introspection.
+- **i18n-2 continued**: login + TOTP page chrome
+  migration.
+- **Future security-track items still open**: D1-DO
+  reconciliation tool (ADR-012 §Q1), user notification
+  on session timeout (ADR-012 §Q2), device fingerprint
+  columns (ADR-012 §Q3), tenant-default locale
+  (ADR-013 §Q2).
+
+---
+
 ## [0.36.0] - 2026-05-03
 
 Internationalization track infrastructure (ADR-013 Accepted).

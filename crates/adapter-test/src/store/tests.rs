@@ -410,3 +410,86 @@ async fn session_list_for_user_empty_when_no_sessions() {
     let out = store.list_for_user("nobody", false, 50).await.unwrap();
     assert!(out.is_empty());
 }
+
+// =====================================================================
+// v0.37.0 — Per-family rate limit behavior (ADR-011 §Q1)
+//
+// These tests exercise the in-memory RateLimitStore through
+// the bucket-key pattern that `rotate_refresh` uses
+// (`refresh:<family_id>`). They pin the math the
+// production path relies on without requiring a full
+// rotate_refresh fixture (which would need PEM keys, a
+// ClientRepository mock, and a JwtSigner).
+// =====================================================================
+
+#[tokio::test]
+async fn refresh_rate_limit_first_5_within_window_allowed_6th_denied() {
+    let store = InMemoryRateLimitStore::default();
+    let bucket = "refresh:fam_abc123";
+    let window = 60;
+    let threshold = 5;
+
+    // First 5 attempts within the window are allowed.
+    for i in 0..5 {
+        let d = store.hit(bucket, i, window, threshold, threshold).await.unwrap();
+        assert!(d.allowed, "attempt {i} must be allowed within threshold");
+    }
+
+    // 6th attempt within the same window is denied.
+    let d = store.hit(bucket, 5, window, threshold, threshold).await.unwrap();
+    assert!(!d.allowed,
+        "6th attempt must trip the rate limit");
+    assert!(d.resets_in > 0,
+        "denial must carry a positive resets_in for Retry-After");
+}
+
+#[tokio::test]
+async fn refresh_rate_limit_isolated_per_family_id() {
+    // The bucket key must namespace by family_id so unrelated
+    // families don't interfere. A user with two active
+    // refresh-token families (e.g., two devices) must not see
+    // device A's rate limiting affect device B.
+    let store = InMemoryRateLimitStore::default();
+    let window = 60;
+    let threshold = 5;
+
+    // Saturate family A.
+    for i in 0..6 {
+        let _ = store.hit("refresh:fam_A", i, window, threshold, threshold).await.unwrap();
+    }
+    // The 7th hit on A is denied.
+    let d_a = store.hit("refresh:fam_A", 6, window, threshold, threshold).await.unwrap();
+    assert!(!d_a.allowed);
+
+    // First hit on family B is allowed (independent bucket).
+    let d_b = store.hit("refresh:fam_B", 6, window, threshold, threshold).await.unwrap();
+    assert!(d_b.allowed,
+        "fam_A's saturated bucket must NOT affect fam_B");
+}
+
+#[tokio::test]
+async fn refresh_rate_limit_resets_after_window_rolls() {
+    // After the window expires, the counter resets. A user
+    // who legitimately needs to rotate at a steady rate
+    // (e.g., long-running background sync that retries every
+    // minute) must not get stuck in a permanent denial.
+    let store = InMemoryRateLimitStore::default();
+    let bucket = "refresh:fam_C";
+    let window = 60;
+    let threshold = 5;
+
+    // Saturate the bucket within the window.
+    for i in 0..6 {
+        let _ = store.hit(bucket, i, window, threshold, threshold).await.unwrap();
+    }
+    // 7th in-window: denied.
+    let denied = store.hit(bucket, 7, window, threshold, threshold).await.unwrap();
+    assert!(!denied.allowed);
+
+    // Move past the window. The counter should reset.
+    let after_window = store.hit(bucket, 100, window, threshold, threshold).await.unwrap();
+    assert!(after_window.allowed,
+        "after the rate-limit window rolls, attempts must be allowed again");
+    assert_eq!(after_window.count, 1,
+        "counter must reset to 1 (this attempt) after window roll");
+}

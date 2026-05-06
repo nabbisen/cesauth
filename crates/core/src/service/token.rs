@@ -19,7 +19,8 @@ use crate::oidc::pkce::{self, ChallengeMethod};
 use crate::oidc::token::TokenResponse;
 use crate::ports::repo::{ClientRepository, Grant, GrantRepository};
 use crate::ports::store::{
-    AuthChallengeStore, Challenge, FamilyInit, RefreshTokenFamilyStore, RotateOutcome,
+    AuthChallengeStore, Challenge, FamilyInit, RateLimitStore, RefreshTokenFamilyStore,
+    RotateOutcome,
 };
 use crate::types::Scopes;
 
@@ -167,14 +168,32 @@ pub struct RotateRefreshInput<'a> {
     pub client_id:     &'a str,
     pub scope:         Option<&'a str>,
     pub now_unix:      i64,
+    /// **v0.37.0** — Per-family rate-limit configuration
+    /// (ADR-011 §Q1). The threshold counts attempts against
+    /// a single `family_id`; the window is how long the
+    /// counter keeps memory. Setting `threshold = 0`
+    /// disables the gate.
+    pub rate_limit_threshold:   u32,
+    pub rate_limit_window_secs: i64,
 }
 
 /// Rotate a refresh token. Reuse of a rotated-out token revokes the
 /// entire family atomically (BCP RFC 9700 §4.14.2) - this is enforced
 /// by the store's `rotate` semantics, not re-enforced here.
-pub async fn rotate_refresh<CR, FS>(
+///
+/// **v0.37.0** — Per-family rate limit (ADR-011 §Q1). Before
+/// consulting the family DO, we record a hit against
+/// `rate_limit:refresh:<family_id>` in the rate-limit store. If
+/// the threshold is exceeded, return `CoreError::RateLimited`
+/// without touching the family — protects against rapid-retry
+/// scanning attacks that could exhaust the family's
+/// `retired_jtis` ring before the legitimate party notices.
+/// The atomic-revoke-on-reuse invariant continues to apply
+/// regardless; rate limit is DoS bounding, not security.
+pub async fn rotate_refresh<CR, FS, RL>(
     clients:  &CR,
     families: &FS,
+    rates:    &RL,
     signer:   &JwtSigner,
     access_ttl_secs:  i64,
     refresh_ttl_secs: i64,
@@ -183,8 +202,36 @@ pub async fn rotate_refresh<CR, FS>(
 where
     CR: ClientRepository,
     FS: RefreshTokenFamilyStore,
+    RL: RateLimitStore,
 {
     let (family_id, presented_jti) = decode_refresh(input.refresh_token)?;
+
+    // v0.37.0: rate-limit check BEFORE the family rotate.
+    // Bucketing on family_id is the right granularity:
+    // - per-jti would not catch leaked-token replay (each
+    //   attempt may carry a different stale jti);
+    // - per-user_id would unrelated apps interfere;
+    // - per-family_id catches "rapid attempts against one
+    //   logical session" exactly.
+    //
+    // threshold = 0 disables the gate (operator opt-out).
+    if input.rate_limit_threshold > 0 {
+        let bucket = format!("refresh:{family_id}");
+        let dec = rates.hit(
+            &bucket,
+            input.now_unix,
+            input.rate_limit_window_secs,
+            input.rate_limit_threshold,
+            input.rate_limit_threshold,  // escalate at the same threshold
+        )
+        .await
+        .map_err(|_| CoreError::Internal)?;
+        if !dec.allowed {
+            return Err(CoreError::RateLimited {
+                retry_after_secs: dec.resets_in,
+            });
+        }
+    }
 
     let client = clients
         .find(input.client_id)
