@@ -81,8 +81,9 @@ fn error_response(failure: TenantAdminFailure) -> Result<Response> {
     Response::error(failure.message(), failure.status_code())
 }
 
-/// Gate one read action against the resolved tenant context. Wraps
-/// `cesauth_core::authz::check_permission` for the worker layer.
+/// Gate one action (read or write) against the resolved tenant
+/// context. Wraps `cesauth_core::authz::check_permission` for the
+/// worker layer.
 ///
 /// Per ADR-002 + the v0.11.0 foundation, the tenant-scoped surface
 /// uses `check_permission` (spec §9.2 scope-walk) for action-level
@@ -92,23 +93,30 @@ fn error_response(failure: TenantAdminFailure) -> Result<Response> {
 /// needs.
 ///
 /// `permission` is one of the slugs in
-/// `cesauth_core::authz::types::PermissionCatalog::*` (e.g.,
-/// `TENANT_READ`, `ORGANIZATION_READ`). The scope is always
-/// `Tenant { tenant_id: ctx.tenant.id }` for v0.13.0 — every read
-/// page is scoped to one tenant. Mutation forms in 0.14.0 may
-/// pass narrower scopes (Organization, Group).
+/// `cesauth_core::authz::types::PermissionCatalog::*`. Examples:
+/// - read: `TENANT_READ`, `ORGANIZATION_READ`, `USER_READ`,
+///   `SUBSCRIPTION_READ`
+/// - write: `ORGANIZATION_CREATE`, `ROLE_ASSIGN`,
+///   `MEMBERSHIP_ADD`, etc.
+///
+/// `scope` is the resource scope to evaluate against. v0.13.0 read
+/// pages always pass `Tenant { tenant_id: ctx.tenant.id }`. v0.14.0
+/// mutation forms pass narrower scopes when the action is on a
+/// child resource (Organization, Group) — the scope-walk picks up
+/// any role assignment that *covers* the requested scope, so a
+/// tenant-scoped role still grants child-scope actions.
 ///
 /// Returns `Ok(Ok(()))` if allowed, `Ok(Err(response))` if denied
 /// (with a 403). The double-Result follows the same convention as
 /// `resolve_or_respond`.
-pub async fn check_read<D>(
+pub async fn check_action<D>(
     ctx_ta:     &TenantAdminContext,
     permission: &str,
+    scope:      cesauth_core::authz::types::ScopeRef<'_>,
     ctx:        &RouteContext<D>,
 ) -> Result<std::result::Result<(), Response>> {
     use cesauth_cf::authz::{CloudflareRoleAssignmentRepository, CloudflareRoleRepository};
     use cesauth_core::authz::service::check_permission;
-    use cesauth_core::authz::types::ScopeRef;
 
     let assignments = CloudflareRoleAssignmentRepository::new(&ctx.env);
     let roles       = CloudflareRoleRepository::new(&ctx.env);
@@ -126,7 +134,7 @@ pub async fn check_read<D>(
         &roles,
         user_id,
         permission,
-        ScopeRef::Tenant { tenant_id: &ctx_ta.tenant.id },
+        scope,
         now,
     ).await;
 
@@ -148,6 +156,24 @@ pub async fn check_read<D>(
         }
         Err(_) => Ok(Err(Response::error("authorization storage error", 503)?)),
     }
+}
+
+/// Convenience wrapper for the common case of "permission at the
+/// current tenant's scope". Read routes use this; mutation forms
+/// that operate on a child resource (Organization, Group) generally
+/// call `check_action` directly with a narrower scope.
+pub async fn check_read<D>(
+    ctx_ta:     &TenantAdminContext,
+    permission: &str,
+    ctx:        &RouteContext<D>,
+) -> Result<std::result::Result<(), Response>> {
+    use cesauth_core::authz::types::ScopeRef;
+    check_action(
+        ctx_ta,
+        permission,
+        ScopeRef::Tenant { tenant_id: &ctx_ta.tenant.id },
+        ctx,
+    ).await
 }
 
 async fn emit_audit(

@@ -100,7 +100,8 @@ fn render_howto() -> String {
   <p class="muted">This is the tenant-scoped admin surface — every page is
   filtered to your tenant. To do system-admin operations across all tenants,
   visit <code>/admin/tenancy/</code> instead (system-admin tokens only).</p>
-  <p class="muted">v0.13.0 ships read pages only. Mutation forms (membership
-  changes, role assignments) land in v0.14.0.</p>
+  <p class="muted">v0.14.0 adds high-risk mutation forms (organization
+  status changes, group create/delete, role assignment grant/revoke).
+  Additive forms (membership add/remove) land in v0.15.0.</p>
 </section>"##.into()
 }

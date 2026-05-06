@@ -51,3 +51,4 @@ pub mod subscription_set_plan;
 pub mod subscription_set_status;
 pub mod tenant_create;
 pub mod tenant_set_status;
+pub mod token_mint;

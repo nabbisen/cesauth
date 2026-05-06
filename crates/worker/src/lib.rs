@@ -164,6 +164,31 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async("/admin/t/:slug/users",                                               |req, ctx| async move { routes::admin::tenant_admin::users::page(req, ctx).await })
         .get_async("/admin/t/:slug/users/:uid/role_assignments",                         |req, ctx| async move { routes::admin::tenant_admin::role_assignments::page(req, ctx).await })
         .get_async("/admin/t/:slug/subscription",                                        |req, ctx| async move { routes::admin::tenant_admin::subscription::page(req, ctx).await })
+        // --- tenant-scoped mutation forms (v0.14.0) -----------------
+        // Each form has GET (form) + POST (preview/apply via the
+        // `confirm` form field). Per-route auth: gate's 3-step
+        // opening + check_action with the relevant write permission.
+        // Audit emissions use `via=tenant-admin,tenant=<id>` to
+        // distinguish them from system-admin originated entries.
+        .get_async ("/admin/t/:slug/organizations/new",                                      |req, ctx| async move { routes::admin::tenant_admin::forms::organization_create::form(req, ctx).await })
+        .post_async("/admin/t/:slug/organizations/new",                                      |req, ctx| async move { routes::admin::tenant_admin::forms::organization_create::submit(req, ctx).await })
+        .get_async ("/admin/t/:slug/organizations/:oid/status",                              |req, ctx| async move { routes::admin::tenant_admin::forms::organization_set_status::form(req, ctx).await })
+        .post_async("/admin/t/:slug/organizations/:oid/status",                              |req, ctx| async move { routes::admin::tenant_admin::forms::organization_set_status::submit(req, ctx).await })
+        .get_async ("/admin/t/:slug/organizations/:oid/groups/new",                          |req, ctx| async move { routes::admin::tenant_admin::forms::group_create::form(req, ctx).await })
+        .post_async("/admin/t/:slug/organizations/:oid/groups/new",                          |req, ctx| async move { routes::admin::tenant_admin::forms::group_create::submit(req, ctx).await })
+        .get_async ("/admin/t/:slug/groups/:gid/delete",                                     |req, ctx| async move { routes::admin::tenant_admin::forms::group_delete::form(req, ctx).await })
+        .post_async("/admin/t/:slug/groups/:gid/delete",                                     |req, ctx| async move { routes::admin::tenant_admin::forms::group_delete::submit(req, ctx).await })
+        .get_async ("/admin/t/:slug/users/:uid/role_assignments/new",                        |req, ctx| async move { routes::admin::tenant_admin::forms::role_assignment_grant::form(req, ctx).await })
+        .post_async("/admin/t/:slug/users/:uid/role_assignments/new",                        |req, ctx| async move { routes::admin::tenant_admin::forms::role_assignment_grant::submit(req, ctx).await })
+        .get_async ("/admin/t/:slug/role_assignments/:id/delete",                            |req, ctx| async move { routes::admin::tenant_admin::forms::role_assignment_revoke::form(req, ctx).await })
+        .post_async("/admin/t/:slug/role_assignments/:id/delete",                            |req, ctx| async move { routes::admin::tenant_admin::forms::role_assignment_revoke::submit(req, ctx).await })
+        // --- system-admin token-mint UI (v0.14.0) -------------------
+        // Lives on the system-admin surface so tenant admins cannot
+        // self-mint per ADR-002 / ADR-003. Issues user-bound tokens
+        // via AdminTokenRepository::create_user_bound. Plaintext is
+        // shown ONCE on the apply page; refresh loses it.
+        .get_async ("/admin/tenancy/users/:uid/tokens/new",                                  |req, ctx| async move { routes::admin::tenancy_console::forms::token_mint::form(req, ctx).await })
+        .post_async("/admin/tenancy/users/:uid/tokens/new",                                  |req, ctx| async move { routes::admin::tenancy_console::forms::token_mint::submit(req, ctx).await })
         // --- tenancy-service API (v0.7.0) ----------------------------
         // JSON-only surface for operator-driven tenant / org / group /
         // role-assignment / subscription provisioning. Gated through

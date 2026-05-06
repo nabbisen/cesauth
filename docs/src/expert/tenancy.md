@@ -75,8 +75,19 @@ this chapter implements §3-§5 and §16.1, §16.3, §16.6.
 > user-bound, slug resolves to a tenant, the principal's
 > user belongs to that tenant) and `check_permission`
 > integration replaces `ensure_role_allows` for action-level
-> authorization on these routes. Mutation forms and the
-> token-mint UI land in **0.14.0**.
+> authorization on these routes.
+>
+> v0.14.0 adds high-risk mutation forms at
+> `/admin/t/<slug>/...` (organization create + status, group
+> create + delete, role-assignment grant + revoke) and a
+> system-admin token-mint UI at
+> `/admin/tenancy/users/:uid/tokens/new` exposing
+> `AdminTokenRepository::create_user_bound`. Per ADR-003,
+> the grant form rejects `Scope::System` and pins tenant
+> scope to the current tenant; defense-in-depth checks
+> verify child resources (Organization, Group, User) belong
+> to the current tenant before mutating. Additive forms
+> (membership × 3 flavors) land in **0.15.0**.
 
 ---
 
@@ -703,22 +714,81 @@ the v0.8.0 → v0.9.0 split for the system-admin surface.
   reason text identifying the principal id and the attempted
   slug. `check_permission` denials are also audited.
 
+### Added in 0.14.0
+
+High-risk mutation forms for the tenant-scoped surface, plus
+a system-admin token-mint UI. Mirrors the v0.9.0 → v0.10.0 split
+for the system-admin surface: high-risk forms first, additive
+ones in 0.15.0.
+
+- **Six tenant-scoped form pairs** at `/admin/t/<slug>/...`:
+  - `organizations/new` — additive, one-click. Permission:
+    `ORGANIZATION_CREATE`. Plan-quota enforcement on
+    `max_organizations`.
+  - `organizations/:oid/status` — preview/confirm.
+    Permission: `ORGANIZATION_UPDATE`. Active / Suspended /
+    Deleted picker with required reason.
+  - `organizations/:oid/groups/new` — additive, one-click.
+    Permission: `GROUP_CREATE`.
+  - `groups/:gid/delete` — preview/confirm. Permission:
+    `GROUP_DELETE`. Preview counts affected role assignments
+    and memberships.
+  - `users/:uid/role_assignments/new` — preview/confirm.
+    Permission: `ROLE_ASSIGN`. Scope picker omits System
+    (per ADR-003) and pins tenant scope's scope_id to the
+    current tenant. `verify_scope_in_tenant` walks storage
+    to confirm Organization / Group / User scopes belong
+    to this tenant before granting.
+  - `role_assignments/:id/delete` — preview/confirm.
+    Permission: `ROLE_UNASSIGN`.
+
+- **System-admin token-mint UI** at
+  `/admin/tenancy/users/:uid/tokens/new` (GET + POST). Three
+  pages: form (role + nickname), preview/confirm, applied
+  (plaintext shown ONCE with prominent warning + post-mint
+  usage instructions linking to `/admin/t/<slug>/...`). Re-uses
+  `mint_plaintext()` and `hash_hex()` from existing
+  `console/tokens.rs`; calls
+  `AdminTokenRepository::create_user_bound`. Gated on
+  `ManageAdminTokens`. The applied page resolves the user's
+  tenant **slug** (not id) for the URL hint — leaking the
+  internal tenant id into operator-facing URLs would be a
+  bug, pinned by a dedicated test.
+
+- **Gate API change**: the v0.13.0 `gate::check_read` is now a
+  thin wrapper around `gate::check_action(ctx_ta, permission,
+  scope, ctx)` accepting an explicit `ScopeRef`. Mutation
+  forms operate on child resources (Organization, Group) and
+  need narrower scopes; reads use the wrapper for the common
+  "permission at tenant scope" case.
+
+- **Audit reason marker**: tenant-scoped mutations carry
+  `via=tenant-admin,tenant=<id>` so log analyses can split
+  by surface origin (system-admin entries continue to use
+  `via=tenancy-console`).
+
+- **Defense-in-depth invariants** pinned by tests: scope
+  picker omits System, tenant id pinned in help text,
+  preview round-trips every form field, group_delete shows
+  affected counts, plaintext token HTML-escaped, applied
+  page uses tenant slug not id. Total **257 tests** passing
+  (+12 over v0.13.0).
+
 ### Does NOT ship in v0.4.x (yet)
 
 The CHANGELOG `Deferred` sections and `ROADMAP.md` track each item.
 Headlines:
 
-- **Mutation forms for the tenant-scoped surface.** All the
-  v0.9.0 / v0.10.0 system-admin forms have natural
-  tenant-scoped equivalents (organization status changes,
-  group create / delete, membership add / remove inside this
-  tenant, role grant / revoke). **0.14.0.**
-- **Token-mint HTML form.** The
-  `AdminTokenRepository::create_user_bound` adapter method
-  exists; what's missing is a
-  `/admin/tenancy/users/:uid/tokens/new` form that exposes it
-  to system-admins, so a tenant admin's first user-bound
-  token can be minted without scripting. **0.14.0.**
+- **Additive mutation forms for the tenant-scoped surface** —
+  membership add/remove (three flavors: tenant / organization
+  / group). Same shape as v0.10.0 system-admin equivalents,
+  scoped to one tenant via the existing gate composition.
+  **0.15.0.**
+- **Affordance gating on tenant-admin pages** — render
+  mutation links/buttons only when `check_permission` would
+  allow the relevant write. Currently the route handlers
+  refuse on denial, but the operator only finds out *after*
+  clicking. **0.15.0.**
 - **`check_permission` integration on `/api/v1/...`.** The
   v0.7.0 JSON API still uses `ensure_role_allows`. Now that
   user-bound tokens exist and `check_permission` is
@@ -727,7 +797,7 @@ Headlines:
   there's a concrete need (most callers of `/api/v1` will be
   system-admin scripts, not tenant admins).
 - **Anonymous-trial promotion.** The account type exists; the
-  promotion lifecycle is unspecified. **0.15.0 or later.**
+  promotion lifecycle is unspecified. **0.15.1 or later.**
 - **External IdP federation.** `AccountType::ExternalFederatedUser`
   is reserved; no IdP wiring exists yet.
 

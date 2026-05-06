@@ -12,6 +12,229 @@ always be called out here.
 
 ---
 
+## [0.14.0] - 2026-04-27
+
+Tenant-scoped admin surface — high-risk mutation forms — plus a
+system-admin token-mint UI that exposes
+`AdminTokenRepository::create_user_bound` to operators. v0.13.0
+shipped the read pages and the auth gate; v0.14.0 adds the
+form-driven mutations that operators most need to run from inside
+the tenant context, and the missing piece for bootstrapping the
+whole flow (a way to actually mint user-bound tokens without
+scripting).
+
+The release follows the v0.9.0 → v0.10.0 split for the system-admin
+surface: high-risk forms first, additive ones in the next release.
+v0.15.0 adds the membership add/remove forms (three flavors,
+mirroring v0.10.0's split).
+
+### Added — tenant-scoped mutation forms
+
+Six form pairs (GET + POST) under `/admin/t/<slug>/...`:
+
+- **`organizations/new`** — additive, one-click submit.
+  Permission: `ORGANIZATION_CREATE` at tenant scope.
+  Plan-quota enforcement (`max_organizations`) mirrors the
+  v0.9.0 system-admin path.
+- **`organizations/:oid/status`** — preview/confirm.
+  Permission: `ORGANIZATION_UPDATE`. Active / Suspended /
+  Deleted picker with required reason field; the diff page
+  spells out the change and round-trips the reason into the
+  apply form.
+- **`organizations/:oid/groups/new`** — additive, one-click.
+  Permission: `GROUP_CREATE`. Uses the `NewGroupInput` shape
+  that v0.5.0 introduced.
+- **`groups/:gid/delete`** — preview/confirm.
+  Permission: `GROUP_DELETE`. Preview counts affected role
+  assignments and memberships so the operator sees the
+  cascade impact before clicking Apply.
+- **`users/:uid/role_assignments/new`** — preview/confirm.
+  Permission: `ROLE_ASSIGN`. Scope picker omits System (per
+  ADR-003: tenant admins cannot grant cesauth-wide roles);
+  Tenant scope's scope_id is forced to the current tenant
+  (a tenant admin who types in a different tenant's id is
+  refused with 403, not just an error). Defense-in-depth
+  `verify_scope_in_tenant` walks the storage layer to confirm
+  the scope's organization / group / user actually belongs
+  to the current tenant before the grant proceeds.
+- **`role_assignments/:id/delete`** — preview/confirm.
+  Permission: `ROLE_UNASSIGN`. The user_id rides on the
+  query string (same pattern as the system-admin equivalent;
+  the repository does not expose `get_by_id` for assignments).
+
+Every handler runs the v0.13.0 gate's 3-step opening
+(`auth::resolve_or_respond` → `gate::resolve_or_respond` →
+`gate::check_action`), then preview/confirm gating on the
+`confirm` form field, then the mutation, then audit emission.
+Audit entries carry `via=tenant-admin,tenant=<id>` to
+distinguish them from `via=tenancy-console` (system-admin
+originated) — log analyses can split by surface origin.
+
+### Added — system-admin token-mint UI
+
+- **`/admin/tenancy/users/:uid/tokens/new`** (GET + POST) —
+  three pages: form (role + nickname), preview/confirm, applied
+  (plaintext shown ONCE with prominent warning + post-mint usage
+  instructions linking to `/admin/t/<slug>/...`).
+- Gated on `ManageAdminTokens` (existing v0.4.0 admin-token
+  capability). Tenant admins cannot self-mint per ADR-002 / ADR-003
+  — this route lives at `/admin/tenancy/...`, not
+  `/admin/t/<slug>/...`.
+- Re-uses `mint_plaintext()` and `hash_hex()` from the existing
+  `console/tokens.rs` (made `pub(crate)`); calls
+  `AdminTokenRepository::create_user_bound`.
+- The applied page resolves the user's tenant **slug** for the
+  post-mint URL hint — a tempting bug here would have used
+  the tenant *id* directly, leaking the internal id into the
+  operator-facing URL. The test
+  `applied_page_carries_plaintext_token_and_post_mint_link`
+  pins this down explicitly.
+
+### Gate API change
+
+The v0.13.0 `gate::check_read` was a thin wrapper for "permission
+at tenant scope". Mutation forms operate on child resources
+(Organization, Group) and need narrower scopes, so the underlying
+function is now `gate::check_action(ctx_ta, permission, scope, ctx)`
+accepting an explicit `ScopeRef`. `check_read` remains as a
+backward-compatible convenience wrapper for the v0.13.0 read
+routes (always passes `ScopeRef::Tenant { tenant_id: ctx.tenant.id }`).
+
+### Defense-in-depth invariants pinned by tests
+
+The v0.13.0 release introduced cross-resource defense
+(`organization_detail` and `role_assignments` re-verify the child
+resource's tenant_id). v0.14.0 extends this to every mutation:
+
+- `organization_set_status` re-verifies `org.tenant_id ==
+  ctx_ta.tenant.id` before applying.
+- `group_delete` walks the `GroupParent` enum: tenant-scoped
+  groups check `group.tenant_id`; org-scoped groups check the
+  parent organization's `tenant_id`.
+- `role_assignment_grant` calls `verify_scope_in_tenant` for
+  every Organization / Group / User scope before proceeding.
+- `role_assignment_revoke` re-verifies the assignment's user
+  belongs to this tenant.
+
+The corresponding template-level invariants — scope picker
+without System option, tenant id pinned in the help text,
+preview round-tripping every form field — are pinned by 7 new
+tests in `tenant_admin/tests.rs`.
+
+### Tests
+
+- Total: **257 passing** (+12 over v0.13.0).
+  - core: 114 (unchanged).
+  - adapter-test: 36 (unchanged).
+  - ui: **107** (was 95) — 12 new tests covering form-template
+    invariants:
+    - 7 in `tenant_admin/tests.rs` — slug-relative form actions,
+      sticky values on error re-render, preview confirm=yes
+      hidden field, group_delete affected-counts visible, scope
+      picker omits System, tenant id pinned in help text, preview
+      round-trips role_id/scope_type/expires_at.
+    - 4 in `tenancy_console/tests.rs::token_mint_tests` —
+      role radio for each AdminRole, plaintext-shown-once warning,
+      applied page uses tenant slug not id, plaintext HTML-escaped.
+    - 1 footer marker assertion update (now `v0.14.0`).
+
+The host-side test surface for the form templates is the load-
+bearing test family. A future refactor that drops the System-
+omission from the scope picker is a test failure, not a security
+regression.
+
+### Migration (0.13.0 → 0.14.0)
+
+Code-only release. No schema migration. No `wrangler.toml`
+change. The new HTML routes are additive — existing
+`/admin/t/<slug>/*` GET routes from v0.13.0 are unchanged.
+
+For operators expecting to use the new mutation forms or the
+token-mint UI:
+
+1. **Tenant admins** can now visit
+   `/admin/t/<slug>/organizations/new`, etc. The forms are
+   gated on the appropriate write permissions (the same slugs
+   the v0.7.0 JSON API gates on).
+2. **System admins** mint user-bound tokens at
+   `/admin/tenancy/users/<uid>/tokens/new`. The plaintext is
+   shown once on the apply page; copy it before clicking
+   anywhere else. cesauth stores only the SHA-256 hash.
+
+Existing `/admin/tenancy/*`, `/admin/console/*`, and
+`/admin/t/<slug>/*` routes are unaffected.
+
+### Smoke test
+
+```bash
+ADMIN=$ADMIN_API_KEY  # system-admin
+
+# 1) Mint a user-bound token for a tenant admin via the new UI.
+#    For now, drive it from curl (browser flow works the same):
+PREVIEW=$(curl -sS -H "Authorization: Bearer $ADMIN" \
+  -d "role=operations&name=alice%20bootstrap" \
+  https://cesauth.example/admin/tenancy/users/u-alice/tokens/new)
+# -> preview page with confirm=yes hidden field
+
+# 2) Apply: post the same form with confirm=yes.
+APPLIED=$(curl -sS -H "Authorization: Bearer $ADMIN" \
+  -d "role=operations&name=alice%20bootstrap&confirm=yes" \
+  https://cesauth.example/admin/tenancy/users/u-alice/tokens/new)
+# -> applied page with the plaintext token (shown once)
+
+# 3) Tenant admin uses the token to grant a role inside the tenant:
+USER_TOKEN=...  # extract from step 2's response
+
+curl -sS -X POST -H "Authorization: Bearer $USER_TOKEN" \
+  -d "role_id=r-admin&scope_type=organization&scope_id=o-eng" \
+  https://cesauth.example/admin/t/acme/users/u-bob/role_assignments/new
+# -> preview page
+
+curl -sS -X POST -H "Authorization: Bearer $USER_TOKEN" \
+  -d "role_id=r-admin&scope_type=organization&scope_id=o-eng&confirm=yes" \
+  https://cesauth.example/admin/t/acme/users/u-bob/role_assignments/new
+# -> 303 redirect to /admin/t/acme/users/u-bob/role_assignments
+
+# 4) Cross-tenant attempt: try to grant against a different tenant's org.
+#    Defense-in-depth refuses with 403:
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  -X POST -d "role_id=r-admin&scope_type=organization&scope_id=o-other-tenant" \
+  https://cesauth.example/admin/t/acme/users/u-bob/role_assignments/new
+# -> 403  (verify_scope_in_tenant refused)
+
+# 5) Trying to grant System scope: refused with 403 per ADR-003:
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  -X POST -d "role_id=r-admin&scope_type=system" \
+  https://cesauth.example/admin/t/acme/users/u-bob/role_assignments/new
+# -> 403
+```
+
+### Deferred to 0.15.0
+
+- **Membership add/remove forms** (three flavors: tenant /
+  organization / group). Same shape as the v0.10.0 system-admin
+  forms but tenant-scoped. Permissions:
+  `MEMBERSHIP_ADD` / `MEMBERSHIP_REMOVE` /
+  `ORGANIZATION_MEMBER_ADD` / `ORGANIZATION_MEMBER_REMOVE` /
+  `GROUP_MEMBER_ADD` / `GROUP_MEMBER_REMOVE`.
+- **Affordance gating on the v0.13.0 read pages**: render
+  mutation buttons only when `check_permission` would actually
+  allow the relevant write. Cleanest way is a per-button
+  Probe call against `check_permission`, batched per page
+  render. Acceptable latency-wise for HTML pages, but worth
+  a dedicated review.
+
+### Deferred — unchanged from 0.13.0
+
+- **`check_permission` integration on `/api/v1/...`** —
+  unscheduled.
+- **Anonymous-trial promotion** — 0.15.1 or later.
+- **External IdP federation** — explicitly out of scope.
+
+---
+
 ## [0.13.0] - 2026-04-27
 
 Tenant-scoped admin surface — the surface implementation that

@@ -44,7 +44,7 @@ use crate::routes::admin::console::render;
 
 /// Mint a fresh plaintext bearer. 256 bits of getrandom-sourced
 /// entropy via two UUIDv4s concatenated as hex.
-fn mint_plaintext() -> String {
+pub(crate) fn mint_plaintext() -> String {
     let a = Uuid::new_v4().as_simple().to_string();
     let b = Uuid::new_v4().as_simple().to_string();
     format!("{a}{b}")
@@ -53,7 +53,7 @@ fn mint_plaintext() -> String {
 /// SHA-256(plaintext) as lower hex. Matches the shape stored in the
 /// `admin_tokens.token_hash` column and what the principal resolver
 /// compares against.
-fn hash_hex(plaintext: &str) -> String {
+pub(crate) fn hash_hex(plaintext: &str) -> String {
     let digest = Sha256::digest(plaintext.as_bytes());
     let mut out = String::with_capacity(64);
     for b in digest {

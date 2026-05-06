@@ -27,3 +27,4 @@ pub mod organization_detail;
 pub mod users;
 pub mod role_assignments;
 pub mod subscription;
+pub mod forms;

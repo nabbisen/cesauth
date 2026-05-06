@@ -41,6 +41,7 @@ pub mod organizations;
 pub mod users;
 pub mod role_assignments;
 pub mod subscription;
+pub mod forms;
 
 #[cfg(test)]
 mod tests;

@@ -168,7 +168,7 @@ pub fn tenant_admin_frame(
     <h2>{title_esc}</h2>
 {body}
   </main>
-  <footer>cesauth tenant admin — v0.13.0 (read pages only)</footer>
+  <footer>cesauth tenant admin — v0.14.0 (read pages + high-risk mutations)</footer>
 </body>
 </html>"##,
         name_html = if name_esc.is_empty() {
