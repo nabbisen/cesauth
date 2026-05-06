@@ -810,6 +810,12 @@ pub fn security_center_page_with_flash(
 
 {totp_section}
 
+<section class="security-row" aria-labelledby="sessions-heading">
+  <h2 id="sessions-heading">アクティブなセッション</h2>
+  <p>サインイン中の端末/ブラウザを一覧表示し、不要なセッションを取り消せます。</p>
+  <p><a href="/me/security/sessions">セッションを確認する</a></p>
+</section>
+
 <p class="muted"><a href="/">トップへ戻る</a></p>"#,
         primary_row = primary_row,
         totp_section = totp_section,
@@ -895,5 +901,139 @@ fn recovery_status_html(n: u32) -> String {
     }
 }
 
+
+// =====================================================================
+// v0.35.0 — /me/security/sessions page
+// =====================================================================
+
+/// One row in the active-sessions list. The handler builds these
+/// from `SessionState` rows returned by
+/// `ActiveSessionStore::list_for_user`. Kept here (vs. importing
+/// `SessionState` directly) so the template's contract is
+/// surface-stable: future changes to `SessionState` shape won't
+/// silently change what the user sees.
+#[derive(Debug, Clone)]
+pub struct SessionListItem {
+    pub session_id:    String,
+    pub auth_method:   String,   // "passkey" | "magic_link" | "admin"
+    pub client_id:     String,   // displayed; empty string is fine
+    pub created_at:    i64,      // Unix seconds
+    pub last_seen_at:  i64,      // Unix seconds; matches created_at on D1-projected rows
+    /// `true` if this row is the session that's currently
+    /// rendering the page. Surfaced as a "this device" badge
+    /// and disables the row's revoke button (revoking your
+    /// current session would just log you out — handle that
+    /// via the regular logout flow).
+    pub is_current:    bool,
+}
+
+pub fn sessions_page(
+    items:      &[SessionListItem],
+    csrf_token: &str,
+    flash_html: &str,
+) -> String {
+    let rows = if items.is_empty() {
+        r##"<p class="muted">アクティブなセッションはありません。</p>"##.to_owned()
+    } else {
+        items.iter().map(|s| render_session_row(s, csrf_token)).collect::<Vec<_>>().join("\n")
+    };
+
+    let body = format!(
+        r##"<h1>アクティブなセッション</h1>
+<p class="muted">サインイン中の端末/ブラウザの一覧です。心当たりのないセッションは右側のボタンで取り消してください。</p>
+
+<section class="security-section" aria-label="Active sessions">
+  {rows}
+</section>
+
+<p class="muted">
+  <a href="/me/security">← セキュリティ センターへ戻る</a>
+</p>"##,
+        rows  = rows,
+    );
+
+    frame_with_flash("アクティブなセッション - cesauth", flash_html, &body)
+}
+
+fn render_session_row(s: &SessionListItem, csrf_token: &str) -> String {
+    let method_label = match s.auth_method.as_str() {
+        "passkey"    => "パスキー",
+        "magic_link" => "Magic Link",
+        "admin"      => "管理者ログイン",
+        _            => "不明",
+    };
+    let created = format_unix_local(s.created_at);
+    let last    = format_unix_local(s.last_seen_at);
+
+    let badge = if s.is_current {
+        r##"<span class="badge badge--current" aria-label="この端末">この端末</span>"##
+    } else {
+        ""
+    };
+
+    // Current session's revoke button is disabled — the user
+    // should log out via the normal flow instead. If we let
+    // them revoke their own session, the next request would
+    // redirect to /login and the action would feel
+    // self-defeating; logout-via-known-button is better UX.
+    let action = if s.is_current {
+        r##"<button type="button" class="muted" disabled aria-disabled="true" title="このセッションは現在使用中です。ログアウトはトップページからどうぞ。">使用中</button>"##.to_owned()
+    } else {
+        format!(
+            r##"<form method="post" action="/me/security/sessions/{sid}/revoke" class="inline-form">
+  <input type="hidden" name="csrf" value="{csrf}">
+  <button type="submit" class="warning">取り消す</button>
+</form>"##,
+            sid  = escape(&s.session_id),
+            csrf = escape(csrf_token),
+        )
+    };
+
+    format!(
+        r##"<article class="session-card" aria-label="セッション {sid}">
+  <header>
+    <strong>{method}</strong> {badge}
+  </header>
+  <dl class="session-meta">
+    <dt>サインイン</dt><dd>{created}</dd>
+    <dt>最終アクセス</dt><dd>{last}</dd>
+    <dt>クライアント</dt><dd><code>{client}</code></dd>
+    <dt>セッション ID</dt><dd><code>{sid_short}</code></dd>
+  </dl>
+  <footer>{action}</footer>
+</article>"##,
+        sid       = escape(&s.session_id),
+        sid_short = escape(&shorten_id(&s.session_id)),
+        method    = method_label,
+        badge     = badge,
+        created   = escape(&created),
+        last      = escape(&last),
+        client    = escape(&s.client_id),
+        action    = action,
+    )
+}
+
+/// Format a Unix-seconds timestamp as ISO-8601 UTC. The user
+/// page is otherwise localized JA, but timestamp formatting
+/// stays UTC because cesauth has no per-user timezone yet —
+/// see ROADMAP i18n track for that future work.
+fn format_unix_local(unix: i64) -> String {
+    use time::format_description::well_known::Rfc3339;
+    time::OffsetDateTime::from_unix_timestamp(unix)
+        .ok()
+        .and_then(|d| d.format(&Rfc3339).ok())
+        .unwrap_or_else(|| unix.to_string())
+}
+
+/// Truncate a UUID-shaped session_id to the first 8 chars for
+/// display. The full id is in the form action's URL; the
+/// shortened version is just visual chrome.
+fn shorten_id(id: &str) -> String {
+    let mut out: String = id.chars().take(8).collect();
+    if id.chars().count() > 8 { out.push('…'); }
+    out
+}
+
 #[cfg(test)]
 mod tests;
+

@@ -279,14 +279,83 @@ pub struct SessionState {
 pub enum SessionStatus {
     NotStarted,
     Active(SessionState),
+    /// Explicitly revoked (admin action OR user-initiated revoke
+    /// from `/me/security/sessions`). The state's `revoked_at` is
+    /// populated.
     Revoked(SessionState),
+    /// **v0.35.0** — Auto-revoked because `last_seen_at` is older
+    /// than the configured idle timeout. The store atomically
+    /// populates `revoked_at` before returning this variant; from
+    /// the wire's perspective the session is just gone, but the
+    /// reason is distinct so the worker can emit a different audit
+    /// event (`session_idle_timeout` vs `session_revoked`).
+    IdleExpired(SessionState),
+    /// **v0.35.0** — Auto-revoked because `created_at + ttl <=
+    /// now`. The absolute lifetime hard limit. Like IdleExpired
+    /// but for a different reason; surfaces as a distinct audit
+    /// event.
+    AbsoluteExpired(SessionState),
+}
+
+impl SessionStatus {
+    /// Convenience: was the session active for use? `Active` only.
+    pub fn is_active(&self) -> bool {
+        matches!(self, SessionStatus::Active(_))
+    }
 }
 
 pub trait ActiveSessionStore {
     async fn start(&self, state: &SessionState) -> PortResult<()>;
-    async fn touch(&self, session_id: &str, now_unix: i64) -> PortResult<SessionStatus>;
+
+    /// Update `last_seen_at` and check the lifecycle gates.
+    ///
+    /// **v0.35.0** — `idle_timeout_secs` and `absolute_ttl_secs`
+    /// are passed in by the worker's auth-resolver and consulted
+    /// inside the store atomically with the touch. If the session
+    /// is past the idle window OR the absolute lifetime, the
+    /// store sets `revoked_at` and returns `IdleExpired` /
+    /// `AbsoluteExpired` rather than `Active`. Set
+    /// `idle_timeout_secs = 0` to disable idle checking (absolute
+    /// is still enforced).
+    ///
+    /// Doing the check inside the store (vs. having the worker
+    /// peek-then-decide) closes a small race window: between a
+    /// peek and a follow-up revoke, the user could submit a
+    /// concurrent request that touches successfully. With the
+    /// in-store check the touch + idle decision are one
+    /// transaction.
+    async fn touch(
+        &self,
+        session_id:        &str,
+        now_unix:          i64,
+        idle_timeout_secs: i64,
+        absolute_ttl_secs: i64,
+    ) -> PortResult<SessionStatus>;
+
     async fn status(&self, session_id: &str) -> PortResult<SessionStatus>;
     async fn revoke(&self, session_id: &str, now_unix: i64) -> PortResult<SessionStatus>;
+
+    /// **v0.35.0** — List active + recently-revoked sessions for a
+    /// user. Used by `/me/security/sessions` to render the
+    /// per-user session list with revoke buttons.
+    ///
+    /// Implementations decide ordering — the in-memory adapter
+    /// returns newest-first; the Cloudflare adapter consults the
+    /// per-user index DO and returns the same order.
+    ///
+    /// `include_revoked = false` filters to active-only; this is
+    /// the common case for the user-facing list.
+    /// `include_revoked = true` returns both for audit/forensic
+    /// surfaces.
+    ///
+    /// `limit` caps the result. The user-facing UI uses 50; admin
+    /// surfaces may pass higher.
+    async fn list_for_user(
+        &self,
+        user_id:         &str,
+        include_revoked: bool,
+        limit:           u32,
+    ) -> PortResult<Vec<SessionState>>;
 }
 
 // -------------------------------------------------------------------------

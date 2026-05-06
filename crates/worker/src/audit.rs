@@ -99,7 +99,37 @@ pub enum EventKind {
     MagicLinkFailed,
     // Sessions
     SessionStarted,
+    /// Legacy generic revoke event. v0.35.0 splits revocations
+    /// into `SessionRevokedByUser` / `SessionRevokedByAdmin` /
+    /// `SessionIdleTimeout` / `SessionAbsoluteTimeout` so
+    /// operators can monitor "user actively logged out" vs
+    /// "admin kicked the session" vs "auto-expiry". This kind
+    /// remains for backward compatibility with v0.4.x — v0.34.x
+    /// audit rows. Pre-v0.35.0 rows in the audit chain still
+    /// carry it; new code paths use the split kinds below.
     SessionRevoked,
+    /// **v0.35.0** — User clicked "revoke" on
+    /// `/me/security/sessions`. Distinct from
+    /// `SessionRevokedByAdmin` so security teams monitoring for
+    /// "someone is forcibly logging users out" can filter.
+    SessionRevokedByUser,
+    /// **v0.35.0** — Admin revoked via `/admin/console`. The
+    /// existing `AdminSessionRevoked` event was the admin's
+    /// view; this is the *session's* view. Both fire for one
+    /// admin action so the audit chain has both an admin-action
+    /// row and a session-lifecycle row.
+    SessionRevokedByAdmin,
+    /// **v0.35.0** — Idle timeout fired. Session was inactive
+    /// past the configured `session_idle_timeout_secs` window
+    /// and got auto-revoked at the next request's `touch()`.
+    /// Payload includes how long the session had been idle.
+    SessionIdleTimeout,
+    /// **v0.35.0** — Absolute lifetime exceeded. Session
+    /// reached `created_at + session_ttl_secs` regardless of
+    /// activity and got auto-revoked at the next request's
+    /// `touch()`. Payload includes the configured ttl + the
+    /// session's age.
+    SessionAbsoluteTimeout,
     // Anonymous trial (v0.16.0, ADR-004)
     AnonymousCreated,
     AnonymousExpired,
@@ -152,6 +182,10 @@ impl EventKind {
             Self::MagicLinkFailed              => "magic_link_failed",
             Self::SessionStarted               => "session_started",
             Self::SessionRevoked               => "session_revoked",
+            Self::SessionRevokedByUser         => "session_revoked_by_user",
+            Self::SessionRevokedByAdmin        => "session_revoked_by_admin",
+            Self::SessionIdleTimeout           => "session_idle_timeout",
+            Self::SessionAbsoluteTimeout       => "session_absolute_timeout",
             Self::AnonymousCreated             => "anonymous_created",
             Self::AnonymousExpired             => "anonymous_expired",
             Self::AnonymousPromoted            => "anonymous_promoted",

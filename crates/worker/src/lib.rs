@@ -121,6 +121,12 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async ("/me/security",                     |req, ctx| async move {
             routes::me::security::get_handler(req, ctx.env).await
         })
+        .get_async ("/me/security/sessions",            |req, ctx| async move {
+            routes::me::sessions::get_handler(req, ctx).await
+        })
+        .post_async("/me/security/sessions/:session_id/revoke", |req, ctx| async move {
+            routes::me::sessions::post_revoke(req, ctx).await
+        })
         .get_async ("/me/security/totp/enroll",         |req, ctx| async move {
             routes::me::totp::enroll::get_handler(req, ctx.env).await
         })
@@ -141,6 +147,13 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         })
         .post_async("/me/security/totp/disable",        |req, ctx| async move {
             routes::me::totp::disable::post_handler(req, ctx.env).await
+        })
+        // v0.35.0: per-user session list + revoke. ADR-012.
+        .get_async ("/me/security/sessions",            |req, ctx| async move {
+            routes::me::sessions::get_handler(req, ctx).await
+        })
+        .post_async("/me/security/sessions/:session_id/revoke", |req, ctx| async move {
+            routes::me::sessions::post_revoke(req, ctx).await
         })
         // --- Admin API ------------------------------------------------
         .post_async("/admin/users",          |req, ctx| async move { routes::admin::create_user(req, ctx).await })

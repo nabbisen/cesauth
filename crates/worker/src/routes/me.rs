@@ -14,4 +14,5 @@
 
 pub mod auth;
 pub mod security;
+pub mod sessions;
 pub mod totp;

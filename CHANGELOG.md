@@ -14,6 +14,280 @@ changes will always be called out here.
 
 ---
 
+## [0.35.0] - 2026-05-03
+
+Session hardening + user-facing session management surface
+(ADR-012 Accepted). The session subsystem grows three things
+v0.34.x lacked: an idle timeout consulted on every
+authenticated request, a per-user session enumeration
+capability backed by a new D1 index, and a
+`/me/security/sessions` page where users can see their
+active sessions and revoke individual ones.
+
+### Why this matters
+
+A v0.34.x audit against the session BCP guidance surfaced
+five gaps: no idle timeout (only absolute lifetime), no
+active-touch wiring (the resolver consulted `status()` not
+`touch()`, so `last_seen_at` never advanced), no per-user
+enumeration, no user-facing revoke UI, and no audit-event
+differentiation between user/admin/auto-revocation. v0.35.0
+closes all five with code, schema, UI, and audit-catalog
+changes.
+
+### What changed
+
+#### Idle timeout — `session_idle_timeout_secs` config (default 30 min)
+
+`Config::session_idle_timeout_secs` defaults to 1800 seconds
+(`SESSION_IDLE_TIMEOUT_SECS` env var). Setting to 0 disables
+the gate (operator escape hatch for kiosk-style deployments).
+
+`ActiveSessionStore::touch` signature extends to take both
+`idle_timeout_secs` and `absolute_ttl_secs`. The DO consults
+both gates atomically with the touch update — no race
+window between peek and revoke.
+
+`SessionStatus` gains:
+
+```rust
+pub enum SessionStatus {
+    NotStarted,
+    Active(SessionState),
+    Revoked(SessionState),
+    IdleExpired(SessionState),     // v0.35.0
+    AbsoluteExpired(SessionState), // v0.35.0
+}
+```
+
+The two new variants are populated by the DO with
+`revoked_at = Some(now)` before returning, so the caller
+can trust the state is durable.
+
+Order: absolute gate consulted FIRST. A session past both
+gates reports `AbsoluteExpired` (deeper-cause attribution).
+Pinned by test
+`session_touch_absolute_takes_priority_over_idle`.
+
+#### Auth resolver wired to `touch()`
+
+The load-bearing v0.35.0 change: `me::auth::resolve_or_redirect`
+switches from `sessions.status()` to `sessions.touch()`. Without
+this, the new timeouts would be dormant — `touch()` was the
+only writer of `last_seen_at` and was never being called from
+production.
+
+This is technically a behavior change for existing v0.34.x
+sessions: a session created at v0.34.x with `last_seen_at =
+created_at` and idle for >30 minutes will be revoked on its
+next request after the v0.35.0 deploy. Operators should
+communicate the change to users if they expect long-idle
+sessions.
+
+#### Per-user session index — D1-backed
+
+New migration `0009_user_session_index.sql` adds a
+`user_sessions` table. SCHEMA_VERSION 8 → 9.
+
+```sql
+CREATE TABLE user_sessions (
+  session_id   TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL,
+  created_at   INTEGER NOT NULL,
+  revoked_at   INTEGER,
+  auth_method  TEXT NOT NULL,
+  client_id    TEXT NOT NULL
+);
+CREATE INDEX user_sessions_user_idx
+  ON user_sessions (user_id, created_at DESC);
+```
+
+The D1 row is a denormalized index whose only job is "given
+a user_id, what session_ids exist". The per-session DO
+remains the source of truth for individual session state.
+
+`ActiveSessionStore::list_for_user(user_id, include_revoked,
+limit)` is the new port method. Implementations:
+
+- **In-memory**: O(n) scan over the map (test-only).
+- **Cloudflare**: D1 SELECT against `user_sessions`. The DO
+  is NOT consulted by `list_for_user` — the index page reads
+  ONLY from D1. Hot path (touch on every authenticated
+  request) is unchanged; D1 is not in that path.
+
+Mirror writes:
+- `start()` writes BOTH the DO state AND `INSERT OR IGNORE
+  INTO user_sessions`.
+- `touch()` returning IdleExpired/AbsoluteExpired triggers a
+  best-effort D1 mirror update.
+- `revoke()` writes the DO AND mirrors `revoked_at` into D1.
+
+Eventually-consistent: a D1 mirror failure does NOT unwind
+the authoritative DO write. The user-facing list may briefly
+show stale state — which the per-row "click to revoke" path
+self-heals on click-through (the click path peeks the DO
+authoritatively).
+
+ADR-012 §"Considered alternatives" documents why we chose
+D1 over a second `UserSessionIndex` DO type.
+
+#### `/me/security/sessions` user-facing page
+
+New page renders the authenticated user's active sessions:
+
+- Auth method label (パスキー / Magic Link / 管理者ログイン)
+- Sign-in time + last access time
+- Client id
+- Shortened session id (8 chars + ellipsis)
+- Per-row "取り消す" button — except the row matching the
+  current cookie's session_id, which shows a "この端末"
+  badge and a disabled button instead.
+
+Rationale for disabling the current-row revoke: revoking your
+own session via this page would cause the next request to
+bounce to /login — surprising UX. The user should use the
+explicit logout flow instead.
+
+Cross-linked from the existing Security Center
+(`/me/security`).
+
+`POST /me/security/sessions/:session_id/revoke` is the
+revoke endpoint. CSRF-guarded. Refuses revoking the current
+session (defensive — UI button is disabled for that row
+anyway). Refuses revoking another user's session via 403
+(ownership check; defense in depth since the page only
+renders the caller's sessions).
+
+#### Audit event split
+
+`EventKind` gains four new kinds:
+
+- `SessionRevokedByUser` — user clicked revoke at
+  `/me/security/sessions`.
+- `SessionRevokedByAdmin` — admin revoked (existing
+  `AdminSessionRevoked` event remains the admin's view; this
+  is the session's view).
+- `SessionIdleTimeout` — auto-revoked by the idle gate.
+  Payload includes `{session_id, idle_secs, last_seen_at,
+  now}`.
+- `SessionAbsoluteTimeout` — auto-revoked by the absolute
+  gate. Payload includes `{session_id, ttl_secs, created_at,
+  now}`.
+
+The legacy `SessionRevoked` kind remains in the catalog for
+backward compatibility with v0.4–v0.34.x audit chain rows.
+New code paths use the split kinds.
+
+`me::auth::resolve_or_redirect` emits the timeout kinds when
+`touch()` returns IdleExpired/AbsoluteExpired (best-effort,
+audit failure does not block the redirect). The user revoke
+handler emits `SessionRevokedByUser` with payload
+`{session_id, revoked_by: "user", actor_user_id}`.
+
+### Tests
+
+783 → 801 (+18).
+
+- adapter-test: 103 → 114 (+11).
+  - 7 idle/absolute timeout tests in
+    `cesauth-adapter-test::store::tests`:
+    `session_touch_active_bumps_last_seen`,
+    `session_touch_idle_window_expired_revokes_atomically`,
+    `session_touch_idle_disabled_when_zero`,
+    `session_touch_absolute_lifetime_expires_regardless_of_activity`,
+    `session_touch_absolute_takes_priority_over_idle`,
+    `session_touch_already_revoked_is_idempotent`,
+    `session_touch_unknown_returns_not_started`.
+  - 4 list_for_user tests:
+    `session_list_for_user_returns_only_that_user_newest_first`,
+    `session_list_for_user_excludes_revoked_by_default`,
+    `session_list_for_user_respects_limit`,
+    `session_list_for_user_empty_when_no_sessions`.
+- ui: 189 → 196 (+7) sessions_page rendering tests.
+- core, worker, do, migrate, adapter-cloudflare: unchanged.
+
+### Schema
+
+SCHEMA_VERSION 8 → 9. Migration `0009_user_session_index.sql`
+adds the `user_sessions` table.
+
+**Operators MUST run `wrangler d1 migrations apply` before
+the v0.35.0 build can serve traffic.** Without the migration,
+`start()` will fail on the D1 INSERT and new sessions cannot
+be created. Existing sessions (DO-only) continue working
+through `touch()` and `revoke()`; only `start()` and
+`list_for_user` need the index.
+
+### Wire format
+
+No change for OAuth clients. The session cookie format is
+unchanged.
+
+### Operator-visible changes
+
+- `SESSION_IDLE_TIMEOUT_SECS` env var (default 1800 = 30 min).
+  Setting to 0 disables.
+- New audit kinds; dashboards may need a panel update to
+  alert on `session_revoked_by_user`,
+  `session_idle_timeout`, etc.
+- D1 write amplification: each session start now writes one
+  DO record + one D1 row (was: DO only). Each revoke writes
+  one DO update + one D1 update (was: DO only). Hot path
+  (touch on every authenticated request) is unchanged — D1
+  is not in that path.
+- v0.34.x sessions idle for >30 min when v0.35.0 deploys
+  will be revoked on their next request. This is correct
+  per BCP guidance. Operators should communicate the change
+  to users if they expect long-idle sessions.
+
+### ADR changes
+
+- **ADR-012: Session hardening** added, status Accepted.
+  Documents the v0.34.x baseline audit, the five gaps, the
+  type-layer + schema changes, the DO + D1 hybrid index
+  rationale, and the deferred items (per-tenant idle
+  override, revoke-all button, auto-revoke flash, D1
+  retention sweep).
+- ADR README index + mdBook `SUMMARY.md` updated.
+
+### Doc / metadata changes
+
+- `Cargo.toml` version 0.34.0 → 0.35.0.
+- UI footers in `tenancy_console/frame.rs` +
+  `tenant_admin/frame.rs` (and matching test asserts)
+  bumped to v0.35.0.
+- ROADMAP: v0.35.0 marked ✅ in the security track.
+- This CHANGELOG entry.
+
+### Upgrade path 0.34.0 → 0.35.0
+
+1. `git pull` or extract this tarball over your working tree.
+2. `cargo build --workspace --target wasm32-unknown-unknown
+   --release`. No new production dependencies.
+3. **Run the schema migration:**
+   `wrangler d1 migrations apply cesauth --remote` (or
+   `--local` for dev environments). This creates the
+   `user_sessions` table.
+4. `wrangler deploy`.
+5. (Optional) Tune `SESSION_IDLE_TIMEOUT_SECS` in your
+   `wrangler.toml` if 30 minutes isn't right for your
+   deployment. Set to 0 to disable the idle gate while
+   keeping the per-user list and revoke surface.
+6. Update audit dashboards to monitor the new kinds:
+   `session_idle_timeout`, `session_absolute_timeout`,
+   `session_revoked_by_user`.
+
+### Forward roadmap
+
+- **i18n track** (parallel) — `MessageKey` lookup
+  infrastructure + `ja` / `en` MVP coverage of end-user
+  surfaces; the v0.35.0 sessions_page is now part of the
+  surface area that needs catalog migration.
+- **Future security-track items** (ADR-012 §"Open
+  questions"): per-tenant idle override, revoke-all-other-
+  sessions button, auto-revoke flash with i18n key, D1
+  user_sessions retention sweep.
+
 ## [0.34.0] - 2026-05-03
 
 Refresh token reuse hardening (ADR-011 Accepted). The

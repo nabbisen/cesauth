@@ -40,7 +40,7 @@ use cesauth_core::session::{self, SessionCookie};
 use time::OffsetDateTime;
 use worker::{Request, Response, Result};
 
-use crate::config::load_session_cookie_key;
+use crate::config::{Config, load_session_cookie_key};
 
 
 /// Cookie name carrying the post-login `next` target. Short TTL
@@ -262,10 +262,64 @@ pub async fn resolve_or_redirect(
 
     // Server-side liveness: even a clean-signing cookie may
     // refer to a revoked session.
+    //
+    // **v0.35.0** — Switched from `status()` to `touch()` so
+    // the idle and absolute timeouts are consulted on every
+    // authenticated request. The DO-side check is atomic with
+    // the touch update; on idle/absolute expiry the DO sets
+    // revoked_at and returns the new variant.
+    //
+    // We bounce ALL non-Active outcomes (Revoked, IdleExpired,
+    // AbsoluteExpired, NotStarted) to /login. The variants are
+    // distinct so a follow-up audit-write in the worker can
+    // emit a different `EventKind` per cause; the user
+    // experience is the same redirect.
+    let cfg      = Config::from_env(env)?;
     let sessions = cesauth_cf::ports::store::CloudflareActiveSessionStore::new(env);
-    match sessions.status(&cookie.session_id).await {
+    let outcome = sessions.touch(
+        &cookie.session_id,
+        now,
+        cfg.session_idle_timeout_secs,
+        cfg.session_ttl_secs,
+    ).await;
+
+    match outcome {
         Ok(SessionStatus::Active(state)) => Ok(Ok(state)),
-        Ok(_) | Err(_) => Ok(Err(redirect_to_login_with_next(req)?)),
+        Ok(SessionStatus::IdleExpired(state)) => {
+            // v0.35.0: emit audit so operators can monitor the
+            // idle-timeout signal separately from explicit
+            // revocation. Best-effort — auth must still bounce
+            // the user to /login regardless of audit success.
+            let payload = serde_json::json!({
+                "session_id":   state.session_id,
+                "idle_secs":    cfg.session_idle_timeout_secs,
+                "last_seen_at": state.last_seen_at,
+                "now":          now,
+            }).to_string();
+            crate::audit::write_owned(
+                env, crate::audit::EventKind::SessionIdleTimeout,
+                Some(state.user_id), Some(state.client_id),
+                Some(payload),
+            ).await.ok();
+            Ok(Err(redirect_to_login_with_next(req)?))
+        }
+        Ok(SessionStatus::AbsoluteExpired(state)) => {
+            let payload = serde_json::json!({
+                "session_id":  state.session_id,
+                "ttl_secs":    cfg.session_ttl_secs,
+                "created_at":  state.created_at,
+                "now":         now,
+            }).to_string();
+            crate::audit::write_owned(
+                env, crate::audit::EventKind::SessionAbsoluteTimeout,
+                Some(state.user_id), Some(state.client_id),
+                Some(payload),
+            ).await.ok();
+            Ok(Err(redirect_to_login_with_next(req)?))
+        }
+        Ok(SessionStatus::Revoked(_) | SessionStatus::NotStarted) | Err(_) => {
+            Ok(Err(redirect_to_login_with_next(req)?))
+        }
     }
 }
 

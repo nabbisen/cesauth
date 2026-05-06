@@ -22,6 +22,15 @@ pub struct Config {
     /// we do not want the browser to surface a login prompt every
     /// hour just because the access token expired.
     pub session_ttl_secs:       i64,
+    /// **v0.35.0** — Idle timeout. If `last_seen_at` is older than
+    /// `now - session_idle_timeout_secs` at touch time, the session
+    /// is considered idle-expired and forcibly revoked. Distinct
+    /// from `session_ttl_secs` (the absolute lifetime): a session
+    /// can survive the absolute window if it's been actively used,
+    /// but goes away if the user walks away. Default 30 minutes.
+    /// Setting this to 0 disables idle timeout (only the absolute
+    /// `session_ttl_secs` applies).
+    pub session_idle_timeout_secs: i64,
     /// How long a `PendingAuthorize` challenge lives in the DO
     /// before it's garbage-collected. The user has this long to
     /// complete authentication after clicking through from
@@ -68,6 +77,10 @@ impl Config {
             // Defaults chosen for passkey-first UX: 7-day session, 10-
             // minute pending-authorize window, 1-minute AuthCode.
             session_ttl_secs:           var_parsed_default("SESSION_TTL_SECS",           7 * 24 * 60 * 60)?,
+            // v0.35.0: 30-minute idle timeout default. Operators can
+            // tighten (e.g., 10 min for high-security tenants) or set
+            // to 0 to disable.
+            session_idle_timeout_secs:  var_parsed_default("SESSION_IDLE_TIMEOUT_SECS",  30 * 60)?,
             pending_authorize_ttl_secs: var_parsed_default("PENDING_AUTHORIZE_TTL_SECS", 10 * 60)?,
             auth_code_ttl_secs:         var_parsed_default("AUTH_CODE_TTL_SECS",         60)?,
             rp_id:                  var("WEBAUTHN_RP_ID")?,

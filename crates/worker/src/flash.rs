@@ -184,26 +184,31 @@ pub enum FlashKey {
     TotpRecovered,
     /// Set after `POST /logout`. Pairs with `Info`.
     LoggedOut,
+    /// **v0.35.0** — Set after `POST /me/security/sessions/:id/revoke`
+    /// succeeds. Pairs with `Success`.
+    SessionRevoked,
 }
 
 impl FlashKey {
     /// Storage form for the cookie payload.
     fn as_str(self) -> &'static str {
         match self {
-            Self::TotpEnabled    => "totp_enabled",
-            Self::TotpDisabled   => "totp_disabled",
-            Self::TotpRecovered  => "totp_recovered",
-            Self::LoggedOut      => "logged_out",
+            Self::TotpEnabled     => "totp_enabled",
+            Self::TotpDisabled    => "totp_disabled",
+            Self::TotpRecovered   => "totp_recovered",
+            Self::LoggedOut       => "logged_out",
+            Self::SessionRevoked  => "session_revoked",
         }
     }
 
     fn from_str(s: &str) -> Option<Self> {
         match s {
-            "totp_enabled"    => Some(Self::TotpEnabled),
-            "totp_disabled"   => Some(Self::TotpDisabled),
-            "totp_recovered"  => Some(Self::TotpRecovered),
-            "logged_out"      => Some(Self::LoggedOut),
-            _                 => None,
+            "totp_enabled"     => Some(Self::TotpEnabled),
+            "totp_disabled"    => Some(Self::TotpDisabled),
+            "totp_recovered"   => Some(Self::TotpRecovered),
+            "logged_out"       => Some(Self::LoggedOut),
+            "session_revoked"  => Some(Self::SessionRevoked),
+            _                  => None,
         }
     }
 
@@ -221,6 +226,7 @@ impl FlashKey {
             Self::TotpRecovered =>
                 "リカバリーコードを使用しました。authenticator を失った場合は再 enroll を検討してください。",
             Self::LoggedOut   => "ログアウトしました。",
+            Self::SessionRevoked => "セッションを取り消しました。",
         }
     }
 }
@@ -395,6 +401,25 @@ fn derive_mac_key(env: &Env) -> Result<Vec<u8>> {
         .expect("HMAC-SHA256 accepts any key length");
     prk.update(HKDF_INFO);
     Ok(prk.finalize().into_bytes().to_vec())
+}
+
+/// Project a `Flash` to the rendering-layer `FlashView`. The
+/// projection is mechanical (each Flash field has a 1:1 mapping
+/// to FlashView) but tedious; centralizing it here saves every
+/// handler from rebuilding the same four-field map.
+///
+/// Added in v0.35.0 alongside `/me/security/sessions` — the
+/// pattern was already present in `routes::me::security` but
+/// inlined; that copy can be migrated later. (Doing the
+/// migration in v0.35.0 isn't worth the diff for an already-
+/// working surface.)
+pub fn render_view(flash: Flash) -> cesauth_ui::templates::FlashView {
+    cesauth_ui::templates::FlashView {
+        aria_live:    flash.level.aria_live(),
+        css_modifier: flash.level.css_modifier(),
+        icon:         flash.level.icon(),
+        text:         flash.key.display_text(),
+    }
 }
 
 #[cfg(test)]

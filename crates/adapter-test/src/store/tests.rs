@@ -3,11 +3,25 @@
 
 use super::*;
 use cesauth_core::ports::store::{
-    AuthChallengeStore, Challenge, FamilyInit, RateLimitStore, RefreshTokenFamilyStore,
-    RotateOutcome,
+    ActiveSessionStore, AuthChallengeStore, AuthMethod, Challenge, FamilyInit,
+    RateLimitStore, RefreshTokenFamilyStore, RotateOutcome,
+    SessionState, SessionStatus,
 };
 use cesauth_core::ports::PortError;
 use cesauth_core::types::Scopes;
+
+fn sample_session(id: &str, user: &str, created_at: i64) -> SessionState {
+    SessionState {
+        session_id:   id.to_owned(),
+        user_id:      user.to_owned(),
+        client_id:    "client_a".to_owned(),
+        scopes:       vec!["openid".to_owned()],
+        auth_method:  AuthMethod::Passkey,
+        created_at,
+        last_seen_at: created_at,
+        revoked_at:   None,
+    }
+}
 
 fn sample_auth_code() -> Challenge {
     Challenge::AuthCode {
@@ -216,4 +230,183 @@ async fn rate_limit_window_rolls() {
     assert_eq!(d.count, 1);
     assert!(d.allowed);
     assert!(!d.escalate);
+}
+
+// =====================================================================
+// ActiveSessionStore — v0.35.0 idle / absolute timeout + list_for_user
+// =====================================================================
+
+#[tokio::test]
+async fn session_touch_active_bumps_last_seen() {
+    let store = InMemoryActiveSessionStore::default();
+    let s = sample_session("s1", "u1", 100);
+    store.start(&s).await.unwrap();
+
+    // 30 sec later, with a 60-sec idle window — still active.
+    let out = store.touch("s1", 130, 60, 0).await.unwrap();
+    match out {
+        SessionStatus::Active(state) => {
+            assert_eq!(state.last_seen_at, 130,
+                "touch must update last_seen_at on active sessions");
+        }
+        other => panic!("expected Active, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn session_touch_idle_window_expired_revokes_atomically() {
+    let store = InMemoryActiveSessionStore::default();
+    let s = sample_session("s1", "u1", 100);
+    store.start(&s).await.unwrap();
+
+    // 90 sec later, with a 60-sec idle window — last_seen_at
+    // (100) + 60 = 160 <= 190; idle gate fires.
+    let out = store.touch("s1", 190, 60, 0).await.unwrap();
+    match out {
+        SessionStatus::IdleExpired(state) => {
+            assert_eq!(state.revoked_at, Some(190),
+                "DO must populate revoked_at atomically with the IdleExpired return");
+        }
+        other => panic!("expected IdleExpired, got {other:?}"),
+    }
+
+    // Subsequent status() reads see Revoked.
+    let st = store.status("s1").await.unwrap();
+    assert!(matches!(st, SessionStatus::Revoked(_)));
+}
+
+#[tokio::test]
+async fn session_touch_idle_disabled_when_zero() {
+    // Setting idle_timeout_secs = 0 disables the idle gate.
+    // This is the operator escape hatch documented in Config.
+    let store = InMemoryActiveSessionStore::default();
+    let s = sample_session("s1", "u1", 100);
+    store.start(&s).await.unwrap();
+
+    // 1 hour later. Without an idle gate, still active.
+    let out = store.touch("s1", 100 + 3600, 0, 0).await.unwrap();
+    assert!(matches!(out, SessionStatus::Active(_)),
+        "idle_timeout_secs=0 must disable the idle gate");
+}
+
+#[tokio::test]
+async fn session_touch_absolute_lifetime_expires_regardless_of_activity() {
+    let store = InMemoryActiveSessionStore::default();
+    let s = sample_session("s1", "u1", 100);
+    store.start(&s).await.unwrap();
+
+    // Bump activity at t=1900 (30 min after start). Wide
+    // idle window (3600) so the bump itself is active. After
+    // the bump, last_seen_at = 1900.
+    let out1 = store.touch("s1", 1900, 3600, 7200).await.unwrap();
+    assert!(matches!(out1, SessionStatus::Active(_)),
+        "30-min-old session with 1-hr idle window must be active");
+
+    // Now test absolute. At t=3800 (63 min from start),
+    // last_seen_at = 1900 → idle delta = 1900, idle window
+    // 3600 → idle gate would NOT fire. But created_at + 3600
+    // = 3700 < 3800 → absolute gate fires.
+    let out2 = store.touch("s1", 3800, 3600, 3600).await.unwrap();
+    match out2 {
+        SessionStatus::AbsoluteExpired(state) => {
+            assert_eq!(state.revoked_at, Some(3800));
+        }
+        other => panic!("expected AbsoluteExpired, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn session_touch_absolute_takes_priority_over_idle() {
+    // Order matters: a session past BOTH gates should report
+    // AbsoluteExpired (the deeper cause). The audit dispatch
+    // can then attribute correctly. Test pin.
+    let store = InMemoryActiveSessionStore::default();
+    let s = sample_session("s1", "u1", 0);
+    store.start(&s).await.unwrap();
+
+    // 7200 sec later: last_seen=0+60 idle window exceeded
+    // (idle gate would fire), AND created_at + 3600 absolute
+    // window exceeded.
+    let out = store.touch("s1", 7200, 60, 3600).await.unwrap();
+    assert!(matches!(out, SessionStatus::AbsoluteExpired(_)),
+        "absolute gate must take priority over idle for forensic clarity");
+}
+
+#[tokio::test]
+async fn session_touch_already_revoked_is_idempotent() {
+    let store = InMemoryActiveSessionStore::default();
+    let s = sample_session("s1", "u1", 100);
+    store.start(&s).await.unwrap();
+    store.revoke("s1", 150).await.unwrap();
+
+    // Subsequent touch must not flip the revoked_at, must
+    // not return IdleExpired, must just see Revoked.
+    let out = store.touch("s1", 200, 60, 0).await.unwrap();
+    match out {
+        SessionStatus::Revoked(state) => {
+            assert_eq!(state.revoked_at, Some(150),
+                "revoked_at must reflect the original revoke time, not a later touch");
+        }
+        other => panic!("expected Revoked, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn session_touch_unknown_returns_not_started() {
+    let store = InMemoryActiveSessionStore::default();
+    let out = store.touch("never-started", 100, 60, 0).await.unwrap();
+    assert!(matches!(out, SessionStatus::NotStarted));
+}
+
+// ----- list_for_user -----
+
+#[tokio::test]
+async fn session_list_for_user_returns_only_that_user_newest_first() {
+    let store = InMemoryActiveSessionStore::default();
+    store.start(&sample_session("s_old",   "alice", 100)).await.unwrap();
+    store.start(&sample_session("s_mid",   "alice", 200)).await.unwrap();
+    store.start(&sample_session("s_new",   "alice", 300)).await.unwrap();
+    store.start(&sample_session("s_other", "bob",   250)).await.unwrap();
+
+    let out = store.list_for_user("alice", false, 50).await.unwrap();
+    assert_eq!(out.len(), 3);
+    assert_eq!(out[0].session_id, "s_new", "newest first");
+    assert_eq!(out[1].session_id, "s_mid");
+    assert_eq!(out[2].session_id, "s_old");
+    // bob's session must not leak in.
+    assert!(out.iter().all(|s| s.user_id == "alice"));
+}
+
+#[tokio::test]
+async fn session_list_for_user_excludes_revoked_by_default() {
+    let store = InMemoryActiveSessionStore::default();
+    store.start(&sample_session("active", "alice", 100)).await.unwrap();
+    store.start(&sample_session("dead",   "alice", 200)).await.unwrap();
+    store.revoke("dead", 250).await.unwrap();
+
+    let active_only = store.list_for_user("alice", false, 50).await.unwrap();
+    assert_eq!(active_only.len(), 1);
+    assert_eq!(active_only[0].session_id, "active");
+
+    let with_revoked = store.list_for_user("alice", true, 50).await.unwrap();
+    assert_eq!(with_revoked.len(), 2,
+        "include_revoked=true must surface revoked sessions for forensic UIs");
+}
+
+#[tokio::test]
+async fn session_list_for_user_respects_limit() {
+    let store = InMemoryActiveSessionStore::default();
+    for i in 0..5 {
+        store.start(&sample_session(&format!("s{i}"), "alice", 100 + i)).await.unwrap();
+    }
+    let out = store.list_for_user("alice", false, 2).await.unwrap();
+    assert_eq!(out.len(), 2,
+        "limit must cap the result count");
+}
+
+#[tokio::test]
+async fn session_list_for_user_empty_when_no_sessions() {
+    let store = InMemoryActiveSessionStore::default();
+    let out = store.list_for_user("nobody", false, 50).await.unwrap();
+    assert!(out.is_empty());
 }
