@@ -28,6 +28,7 @@ pub mod sweep;
 pub mod audit_chain_cron;
 pub mod audit_retention_cron;
 pub mod session_index_audit;
+pub mod session_index_repair_cron;
 pub mod turnstile;
 
 #[allow(clippy::wildcard_imports)]
@@ -86,6 +87,18 @@ pub async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
             // and exits as a safe no-op.
             if let Err(e) = audit_retention_cron::run(&env).await {
                 console_error!("audit retention cron failed: {e:?}");
+            }
+            // v0.49.0: session-index repair pass
+            // (ADR-012 §Q1.5 Resolved). Reads the same
+            // D1 mirror as session_index_audit, walks
+            // outward to the DOs, classifies drifts,
+            // and (when SESSION_INDEX_AUTO_REPAIR=true)
+            // mutates D1 to bring the mirror in line.
+            // Default off — operators opt in after
+            // watching the drift event stream from
+            // session_index_audit for some time.
+            if let Err(e) = session_index_repair_cron::run(&env).await {
+                console_error!("session index repair cron failed: {e:?}");
             }
         }
         // Unknown schedule. Either a misconfigured `wrangler.toml`

@@ -12,6 +12,279 @@ changes will always be called out here.
 
 ---
 
+## [0.49.0] - 2026-05-04
+
+D1 session-index repair tool. **ADR-012 §Q1.5
+Resolved.** Per-operator-request order: tech-debt
+(v0.44.0), bulk-revoke (v0.45.0), refresh-
+introspection (v0.46.0), i18n-2 (v0.47.0), audit
+retention (v0.48.0), D1 repair sixth (this
+release). **All six items shipped.**
+
+### Why this matters
+
+v0.40.0 introduced the `session_index_audit` cron
+pass which walks D1 outward to per-session DOs,
+classifies drift via `session_index::classify`,
+and emits `SessionIndexDrift` audit events. **It
+emitted but did not repair.** The ADR-012 §Q1.5
+paragraph explicitly deferred the repair half:
+"Once we have observed a few weeks of
+`session_index_drift` events in production, ship
+the repair half." Operators have now surfaced
+that demand.
+
+### What ships
+
+#### `cesauth_core::ports::session_index::SessionIndexRepo`
+
+New trait. Three methods:
+
+```rust
+pub trait SessionIndexRepo {
+    async fn list_active(&self, limit: u32) -> PortResult<Vec<SessionIndexRow>>;
+    async fn delete_row(&self, session_id: &str) -> PortResult<()>;
+    async fn mark_revoked(&self, session_id: &str, revoked_at: i64) -> PortResult<()>;
+}
+```
+
+Both write methods are **idempotent**:
+
+- `delete_row` on a non-existent session_id is
+  `Ok(())`. A repair pass running after a
+  reconcile-then-write race produces no error.
+- `mark_revoked` uses a `WHERE revoked_at IS NULL`
+  SQL guard. A row whose `revoked_at` is already
+  set is NOT overwritten — the existing
+  timestamp is the canonical first-revoke moment
+  and a repair pass must not rewrite history.
+
+The Cloudflare D1 adapter
+(`crates/adapter-cloudflare/src/ports/session_index.rs`)
+implements both with explicit comments on the
+guard SQL.
+
+#### Pure repair service
+
+`cesauth_core::session_index::repair::run_repair_pass(index, store, cfg, now) -> RepairOutcome`.
+Composes the existing `classify` logic with
+the new port. For each row in
+`index.list_active`:
+
+| Drift state | Repair action |
+|---|---|
+| `InSync` | none |
+| `DoVanished` | `index.delete_row(sid)` |
+| `DoNewerRevoke` | `index.mark_revoked(sid, do_revoked_at)` |
+| `AnomalousD1RevokedDoActive` | **none** (alert-only) |
+
+`AnomalousD1RevokedDoActive` is never auto-
+repaired because automated repair would mask
+whatever upstream bug produced it (D1 says
+revoked, DO says active means a revoke write
+landed in D1 but not the DO — that's a
+regression, not a drift to silently fix).
+
+**Best-effort**: per-row failures (DO query or
+D1 mutation errored) increment `errors` and
+continue the batch. Aborting on first error
+would leave the bulk of drifts unrepaired
+forever if the first row hits a transient
+failure.
+
+#### `RepairConfig` opt-in
+
+```rust
+pub struct RepairConfig {
+    pub auto_repair_enabled: bool,
+    pub batch_limit:         u32,
+}
+```
+
+When `auto_repair_enabled = false` (the cesauth
+default), the pass classifies + counts but emits
+no D1 writes. `RepairOutcome::dry_run = true` in
+that case. When `true`, the pass writes the
+repairs.
+
+**Operators opt in deliberately.** Default-off
+because:
+
+- **Trust gradient**: a deployment without a
+  track record of clean drift events shouldn't
+  have automated D1 mutation pointed at it. The
+  first cron pass after an upstream regression
+  could mass-delete real rows.
+- **Reversibility**: the v0.40.0 detection trail
+  (one `SessionIndexDrift` audit event per
+  drift) is the operator's "what got changed and
+  why" record if a repair later turns out to be
+  wrong. Auto-repair without the prior
+  detection period collapses that trail.
+
+#### Fifth cron pass
+
+`session_index_repair_cron::run` runs after
+`sweep` → `audit_chain_cron` →
+`session_index_audit` → `audit_retention_cron`
+on the daily 04:00 UTC schedule. Independent —
+failure logs but doesn't block the others.
+
+Log line shape (dry-run):
+
+```text
+session_index_repair: [DRY RUN] walked=1234 in_sync=1230 \
+                      would-repair-do_vanished=3 \
+                      would-repair-do_newer_revoke=1 \
+                      anomalous=0 errors=0 \
+                      (set SESSION_INDEX_AUTO_REPAIR=true to enable repairs)
+```
+
+Log line shape (auto-repair on):
+
+```text
+session_index_repair: walked=1234 in_sync=1230 \
+                      repaired-do_vanished=3 \
+                      repaired-do_newer_revoke=1 \
+                      anomalous=0 errors=0
+```
+
+#### Env vars
+
+| Env var | Default | Effect |
+|---|---|---|
+| `SESSION_INDEX_AUTO_REPAIR` | `false` | When `"true"`, enable D1 mutations |
+| `SESSION_INDEX_REPAIR_BATCH_LIMIT` | `1000` | Max rows walked per pass |
+
+### Tests
+
+973 → **986** lib (+13). With migrate integration:
+1002 → **1015**.
+
+- core: 430 → 443 (+13). All in
+  `session_index::repair::tests`:
+  - Happy paths: `in_sync_rows_count_no_writes`,
+    `do_vanished_drift_is_repaired_when_enabled`,
+    `do_newer_revoke_drift_is_repaired_with_do_timestamp`.
+  - Anomalous case pin:
+    `anomalous_alert_only_is_never_repaired`
+    (also documents the
+    `list_active`-filter-excludes-anomalous edge).
+  - Dry-run pin:
+    `dry_run_classifies_but_writes_nothing`.
+  - Error handling:
+    `list_failure_propagates_as_internal`,
+    `per_row_status_failure_increments_errors_does_not_abort`,
+    `per_row_repair_failure_increments_errors_does_not_abort`
+    (best-effort failure containment).
+  - Counts:
+    `walked_count_equals_listed_rows`,
+    `idempotent_second_repair_pass_is_no_op`,
+    `mark_revoked_idempotent_at_repo_level`
+    (the WHERE-revoked_at-IS-NULL guard).
+  - Wire shape:
+    `default_config_is_dry_run` (pin: opt-in
+    contract), `outcome_default_zero_counts`.
+- ui: 244 → 244.
+- worker: 182 → 182 (cron handler is glue; the
+  testable transformation is in pure core).
+
+### Schema / wire / DO
+
+- Schema unchanged (still SCHEMA_VERSION 9).
+  Repair operates on the existing `user_sessions`
+  table; no migration.
+- Wire format unchanged.
+- DO state unchanged (the repair pass reads DO
+  state via `ActiveSessionStore::status`, never
+  mutates it).
+- No new dependencies.
+
+### Operator-visible changes
+
+- **New cron pass** runs daily after the existing
+  four. **Default behavior is dry-run** —
+  classifies but doesn't mutate.
+- **Two new optional env vars**:
+  `SESSION_INDEX_AUTO_REPAIR` and
+  `SESSION_INDEX_REPAIR_BATCH_LIMIT`. Operators
+  opt in to repairs by setting
+  `SESSION_INDEX_AUTO_REPAIR=true`.
+- **Recommended deployment progression**:
+  1. Upgrade to v0.49.0. The dry-run pass starts
+     emitting log lines showing
+     would-repair counts.
+  2. Watch for at least one week, ideally a
+     month. If the dry-run counts are stable
+     (small numbers, no spikes), the upstream
+     paths are healthy and repair is safe.
+  3. Set `SESSION_INDEX_AUTO_REPAIR=true` and
+     redeploy. Subsequent cron passes write the
+     repairs.
+- No `wrangler.toml` change (cron schedule
+  unchanged). No new bindings. No schema
+  migration.
+
+### ADR changes
+
+- **ADR-012 §Q1.5** marked **Resolved**. Inline
+  resolution paragraph follows the
+  ADR-011 §Q1 / ADR-012 §Q1, §Q4 / ADR-014 §Q4,
+  §Q2, §Q3 inline-resolution style.
+- No new ADR.
+
+### Doc / metadata changes
+
+- `Cargo.toml` workspace version 0.48.0 → 0.49.0.
+- UI footers + tests bumped to v0.49.0.
+- ROADMAP: v0.49.0 Shipped table row.
+- This CHANGELOG entry.
+
+### Upgrade path 0.48.0 → 0.49.0
+
+1. `git pull` or extract this tarball.
+2. `cargo build --workspace --target
+   wasm32-unknown-unknown --release`. **No new
+   dependencies.**
+3. `wrangler deploy`. **No schema migration. No
+   new bindings.**
+4. **Watch the dry-run cron output** for a week
+   or more.
+5. **Optionally** turn repair on:
+   ```
+   wrangler secret put SESSION_INDEX_AUTO_REPAIR  # set to "true"
+   ```
+   Or add to `[vars]` in `wrangler.toml`.
+
+### Per-operator-request ordering — complete
+
+| # | Item | Release |
+|---|---|---|
+| 1 | Tech-debt sweep | v0.44.0 |
+| 2 | Bulk "revoke all other sessions" | v0.45.0 |
+| 3 | Refresh-token introspection enhancements | v0.46.0 |
+| 4 | i18n-2 continuation | v0.47.0 |
+| 5 | Audit retention policy | v0.48.0 |
+| 6 | D1 repair tool | **v0.49.0** ← here |
+
+### Forward roadmap
+
+- **No items pending from operator-requested
+  order.** The six-item batch is complete.
+- **Future security-track items still open**
+  (operator demand pending):
+  - ADR-012 §Q2: User notification on idle /
+    absolute timeout.
+  - ADR-012 §Q3: Geographic / device-fingerprint
+    columns on `user_sessions`.
+  - ADR-012 §Q5: Orphan DOs (Cloudflare does not
+    support DO namespace iteration; this would
+    require a different storage shape).
+  - ADR-014 §Q1: Audience scoping for
+    introspection responses.
+
+---
+
 ## [0.48.0] - 2026-05-04
 
 Audit retention policy. **ADR-014 §Q3 Resolved.**

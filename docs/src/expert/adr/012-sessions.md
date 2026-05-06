@@ -346,23 +346,42 @@ who want the v0.34.0 behavior can set
   the mirror write paths have a regression
   somewhere, and fixing the root cause is the right
   move rather than auto-rewriting D1.
-- **Q1.5** (NEW, v0.40.0): D1 repair tool. Once we
-  have observed a few weeks of `session_index_drift`
-  events in production, ship the repair half: D1
-  delete for `do_vanished` rows, D1 update for
-  `do_newer_revoke` rows. `anomalous_d1_revoked_do_active`
-  remains alert-only — automated repair would mask
-  whatever upstream bug produced it. Likely shape: a
-  `cesauth-migrate sessions repair` admin
-  subcommand that talks to a new admin HTTP endpoint
-  on the worker, or a separate cron switch
-  (`SESSION_INDEX_AUTO_REPAIR=true`) for trusted
-  deployments. **Limitation already documented**:
-  this approach cannot detect a DO that exists with no
-  D1 row (orphan DO) — Cloudflare doesn't support DO
-  namespace iteration. Pre-v0.35.0 sessions and
-  start-time-mirror-failures are invisible. Tracked
-  as Q5.
+- **Q1.5** (NEW, v0.40.0): ~~D1 repair tool.~~
+  **Resolved in v0.49.0.** A fifth cron pass
+  `session_index_repair_cron` runs daily at 04:00 UTC
+  after `audit_retention_cron`. It re-walks the same
+  D1 mirror as the v0.40.0 detection pass, classifies
+  each row's drift state, and (when opted in via
+  `SESSION_INDEX_AUTO_REPAIR=true`) writes the repairs:
+  D1 DELETE for `DoVanished` rows (DO has no record;
+  sweep cascade deleted it); D1 UPDATE setting
+  `revoked_at = do_revoked_at` for `DoNewerRevoke`
+  rows (DO has a revoke timestamp the mirror missed).
+  `AnomalousD1RevokedDoActive` remains alert-only —
+  automated repair would mask whatever upstream bug
+  produced it. **Default is detection-only** (auto-
+  repair opt-in via env). Reasoning: a fresh
+  deployment without a track record of clean drifts
+  shouldn't have automated D1 mutation pointed at it
+  (the first cron pass after an upstream regression
+  could mass-delete real rows). Default-off gives
+  operators time to watch the `session_index_drift`
+  event stream from v0.40.0's pass and decide "yes,
+  the upstream paths are stable; turn repair on".
+  **New port `cesauth_core::ports::session_index::SessionIndexRepo`**
+  exposes `list_active`, `delete_row`, `mark_revoked`.
+  Both write methods are idempotent: `delete_row` on
+  a non-existent session_id is `Ok(())`; `mark_revoked`
+  uses a `WHERE revoked_at IS NULL` SQL guard to refuse
+  to overwrite an already-set revoked_at (history is
+  preserved). **Pure service**
+  `cesauth_core::session_index::repair::run_repair_pass`
+  composes the existing `classify` logic with the new
+  port; full unit-test coverage via stub repos. **Q5
+  limitation acknowledged**: orphan DOs with no D1
+  row remain undetectable (Cloudflare doesn't support
+  DO namespace iteration); pre-v0.35.0 sessions and
+  start-time-mirror-failures stay invisible.
 - **Q2**: User notification on idle / absolute timeout. The
   current behavior is silent (the user just gets redirected
   to /login on the next request). A notification "your

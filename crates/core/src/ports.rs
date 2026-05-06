@@ -32,6 +32,7 @@ pub mod audit;
 pub mod audit_chain;
 pub mod cache;
 pub mod repo;
+pub mod session_index;
 pub mod store;
 
 use thiserror::Error;

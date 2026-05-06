@@ -195,5 +195,7 @@ pub fn classify(d1: &D1SessionRow, do_status: &SessionStatus) -> ReconcileOutcom
     }
 }
 
+pub mod repair;
+
 #[cfg(test)]
 mod tests;
