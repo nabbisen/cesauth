@@ -17,7 +17,7 @@ members = [
 # `[workspace.package].rust-version`) and the wasm32 target installed.
 
 [workspace.package]
-version      = "0.19.0"
+version      = "0.20.0"
 edition      = "2024"
 rust-version = "1.85"
 license      = "Apache-2.0"
@@ -76,7 +76,7 @@ time = { version = "0.3", features = ["serde", "wasm-bindgen"] }
 # Used only by host-side binaries (`crates/migrate`). Workers crates
 # do not pull these in.
 clap  = { version = "4", features = ["derive"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "process"] }
 
 # --- Internal crates ---
 cesauth-core                = { path = "crates/core" }

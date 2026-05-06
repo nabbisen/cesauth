@@ -260,6 +260,19 @@ A common operational need: refresh staging's data with a
 sanitized snapshot of production, so QA can repro production
 issues against realistic data.
 
+**As of v0.20.0, the recommended path is `cesauth-migrate`** —
+see the [Data migration](./data-migration.md) chapter. The
+single command `cesauth-migrate export --profile prod-to-staging`
+produces a redacted dump whose redaction is recorded in the
+manifest (so the importer's later `--require-unredacted` flag
+can refuse it for production-restore use cases).
+
+The legacy `sed`-based procedure below is preserved for
+operators on cesauth versions older than v0.20.0, or for
+environments where `cesauth-migrate` is unavailable.
+
+### Legacy procedure (pre-v0.20.0)
+
 The procedure:
 
 ```sh
@@ -322,14 +335,17 @@ specific architecture; this is operator territory.
 
 The procedures above cover **same-account** backup and restore.
 For **cross-account** moves (M&A events, regional separation,
-isolating a compromised account, operator preference shifts),
-the dedicated `cesauth-migrate` CLI lands in v0.20.0+ following
-ADR-005's phasing. v0.19.0 ships the CLI skeleton + format
-foundation; check `cesauth-migrate --help` for the
-finalized UX. The `prod-to-staging` refresh sketched above
-becomes a single first-class command (`cesauth-migrate export
---profile prod-to-staging | cesauth-migrate import`) once
-v0.22.0 lands.
+isolating a compromised account, operator preference shifts), the
+dedicated `cesauth-migrate` CLI is now the right tool. Real
+export and verify ship in v0.20.0; real import lands in
+v0.21.0. See the [Data migration](./data-migration.md) chapter
+for the operator-facing walkthrough; ADR-005 covers the design.
+
+The hand-rolled `sed` script for production → staging email
+redaction sketched earlier in this chapter is **obsolete as of
+v0.20.0** — `cesauth-migrate export --profile prod-to-staging`
+does the same thing properly, with the redaction recorded in
+the dump's manifest so the importer knows what was scrubbed.
 
 ## See also
 

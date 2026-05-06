@@ -52,6 +52,7 @@
 - [Multi-environment workflow](./deployment/environments.md)
 - [Migrating from local to production](./deployment/production.md)
 - [Backup & restore](./deployment/backup-restore.md)
+- [Data migration](./deployment/data-migration.md)
 - [Observability](./deployment/observability.md)
 - [Day-2 operations runbook](./deployment/runbook.md)
 - [Disaster recovery](./deployment/disaster-recovery.md)

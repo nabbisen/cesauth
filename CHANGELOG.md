@@ -12,6 +12,241 @@ always be called out here.
 
 ---
 
+## [0.20.0] - 2026-04-28
+
+Data migration tooling — Phase 2: real `export` + `verify`
+subcommands. The CLI is now functional for the source-side and
+destination-verification halves of a cross-account move; the
+import path lands in v0.21.0 with the operator handshake and
+invariant accumulation.
+
+ADR-005 phasing intact: foundation (v0.19.0) → export+verify
+(this release) → import (v0.21.0) → polish (v0.22.0). After
+v0.21.0, ADR-005 graduates from `Draft` to `Accepted`.
+
+### Added — `cesauth_core::migrate` library
+
+The library expands from value-types-only to a complete
+exporter + verifier:
+
+- **`MigrateError`** — typed error enum with 8 distinguished
+  kinds: `Io`, `Parse`, `UnsupportedFormatVersion`,
+  `SignatureMismatch`, `TableHashMismatch`,
+  `PayloadHashMismatch`, `Random`, `Crypto`. The CLI maps
+  each to a different exit code and message tone — a
+  signature mismatch is a security event (loud, postmortem-
+  grade); a parse error is a corruption event
+  (retransmit); an I/O error is local. Caller can match on
+  the kind without string-matching error messages.
+- **`apply_redaction(profile, table, &mut row)`** — pure
+  function. Applies a `RedactionProfile`'s per-column rules
+  to a row. The `HashedEmail` kind derives a synthetic
+  `anon-<hex>@example.invalid` value via SHA-256 of the
+  original — deterministic (re-export of the same source
+  produces the same redacted output, important for
+  diff-friendly dumps), and preserves `users.email` UNIQUE
+  invariant on the receiving side.
+- **`ExportSpec<'a>`** — the static configuration of a
+  single export run.
+- **`ExportSigner`** — per-export Ed25519 keypair wrapper.
+  `fresh()` generates via `getrandom` (returning
+  `MigrateError::Random` rather than panicking on RNG
+  failure, unlike default `SigningKey::generate`).
+  `Debug` impl deliberately elides everything — never
+  surfaces private bytes through accidental tracing.
+- **`Exporter<W>`** — streaming exporter. `push(table, row)`
+  enforces topological order (out-of-order or unknown table
+  → `MigrateError::Parse`). `finish()` consumes self —
+  signing key is dropped after use, single-use invariant
+  per ADR-005 §Q3. `fingerprint()` returns the pubkey
+  fingerprint operators print at export start for the
+  out-of-band handshake.
+- **`verify<R: BufRead>`** — streaming verifier.
+  Per-table SHA-256, total payload SHA-256, signature
+  verify against pubkey embedded in manifest. Pure
+  function; no D1 contact, no filesystem assumptions
+  beyond the passed-in reader. `VerifyReport` carries the
+  manifest plus re-computed per-table row counts so the
+  CLI doesn't have to re-sum.
+
+### Added — `crates/migrate/` (CLI)
+
+- **Real `export` subcommand**. Wires
+  `WranglerD1Source` → `Exporter`. Refuses to clobber
+  existing files. Prints the public-key fingerprint to
+  stderr at export start (operator reads it out-of-band
+  to the importing operator). Walks
+  `MIGRATION_TABLE_ORDER` in topological order, prints
+  per-table row counts as it goes. Prints the
+  secrets-coordination checklist at the end (ADR-005 §Q6).
+- **Real `verify` subcommand**. No D1 contact. Prints
+  manifest summary (format version, schema version,
+  source identifiers, redaction profile if any). Prints
+  fingerprint with operator-facing prompt to confirm
+  out-of-band. Prints per-table row counts. Final
+  `Signature verified ✓` line when all checks pass.
+- **`d1_source` module** — `D1Source` trait abstracts how
+  to read rows from a D1. Two implementations:
+  - `WranglerD1Source` — shells out to `wrangler d1
+    execute --remote --json`. v0.20.0's production path.
+    Includes a SQL-identifier check on table names that
+    refuses anything outside `[A-Za-z_][A-Za-z0-9_]*` —
+    defense in depth against table-name typos becoming
+    syntax-error injections.
+  - `MockD1Source` — `#[cfg(test)]`-gated in-memory
+    implementation for tests.
+- **`schema` module** — `MIGRATION_TABLE_ORDER` constant:
+  18 cesauth tables in topological FK order. Two tests
+  pin: no duplicates + key topology invariants (tenants
+  before users, roles before role_assignments, plans
+  before subscriptions before subscription_history, etc.).
+
+### Workspace
+
+- **`tokio` feature** extended with `process` for
+  `WranglerD1Source`'s `Command::output().await`.
+- All other deps unchanged.
+
+### Tests
+
+- Total: **337 passing** (+32 over v0.19.0).
+  - core: **151** (was 133) — 18 new in `migrate::tests`:
+    - `apply_redaction_hashed_email_is_deterministic` — same
+      source email → same redacted value across runs.
+    - `apply_redaction_hashed_email_distinguishes_distinct_emails`
+      — UNIQUE-preservation property holds.
+    - `apply_redaction_static_string_is_uniform` — display
+      names collapse to `[redacted]`.
+    - `apply_redaction_skips_unmatched_table` — rules are
+      `(table, column)`-keyed.
+    - `apply_redaction_preserves_unrelated_columns`.
+    - `apply_redaction_null_kind_drops_value`.
+    - `export_then_verify_round_trip` — load-bearing
+      end-to-end.
+    - `export_with_no_rows_produces_valid_dump` — empty
+      deployments are migratable.
+    - `export_records_redaction_profile_in_manifest` —
+      profile name flows into the manifest.
+    - `export_applies_redaction_to_payload_rows` —
+      redaction actually transforms the payload bytes.
+    - `verify_rejects_tampered_payload` — single-byte
+      flip is detected.
+    - `verify_rejects_tampered_signature` — signature
+      substitution is detected as `SignatureMismatch`.
+    - `verify_rejects_unknown_format_version` — refuses
+      future formats rather than silently downgrading.
+    - `verify_rejects_empty_input`.
+    - `verify_rejects_malformed_manifest`.
+    - `export_refuses_out_of_topological_order` — fail-
+      fast on CLI bug that shuffles tables.
+    - `export_refuses_unknown_table`.
+    - `exporter_fingerprint_matches_post_finish_manifest`
+      — operator-prefix print equals eventual manifest's
+      value.
+  - adapter-test: 51 (unchanged).
+  - ui: 121 (unchanged).
+  - migrate: **14** (was 0) — 6 unit (3 in `d1_source`,
+    2 in `schema`, 1 in tests of mock) + 8 integration
+    (`tests/end_to_end.rs`):
+    - `verify_accepts_clean_dump` — real CLI invocation
+      against library-generated dump.
+    - `verify_surfaces_redaction_profile_in_summary`.
+    - `verify_rejects_truncated_dump`.
+    - `verify_rejects_nonexistent_file`.
+    - `list_profiles_prints_the_two_built_ins`.
+    - `export_refuses_to_clobber_existing_file` — exercises
+      the clobber guard without needing wrangler.
+    - `import_still_returns_explanatory_error` — phase 3
+      stub still pointing at v0.21.0.
+    - `export_rejects_unknown_profile` — fail-fast on
+      bad profile name.
+
+### Documentation
+
+- **New chapter** `docs/src/deployment/data-migration.md`.
+  Operator-facing walkthrough: when to use `cesauth-migrate`
+  vs `wrangler d1 export`, install instructions, end-to-end
+  export procedure, redaction-profile usage, what's NOT in
+  the dump, verify procedure including the load-bearing
+  fingerprint-comparison step, operator runbook (export +
+  verify halves), v0.20.0 limitations.
+- **Updated** `docs/src/deployment/backup-restore.md` —
+  `cesauth-migrate` cross-link now points at the real
+  chapter; the legacy `sed`-script prod→staging refresh is
+  marked obsolete and the section now leads with the
+  recommended `cesauth-migrate` path.
+- **`SUMMARY.md`** registers the new chapter.
+
+### Migration (0.19.0 → 0.20.0)
+
+Code-only release. No schema change. No `wrangler.toml`
+change. `wrangler deploy` for the Worker is a no-op (the
+Worker is unaffected).
+
+For operators planning to use the migration tool:
+
+```sh
+# Build / install the host-side binary.
+cargo install --path crates/migrate
+
+# Confirm the new subcommands are real.
+cesauth-migrate verify --help
+cesauth-migrate export --help
+
+# A first dry run against a non-production target is a good
+# idea before depending on it in a real move window.
+```
+
+### Smoke test
+
+```sh
+# Unit + integration tests pass.
+cargo test --workspace
+
+# CLI binary builds, --help exits cleanly.
+./target/debug/cesauth-migrate --help
+
+# verify against a hand-prepared dump (see
+# crates/migrate/tests/end_to_end.rs for the pattern).
+./target/debug/cesauth-migrate verify --input some.cdump
+
+# Existing surfaces unchanged.
+curl -s https://auth.example.com/.well-known/openid-configuration | jq .
+```
+
+### Deferred to 0.21.0
+
+- **Real `import` subcommand** — operator handshake
+  (fingerprint prompt + `[Y/n]` confirmation), payload
+  streaming with per-row schema-invariant checks,
+  accumulate-then-commit/rollback semantics, the
+  `--commit` gate that refuses if the destination's
+  `JWT_SIGNING_KEY` is unset, the `--accept-violations`
+  recovery escape hatch.
+- **Day-2 runbook integration** — adds an "Importing a
+  `.cdump` to a destination" section.
+- **Disaster-recovery integration** — the cross-account
+  compromise scenario gains concrete `cesauth-migrate`
+  invocations.
+- **ADR-005 → Accepted** once import lands.
+
+### Deferred to 0.22.0
+
+- **Resume support** for interrupted exports/imports.
+- **Multi-tenant filtered exports** (`--tenant <slug>`).
+- **First-class staging-refresh combinator** combining
+  export + redaction + import in one invocation.
+- **Native Cloudflare HTTP API client** as an alternative
+  to `wrangler` shell-out.
+- **Per-row progress reporting** (currently per-table).
+
+### Deferred — unchanged
+
+- **`check_permission` integration on `/api/v1/...`.** Unscheduled.
+- **External IdP federation.** Out of scope.
+
+---
+
 ## [0.19.0] - 2026-04-28
 
 Data migration tooling — design (ADR-005) plus the foundation
