@@ -12,6 +12,293 @@ changes will always be called out here.
 
 ---
 
+## [0.42.0] - 2026-05-03
+
+RFC 7009 token revocation conformance. Closes a **silent
+security gap** in v0.27.0's `/revoke`: pre-v0.42.0 the
+endpoint was fully public — any actor with a refresh
+token (e.g., obtained from a leaky client) could revoke
+the underlying family without authenticating, and could
+attribute their own `client_id` form field to
+arbitrarily-issued tokens. Per RFC 7009 §2.1 confidential
+clients MUST authenticate, and §2 says "the
+authorization server first validates the client
+credentials and then verifies whether the token was
+issued to the client making the revocation request" —
+v0.27.0 did neither.
+
+### What ships
+
+#### `cesauth_core::service::client_auth::verify_client_credentials_optional`
+
+Companion to v0.38.0's
+`verify_client_credentials`. The optional variant takes
+`presented_secret: Option<&str>` and returns a
+three-variant `ClientAuthOutcome`:
+
+- **`PublicOrUnknown`** — the named `client_id` is
+  registered as public (no `client_secret_hash` on
+  file) OR doesn't exist at all. The conflation is
+  intentional: the caller can't tell "unknown
+  client" from "public client" by outcome alone,
+  preserving the v0.38.0 enumeration-side-channel
+  defense.
+- **`Authenticated`** — confidential client with
+  matching credentials.
+- **`AuthenticationFailed`** — confidential client,
+  either no credentials presented or wrong secret.
+
+Used by `/revoke` to decide whether the requesting
+client_id requires authentication.
+
+#### `cesauth_core::service::revoke` — pure RFC 7009 service
+
+New module orchestrating the four-way classification +
+cid-binding gate:
+
+```rust
+pub async fn revoke_refresh_token<FS, CR>(
+    families: &FS, clients: &CR, input: &RevokeInput<'_>,
+) -> CoreResult<RevokeOutcome>
+```
+
+Returns one of four `RevokeOutcome` variants:
+
+| Outcome | When | Audit-attributable cause |
+|---|---|---|
+| `Revoked { family_id, client_id, auth_mode }` | Token decoded, auth+cid policy passed, family DO revoked | success |
+| `NotRevocable` | Token couldn't be decoded as refresh token (malformed, or a JWT access token) | scanner traffic / unsupported type |
+| `UnknownFamily` | Token decoded but family didn't exist (already swept, or recycled id) | stale client integration / clock skew |
+| `Unauthorized { reason }` | Auth or cid-binding failed | `ConfidentialAuthFailed` or `ClientIdCidMismatch` |
+
+`RevokeAuthMode` (`PublicClient` / `ConfidentialClient`)
+distinguishes how an authorized revoke succeeded.
+`UnauthorizedReason` (`ConfidentialAuthFailed` /
+`ClientIdCidMismatch`) attributes denials.
+
+**RFC 7009 §2 ordering** — authenticate first against
+the request's `client_id`, then check the cid binding
+(request's claimed client_id vs token's actual cid).
+The service picks the auth target as
+`input.client_id.unwrap_or(token_cid.as_str())` so:
+
+- Public client with no `client_id` form field →
+  trivially passes cid binding (auth target IS the
+  cid).
+- Public client with a wrong `client_id` form field
+  → cid mismatch → `Unauthorized` (closes the
+  cross-client revoke vector).
+- Confidential client with creds → authenticated
+  against own client_id → cid binding still
+  enforced (can't revoke another client's token
+  even after authenticating).
+
+**Cross-client revoke prevention** is the headline
+**security improvement**, not just spec conformance:
+pre-v0.42.0, an attacker who obtained a refresh token
+belonging to ClientA could submit it to `/revoke`
+with `client_id=AttackerControlledApp` and the
+endpoint would happily revoke it. v0.42.0's cid
+binding gate rejects this with silent 200.
+
+#### Worker handler `crates/worker/src/routes/oidc/revoke.rs`
+
+Rewritten to delegate to the pure service:
+
+- Parses form body via `req.form_data()` (matches the
+  v0.38.0 introspection pattern).
+- Reuses v0.38.0's `client_auth::extract` for
+  `Authorization: Basic` + form-body credential
+  extraction. Authorization header takes precedence
+  per RFC 6749 §2.3.1.
+- Resolves requestor's claimed client_id: Basic-header
+  creds first, form `client_id` field second. Used
+  for the cid-binding gate.
+- Calls `revoke_refresh_token`. Maps outcome to:
+  - **Audit event** with per-outcome JSON payload.
+    `NotRevocable` cases are NOT audited (scanner
+    traffic; would just bloat the chain). The other
+    three outcomes emit `EventKind::RevocationRequested`
+    with payload `{outcome, ...}`.
+  - **Log line** for operator dashboards (info
+    level, Auth category, with client_id breadcrumb).
+- **Wire response: always 200 OK with empty body** per
+  RFC 7009 §2.2 — including the `Unauthorized` cases.
+  Returning 401 there would let an attacker probe
+  whether a refresh token belongs to a confidential
+  vs public client by response shape.
+
+#### Discovery doc — RFC 8414 §2
+
+```diff
++ "revocation_endpoint_auth_methods_supported": [
++     "none",
++     "client_secret_basic",
++     "client_secret_post"
++ ]
+```
+
+The `none` entry is the spec-mandated difference vs
+`introspection_endpoint_auth_methods_supported`: RFC
+7009 §2.1 explicitly allows public-client revocation,
+RFC 7662 §2.1 doesn't. Spec-conformant clients
+(`oauth-discovery`-style libraries) auto-pick-up the
+new field.
+
+#### Token-type-hint support
+
+`POST /revoke` now parses the `token_type_hint` form
+parameter (`access_token` / `refresh_token`) per RFC
+7009 §2.1. Unknown values are ignored as the spec
+allows. The hint is currently advisory only — cesauth's
+revoke implementation always treats the input as a
+refresh token; access-token revocation remains
+unsupported (RFC 7009 §2: the AS MAY refuse). A future
+release may use the hint to short-circuit the refresh
+decode for `access_token`-hinted tokens.
+
+### Tests
+
+882 → **902** lib (+20). With migrate integration: 911
+→ **934**.
+
+- core: 364 → 387 (+23).
+  - 6 in `client_auth::tests` for the optional
+    helper (public, unknown, no creds, correct creds,
+    wrong creds, empty secret).
+  - 14 in `service::revoke::tests`:
+    `public_client_with_no_client_id_revokes_by_token_possession`,
+    `public_client_form_client_id_mismatch_returns_unauthorized`
+    (the cross-client revoke prevention pin),
+    `confidential_client_with_correct_creds_revokes`,
+    `confidential_client_no_creds_returns_unauthorized`,
+    `confidential_client_wrong_secret_returns_unauthorized`,
+    `confidential_client_cannot_revoke_other_clients_token`
+    (the multi-tenant cross-cid pin),
+    `malformed_token_returns_not_revocable`,
+    `empty_token_returns_not_revocable`,
+    `unknown_family_returns_unknown_family`,
+    `jwt_access_token_returns_not_revocable`,
+    `token_type_hint_parses_recognized_values`,
+    `token_type_hint_returns_none_for_unknown`,
+    `already_revoked_family_revokes_again_idempotently`.
+  - 3 in `oidc::discovery::tests`:
+    `discovery_revocation_endpoint_auth_methods_advertised`,
+    `discovery_revocation_endpoint_auth_methods_includes_none`
+    (pins the RFC 7009 §2.1 vs RFC 7662 §2.1 spec
+    difference),
+    `discovery_revocation_endpoint_auth_methods_in_wire_form`.
+- ui: 230 → 230. No UI changes.
+- worker: 171 → 171. Handler edits, no new tests;
+  the testable logic is in the pure core service.
+
+### Schema / wire / DO
+
+- Schema unchanged from v0.41.0 (still SCHEMA_VERSION 9).
+  No migration.
+- Wire format additive only: discovery doc gains one
+  field. Spec-conformant parsers tolerate.
+- DO state unchanged.
+- No new dependencies.
+
+### Operator-visible changes / breaking-change notice
+
+- **Pre-v0.42.0 `/revoke` was a known security gap**
+  (cross-client revoke; no confidential-client auth).
+  v0.42.0 fixes the gap. Operators running clients
+  that depend on the loose v0.27.0 behavior — there
+  shouldn't be any, since the spec was the looser
+  side — may see new `Unauthorized` audit events.
+- **Confidential-client revoke now requires
+  authentication.** Clients with a `client_secret_hash`
+  on file MUST submit credentials via Authorization:
+  Basic (preferred) or `client_secret`/`client_id`
+  form fields. Without credentials the revoke is
+  silently no-op'd (200, no body, audit event
+  attributes `Unauthorized:ConfidentialAuthFailed`).
+- **Cross-client revoke is rejected.** A request
+  presenting `client_id=ClientA` for a token whose
+  cid is ClientB is silently no-op'd (200, no body,
+  audit event attributes `Unauthorized:ClientIdCidMismatch`).
+- **`token_type_hint` is now parsed** but currently
+  advisory-only.
+- **Discovery doc adds
+  `revocation_endpoint_auth_methods_supported`** —
+  RFC 8414 §2. Spec-conformant clients pick it up
+  automatically.
+- **Audit dashboards should add a panel breaking down
+  `revocation_requested` events by `outcome` field**
+  — the new four-way attribution lets operators
+  distinguish:
+  - `revoked` (steady-state),
+  - `unauthorized` with `reason: cid_mismatch` (could
+    be cross-client revoke probing — alert),
+  - `unauthorized` with `reason: auth_failed` (could
+    be wrong creds — investigate, but also some
+    integrations rotate secrets out of band),
+  - `unknown_family` (stale clients / clock skew —
+    operationally noisy but not security-meaningful).
+
+### ADR changes
+
+- **No new ADR.** The implementation maps directly to
+  RFC 7009; no cesauth-specific decision points
+  beyond what the spec says. The cid-binding-on-
+  public-clients choice is recorded inline in the
+  module-level docs of `cesauth_core::service::revoke`.
+
+### Doc / metadata changes
+
+- `Cargo.toml` version 0.41.0 → 0.42.0.
+- UI footers + tests bumped to v0.42.0.
+- ROADMAP: v0.42.0 Shipped table row.
+- This CHANGELOG entry.
+
+### Upgrade path 0.41.0 → 0.42.0
+
+1. `git pull` or extract this tarball.
+2. `cargo build --workspace --target
+   wasm32-unknown-unknown --release`. **No new
+   production dependencies.**
+3. `wrangler deploy`. **No schema migration.** No
+   `wrangler.toml` change. No new bindings.
+4. **For confidential-client integrations**: ensure
+   `client_secret_basic` (Authorization: Basic) or
+   `client_secret_post` (form-body) credentials are
+   sent on `/revoke`. Without them, revocation
+   silently no-ops.
+5. **For public-client integrations** (mobile apps,
+   SPAs): no action required IF you weren't sending
+   a wrong `client_id` form field. If you were
+   sending one that doesn't match the token's
+   cid, revocation will now silently no-op.
+6. Add the audit-dashboard panel for
+   `revocation_requested` outcome breakdown.
+
+### Forward roadmap
+
+- **Future security-track items still open**:
+  - ADR-012 §Q1.5 D1 repair tool (decision blocked
+    on observed v0.40.0 drift data)
+  - ADR-012 §Q2 user notification on session timeout
+  - ADR-012 §Q3 device fingerprint columns
+  - ADR-012 §Q4 bulk revoke other sessions
+  - ADR-012 §Q5 orphan DO limitation
+  - ADR-014 §Q1 introspection resource-server
+    audience scoping
+  - ADR-014 §Q2 introspection rate limit
+  - ADR-014 §Q3 audit retention policy
+- **Tech-debt sweep candidate**: swap jsonwebtoken to
+  `josekit` + `ed25519-dalek` direct, dropping
+  transitive `rsa` (v0.41.0 trade-off).
+- **i18n-2 continued (v0.39.1+)**: TOTP recovery
+  codes, TOTP disable confirm, magic link, error
+  pages, `PrimaryAuthMethod::label`, Security
+  Center enabled-state recovery-codes row (blocked
+  on pluralization — ADR-013 §Q4).
+
+---
+
 ## [0.41.0] - 2026-05-03
 
 Multi-key access-token introspection (ADR-014 §Q4

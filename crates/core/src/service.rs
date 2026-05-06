@@ -17,6 +17,7 @@
 
 pub mod client_auth;
 pub mod introspect;
+pub mod revoke;
 pub mod token;
 
 #[allow(async_fn_in_trait)]

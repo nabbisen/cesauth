@@ -52,6 +52,14 @@ pub struct DiscoveryDocument {
     /// but the introspection endpoint requires authentication
     /// (no `none`) per RFC 7662 §2.1.
     pub introspection_endpoint_auth_methods_supported: &'static [&'static str],
+    /// **v0.42.0** — Auth methods accepted at the revocation
+    /// endpoint. RFC 7009 + RFC 8414 §2: revocation accepts
+    /// `none` (public clients revoke by token possession),
+    /// `client_secret_basic`, and `client_secret_post`. The
+    /// difference vs introspection is the `none` entry —
+    /// RFC 7009 §2.1 explicitly allows public-client
+    /// revocation, RFC 7662 §2.1 doesn't.
+    pub revocation_endpoint_auth_methods_supported: &'static [&'static str],
     pub code_challenge_methods_supported:      &'static [&'static str],
     pub grant_types_supported:                 &'static [&'static str],
     pub scopes_supported:                      &'static [&'static str],
@@ -80,6 +88,11 @@ impl DiscoveryDocument {
                 "client_secret_post",
             ],
             introspection_endpoint_auth_methods_supported: &[
+                "client_secret_basic",
+                "client_secret_post",
+            ],
+            revocation_endpoint_auth_methods_supported: &[
+                "none",
                 "client_secret_basic",
                 "client_secret_post",
             ],
@@ -199,5 +212,47 @@ mod tests {
         let d = DiscoveryDocument::new("https://auth.example.com");
         assert_eq!(d.token_endpoint_auth_methods_supported,
             &["none", "client_secret_basic", "client_secret_post"]);
+    }
+
+    // ============================================================
+    // v0.42.0 — RFC 7009 revocation endpoint auth methods
+    // ============================================================
+
+    #[test]
+    fn discovery_revocation_endpoint_auth_methods_advertised() {
+        // RFC 8414 §2 + RFC 7009 §2.1: the revocation
+        // endpoint accepts `none` (public clients
+        // revoke by token possession) + the two
+        // confidential-client methods.
+        let d = DiscoveryDocument::new("https://auth.example.com");
+        assert_eq!(d.revocation_endpoint_auth_methods_supported,
+            &["none", "client_secret_basic", "client_secret_post"]);
+    }
+
+    #[test]
+    fn discovery_revocation_endpoint_auth_methods_includes_none() {
+        // Pin the difference vs the introspection
+        // endpoint: revocation MUST list `none`,
+        // introspection MUST NOT. RFC 7662 §2.1
+        // requires confidential auth for introspection;
+        // RFC 7009 §2.1 explicitly allows public-client
+        // revocation.
+        let d = DiscoveryDocument::new("https://auth.example.com");
+        assert!(d.revocation_endpoint_auth_methods_supported.contains(&"none"),
+            "revocation MUST list `none` per RFC 7009 §2.1");
+        assert!(!d.introspection_endpoint_auth_methods_supported.contains(&"none"),
+            "introspection MUST NOT list `none` per RFC 7662 §2.1");
+    }
+
+    #[test]
+    fn discovery_revocation_endpoint_auth_methods_in_wire_form() {
+        // The new field must appear in serialized JSON.
+        // Spec-conformant clients (`oauth-discovery`-
+        // style libraries) read this to decide which
+        // auth method to present at the endpoint.
+        let d = DiscoveryDocument::new("https://auth.example.com");
+        let json = serde_json::to_string(&d).unwrap();
+        assert!(json.contains("revocation_endpoint_auth_methods_supported"),
+            "new RFC 8414 field must appear in wire JSON: {json}");
     }
 }

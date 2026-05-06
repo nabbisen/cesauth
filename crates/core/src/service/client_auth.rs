@@ -67,6 +67,89 @@ where
     }
 }
 
+/// **v0.42.0** — Outcome of an optional client-authentication attempt.
+/// Used by `/revoke` (RFC 7009) where the policy is "confidential
+/// clients MUST authenticate; public clients MAY skip auth and rely
+/// on token possession". The introspect endpoint (RFC 7662) requires
+/// auth unconditionally and uses [`verify_client_credentials`]
+/// directly.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ClientAuthOutcome {
+    /// `client_id` resolves to a public client (no
+    /// `client_secret_hash` on file) OR doesn't exist at
+    /// all. The conflation is intentional: the caller
+    /// shouldn't distinguish "unknown client_id" from
+    /// "public client" because doing so leaks
+    /// client-existence information.
+    PublicOrUnknown,
+    /// Confidential client; presented credentials match
+    /// stored hash.
+    Authenticated,
+    /// Confidential client; either no credentials were
+    /// presented or the presented secret didn't match.
+    /// Conflated for the same reason `verify_client_credentials`
+    /// conflates its failure modes.
+    AuthenticationFailed,
+}
+
+/// **v0.42.0** — Resolve a client's authentication mode with
+/// optional credentials.
+///
+/// `presented_secret` is `Some(secret)` when the request carried
+/// credentials (Authorization: Basic or form-body), `None` when
+/// it didn't. The function inspects whether the named client has
+/// a stored secret hash and combines that with whether
+/// credentials were presented to produce one of three
+/// [`ClientAuthOutcome`] variants.
+///
+/// **Privacy invariant**: the four `(client_secret_hash present?,
+/// credentials presented?, credentials match?)` cases all map to
+/// just three outcomes — `PublicOrUnknown`,
+/// `Authenticated`, `AuthenticationFailed`. Callers cannot
+/// distinguish "the client_id you named doesn't exist" from
+/// "the client_id is registered as public" from the outcome
+/// alone. This avoids the side channel where a confidential-
+/// client revoke endpoint would otherwise let an attacker
+/// enumerate registered client_ids.
+pub async fn verify_client_credentials_optional<CR>(
+    clients:          &CR,
+    client_id:        &str,
+    presented_secret: Option<&str>,
+) -> CoreResult<ClientAuthOutcome>
+where
+    CR: ClientRepository,
+{
+    let stored_hash = clients
+        .client_secret_hash(client_id)
+        .await
+        .map_err(|_| CoreError::Internal)?;
+
+    match (stored_hash, presented_secret) {
+        (None, _) => {
+            // Client unknown OR public — same outcome.
+            // The caller treats this as "auth not
+            // required for this client_id"; if the
+            // caller went on to fetch the token and the
+            // cid in the token's payload referred to a
+            // confidential client, the cid-mismatch
+            // gate downstream still rejects.
+            Ok(ClientAuthOutcome::PublicOrUnknown)
+        }
+        (Some(_), None) => {
+            // Confidential client; no creds presented.
+            Ok(ClientAuthOutcome::AuthenticationFailed)
+        }
+        (Some(stored_hex), Some(secret)) => {
+            let presented_hex = sha256_hex(secret.as_bytes());
+            if constant_time_eq(presented_hex.as_bytes(), stored_hex.as_bytes()) {
+                Ok(ClientAuthOutcome::Authenticated)
+            } else {
+                Ok(ClientAuthOutcome::AuthenticationFailed)
+            }
+        }
+    }
+}
+
 /// SHA-256, lowercase hex. The format that `ClientRepository::create`
 /// expects to receive in `secret_hash`.
 pub fn sha256_hex(bytes: &[u8]) -> String {

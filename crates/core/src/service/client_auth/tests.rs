@@ -32,6 +32,19 @@ fn stub_with(client_id: &str, secret: &str) -> StubClients {
     StubClients { map }
 }
 
+/// **v0.42.0** — Stub returning a registered public
+/// client (the `client_id` exists but has no
+/// `client_secret_hash` on file). Used by the
+/// `verify_client_credentials_optional` tests; in
+/// production this corresponds to a PKCE-only OIDC
+/// client provisioned by an admin who chose not to
+/// generate a secret.
+fn stub_public(client_id: &str) -> StubClients {
+    let mut map = std::collections::HashMap::new();
+    map.insert(client_id.to_owned(), None);
+    StubClients { map }
+}
+
 #[tokio::test]
 async fn correct_secret_verifies() {
     let clients = stub_with("rs_demo", "topsecret123");
@@ -112,4 +125,74 @@ fn constant_time_eq_basic_correctness() {
         "length mismatch must return false");
     assert!(constant_time_eq(b"", b""));
     assert!(!constant_time_eq(b"a", b""));
+}
+
+// =====================================================================
+// v0.42.0 — verify_client_credentials_optional (RFC 7009 revoke)
+// =====================================================================
+
+#[tokio::test]
+async fn optional_public_client_returns_public_or_unknown() {
+    // No client_secret_hash on file → registered as public.
+    let clients = stub_public("public_demo");
+    let outcome = verify_client_credentials_optional(
+        &clients, "public_demo", None,
+    ).await.unwrap();
+    assert_eq!(outcome, ClientAuthOutcome::PublicOrUnknown);
+}
+
+#[tokio::test]
+async fn optional_unknown_client_returns_public_or_unknown() {
+    // Client doesn't exist at all → same outcome as public.
+    // This conflation is the privacy invariant: the caller
+    // can't tell "unknown client" from "public client" by
+    // outcome alone.
+    let clients = stub_with("known_only", "secret");
+    let outcome = verify_client_credentials_optional(
+        &clients, "totally_unknown", Some("anything"),
+    ).await.unwrap();
+    assert_eq!(outcome, ClientAuthOutcome::PublicOrUnknown);
+}
+
+#[tokio::test]
+async fn optional_confidential_no_creds_returns_auth_failed() {
+    // Confidential client, but no Authorization or
+    // form-body creds → revoke endpoint must reject.
+    let clients = stub_with("conf_demo", "real_secret");
+    let outcome = verify_client_credentials_optional(
+        &clients, "conf_demo", None,
+    ).await.unwrap();
+    assert_eq!(outcome, ClientAuthOutcome::AuthenticationFailed);
+}
+
+#[tokio::test]
+async fn optional_confidential_correct_creds_returns_authenticated() {
+    let clients = stub_with("conf_demo", "real_secret");
+    let outcome = verify_client_credentials_optional(
+        &clients, "conf_demo", Some("real_secret"),
+    ).await.unwrap();
+    assert_eq!(outcome, ClientAuthOutcome::Authenticated);
+}
+
+#[tokio::test]
+async fn optional_confidential_wrong_creds_returns_auth_failed() {
+    let clients = stub_with("conf_demo", "real_secret");
+    let outcome = verify_client_credentials_optional(
+        &clients, "conf_demo", Some("wrong_secret"),
+    ).await.unwrap();
+    assert_eq!(outcome, ClientAuthOutcome::AuthenticationFailed);
+}
+
+#[tokio::test]
+async fn optional_confidential_empty_secret_returns_auth_failed() {
+    // Defensive: an empty Some("") is treated like wrong
+    // creds, not like None. The hash of "" doesn't match
+    // any reasonable stored secret. We don't want a path
+    // where presenting "" to a confidential client somehow
+    // gates as PublicOrUnknown.
+    let clients = stub_with("conf_demo", "real_secret");
+    let outcome = verify_client_credentials_optional(
+        &clients, "conf_demo", Some(""),
+    ).await.unwrap();
+    assert_eq!(outcome, ClientAuthOutcome::AuthenticationFailed);
 }
