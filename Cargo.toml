@@ -17,7 +17,7 @@ members = [
 # `[workspace.package].rust-version`) and the wasm32 target installed.
 
 [workspace.package]
-version      = "0.40.0"
+version      = "0.41.0"
 edition      = "2024"
 rust-version = "1.85"
 license      = "Apache-2.0"
@@ -41,14 +41,40 @@ anyhow    = "1"
 # --- Crypto / Auth ---
 # jsonwebtoken 10.x supports EdDSA (Ed25519). `use_pem` lets us load
 # the signing key from a PKCS#8 PEM via `EncodingKey::from_ed_pem`.
-# We do NOT enable `rust_crypto` (its blanket bundle drags in
-# `rsa`, `p256`, `p384`, `hmac` which we don't use). Only the
-# `ed25519-dalek` and `rand` features we actually need are enabled.
-# This avoids a known CVE in transitive `rsa` (RUSTSEC-2023-0071,
-# Marvin Attack) that we'd otherwise carry without exercising —
-# cesauth signs and verifies exclusively with `Algorithm::EdDSA`,
-# never RSA, but the dep would still ship in the workspace lock.
-jsonwebtoken = { version = "10", default-features = false, features = ["use_pem", "ed25519-dalek", "rand"] }
+#
+# **v0.41.0** — enabled `rust_crypto`. Historical context: pre-v0.41.0
+# the workspace deliberately enabled only the bare `ed25519-dalek`
+# opt-dep + `rand` + `use_pem`, deliberately omitting `rust_crypto`
+# to avoid pulling in the transitive `rsa` dep affected by
+# RUSTSEC-2023-0071 / "Marvin Attack". This was a sound threat-model
+# call (cesauth signs and verifies exclusively with EdDSA, never
+# RSA) but it produced a latent runtime bug: jsonwebtoken 10 wired
+# the EdDSA verify path through `CryptoProvider::install_default`,
+# which the bare `ed25519-dalek` opt-dep does not satisfy. The
+# first introspection request with a real access token in
+# production would panic at `decode<C>(...)` with the message
+# "Could not automatically determine the process-level
+# CryptoProvider...". The bug existed since v0.38.0
+# (introspection's introduction) but no CI test exercised the
+# real-JWT verify path until v0.41.0's multi-key work tried to.
+#
+# Enabling `rust_crypto` brings transitive `rsa` v0.9 back in. We
+# accept this because:
+#  - cesauth has no code path that calls `Algorithm::RS{256,384,512}`
+#    or `Algorithm::PS{256,384,512}`. The `rsa` dep is dead code from
+#    cesauth's perspective.
+#  - Marvin Attack is a side-channel against RSA decryption /
+#    signing, not against unused-but-linked code. A linked-but-
+#    unreachable `rsa::PrivateKey` does not exercise the
+#    vulnerable path.
+#  - The alternative (a panicking production binary on the first
+#    real introspection request) is strictly worse.
+#
+# A future sweep should swap the dep to `josekit` + `ed25519-dalek`
+# direct, dropping `rsa` entirely. Tracked in the v0.4 "WASM
+# caveat" comment in `signer.rs` which already anticipates this
+# move.
+jsonwebtoken = { version = "10", default-features = false, features = ["use_pem", "rust_crypto"] }
 
 # webauthn-rs: deliberately NOT included in the initial build. The
 # `webauthn::registration::finish` and `webauthn::authentication::finish`

@@ -12,6 +12,256 @@ changes will always be called out here.
 
 ---
 
+## [0.41.0] - 2026-05-03
+
+Multi-key access-token introspection (ADR-014 §Q4
+**Resolved**) AND fix for a latent jsonwebtoken-10
+CryptoProvider bug introduced in v0.38.0 that would
+have panicked the worker on the first real-token
+introspection request.
+
+### Why this matters
+
+**Two issues, one release**:
+
+1. **Signing-key rotation correctness.** v0.38.0
+   shipped `/introspect` with a single-key access-token
+   verify path: `keys.first()` selected only the most-
+   recently-added active signing key. During a
+   signing-key rotation grace period (multiple keys
+   active concurrently), an access token signed with an
+   older but still-active `kid` would fail introspection's
+   verify path. The refresh-token fallback path
+   covered most user-facing cases, but resource servers
+   actually validating access tokens via introspection
+   would have seen them reported `active=false`.
+2. **A P0 latent bug from v0.38.0.** The workspace's
+   jsonwebtoken-10 dependency was configured with
+   `features = ["use_pem", "ed25519-dalek", "rand"]`,
+   deliberately omitting the `rust_crypto` umbrella to
+   avoid the transitive `rsa` dep affected by
+   RUSTSEC-2023-0071 (Marvin Attack). This was a sound
+   threat-model decision (cesauth never uses RSA) but
+   it produced a runtime bug: jsonwebtoken-10 wired
+   the EdDSA verify path through
+   `CryptoProvider::install_default`, which the bare
+   `ed25519-dalek` opt-dep doesn't satisfy. **The
+   first real introspection request with a real
+   access token in production would have panicked the
+   worker** with the message "Could not automatically
+   determine the process-level CryptoProvider". The
+   bug existed since v0.38.0 (introspection's
+   introduction) but no CI test exercised the
+   real-JWT verify path until v0.41.0's multi-key
+   work tried to.
+
+### What ships
+
+#### Multi-key support (ADR-014 §Q4)
+
+**`cesauth_core::oidc::introspect::IntrospectionKey<'a>`** —
+new type with `kid: &'a str` + `public_key_raw: &'a [u8]`.
+Borrowed lifetime ties to the worker's signing-key
+buffer (which lives only for the request duration).
+
+**`cesauth_core::jwt::signer::extract_kid(token: &str) -> Option<String>`** —
+extracts the JWT header's `kid` member without
+verifying the signature. Returns `None` for malformed
+tokens or kid-less headers. **The kid is untrusted at
+this point** — used only as a hint for key selection;
+the cryptographic verify still runs against the chosen
+key.
+
+**`introspect_token` signature change**:
+
+```diff
+- public_key_raw: &[u8]
++ keys: &[IntrospectionKey<'_>]
+```
+
+Old behavior is the special case `keys.len() == 1`.
+
+**`introspect_access` multi-key strategy**:
+
+1. Empty keys → return `Ok(None)` (deployment
+   misconfigured; refresh-token path still works,
+   pinned by `refresh_path_isolated_from_empty_access_keys`).
+2. **kid-directed lookup**: extract the JWT's `kid`
+   header. If it matches one of the active keys, try
+   that key first. Fast path: 1 crypto verify call.
+3. **try-each fallback**: if no kid present, no
+   match in active set, or kid-matched key fails to
+   verify (defensive), walk every active key in turn.
+4. Return `Some(active_response)` on first
+   verification success. Return `Ok(None)` (inactive)
+   if every key fails.
+
+#### Worker handler `crates/worker/src/routes/oidc/introspect.rs`
+
+Builds `Vec<IntrospectionKey>` from `key_repo.list_active()`
+result. Malformed `public_key_b64` entries (b64 decode
+fails) are filtered out with a `console_warn!` rather
+than aborting the request — defensive against a
+single bad key shadowing the whole active set.
+
+#### CryptoProvider fix (P0 latent v0.38.0 bug)
+
+Workspace `Cargo.toml`:
+
+```diff
+- jsonwebtoken = { version = "10", default-features = false, features = ["use_pem", "ed25519-dalek", "rand"] }
++ jsonwebtoken = { version = "10", default-features = false, features = ["use_pem", "rust_crypto"] }
+```
+
+`rust_crypto` brings transitive `rsa` v0.9 back in.
+We accept this because:
+
+- cesauth has no code path that calls
+  `Algorithm::RS{256,384,512}` or
+  `Algorithm::PS{256,384,512}`. The `rsa` dep is dead
+  code from cesauth's perspective.
+- Marvin Attack is a side-channel against RSA
+  decryption / signing, not against unused-but-linked
+  code. A linked-but-unreachable `rsa::PrivateKey`
+  does not exercise the vulnerable path.
+- The alternative (a panicking production binary on
+  the first real introspection request) is strictly
+  worse.
+
+A future sweep should swap to `josekit` + `ed25519-dalek`
+direct, dropping `rsa` entirely. The v0.4 "WASM
+caveat" comment in `signer.rs` already anticipates
+this move.
+
+### Tests
+
+871 → **882** (+11 lib tests, total 911 with migrate
+integration tests).
+
+- core: 353 → 364 (+11). All in
+  `service::introspect::tests`:
+  - 4 in `multi_key` mod requiring real Ed25519 verify:
+    `single_key_match_verifies_active`,
+    `multi_key_kid_directed_lookup_picks_correct_key`
+    (the headline rotation-grace-period scenario),
+    `multi_key_try_each_fallback_when_kid_unknown`,
+    `forged_kid_with_unknown_signature_rejected`,
+    `token_signed_by_retired_key_reports_inactive`,
+    `empty_keys_returns_inactive`,
+    `refresh_path_isolated_from_empty_access_keys`.
+  - 4 in `extract_kid_tests` mod:
+    `extracts_kid_when_present`,
+    `returns_none_when_kid_absent`,
+    `returns_none_on_garbage_input`,
+    `does_not_verify_signature`.
+
+  Tests build JWTs directly via base64url +
+  `ed25519_dalek::Signer` rather than through
+  `jsonwebtoken::EncodingKey` (which expects PKCS#8 DER
+  rather than the raw 32-byte seed; our test keys are
+  raw seeds). Public-key path uses
+  `DecodingKey::from_ed_der` with the 32 raw bytes,
+  which `jsonwebtoken-10` correctly accepts (the
+  inner storage is `SecretOrDer(raw_bytes)` regardless
+  of whether you came in via `from_ed_der` or
+  `from_ed_components`).
+
+  The 13 baseline introspect tests still pass; their
+  call sites were migrated from `&FAKE_PUBKEY` to
+  `&fake_keys()` (a one-element slice).
+- ui: 230 → 230 (no UI changes).
+- worker: 171 → 171. Handler edits, no new tests;
+  existing handler tests assert structural properties
+  (CSRF, content-type, status codes).
+
+### Schema / wire / DO
+
+- Schema unchanged from v0.40.0 (still SCHEMA_VERSION 9).
+- Wire format unchanged.
+- DO state unchanged.
+- **Dependency change**: `rsa` v0.9 transitively pulled
+  in via jsonwebtoken's `rust_crypto` feature. The
+  deps tree adds `rsa`, `pkcs1`, `pkcs8`, `num-bigint-dig`,
+  `num-iter`, `num-traits`, `signature` 2.x, plus
+  `p256`, `p384`, `hmac` (all unused by cesauth).
+  Worker WASM bundle size increase: TBD on next
+  release build (estimated low single-digit %).
+
+### Operator-visible changes
+
+- **No production behavior change for happy-path
+  introspection.** A resource server submitting a
+  real access token now gets the correct
+  `active=true` instead of a worker panic.
+- **Signing-key rotation grace period**: tokens
+  signed by any key in the active set verify
+  correctly. Operators who delayed rotations because
+  of the v0.38.0 bug can now rotate confidently.
+- **No `wrangler.toml` change. No new bindings. No
+  schema migration.**
+
+### ADR changes
+
+- **ADR-014 §Q4** marked **Resolved**. The "deferred
+  to a future iteration" paragraph replaced with a
+  v0.41.0 implementation summary mirroring the
+  ADR-011 §Q1 / ADR-012 §Q1 inline-resolution style.
+- No new ADR.
+
+### Doc / metadata changes
+
+- `Cargo.toml` version 0.40.0 → 0.41.0.
+- UI footers + tests bumped to v0.41.0.
+- ROADMAP: ADR-014 §Q4 Resolved annotation; v0.41.0
+  Shipped table row added.
+- This CHANGELOG entry.
+
+### Upgrade path 0.40.0 → 0.41.0
+
+1. `git pull` or extract this tarball over your
+   working tree.
+2. `cargo build --workspace --target
+   wasm32-unknown-unknown --release`. **Dependency
+   change**: `rsa` and friends pulled in transitively
+   via jsonwebtoken's `rust_crypto`. Bundle size goes
+   up modestly. If your deployment has tight Worker
+   bundle-size budgets, audit before deploying.
+3. `wrangler deploy`. **No schema migration.** No
+   `wrangler.toml` change.
+4. **Resource servers that previously saw spurious
+   `active=false` from `/introspect` should see
+   correct results immediately** — both the
+   multi-key fix and the CryptoProvider fix land in
+   the same deploy.
+
+### Forward roadmap
+
+- **Future security-track items still open**:
+  - ADR-012 §Q1.5 D1 repair tool (decision blocked
+    on observed v0.40.0 drift data)
+  - ADR-012 §Q2 user notification on session timeout
+  - ADR-012 §Q3 device fingerprint columns
+  - ADR-012 §Q4 bulk revoke other sessions
+  - ADR-012 §Q5 orphan DO limitation
+  - ADR-014 §Q1 introspection resource-server audience
+    scoping
+  - ADR-014 §Q2 introspection rate limit
+  - ADR-014 §Q3 audit retention policy
+- **i18n-2 continued (v0.39.1+)**: TOTP recovery
+  codes, TOTP disable confirm, magic link, error
+  pages, `PrimaryAuthMethod::label`, Security Center
+  enabled-state recovery-codes row (blocked on
+  pluralization — ADR-013 §Q4).
+- **Feature track candidates**: RFC 7009 token
+  revocation for confidential clients.
+- **Tech-debt sweep candidate**: swap jsonwebtoken to
+  `josekit` + `ed25519-dalek` direct, dropping
+  transitive `rsa` (resolves the dead-code-but-
+  CVE-flagged dep that v0.41.0 accepted as a
+  trade-off).
+
+---
+
 ## [0.40.0] - 2026-05-03
 
 D1-DO sessions index drift detection (ADR-012 §Q1

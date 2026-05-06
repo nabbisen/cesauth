@@ -36,6 +36,23 @@ pub enum TokenTypeHint {
     RefreshToken,
 }
 
+/// **v0.41.0** — One signing key in the active set, in
+/// the form the introspection service consumes (kid +
+/// raw 32-byte Ed25519 public key). The worker decodes
+/// the base64-encoded `public_key_b64` from
+/// `PublicSigningKey` once and assembles a slice of these
+/// for the introspection call.
+///
+/// Held by-borrow as a `&[IntrospectionKey<'_>]` so callers
+/// don't have to allocate; the borrow's lifetime ties to
+/// the worker's signing-key buffer that lives only for
+/// the request duration.
+#[derive(Debug)]
+pub struct IntrospectionKey<'a> {
+    pub kid:            &'a str,
+    pub public_key_raw: &'a [u8],
+}
+
 impl TokenTypeHint {
     /// Parse from the `token_type_hint` form parameter. RFC 7662
     /// §2.1 lists `access_token` and `refresh_token` as the

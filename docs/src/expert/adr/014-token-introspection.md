@@ -275,20 +275,32 @@ flag added (their problem, not ours).
   `token_introspected` rows (shorter than other events).
   Defer to operator demand; v0.38.0 emits but doesn't
   expire.
-- **Q4**: Multi-key access-token verification. Today
-  introspection tries only the most-recently-added
-  active signing key. During a key rotation grace
-  period (cesauth supports multiple active keys
-  concurrently), an access token signed with an older
-  key would fail introspection's JWT-verify path even
-  if the resource server's local jwks-cached
-  verification would succeed. The fallback to refresh
-  introspection covers most cases (the access token
-  reports inactive, but the user's refresh token still
-  works for a fresh issuance). For full coverage the
-  introspection path should iterate active keys until
-  one matches. Defer to the rotation work in the
-  future.
+- **Q4**: ~~Multi-key access-token verification.~~
+  **Resolved in v0.41.0.** The access-token verify
+  path now does kid-directed lookup with a try-each
+  fallback. The JWT's `kid` header is extracted via
+  `cesauth_core::jwt::signer::extract_kid` (no signature
+  verification at this stage; kid is untrusted). If the
+  kid matches one of the active keys, that key is
+  tried first — the fast path, one crypto verify call.
+  If the kid doesn't match anything, isn't present, or
+  the kid-matched key fails to verify (defensive),
+  every active key is tried in turn. Returns active
+  on first success; inactive if all fail. The
+  cryptographic check remains the gate; an attacker
+  who forges a kid pointing at a key they don't
+  control still has to produce a valid signature with
+  that key, which they can't. **Side-finding**: the
+  multi-key work surfaced a P0 latent bug from v0.38.0:
+  jsonwebtoken-10's `CryptoProvider::install_default`
+  requirement wasn't met by the workspace's bare
+  `ed25519-dalek` opt-dep, and the first real
+  introspection request would have panicked the
+  worker. v0.41.0 fixes this by enabling the
+  `rust_crypto` feature (accepting transitive `rsa` as
+  unused-but-linked dead code, with a follow-up to
+  swap to `josekit` + direct ed25519-dalek tracked).
+  See v0.41.0 CHANGELOG.
 
 ## Considered alternatives (rejected)
 

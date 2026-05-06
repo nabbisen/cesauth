@@ -88,31 +88,48 @@ pub async fn handler<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
         return unauthorized();
     }
 
-    // Look up the signing key for verifying access-token JWTs.
-    // We use the first active key; if there are multiple
-    // (during a rotation grace period), the introspector may
-    // need to be retried after the kid for which the token
-    // was signed. v0.38.0 tries only the most-recently-added
-    // active key. A future iteration may try each key in
-    // turn — but operators rarely rotate signing keys, so the
-    // simpler implementation is fine for now.
+    // Look up active signing keys for verifying access-token JWTs.
+    // **v0.41.0** — multi-key support (ADR-014 §Q4
+    // resolved). Pre-v0.41.0 we used `keys.first()` — only the
+    // most-recently-added active key would verify, so during a
+    // signing-key rotation grace period an access token signed
+    // with an older but still-active kid would falsely report
+    // inactive. Now we build a slice of every active key's
+    // (kid, raw_public_key) and pass it to `introspect_token`,
+    // which does kid-directed lookup with a try-each fallback.
     let key_repo = CloudflareSigningKeyRepository::new(&ctx.env);
-    let keys = key_repo.list_active().await
+    let active = key_repo.list_active().await
         .map_err(|_| worker::Error::RustError("signing key lookup failed".into()))?;
 
     use base64::{Engine, engine::general_purpose::STANDARD};
-    let public_key_raw: Vec<u8> = match keys.first() {
-        Some(k) => STANDARD.decode(&k.public_key_b64)
-            .map_err(|_| worker::Error::RustError("malformed public key".into()))?,
-        None => Vec::new(),
-    };
+    // Decode b64-encoded public keys once. Filter out any
+    // malformed entries with a console warning rather than
+    // failing the whole request — a single garbled key in the
+    // active set shouldn't shadow the others. (In practice a
+    // malformed `public_key_b64` is itself a structural bug
+    // worth fixing, but we don't want it to take down
+    // introspection while we figure that out.)
+    let keys_raw: Vec<(String, Vec<u8>)> = active.iter()
+        .filter_map(|k| match STANDARD.decode(&k.public_key_b64) {
+            Ok(raw) => Some((k.kid.clone(), raw)),
+            Err(_)  => {
+                worker::console_warn!("introspect: malformed public_key_b64 for kid={}", k.kid);
+                None
+            }
+        })
+        .collect();
+    let key_views: Vec<cesauth_core::oidc::introspect::IntrospectionKey<'_>> = keys_raw.iter()
+        .map(|(kid, raw)| cesauth_core::oidc::introspect::IntrospectionKey {
+            kid: kid.as_str(), public_key_raw: raw.as_slice(),
+        })
+        .collect();
 
     let families = CloudflareRefreshTokenFamilyStore::new(&ctx.env);
     let now = OffsetDateTime::now_utc().unix_timestamp();
 
     let resp = introspect_token(
         &families,
-        &public_key_raw,
+        &key_views,
         &cfg.issuer,
         &cfg.issuer,  // audience: cesauth tokens are aud=iss for now
         30,           // leeway_secs

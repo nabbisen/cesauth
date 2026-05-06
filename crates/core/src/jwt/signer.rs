@@ -11,7 +11,7 @@
 //! (for example via a transitive dev-dependency), swap to
 //! `josekit` + `ed25519-dalek` rather than shipping broken code.
 
-use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, decode_header, encode};
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::error::{CoreError, CoreResult};
@@ -98,4 +98,26 @@ pub fn verify<C: DeserializeOwned>(
             | jsonwebtoken::errors::ErrorKind::InvalidAlgorithm  => CoreError::JwtValidation("alg"),
             _ => CoreError::JwtValidation("malformed"),
         })
+}
+
+/// Extract the `kid` (key id) from a JWT's header without
+/// verifying the signature. Used by `service::introspect`'s
+/// access-token path to pick the right key out of an
+/// active-keys list when multiple are present (signing-key
+/// rotation grace period — ADR-014 §Q4).
+///
+/// Returns `None` if:
+/// - The token is malformed (not three dot-separated parts,
+///   header isn't valid base64url-JSON, etc.).
+/// - The header has no `kid` member.
+///
+/// **Important**: this function does NOT verify anything.
+/// The caller must follow up with `verify(...)` against the
+/// key it picked. If a caller treated the kid as
+/// authoritative (e.g., embedded in audit payloads before
+/// verification succeeded), an attacker could forge any kid
+/// they want. Callers in cesauth use it only as a hint for
+/// key selection; the cryptographic check still runs after.
+pub fn extract_kid(token: &str) -> Option<String> {
+    decode_header(token).ok()?.kid
 }
