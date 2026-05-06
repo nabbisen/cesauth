@@ -12,6 +12,341 @@ changes will always be called out here.
 
 ---
 
+## [0.50.0] - 2026-05-04
+
+Per-client audience scoping for `/introspect`.
+**ADR-014 §Q1 Resolved.** First release after the
+six-item operator-requested batch (v0.44–v0.49)
+completed. Picked from the four open security-track
+items the v0.49.0 changelog flagged as the only
+candidate that's both ready-to-ship and security-
+meaningful.
+
+### Why this matters
+
+v0.38.0 shipped `/introspect` with a global trust
+model: any authenticated confidential client could
+introspect any token. The ADR-014 §Q1 paragraph
+flagged this as a privilege-escalation concern for
+multi-tenant deployments where one cesauth issues
+tokens for many resource servers. Pre-v0.50.0, an
+RS_A holding valid introspection credentials could
+ask cesauth about RS_B's tokens — and learn whether
+they were currently active, what their scopes were,
+which user they belonged to. Cross-RS visibility,
+unintended.
+
+v0.50.0 closes this with a per-client audience scope
+that's **off by default** (existing deployments
+upgrade unchanged) and **opt-in per client** (no
+deployment-wide flag — operators enable it for the
+clients that need it).
+
+### What ships
+
+#### Schema migration
+
+`migrations/0010_introspection_audience.sql` adds
+`audience TEXT` (nullable) to `oidc_clients`.
+**SCHEMA_VERSION 9 → 10** — first schema bump since
+v0.35.0.
+
+NULL means "unscoped — pre-v0.50.0 behavior". A
+non-NULL value means "this client may introspect
+ONLY tokens whose `aud` claim matches verbatim".
+Single string column, not JSON array — RFC 7662
+doesn't model multi-audience introspecters; if
+demand surfaces for clients needing multiple
+allowed audiences, a future migration can broaden.
+No CHECK constraint on the value (audiences are
+operator-controlled identifiers; the truth check
+is the runtime comparison, not a schema constraint).
+
+#### Pure gate function
+
+`cesauth_core::service::introspect::apply_introspection_audience_gate(response, requesting_client_audience) -> IntrospectionGateOutcome`.
+
+```rust
+pub enum IntrospectionGateOutcome {
+    PassedThrough(IntrospectionResponse),
+    AudienceDenied {
+        response:                  IntrospectionResponse,
+        requesting_client_audience: String,
+        token_audience:             String,
+    },
+}
+```
+
+The orchestrator (`introspect_token`) stays pure —
+it produces a response based purely on token
+validity. The gate runs separately, in the worker
+handler, which applies it after `introspect_token`
+returns. This keeps the orchestrator testable
+without touching audit infrastructure AND surfaces
+the gate-fired signal to the handler for distinct
+audit emission.
+
+The gate is a no-op when:
+
+- `requesting_client_audience` is `None` (client is
+  unscoped — the default).
+- `response.active` is false (already inactive — gate
+  has nothing to add).
+- `response.aud` is `None` (refresh-token responses;
+  documented out-of-scope below).
+
+#### Privacy invariant on denial
+
+On audience mismatch, the response is replaced with
+`IntrospectionResponse::inactive()` — wire form
+`{"active":false}`, byte-identical to v0.38.0's
+privacy-preserving inactive shape. Returning 403
+would let an attacker probe whether tokens exist
+for other audiences by trying their own credentials
+(the same enumeration-side-channel concern v0.38.0
+documented for unknown-client vs wrong-secret).
+
+Test pin `mismatch_response_serializes_to_bare_inactive`
+asserts the wire form byte-exact — defense in depth
+against a future change adding a field to
+`IntrospectionResponse` that the gate forgets to
+clear.
+
+#### `IntrospectionResponse.aud` added
+
+RFC 7662 §2.2 lists `aud` as an optional response
+field. v0.38.0 deliberately omitted it because no
+resource servers cesauth supported needed it; v0.50.0
+surfaces it because (a) the gate reads it internally
+so we may as well expose it on the wire, and (b)
+standard introspection libraries expect it.
+
+Active access responses populate `aud` from the JWT's
+`aud` claim. Active refresh responses leave it
+`None`. Inactive responses (including audience-
+denied) leave it `None`.
+
+`#[serde(skip_serializing_if = "Option::is_none")]` —
+clients consuming only the fields they need are
+unaffected.
+
+#### `active_access` constructor signature change
+
+```rust
+pub fn active_access(
+    scope:     String,
+    client_id: String,
+    sub:       String,
+    jti:       String,
+    iat:       i64,
+    exp:       i64,
+    aud:       Option<String>,   // ← new
+) -> Self
+```
+
+`active_refresh` and `active_refresh_with_ext`
+unchanged (refresh responses always have
+`aud: None`).
+
+External code constructing `IntrospectionResponse`
+directly will need a one-line update. In-tree call
+sites updated alongside.
+
+#### Refresh-token introspection out of v0.50.0 scope
+
+`FamilyState` doesn't record an audience — the
+audience is determined per access-token mint, not
+per family. Refresh introspection therefore returns
+`aud: None`, and the gate falls through (a refresh
+response won't trip the audience check regardless of
+the requesting client's scope).
+
+Audience scoping for refresh introspection is
+architecturally distinct (the family doesn't bind to
+a single audience; tokens minted from a refresh
+inherit `aud` from the request) and is left to a
+future iteration if operator demand surfaces.
+
+#### `EventKind::IntrospectionAudienceMismatch`
+
+New audit kind, snake_case
+`introspection_audience_mismatch`. Payload:
+
+```json
+{
+  "requesting_client_id":       "client_abc",
+  "requesting_client_audience": "rs.a.example",
+  "token_audience":             "rs.b.example"
+}
+```
+
+Both audiences are operator-controlled identifiers,
+not secret material — their presence in audit doesn't
+reveal token contents. The introspected token itself
+is NOT in the payload (same privacy invariant as
+`TokenIntrospected`).
+
+Distinct from `IntrospectionRateLimited` (which fires
+before any token check) and `TokenIntrospected`
+(which fires on any authenticated request that
+proceeded to checks). A spike of these events likely
+indicates a misconfigured resource server (its
+`oidc_clients.audience` doesn't match what its tokens
+carry) or a legitimate-but-unintended cross-RS
+introspection probe.
+
+#### Worker handler integration
+
+`POST /introspect` now:
+
+1. Authenticates client (existing).
+2. Rate-limit gate (existing, v0.43.0).
+3. **NEW**: Fetches the authenticated client row to
+   read `audience`. Storage outage on this lookup
+   treats the client as unscoped (lets the request
+   proceed under pre-v0.50.0 behavior) rather than
+   fail-closing on a transient hiccup. Errors log a
+   warning.
+4. `introspect_token` (existing).
+5. **NEW**: `apply_introspection_audience_gate`. On
+   `AudienceDenied`: emit
+   `IntrospectionAudienceMismatch` audit event with
+   the operator-controlled identifiers; replace
+   response with bare `inactive()`.
+6. Audit `TokenIntrospected` (existing).
+7. Render JSON (existing).
+
+### Tests
+
+986 → **996** lib (+10). With migrate integration:
+1015 → **1025**.
+
+- core: 443 → 453 (+10). All in
+  `service::introspect::tests::audience_gate`:
+  - `unscoped_client_passes_through_active_response` —
+    NULL client.audience = legacy behavior.
+  - `matching_audience_passes_through` — happy path.
+  - `mismatched_audience_returns_inactive_no_leak` —
+    critical privacy pin: response on denial has zero
+    leaked claims.
+  - `mismatch_response_serializes_to_bare_inactive` —
+    wire-form byte-exact `{"active":false}`.
+  - `already_inactive_response_passes_through_unchanged`
+    — gate doesn't double-wrap.
+  - `refresh_token_response_with_no_aud_passes_through`
+    — documented v0.50.0 scope: refresh responses
+    aren't gated.
+  - `empty_string_audiences_compared_byte_exact` —
+    "" matches "" only; legitimate edge.
+  - `case_sensitive_audience_comparison` — RFC 7519
+    §4.1.3 case-sensitivity preserved.
+  - `substring_match_does_not_satisfy_gate` — defensive:
+    "rs" must NOT match "rs.example.com"; nor vice
+    versa.
+  - `mismatched_audience_audit_payload_contains_both_values`
+    — audit payload contract.
+- ui: 244 → 244.
+- worker: 182 → 182 (handler wiring; testable
+  transformation is in pure core).
+
+### Schema / wire / DO
+
+- **Schema migration** (SCHEMA_VERSION 9 → 10).
+  Single ALTER TABLE; ~milliseconds for any
+  realistic deployment size.
+- **Wire format additive only**: `aud` added to
+  `IntrospectionResponse`; spec-conformant clients
+  ignore unknown fields. Existing inactive-response
+  byte-form unchanged. Audience-denied responses
+  byte-equal to legacy inactive responses.
+- **DO state unchanged**: refresh families don't
+  store audience.
+- **No new dependencies**.
+
+### Operator-visible changes
+
+- **No production behavior change** until an operator
+  sets `oidc_clients.audience` to a non-NULL value
+  for at least one client. Default behavior is
+  unchanged.
+- **Schema migration** runs on next deploy
+  automatically via existing migrate machinery
+  (SCHEMA_VERSION bump triggers).
+- **Recommended deployment progression for multi-RS
+  deployments**:
+  1. Upgrade to v0.50.0. No clients have audience
+     set. Behavior unchanged.
+  2. Identify which resource-server clients should
+     be scoped. For each, decide its allowed
+     audience (typically the RS's stable hostname
+     or identifier).
+  3. Set `oidc_clients.audience` for those clients
+     via direct D1 statement
+     (`UPDATE oidc_clients SET audience = ? WHERE id = ?`).
+     Admin console UI for this is out of v0.50.0
+     scope.
+  4. Watch audit logs for
+     `introspection_audience_mismatch` events. A
+     spike right after enabling typically indicates
+     either (a) misconfiguration — the audience
+     value doesn't match what the tokens actually
+     carry, or (b) the discovered cross-RS
+     introspection that motivated the scoping in
+     the first place.
+- **No `wrangler.toml` change**. No new bindings.
+  No new env vars.
+
+### ADR changes
+
+- **ADR-014 §Q1** marked **Resolved**. Inline
+  resolution paragraph follows the ADR-011 §Q1 /
+  ADR-012 §Q1, §Q4, §Q1.5 / ADR-014 §Q4, §Q2, §Q3
+  inline-resolution style.
+- No new ADR.
+
+### Open security-track items remaining
+
+After v0.50.0, the open items the v0.49.0 changelog
+flagged are:
+
+- **ADR-012 §Q2** (idle-timeout user notification) —
+  needs an email pipeline, which cesauth doesn't
+  yet have. Defer until that's built.
+- **ADR-012 §Q3** (geo/device-fingerprint columns
+  on `user_sessions`) — needs GeoIP infrastructure;
+  cesauth has none. Defer until operator demand
+  + infrastructure choice surface together.
+- **ADR-012 §Q5** (orphan DOs — DO has no D1 row)
+  — structurally blocked by Cloudflare not
+  supporting DO namespace iteration. No good
+  resolution path exists with current platform
+  primitives.
+
+### Doc / metadata changes
+
+- `Cargo.toml` workspace version 0.49.0 → 0.50.0.
+- UI footers + tests bumped to v0.50.0.
+- ROADMAP: v0.50.0 Shipped table row.
+- This CHANGELOG entry.
+
+### Upgrade path 0.49.0 → 0.50.0
+
+1. `git pull` or extract this tarball.
+2. `cargo build --workspace --target
+   wasm32-unknown-unknown --release`. **No new
+   dependencies.**
+3. `wrangler deploy`. **One schema migration runs
+   (0010, ALTER TABLE oidc_clients ADD COLUMN
+   audience TEXT).**
+4. **Optionally** set
+   `oidc_clients.audience` for clients you want
+   scoped. Default behavior is unchanged.
+5. **Watch audit logs** for
+   `introspection_audience_mismatch` events after
+   enabling scoping for any client.
+
+---
+
 ## [0.49.0] - 2026-05-04
 
 D1 session-index repair tool. **ADR-012 §Q1.5

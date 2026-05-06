@@ -91,6 +91,102 @@ where
     Ok(IntrospectionResponse::inactive())
 }
 
+/// **v0.50.0** (ADR-014 §Q1) — apply per-client audience
+/// scoping to an introspection response. The worker
+/// handler calls this AFTER `introspect_token` returns,
+/// before mapping the response onto the wire. Returns an
+/// outcome that distinguishes "passed through" from
+/// "denied by audience mismatch" so the handler can emit
+/// a distinct audit event.
+///
+/// ## Why a separate function instead of folded into the orchestrator
+///
+/// The orchestrator (`introspect_token`) is pure-service —
+/// it has no audit-write capability and no awareness of
+/// the worker's audit dispatch. Folding the gate into it
+/// would either (a) collapse the audience-denied case
+/// into the regular `inactive()` path (operator can't
+/// distinguish "regular inactive" from "audience denied"
+/// via audit) or (b) require the orchestrator to take an
+/// audit-write port (couples pure logic to I/O).
+///
+/// Pulling the gate into a separate function keeps the
+/// orchestrator pure AND surfaces the gate-fired signal
+/// to the handler for audit emission.
+///
+/// ## Wire-form invariant
+///
+/// On audience denial the returned response is
+/// `IntrospectionResponse::inactive()` — bare
+/// `{"active":false}`, no leakage. This preserves the
+/// v0.38.0 token-existence side-channel discipline
+/// (returning 403 here would let an attacker probe
+/// whether a token exists for a different audience by
+/// trying their own credentials).
+///
+/// ## No-op cases
+///
+/// Returns `IntrospectionGateOutcome::PassedThrough`
+/// (preserving the input response) when:
+///
+/// - `requesting_client_audience` is `None` (the client
+///   has unscoped permission; pre-v0.50.0 behavior — every
+///   active token is reportable to it).
+/// - `response.active` is false (already inactive — gate
+///   has nothing to add).
+/// - `response.aud` is `None` (defensive fallback for
+///   refresh-token responses or future paths that produce
+///   active responses without an `aud` claim — refresh
+///   introspection is documented as out of scope for
+///   v0.50.0's gate).
+pub fn apply_introspection_audience_gate(
+    response:                  IntrospectionResponse,
+    requesting_client_audience: Option<&str>,
+) -> IntrospectionGateOutcome {
+    let Some(client_aud) = requesting_client_audience else {
+        return IntrospectionGateOutcome::PassedThrough(response);
+    };
+    if !response.active {
+        return IntrospectionGateOutcome::PassedThrough(response);
+    }
+    let Some(token_aud) = response.aud.as_deref() else {
+        return IntrospectionGateOutcome::PassedThrough(response);
+    };
+    if token_aud == client_aud {
+        return IntrospectionGateOutcome::PassedThrough(response);
+    }
+    // Mismatch. Surface the gate fired AND the original
+    // values so the handler can log/audit them. The
+    // returned response is bare `inactive()` — no leak.
+    IntrospectionGateOutcome::AudienceDenied {
+        response:                  IntrospectionResponse::inactive(),
+        requesting_client_audience: client_aud.to_owned(),
+        token_audience:             token_aud.to_owned(),
+    }
+}
+
+/// Outcome of `apply_introspection_audience_gate`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IntrospectionGateOutcome {
+    /// The gate did not fire (either the requesting
+    /// client is unscoped, or the response is already
+    /// inactive, or the response carries no `aud`, or
+    /// the audiences match). The original response is
+    /// returned untouched.
+    PassedThrough(IntrospectionResponse),
+    /// The gate fired: the requesting client's audience
+    /// did not match the introspected token's audience.
+    /// The response has been replaced with bare
+    /// `inactive()`. The original audiences are
+    /// surfaced for audit emission — they MUST NOT be
+    /// rendered onto the wire response.
+    AudienceDenied {
+        response:                  IntrospectionResponse,
+        requesting_client_audience: String,
+        token_audience:             String,
+    },
+}
+
 #[derive(Debug, Clone, Copy)]
 enum TokenKind { Access, Refresh }
 
@@ -146,6 +242,7 @@ async fn introspect_access(
             ) {
                 return Ok(Some(IntrospectionResponse::active_access(
                     claims.scope, claims.cid, claims.sub, claims.jti, claims.iat, claims.exp,
+                    Some(claims.aud),
                 )));
             }
             // kid-matched key failed verification. Fall
@@ -167,6 +264,7 @@ async fn introspect_access(
         ) {
             return Ok(Some(IntrospectionResponse::active_access(
                 claims.scope, claims.cid, claims.sub, claims.jti, claims.iat, claims.exp,
+                Some(claims.aud),
             )));
         }
     }

@@ -13,6 +13,7 @@ fn sample_client() -> OidcClient {
         allowed_scopes:    vec!["openid".into()],
         token_auth_method: TokenAuthMethod::None,
         require_pkce:      true,
+        audience:          None,
     }
 }
 

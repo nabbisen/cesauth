@@ -129,6 +129,24 @@ pub struct IntrospectionResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jti: Option<String>,
 
+    /// **v0.50.0** (ADR-014 §Q1) — `aud` claim of the
+    /// introspected token. RFC 7662 §2.2 lists `aud` as
+    /// optional. Pre-v0.50.0 cesauth omitted it (v0.38.0
+    /// `aud` and `iss` were dropped because no resource
+    /// servers we supported needed them); v0.50.0
+    /// surfaces it because (a) the audience-scope gate
+    /// reads it internally, so we may as well expose it,
+    /// and (b) standard introspection client libraries
+    /// expect it. `None` for inactive responses; `Some`
+    /// for active access tokens (carries the JWT's `aud`
+    /// claim) and active refresh tokens (carries the
+    /// family's audience). Same `skip_serializing_if`
+    /// shape as the other optional fields — wire-form-
+    /// stable for clients consuming only the fields they
+    /// need.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aud: Option<String>,
+
     /// **v0.46.0** — cesauth-specific extensions namespaced
     /// under `x_cesauth` per RFC 7662 §2.2 ("Specific
     /// implementations MAY extend this structure with their
@@ -266,6 +284,7 @@ impl IntrospectionResponse {
             active: false,
             scope: None, client_id: None, token_type: None,
             exp: None, iat: None, sub: None, jti: None,
+            aud: None,
             x_cesauth: None,
         }
     }
@@ -288,6 +307,7 @@ impl IntrospectionResponse {
             active: false,
             scope: None, client_id: None, token_type: None,
             exp: None, iat: None, sub: None, jti: None,
+            aud: None,
             x_cesauth: Some(ext),
         }
     }
@@ -295,6 +315,16 @@ impl IntrospectionResponse {
     /// Active access-token response. The resource server can use
     /// `scope` for authorization decisions, `sub` for user
     /// identification, and `exp` / `iat` for cache TTL hints.
+    ///
+    /// **v0.50.0** — `aud` parameter added (ADR-014 §Q1
+    /// audience scoping). The `aud` claim from the access
+    /// token's JWT is surfaced both internally for the
+    /// audience-scope gate AND on the wire response (RFC
+    /// 7662 §2.2 permits `aud`). Pass `Some(claims.aud)`
+    /// for tokens cesauth minted; pass `None` only if a
+    /// future code path produces an active access response
+    /// without a verified `aud` claim (no such path
+    /// exists today).
     pub fn active_access(
         scope:     String,
         client_id: String,
@@ -302,6 +332,7 @@ impl IntrospectionResponse {
         jti:       String,
         iat:       i64,
         exp:       i64,
+        aud:       Option<String>,
     ) -> Self {
         Self {
             active: true,
@@ -312,6 +343,7 @@ impl IntrospectionResponse {
             iat: Some(iat),
             sub: Some(sub),
             jti: Some(jti),
+            aud,
             x_cesauth: None,
         }
     }
@@ -325,6 +357,20 @@ impl IntrospectionResponse {
     /// `token_type` is omitted: refresh tokens don't have an
     /// HTTP-Authorization `Bearer` semantic — they're scoped to
     /// the `/token` endpoint.
+    ///
+    /// **v0.50.0 NOTE — refresh tokens have no `aud` field on
+    /// the wire response**: the `FamilyState` in the DO doesn't
+    /// record an audience (the audience is determined per
+    /// access-token mint, not per family). Refresh
+    /// introspection always returns `aud: None`. The v0.50.0
+    /// audience-scope gate therefore naturally falls through
+    /// for refresh introspection — when the response carries
+    /// no `aud`, the gate has no value to compare against and
+    /// permits the response. Audience scoping for refresh
+    /// introspection is architecturally distinct (the family
+    /// doesn't bind to a single audience; tokens minted from a
+    /// refresh inherit `aud` from the request) and is left to
+    /// a future iteration if operator demand surfaces.
     pub fn active_refresh(
         scope:     String,
         client_id: String,
@@ -342,6 +388,7 @@ impl IntrospectionResponse {
             iat: Some(iat),
             sub: Some(sub),
             jti: Some(jti),
+            aud: None,
             x_cesauth: None,
         }
     }

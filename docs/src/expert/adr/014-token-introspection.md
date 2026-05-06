@@ -249,19 +249,63 @@ flag added (their problem, not ours).
 
 ## Open questions
 
-- **Q1**: Resource-server-typed clients. Today any
-  registered confidential client can introspect any token
-  — there's no audience-scoping ("client_X may only
-  introspect tokens issued for resource_R"). For
-  multi-tenant deployments where one cesauth issues for
-  many resource servers, this is a privilege-escalation
-  concern. v0.38.0 ships unscoped; a future iteration
-  adds a `resource_server_audience` column to
-  `oidc_clients` and a check in `introspect_token` that
-  the requesting client's audience matches the token's
-  audience. Not blocking v0.38.0 because cesauth's
-  current deployments all run with one resource server
-  per tenant.
+- **Q1**: ~~Resource-server-typed clients.~~
+  **Resolved in v0.50.0.** A new nullable column
+  `oidc_clients.audience` (added by migration 0010,
+  SCHEMA_VERSION 9 → 10) records the audience an
+  authenticated introspection client is permitted to
+  see. NULL = unscoped (the pre-v0.50.0 behavior — any
+  authenticated confidential client can introspect any
+  token); a non-NULL value gates `/introspect` so the
+  requesting client may only see tokens whose `aud`
+  claim matches verbatim. Existing deployments upgrade
+  with no operator action required (every existing row
+  gets NULL); operators set the column explicitly per
+  client to opt in. **Pure gate** at
+  `cesauth_core::service::introspect::apply_introspection_audience_gate(response, requesting_client_audience)`
+  returns `IntrospectionGateOutcome::PassedThrough(resp)`
+  or `AudienceDenied { response, requesting_client_audience, token_audience }`.
+  The orchestrator (`introspect_token`) stays pure — it
+  produces a response based purely on token validity;
+  the gate runs separately. Worker handler applies the
+  gate after `introspect_token` returns and emits a
+  distinct `IntrospectionAudienceMismatch` audit event
+  on denial. **Privacy invariant on denial**: the gate
+  replaces the response with bare
+  `IntrospectionResponse::inactive()` (wire form
+  `{"active":false}`, byte-identical to v0.38.0's
+  privacy-preserving inactive shape). Returning 403
+  would let an attacker probe whether tokens exist for
+  other audiences by trying their own credentials —
+  the same enumeration-side-channel concern v0.38.0
+  documented for unknown-client vs wrong-secret. The
+  audit payload carries both the requesting client's
+  configured audience AND the token's actual audience
+  (operator-controlled identifiers, not secret
+  material; their presence in audit doesn't reveal
+  token contents). **Refresh-token introspection is
+  out of scope** for v0.50.0's gate: refresh families
+  don't record an audience (the audience is set per
+  access-token mint, not per family), so refresh
+  responses carry `aud: None` and the gate falls
+  through. Audience scoping for refresh introspection
+  is architecturally distinct (the family doesn't
+  bind to a single audience) and is left to a future
+  iteration if operator demand surfaces. **Wire
+  addition**: `IntrospectionResponse` gains an `aud`
+  field (RFC 7662 §2.2 permits `aud`; v0.38.0 had
+  deliberately omitted it because no resource servers
+  cesauth supported needed it). The field is
+  `Option<String>` with `skip_serializing_if = "Option::is_none"` —
+  spec-conformant clients consuming only the fields
+  they need are unaffected. Active access responses
+  populate it from the JWT's `aud` claim; active
+  refresh responses leave it `None`; inactive
+  responses (including audience-denied) leave it
+  `None`. **Active access constructor signature
+  change**: `active_access` now takes a final
+  `aud: Option<String>` parameter; existing test
+  fixtures and one in-tree call site updated.
 - **Q2**: ~~Per-resource-server rate limiting.~~
   **Resolved in v0.43.0.** The introspection endpoint
   now hits a per-client rate-limit gate after

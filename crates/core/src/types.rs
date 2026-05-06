@@ -77,6 +77,27 @@ pub struct OidcClient {
     pub allowed_scopes:     Vec<String>,
     pub token_auth_method:  TokenAuthMethod,
     pub require_pkce:       bool,
+    /// **v0.50.0** (ADR-014 §Q1) — per-client audience
+    /// scoping for `/introspect`. `None` = unscoped (the
+    /// pre-v0.50.0 behavior; any confidential client can
+    /// introspect any token). `Some(aud)` = this client
+    /// may only introspect tokens whose `aud` claim
+    /// matches this string verbatim. The check fires in
+    /// `service::introspect::introspect_token` AFTER
+    /// authentication and rate-limit gates and AFTER
+    /// token decode, but BEFORE returning the active
+    /// response. A mismatch returns `active=false` (not
+    /// 403) to preserve the v0.38.0 token-existence
+    /// side-channel defense.
+    ///
+    /// `#[serde(default)]` so that historical D1 data
+    /// + DO state recorded pre-v0.50.0 deserializes
+    /// without `audience` to `None`. The migration
+    /// `0010_introspection_audience.sql` adds the column
+    /// nullable; ALTER TABLE backfills NULL into every
+    /// existing row.
+    #[serde(default)]
+    pub audience:           Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,0 +1,52 @@
+-- ============================================================================
+-- 0010_introspection_audience.sql
+-- ----------------------------------------------------------------------------
+-- v0.50.0: per-client audience scoping for /introspect (ADR-014 §Q1).
+--
+-- Adds `audience` column to `oidc_clients`. NULL means "unscoped" — the
+-- pre-v0.50.0 behavior where any registered confidential client could
+-- introspect any token. A non-NULL value gates `/introspect` so the
+-- requesting client may only see tokens whose `aud` claim matches this
+-- column verbatim.
+--
+-- ## Why nullable
+--
+-- Existing deployments upgrade with no operator intervention required.
+-- All existing rows get `audience = NULL` from the ALTER TABLE default,
+-- which preserves pre-v0.50.0 behavior bit-for-bit. Operators wanting
+-- to enable the new gate set the column explicitly per client (admin
+-- console UI for this is out of v0.50.0 scope; for now operators
+-- configure via direct D1 statements).
+--
+-- ## Why a single string column, not a JSON array
+--
+-- v0.50.0 ships the minimal model: one client, one allowed audience.
+-- RFC 7662 doesn't define multi-audience introspection. If demand
+-- surfaces for clients that need to introspect tokens for multiple
+-- audiences, a future migration can broaden this column to a JSON
+-- array. Single-string-now keeps the gate's SQL trivial and the
+-- schema compact.
+--
+-- ## Why no CHECK constraint on the value
+--
+-- Audiences are operator-controlled strings — typically RS hostnames
+-- or stable identifiers. Validating their shape at the SQL layer would
+-- be both wrong (operators have legitimate reasons to use opaque IDs)
+-- and incomplete (the truth check is "does this match what the token
+-- mint side stamped onto the `aud` claim", which is a runtime
+-- comparison, not a constraint). The runtime comparison lives in
+-- `cesauth_core::service::introspect::introspect_token`.
+--
+-- ## What this migration does NOT do
+--
+-- - **Does not add an index** on `audience`. The audience check fires
+--   only AFTER `find(client_id)` returns the client row, so the
+--   client's audience is in scope without a secondary lookup. No
+--   query joins on `audience`; no index payoff.
+-- - **Does not backfill** any existing row's audience — every row
+--   gets NULL.
+-- - **Does not migrate** the running RefreshTokenFamily DOs. Their
+--   `aud` claim was set at mint time; v0.50.0 reads it as-is.
+-- ============================================================================
+
+ALTER TABLE oidc_clients ADD COLUMN audience TEXT;

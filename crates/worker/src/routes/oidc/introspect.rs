@@ -88,6 +88,36 @@ pub async fn handler<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
         return unauthorized();
     }
 
+    // **v0.50.0** (ADR-014 §Q1) — fetch the authenticated
+    // client so we can apply its audience scope (if any)
+    // to the introspection result. `find` here is a second
+    // round-trip after `verify_client_credentials` (which
+    // only confirms the secret); a future optimization
+    // could merge them, but the cost is one extra D1 read
+    // per /introspect call which is negligible. Failing
+    // to fetch (storage outage) treats the client as
+    // unscoped — letting the request proceed under the
+    // pre-v0.50.0 gate-less behavior — rather than fail-
+    // closing on a transient storage hiccup. Errors here
+    // log a warning.
+    use cesauth_core::ports::repo::ClientRepository;
+    let requesting_client = match clients.find(&creds.client_id).await {
+        Ok(Some(c)) => Some(c),
+        Ok(None) => {
+            // Auth succeeded but the row is gone? Race
+            // with admin DELETE between auth and lookup.
+            // Treat as unscoped; the underlying issue is
+            // the operator's race, not a security one.
+            None
+        }
+        Err(_) => {
+            worker::console_warn!(
+                "introspect: client repo lookup failed (audience scope unavailable)"
+            );
+            None
+        }
+    };
+
     // **v0.43.0** — per-client introspection rate limit
     // (ADR-014 §Q2). The check fires AFTER auth (we
     // need the authenticated client_id as the bucket
@@ -178,6 +208,53 @@ pub async fn handler<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
         &IntrospectInput { token: &token, hint, now_unix: now },
     ).await
         .map_err(|e| worker::Error::RustError(format!("introspect failed: {e:?}")))?;
+
+    // **v0.50.0** (ADR-014 §Q1) — apply per-client audience
+    // scope. The pure-service `introspect_token` returned
+    // a response based purely on token validity; the gate
+    // here decides whether the requesting client is
+    // entitled to see it. On mismatch the response is
+    // replaced with bare `inactive()` (no leak) and we
+    // emit a distinct `IntrospectionAudienceMismatch`
+    // audit event. On pass-through the response is
+    // untouched.
+    let resp = {
+        use cesauth_core::service::introspect::{
+            apply_introspection_audience_gate, IntrospectionGateOutcome,
+        };
+        let client_aud = requesting_client.as_ref()
+            .and_then(|c| c.audience.as_deref());
+        match apply_introspection_audience_gate(resp, client_aud) {
+            IntrospectionGateOutcome::PassedThrough(r) => r,
+            IntrospectionGateOutcome::AudienceDenied {
+                response,
+                requesting_client_audience,
+                token_audience,
+            } => {
+                // Audit ONLY the operator-controlled
+                // identifiers. Token claims are NOT in
+                // the payload — same privacy invariant
+                // that keeps tokens out of
+                // `TokenIntrospected` payloads.
+                let payload = serde_json::json!({
+                    "requesting_client_id":       &creds.client_id,
+                    "requesting_client_audience": &requesting_client_audience,
+                    "token_audience":             &token_audience,
+                }).to_string();
+                audit::write_owned(
+                    &ctx.env, EventKind::IntrospectionAudienceMismatch,
+                    None, Some(creds.client_id.clone()),
+                    Some(payload),
+                ).await.ok();
+                log::emit(&cfg.log, Level::Warn, Category::Auth,
+                    &format!("introspect: audience mismatch \
+                              requesting_aud={} token_aud={}",
+                             requesting_client_audience, token_audience),
+                    Some(&creds.client_id));
+                response
+            }
+        }
+    };
 
     // Audit. Payload deliberately omits the token itself —
     // see `EventKind::TokenIntrospected` docs for why.

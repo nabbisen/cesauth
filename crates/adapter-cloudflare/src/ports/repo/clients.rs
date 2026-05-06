@@ -33,6 +33,12 @@ struct ClientRow {
     allowed_scopes:     String,   // JSON array
     token_auth_method:  String,
     require_pkce:       i64,
+    /// **v0.50.0** — `oidc_clients.audience` column
+    /// added by migration 0010. NULL on existing rows.
+    /// `#[serde(default)]` so historical exports without
+    /// the field deserialize cleanly.
+    #[serde(default)]
+    audience:           Option<String>,
 }
 
 impl ClientRow {
@@ -58,6 +64,7 @@ impl ClientRow {
             allowed_scopes,
             token_auth_method,
             require_pkce:       self.require_pkce != 0,
+            audience:           self.audience,
         })
     }
 }
@@ -66,7 +73,7 @@ impl ClientRepository for CloudflareClientRepository<'_> {
     async fn find(&self, client_id: &str) -> PortResult<Option<OidcClient>> {
         let db   = db(self.env)?;
         let stmt = db.prepare(
-            "SELECT id, name, client_type, redirect_uris, allowed_scopes, token_auth_method, require_pkce \
+            "SELECT id, name, client_type, redirect_uris, allowed_scopes, token_auth_method, require_pkce, audience \
              FROM oidc_clients WHERE id = ?1"
         )
             .bind(&[client_id.into()])
@@ -110,8 +117,8 @@ impl ClientRepository for CloudflareClientRepository<'_> {
 
         db.prepare(
             "INSERT INTO oidc_clients \
-             (id, name, client_type, client_secret_hash, redirect_uris, allowed_scopes, token_auth_method, require_pkce, created_at, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
+             (id, name, client_type, client_secret_hash, redirect_uris, allowed_scopes, token_auth_method, require_pkce, audience, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"
         )
             .bind(&[
                 client.id.clone().into(),
@@ -122,6 +129,7 @@ impl ClientRepository for CloudflareClientRepository<'_> {
                 allowed_scopes.into(),
                 tam_s.into(),
                 d1_int(client.require_pkce as i64),
+                client.audience.clone().map(Into::into).unwrap_or(JsValue::NULL),
                 d1_int(now),
                 d1_int(now),
             ])

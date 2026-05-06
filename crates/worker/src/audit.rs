@@ -109,6 +109,29 @@ pub enum EventKind {
     /// requests do NOT proceed to actual introspection;
     /// the two events are alertable independently.
     IntrospectionRateLimited,
+    /// **v0.50.0** (ADR-014 §Q1) — `POST /introspect` was
+    /// called by an authenticated confidential client
+    /// whose configured `audience` does NOT match the
+    /// introspected token's `aud` claim. The wire response
+    /// is bare `{"active":false}` per the v0.38.0 token-
+    /// existence side-channel discipline (returning 403
+    /// would let an attacker probe whether tokens exist
+    /// for other audiences by trying their own creds).
+    /// The audit row carries the requesting client's
+    /// configured audience AND the token's actual
+    /// audience so operators can investigate — these
+    /// values are operator-controlled identifiers, not
+    /// secret material; their presence in audit doesn't
+    /// reveal token contents. Distinct from
+    /// `TokenIntrospected` (which fires on any
+    /// authenticated request that proceeded to checks)
+    /// and `IntrospectionRateLimited` (which fires before
+    /// any token check). A spike of these events likely
+    /// indicates a misconfigured resource server (its
+    /// `oidc_clients.audience` doesn't match what its
+    /// tokens carry) or a legitimate-but-unintended
+    /// cross-RS introspection probe.
+    IntrospectionAudienceMismatch,
     /// **v0.38.0** — `POST /introspect` was called (RFC 7662
     /// Token Introspection). Payload includes the requesting
     /// `introspecter_client_id`, the `token_type` reported
@@ -223,6 +246,7 @@ impl EventKind {
             Self::RefreshTokenReuseDetected    => "refresh_token_reuse_detected",
             Self::RefreshRateLimited           => "refresh_rate_limited",
             Self::IntrospectionRateLimited     => "introspection_rate_limited",
+            Self::IntrospectionAudienceMismatch => "introspection_audience_mismatch",
             Self::TokenIntrospected            => "token_introspected",
             Self::RevocationRequested          => "revocation_requested",
             Self::WebauthnRegistered           => "webauthn_registered",
