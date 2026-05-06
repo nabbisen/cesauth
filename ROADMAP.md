@@ -81,6 +81,7 @@ zero remaining issues.
 | **Security track Phase 2: email verification audit + OIDC discovery honest reset** | ✅       | Shipped 0.25.0. Audit deliverable (`docs/src/expert/email-verification-audit.md`) per-path table with 9 rows + meaning of `email_verified=true` + the discovered OIDC `id_token` issuance gap. **Concern 2 fix**: returning-user Magic Link verify flips `email_verified=true` when previously false (best-effort UPDATE, skip-write optimization for already-verified rows). **Discovery doc honest reset** (breaking wire change): `id_token_signing_alg_values_supported` and `subject_types_supported` removed from struct + JSON output; `openid` removed from `scopes_supported` (now `["profile", "email", "offline_access"]`); discovery is now RFC 8414 OAuth 2.0 metadata, not OIDC Discovery 1.0 — accurate to what the implementation delivers. **`magic_link_sent_page()` UX bug fix** (folded in from v0.24.0 audit): template takes `handle: &str, csrf_token: &str` parameters, both render as escaped hidden inputs; both callers in `/magic-link/request` updated. **ADR-008 drafted**: `id_token` issuance design queued for "Later" — TOTP track (v0.26.0/v0.27.0) goes first per security-track sequencing. 14 new tests (8 discovery shape, 6 templates). Total 451 passing. |
 | **Security track Phase 3: TOTP Phase 1 (ADR + schema + library)** | ✅       | Shipped 0.26.0. Foundation work for TOTP as a 2nd factor (RFC 6238). **ADR-009 Draft** (`docs/src/expert/adr/009-totp.md`) settles 11 design questions: SHA-1/6/30/160 algorithm parameters locked (Q1, universal authenticator-app compatibility); ±1 step skew tolerance (Q2); per-secret `last_used_step` replay protection (Q3); separate `totp_authenticators` table not WebAuthn's (Q4 — they share zero columns); AES-GCM-256 encryption at rest with AAD bound to row id (Q5); 10 SHA-256-hashed recovery codes per user matching cesauth's existing high-entropy bearer pattern (Q6); always-2nd-factor composition (Q7 — Magic Link → TOTP if configured, WebAuthn → no TOTP, Anonymous → no TOTP); QR code + manual base32 enrollment (Q8); cron sweep extension for unconfirmed pruning (Q9, lands in v0.27.0); per-tenant policy / admin TOTP / backup-code import / WebAuthn-backed TOTP / name-editing all out of scope (Q10); SCHEMA_VERSION 6 → 7 with prod→staging redaction dropping both new tables (Q11). **Migration 0007** adds `totp_authenticators` and `totp_recovery_codes` tables with full comments. **`cesauth_core::totp` library** ~700 lines: `Secret` newtype with debug redaction, `compute_code` with HMAC-SHA1 + RFC 4226 §5.3 truncation, `verify_with_replay_protection` with constant-time-eq and replay gate, `RecoveryCode` newtype with redacting Debug, `encrypt_secret`/`decrypt_secret` with AAD binding, `otpauth_uri` builder. Workspace deps added: `sha1`, `aes-gcm`, `data-encoding`. **No HTTP routes, no UI, no verify wire-up** — Phase 2 (v0.27.0). Discovered: `oidc_clients.client_secret_hash` schema comment claims Argon2 but no Argon2 implementation exists; ROADMAP "Later" item tracks resolution. 51 new tests (5 RFC 6238 reference vectors, 8 verify replay/skew, 8 encryption with AAD, 8 recovery codes, etc.). Total **502 passing**. |
 | **Security track Phase 4: TOTP Phase 2a — storage layer** | ✅       | Shipped 0.27.0. Storage adapters between v0.26.0's pure-function library and v0.28.0's HTTP routes. The original v0.27.0 plan combined storage and routes; mid-implementation the storage layer alone proved substantial enough to deserve its own review-able release. **`cesauth_core::totp::storage`** submodule with `TotpAuthenticator` and `TotpRecoveryCodeRow` value types and `TotpAuthenticatorRepository` (7 methods: create, find_by_id, find_active_for_user, confirm — idempotent via `WHERE confirmed_at IS NULL`, update_last_used_step, delete, list_unconfirmed_older_than for the cron sweep) and `TotpRecoveryCodeRepository` (5 methods: bulk_create — atomic, find_unredeemed_by_hash, mark_redeemed — idempotent, count_remaining, delete_all_for_user). **`Challenge::PendingTotp`** variant for the post-MagicLink intermediate state. **In-memory adapters** in `cesauth-adapter-test` with 19 tests pinning `find_active`-picks-most-recently-confirmed semantic, atomic `bulk_create` rollback, idempotency, user-scoped delete. **D1 adapters** in `cesauth-adapter-cloudflare` mirroring in-memory shape; BLOB columns bind via `Uint8Array`; recovery code `bulk_create` uses D1's `batch()` for transactional atomicity; unconfirmed-row sweep query uses partial index from migration 0007. **`load_totp_encryption_key()` and `load_totp_encryption_key_id()`** in worker config, with pure helper `parse_totp_encryption_key` factored out for testability + 5 unit tests covering whitespace stripping, base64 errors, length validation. **No HTTP routes, no verify gate, no UI** — Phase 2b (v0.28.0). ADR-009 remains Draft pending end-to-end validation. 24 new tests. Total **526 passing**. |
+| **Security track Phase 5: TOTP Phase 2b — presentation layer** | ✅       | Shipped 0.28.0. Templates + QR generator + `/me/*` auth helper between v0.27.0's storage layer and v0.29.0's HTTP routes. The v0.28.0 plan originally combined presentation + routes; mid-implementation the presentation layer alone proved review-able as its own slice. The TOTP track is now a **five-release split**: library (0.26), storage (0.27), presentation (0.28), routes (0.29), polish (0.30 — ADR Accepted). **Three new UI templates**: `totp_enroll_page(qr_svg, secret_b32, csrf)` renders the QR + manual-entry secret + confirmation form; `totp_recovery_codes_page(codes)` shows the plaintext codes once with strong "save now" warning; `totp_verify_page(csrf, error)` is the post-MagicLink prompt with a `<details>`-collapsed recovery alternative form. **18 template tests** pinning CSRF inclusion across both forms, escape behavior on every variable input, error-block conditional rendering, `<details>` placement of the recovery alternative (UX-habituation defense), no-email-leak from the verify page. **`cesauth_core::totp::qr` module** with `otpauth_to_svg(uri) -> Result<String>` using the `qrcode` 0.14 crate at `EcLevel::M` (15% recovery — pragmatic balance), 240 px min-dimension, deterministic black-on-white SVG. **7 QR tests** pinning determinism, color emission, long-URI handling, output structure. **`cesauth_worker::routes::me`** parent module with `me::auth::resolve_or_redirect` centralizing the cookie → `SessionCookie::verify` → `ActiveSessionStore::status` → 302-to-/login pipeline; `redirect_to_login()` 302 helper. **Workspace dep added**: `qrcode = { version = "0.14", default-features = false, features = ["svg"] }`. **No HTTP routes still** — the presentation layer renders in unit tests and the QR generator runs pure-function; the wire-up is v0.29.0. 25 new tests. Total **551 passing**. |
 | mdBook documentation                   | ✅       | `docs/`                                            |
 
 ---
@@ -92,11 +93,14 @@ started.
 
 ### Next minor releases
 
-- **Security track — phased rollout.** Nine releases of focused
+- **Security track — phased rollout.** Eleven releases of focused
   security work, ordered by impact-vs-effort. Each is small
   enough to ship cleanly without overlap. Originally framed as
   eight phases; v0.27.0 split into 2a (storage) + 2b (routes)
-  mid-implementation, adding one phase.
+  mid-implementation, then v0.28.0 split again into 2b
+  (presentation) + 2c (routes) + 2d (polish) — adding three
+  phases total. Each split keeps releases review-able rather
+  than shipping a giant change-set.
 
   - **0.24.0** ✅ — `SECURITY.md` improvements (severity table,
     known-limitations subsection, see-also cross-links;
@@ -151,39 +155,65 @@ started.
     bundled storage + routes; mid-implementation the
     storage layer alone proved review-able as its own
     release. 24 new tests. Total **526 passing**.
-  - **0.28.0** — TOTP Phase 2b: HTTP routes
-    (`/me/security/totp/{enroll, enroll/confirm, disable,
-    recover}`), verify gate insertion in
-    `post_auth::complete_auth` after Magic Link primary,
-    server-side QR code SVG generation, recovery code
-    redemption flow, cron sweep extension (drops
-    unconfirmed rows older than 24h), redaction profile
-    drops both TOTP tables for prod→staging,
-    `docs/src/deployment/totp.md` operator chapter,
+  - **0.28.0** ✅ — TOTP Phase 2b: presentation layer.
+    Three new `cesauth_ui::templates` (enroll page,
+    recovery-codes page, verify page) with 18 tests pinning
+    CSRF inclusion / escape behavior / `<details>` placement
+    of the recovery alternative form / no-email-leak from
+    the verify page. New `cesauth_core::totp::qr` module
+    with `otpauth_to_svg` using `qrcode` 0.14 at EcLevel::M,
+    240 px, deterministic black-on-white. New
+    `cesauth_worker::routes::me::auth::resolve_or_redirect`
+    centralizing the cookie → session → 302-to-/login
+    pipeline for `/me/*` routes. Workspace dep added:
+    `qrcode = 0.14`. The original v0.28.0 plan bundled
+    presentation + routes; mid-implementation the
+    presentation layer alone proved review-able. 25 new
+    tests. Total **551 passing**.
+  - **0.29.0** — TOTP Phase 2c: HTTP routes + verify gate.
+    `GET /me/security/totp/enroll`,
+    `POST /me/security/totp/enroll/confirm`,
+    `GET /me/security/totp/verify`,
+    `POST /me/security/totp/verify`,
+    `POST /me/security/totp/recover`. Verify gate
+    insertion in `post_auth::complete_auth` (peek-not-take
+    PendingAuthorize, gate on `find_active_for_user`, park
+    PendingTotp + redirect to verify page). Routing wired
+    in `worker::lib::main`. Recovery code redemption.
+  - **0.30.0** — TOTP Phase 2d: polish + operations.
+    Disable flow (`POST /me/security/totp/disable`), cron
+    sweep extension (drops unconfirmed rows older than
+    24h), `cesauth-migrate` redaction profile drops both
+    TOTP tables for prod→staging, new chapter
+    `docs/src/deployment/totp.md` documenting encryption
+    key configuration / rotation / admin reset path,
     `TOTP_ENCRYPTION_KEY` added to pre-production release
-    gate. ADR-009 graduates `Draft` → `Accepted`.
-  - **0.29.0** — Audit log hash chain Phase 1: ADR-010 +
+    gate in `docs/src/expert/security.md`. **ADR-009
+    graduates from `Draft` to `Accepted`** at this point —
+    the design has been validated end-to-end by the prior
+    releases.
+  - **0.31.0** — Audit log hash chain Phase 1: ADR-010 +
     chain design + values (previous_hash column, computed
     hash on insert) + transition strategy for existing
     pre-chain rows. No automated integrity sweep yet.
-  - **0.30.0** — Audit log hash chain Phase 2: integrity
+  - **0.32.0** — Audit log hash chain Phase 2: integrity
     sweep cron + admin verification UI (display "chain
     valid through row N" + flag unexpected gaps).
-  - **0.31.0** — Refresh token reuse detection hardening:
+  - **0.33.0** — Refresh token reuse detection hardening:
     audit current `RefreshTokenFamily` DO behavior against
     OAuth 2.0 Security BCP (RFC 6749 §10.4 / draft-ietf-
     oauth-security-topics §4.13), close any gaps. The
     "use a refresh token twice → revoke the entire family"
     invariant is the load-bearing one.
-  - **0.32.0** — Session management hardening + `/me/security`
+  - **0.34.0** — Session management hardening + `/me/security`
     self-service UI: session-id rotation on login, idle and
     absolute timeouts, "new device" notification path,
     user-facing list of active sessions with revoke buttons.
 
-  After this track completes (now 9 phases instead of the
-  original 8 — the v0.27.0 split adds one phase), the
-  schedule reverts to the feature track (RFC 7662 Token
-  Introspection, etc.).
+  After this track completes (now 11 phases instead of the
+  original 8 — the v0.27.0 split added one and the v0.28.0
+  split added two more), the schedule reverts to the feature
+  track (RFC 7662 Token Introspection, etc.).
 
 - **Real mail provider for Magic Link delivery.** The current
   `dev-delivery` audit line containing the plaintext OTP must be
@@ -696,8 +726,9 @@ started.
   - 8 v0.25.0 discovery shape tests inverted/extended to OIDC
     posture.
 
-  **Scheduled when**: TOTP track (v0.26.0 - v0.28.0) completes.
-  Likely v0.29.0 or later, deferred behind any urgent track.
+  **Scheduled when**: TOTP track (v0.26.0 - v0.30.0) completes.
+  Likely v0.31.0 or later, deferred behind the audit-log-hash-
+  chain track which currently has the next-up slots.
   Not blocking 1.0 unless a deployment requires OIDC compliance
   for an identity-federation integration. The audit doc and
   ADR-008 keep the design ready for whoever picks it up.

@@ -12,6 +12,207 @@ always be called out here.
 
 ---
 
+## [0.28.0] - 2026-04-29
+
+Security track Phase 5 of 11: TOTP Phase 2b — presentation
+layer.
+
+The original v0.28.0 plan combined presentation (templates +
+QR generator) with HTTP routes and the `complete_auth`
+verify-gate insertion. Mid-implementation it became clear the
+presentation layer alone was substantial enough to deserve its
+own review-able release, and that v0.29.0 would benefit from
+having the templates already validated when the route handlers
+are written. The TOTP track is now a **five-release split**:
+library (v0.26.0), storage (v0.27.0), presentation (v0.28.0),
+routes (v0.29.0), polish (v0.30.0 — ADR Accepted).
+
+The repeated splitting reflects a project value documented in
+v0.23.0/v0.24.0/v0.27.0: ship review-able slices over giant
+change-sets. Each release leaves the system in a coherent
+state. v0.27.0 → v0.28.0 is code-only with no new HTTP
+surface; v0.28.0 → v0.29.0 will be route-additive only; etc.
+
+Operators deploying v0.28.0 see:
+- New compiled-in modules (templates, QR generator, /me/auth
+  helper) that aren't reached from any HTTP route yet.
+- New workspace dep `qrcode = 0.14`.
+- **No user-visible behavior change.**
+
+### Added — `cesauth_ui::templates::totp_*`
+
+Three new public template functions:
+
+- **`totp_enroll_page(qr_svg, secret_b32, csrf_token)`** —
+  renders the enrollment page: inline SVG QR code, manual-
+  entry secret in a `<details>` collapsed section, code-
+  confirmation form POSTing to
+  `/me/security/totp/enroll/confirm`. CSRF token rendered as
+  hidden input. The QR SVG is intentionally NOT escaped (it's
+  server-issued markup the page must render); everything else
+  goes through `escape()` defense-in-depth.
+- **`totp_recovery_codes_page(codes)`** — shows the plaintext
+  recovery codes once with a strong "save now" warning. No
+  CSRF needed (read-only display). The "I've saved them"
+  link is a plain `<a href="/">` rather than a form because
+  there's no server-side action to take — recovery codes
+  were already stored hashed during the prior confirm step;
+  this page exists purely so the user has one chance to read
+  the plaintext.
+- **`totp_verify_page(csrf_token, error)`** — the post-Magic-
+  Link gate prompt. Two forms: the primary 6-digit code
+  entry, and (inside `<details>` to discourage habituation) a
+  recovery-code form posting to `/me/security/totp/recover`.
+  `error: Option<&str>` controls inline error rendering for
+  invalid-code retries; `None` is the initial render.
+
+**18 new template tests** in `cesauth_ui::templates::tests`
+covering CSRF inclusion (verified twice on the verify page —
+once per form), escape behavior on every variable input,
+form action correctness, error-block conditional rendering,
+`<details>` placement of the recovery alternative form (UX-
+habituation defense pinned by `recover_idx > details_idx`
+ordering check), no-email-leak from the verify page (no `@`
+character should appear).
+
+### Added — `cesauth_core::totp::qr`
+
+New module with `otpauth_to_svg(uri) -> Result<String,
+String>` wrapping the `qrcode` 0.14 crate's SVG renderer.
+Cesauth-specific defaults: `EcLevel::M` (15% recovery —
+pragmatic balance between size and robustness), 240 px
+minimum dimension (fits beside the manual-entry secret in
+the enrollment-page layout), deterministic black-on-white.
+
+The output is fully deterministic for a given input — pinned
+by a test that encodes the same URI twice and asserts byte-
+equality. This makes the SVG reproducible for tests and
+cacheable in any layer that wants to.
+
+**7 new QR tests**: starts/ends with valid SVG markup,
+includes the dark color (`#000000`) we asked for, is
+deterministic, changes when the URI changes (sanity check
+that the input reaches the encoder), handles realistically-
+long URIs without panicking, dimension constant is
+page-embeddable.
+
+### Added — `cesauth_worker::routes::me`
+
+New parent module + `me::auth` helper. The cookie → session
+→ redirect-or-state pipeline for `/me/*` routes is centralized
+in `me::auth::resolve_or_redirect`, returning
+`Result<Result<SessionState, Response>>` mirroring the shape
+of `crate::admin::auth::resolve_or_respond`. The `Result`
+nesting lets handlers distinguish "user not signed in, here's
+the response to send" from "infrastructure failed". The
+`redirect_to_login()` 302 helper is the standard
+unauthenticated outcome.
+
+The module is intentionally minimal in v0.28.0 — only the
+`auth` helper. The `me::totp` submodule (with `enroll`,
+`recover`, `verify` handlers) lands in v0.29.0.
+
+### Added — workspace dependencies
+
+- `qrcode = { version = "0.14", default-features = false,
+  features = ["svg"] }` — pure-Rust QR code generation. The
+  `default-features = false` drops the image-rendering
+  features we don't use; `svg` is the string-emit path.
+
+### Tests
+
+Total: **551 passing** (+25 over v0.27.0):
+
+- core: **272** (was 265) — 7 new in `totp::qr::tests`.
+- adapter-test: 70 (unchanged).
+- ui: **145** (was 127) — 18 new in `templates::tests`:
+  - 6 enroll-page tests (CSRF, QR-SVG-unescaped, secret
+    escape, CSRF escape, form action, 6-digit pattern).
+  - 3 recovery-codes-page tests (each code rendered as
+    `<code>`, irreversibility warning present, codes
+    escaped).
+  - 9 verify-page tests (CSRF in both forms, no/some error
+    rendering, recovery alternative present and inside
+    `<details>`, escape behavior, 6-digit pattern, no
+    email leak).
+- worker: 35 (unchanged — the new `me::auth` module is
+  shape-only; integration tests for it land in v0.29.0
+  alongside the route handlers that exercise it).
+- migrate: 29 (unchanged).
+
+### Documentation
+
+- `docs/src/expert/adr/009-totp.md` — Phasing section
+  rewritten to reflect the five-release split. Acceptance
+  criteria moved to v0.30.0. ADR remains in `Draft`.
+
+### Migration (0.27.0 → 0.28.0)
+
+Code-only release. **No schema migration.** No
+`wrangler.toml` changes.
+
+The `qrcode` 0.14 dep is added to the workspace and used
+only by `cesauth_core::totp::qr`. The compiled WASM grows
+slightly; otherwise no operational impact.
+
+The `cesauth_worker::routes::me` parent module is now
+compiled but no `/me/*` URL is wired in `lib::main` yet.
+Routes land in v0.29.0.
+
+**No route surface changes**, **no UI changes**, **no
+discovery doc changes**. Pure presentation-layer
+infrastructure.
+
+### Smoke test
+
+```sh
+cargo test --workspace                      # 551 passing
+cargo test -p cesauth-ui --lib templates    # 27 passing (the
+# 9 prior templates::tests + 18 new totp template tests).
+cargo test -p cesauth-core --lib totp::qr   # 7 passing.
+```
+
+### Discovered
+
+No new findings this release. The v0.26.0-discovered
+`oidc_clients.client_secret_hash` schema-comment drift
+remains tracked in ROADMAP "Later".
+
+### Deferred (v0.29.0 + v0.30.0)
+
+**v0.29.0 (TOTP Phase 2c — routes + verify gate)**:
+- HTTP routes at `/me/security/totp/{enroll, enroll/confirm,
+  verify, recover}`.
+- Verify gate insertion in `post_auth::complete_auth`:
+  peek-not-take the PendingAuthorize, gate on
+  `find_active_for_user`, park `PendingTotp` carrying the
+  original handle, set `__Host-cesauth_totp` cookie,
+  redirect to `/me/security/totp/verify`.
+- Routing wired in `worker::lib::main`.
+- Recovery code redemption flow.
+
+**v0.30.0 (TOTP Phase 2d — polish)**:
+- Disable flow (`POST /me/security/totp/disable`).
+- Cron sweep extension (drops unconfirmed rows older than
+  24h).
+- `cesauth-migrate` redaction profile drops both TOTP
+  tables for prod→staging.
+- New chapter `docs/src/deployment/totp.md`.
+- `TOTP_ENCRYPTION_KEY` added to pre-production release
+  gate.
+- ADR-009 graduates `Draft` → `Accepted`.
+
+### Deferred — unchanged
+
+- **OIDC `id_token` issuance (ADR-008)** — Drafted, queued
+  in ROADMAP "Later" behind the security track (which now
+  ends at v0.30.0 — track expanded to 11 phases).
+- **Audit log hash chain (ADR-010)** — v0.31.0/v0.32.0.
+- **`oidc_clients.client_secret_hash` schema-comment
+  drift** — ROADMAP "Later" item.
+
+---
+
 ## [0.27.0] - 2026-04-29
 
 Security track Phase 4 of 8: TOTP Phase 2a — storage layer.

@@ -10,6 +10,7 @@ pub mod admin;
 pub mod api_v1;
 pub mod dev;
 pub mod magic_link;
+pub mod me;
 pub mod oidc;
 pub mod session;
 pub mod ui;

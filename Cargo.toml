@@ -17,7 +17,7 @@ members = [
 # `[workspace.package].rust-version`) and the wasm32 target installed.
 
 [workspace.package]
-version      = "0.27.0"
+version      = "0.28.0"
 edition      = "2024"
 rust-version = "1.85"
 license      = "Apache-2.0"
@@ -76,6 +76,12 @@ aes-gcm    = "0.10"
 # base32 for the `otpauth://` URI's `secret=` parameter
 # (ADR-009 §Q8) and recovery codes (ADR-009 §Q6).
 data-encoding = "2"
+# QR code generation for the TOTP enrollment page (v0.28.0+).
+# Pure-Rust, no external image dep — emits SVG which we inline
+# into the HTML template. `default-features = false` drops the
+# image-rendering features we don't use; `svg` feature is what
+# lets us emit string SVG.
+qrcode     = { version = "0.14", default-features = false, features = ["svg"] }
 
 # Pin `getrandom` to the 0.2 line. 0.3 is also in the graph via ring, but we
 # only ask for 0.2 ourselves - the `js` feature is only relevant here.

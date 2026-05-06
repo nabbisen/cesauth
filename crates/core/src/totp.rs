@@ -620,6 +620,10 @@ pub fn aad_for_id(id: &str) -> Vec<u8> {
 /// (D1) and `cesauth-adapter-test` (in-memory) implement these.
 pub mod storage;
 
+/// QR code SVG generator for the TOTP enrollment page (v0.28.0+).
+/// Wraps the `qrcode` crate with cesauth-specific defaults.
+pub mod qr;
+
 // =====================================================================
 // Tests
 // =====================================================================

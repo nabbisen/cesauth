@@ -43,6 +43,11 @@ hmac         = { workspace = true }
 sha1            = { workspace = true }
 aes-gcm         = { workspace = true }
 data-encoding   = { workspace = true }
+# QR code SVG generator — used by `cesauth_core::totp::qr` to
+# emit the inline-SVG block consumed by the enrollment page
+# template. Pure-Rust, no image deps; the `svg` feature is the
+# string-emit path we want.
+qrcode          = { workspace = true }
 
 # --- WebAuthn verification ---
 # `webauthn-rs-core` has a hard dependency on `openssl` which does not
