@@ -71,12 +71,10 @@ pub async fn stage_auth_code<D>(mut req: Request, ctx: RouteContext<D>) -> Resul
 
 /// `GET /__dev/audit`
 ///
-/// Lists audit-log objects in the `AUDIT` R2 bucket. Exists because
-/// `wrangler r2 object list` does not exist as of wrangler v3/v4 -
-/// the only `wrangler r2 object` subcommands are `get`, `put`, and
-/// `delete`. Writing a manual `find` inside the miniflare state
-/// directory works but depends on miniflare's on-disk format, which
-/// is not a documented API contract.
+/// Lists recent audit events from the D1 `audit_events` table.
+/// Replaces the previous R2-based route (v0.32.0 moved audit
+/// storage from R2 to D1; this route was updated in v0.52.1,
+/// RFC 012, to reflect the D1 backend).
 ///
 /// This handler reads from the v0.32.0 `audit_events` D1 table. It
 /// is still guarded by `WRANGLER_LOCAL=1` because shipping an

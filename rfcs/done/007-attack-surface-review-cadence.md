@@ -1,6 +1,6 @@
 # RFC 007: Cesauth-specific attack-surface review cadence
 
-**Status**: Proposed
+**Status**: Implemented (v0.52.1)
 **ROADMAP**: `## Planned (0.x) / Later` — "Cesauth-specific attack surface review"
 **ADR**: N/A
 **Estimated scope**: Small per review; sustained low-grade workload across releases

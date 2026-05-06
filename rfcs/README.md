@@ -38,8 +38,8 @@ Full policy: `done/019-rfc-lifecycle-policy.md`.
 |----|-------|-------|
 | [001](./proposed/001-id-token-issuance.md) | OIDC `id_token` issuance | ADR-008; ~30 tests; 5-PR scope |
 
-| [007](./proposed/007-attack-surface-review-cadence.md) | Attack surface review cadence | Process RFC; schedule quarterly |
-| [012](./proposed/012-doc-and-repo-hygiene.md) | Doc & repo hygiene | README, migrate.rs split, docs gaps |
+
+
 | [013](./proposed/013-operational-envelope.md) | Operational envelope | Graceful shutdown, memory limits |
 | [014](./proposed/014-audit-append-performance.md) | Audit append performance | Batch writes, back-pressure |
 | [015](./proposed/015-request-traceability.md) | Request traceability | `X-Request-Id` propagation |
@@ -62,6 +62,8 @@ Full policy: `done/019-rfc-lifecycle-policy.md`.
 | [010](./done/010-magic-link-real-delivery.md) | Magic Link mailer port | v0.51.0 |
 | [011](./done/011-worker-layer-hardening.md) | Worker-layer hardening | v0.50.3 |
 | [006](./done/006-csp-without-unsafe-inline.md) | CSP without `unsafe-inline` | v0.52.0 |
+| [007](./done/007-attack-surface-review-cadence.md) | Attack surface review cadence | v0.52.1 |
+| [012](./done/012-doc-and-repo-hygiene.md) | Doc & repo hygiene | v0.52.1 |
 | [019](./done/019-rfc-lifecycle-policy.md) | RFC lifecycle policy | v0.51.2 |
 
 ---

@@ -44,8 +44,9 @@ posture, or extending it. You will find:
 
 ## Design principles
 
-1. **Minimal surface.** No management GUI, no SAML, no LDAP, no
-   password login.
+1. **Minimal surface — minus the admin path.** No SAML, no LDAP, no
+   password login. An admin console (`/admin/console/*`) and tenant-scoped
+   admin surface (`/admin/t/<slug>/*`) ship for operator use.
 2. **Strong consistency first.** Anything that must not double-spend
    lives in Durable Objects.
 3. **Passkey first, username-less first.** Magic Link is a fallback,
@@ -55,7 +56,7 @@ posture, or extending it. You will find:
 5. **Accessibility baked in.** Semantic HTML, `aria-live`,
    keyboard-navigable forms.
 6. **Audit everything sensitive.** Authentication, admin, failures,
-   revocations — all land in R2.
+   revocations — all land in D1's hash-chained `audit_events` table (ADR-010).
 
 ## Status
 

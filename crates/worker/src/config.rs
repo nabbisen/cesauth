@@ -191,11 +191,9 @@ impl Config {
 /// real newline. If the string already had real newlines
 /// they're untouched.
 ///
-/// (Pre-v0.44.0 this docstring referenced
-/// `jsonwebtoken::EncodingKey::from_ed_pem`; the v0.44.0
-/// tech-debt sweep dropped `jsonwebtoken` in favor of direct
-/// `ed25519-dalek`, but the PEM input format and the
-/// `\n`-escaping requirement are unchanged.)
+/// (v0.44.0 dropped the `jsonwebtoken` crate in favour of direct
+/// `ed25519-dalek`. The PEM input format and the `\n`-escaping
+/// requirement are unchanged.)
 ///
 /// If you get "JwtSigner::from_pem failed" in the log after this,
 /// the cause is almost certainly NOT escaping - check for a stray

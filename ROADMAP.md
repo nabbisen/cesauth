@@ -117,6 +117,16 @@ started.
 
 ### Next minor releases
 
+- ✅ **v0.52.1 — RFC 012 + RFC 007 (doc/repo hygiene + attack surface review cadence).**
+  Patch release. README and intro.md factual errors corrected (admin console
+  existence, audit→D1 not R2). `migrate.rs` 2568-line monolith split into
+  7 focused submodules (facade re-exports unchanged public API; all 29 tests
+  pass). `scripts/drift-scan.sh` + `.github/workflows/drift-scan.yml` added
+  for stale-phrase detection on every PR. `wrangler.toml` RATE_LIMIT=DO
+  comment added. RFC 007 process doc at
+  `docs/src/expert/attack-surface-review-cadence.md`. Both RFCs moved to
+  `rfcs/done/`. 888 tests pass.
+
 - ✅ **v0.52.0 — RFC 006 + RFC 019 (CSP nonces + RFC lifecycle policy).**
   Minor bump because RFC 006 changes the observable CSP header for all HTML
   responses. `CspNonce` type + `build_csp_with_nonce` in cesauth-core.

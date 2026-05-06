@@ -16,12 +16,21 @@
 
 ## Design principles
 
-- **Minimal surface.** No management GUI, no SAML, no LDAP, no password login.
-- **Strong consistency first.** Anything that must not double-spend lives in Durable Objects.
-- **Passkey first, username-less first.** Magic Link is a fallback, not the default.
-- **Slim dependency graph.** Only what's known to build on the Workers WASM target.
-- **Accessibility baked in.** Semantic HTML, `aria-live`, keyboard-navigable forms.
-- **Audit everything sensitive.** Authentication, admin, failures, revocations — all land in R2.
+- **Minimal surface — minus the admin path.** No SAML, no LDAP, no password
+  login. cesauth ships an admin console (`/admin/console/*`) and a tenant-scoped
+  admin surface (`/admin/t/<slug>/*`) for operator and tenant administration —
+  but no end-user signup gallery and no public registration UI.
+- **Strong consistency first.** Anything that must not double-spend lives in
+  Durable Objects.
+- **Passkey first, username-less first.** Magic Link is a fallback, not the
+  default.
+- **Slim dependency graph.** Only what's known to build on the Workers WASM
+  target.
+- **Accessibility baked in.** Semantic HTML, `aria-live`, keyboard-navigable
+  forms.
+- **Audit everything sensitive.** Authentication, admin, failures, revocations —
+  all land in D1's hash-chained `audit_events` table (ADR-010). Operators forward
+  to external SIEM via Cloudflare Logpush.
 
 ---
 
@@ -34,7 +43,7 @@ no network-side setup. In short:
 # Host-only domain tests — no Cloudflare needed:
 cargo test
 
-# Full flow with Miniflare. Local D1/KV/R2/DOs are auto-provisioned
+# Full flow with Miniflare. Local D1/KV/DOs are auto-provisioned
 # from the bindings in wrangler.toml — you do NOT call
 # `wrangler d1 create` etc. for local dev.
 wrangler d1 migrations apply cesauth --local

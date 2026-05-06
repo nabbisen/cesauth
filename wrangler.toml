@@ -33,6 +33,12 @@ migrations_dir = "migrations"
 
 # --- Durable Objects: strong-consistency state ---------------------------
 # Four DO classes, each with a single, narrow responsibility.
+# NOTE (RFC 012, v0.52.1): rate limiting uses a Durable Object, NOT KV.
+# KV holds only long-lived caches (audit chain checkpoint, OIDC discovery
+# document). The `RATE_LIMIT` DO provides per-key sliding-window counters
+# with strong consistency. Class implementations live in
+# `crates/adapter-cloudflare/src/{auth_challenge,refresh_token_family,
+# active_session,rate_limit}.rs`.
 [[durable_objects.bindings]]
 name       = "AUTH_CHALLENGE"
 class_name = "AuthChallenge"

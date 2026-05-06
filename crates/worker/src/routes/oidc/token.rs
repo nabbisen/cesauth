@@ -53,8 +53,8 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
         Err(e) => {
             // Most common cause: the PEM in .dev.vars was escaped
             // with literal `\n` characters that weren't interpreted
-            // as newlines. `JwtSigner::from_pem` wraps jsonwebtoken's
-            // PKCS8 PEM parser, which needs real line breaks between
+            // as newlines. `JwtSigner::from_pem` uses the pkcs8 crate's
+            // PEM parser, which needs real line breaks between
             // `-----BEGIN`/`-----END` and the base64 body.
             log::emit(&cfg.log, Level::Error, Category::Crypto,
                 &format!("JwtSigner::from_pem failed: {e:?}. \

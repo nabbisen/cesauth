@@ -1,0 +1,25 @@
+# Stale-phrase drift scan.
+#
+# RFC 012 (v0.52.1): runs on every PR to catch narrative phrases that were
+# accurate in an earlier version but no longer reflect the current implementation.
+# See scripts/drift-scan.sh for the pattern registry.
+#
+# Keeps the "the README is wrong" and "a comment refers to R2" class of drift
+# from accumulating between major reviews. Fast: grep only, no Rust toolchain.
+
+name: drift-scan
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  scan:
+    name: stale-phrase check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run drift-scan
+        run: bash scripts/drift-scan.sh --verbose

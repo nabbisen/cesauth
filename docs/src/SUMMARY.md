@@ -53,6 +53,7 @@
     - [ADR-014: Token Introspection](./expert/adr/014-token-introspection.md)
     - [ADR-015: Magic Link mail delivery port](./expert/adr/015-magic-link-mailer.md)
 - [Security considerations](./expert/security.md)
+- [Attack surface review cadence](./expert/attack-surface-review-cadence.md)
 
 ---
 

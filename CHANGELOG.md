@@ -14,6 +14,91 @@ changes will always be called out here.
 
 ---
 
+## [0.52.1] - 2026-05-06
+
+Patch release. Implements RFC 012 (documentation and repo hygiene) and
+RFC 007 (attack surface review cadence). No production behavior change;
+no schema migration; no new env vars.
+
+### Why this release
+
+**RFC 012**: Four documentation quality items identified in the external
+v0.50.1 codebase review. Two claims in README and `docs/src/introduction.md`
+were factually wrong (admin console existence, audit storage). `migrate.rs`
+at 2568 lines exceeded the 800-line soft cap. Inline comments referenced
+the removed `jsonwebtoken` and R2 audit subsystems. No drift-detection
+automation existed to catch future drift.
+
+**RFC 007**: The attack surface review cadence process was defined in the
+2026 initial review but never written into the codebase. This release
+adds the written policy and creates the framework for per-quarter review
+deliverables.
+
+### What shipped
+
+**RFC 012 — Documentation and repo hygiene**
+
+- **README rewrite** (PR 1): "No management GUI" → "No SAML/LDAP/password
+  login; admin console and tenant-scoped admin surface ship for operator
+  use". "All land in R2" → "All land in D1's hash-chained `audit_events`
+  table (ADR-010)". `Quick Start` code block removed spurious `R2` from
+  the D1/KV/DOs description.
+- **Inline comment cleanup** (PR 2): `routes/dev.rs` route comment updated
+  from R2 bucket to D1 table; `config.rs` doc comment simplified (dropped
+  `jsonwebtoken::EncodingKey::from_ed_pem` historical ref); `routes/oidc/token.rs`
+  PKCS8 parser comment updated from `jsonwebtoken` to `pkcs8` crate.
+- **`docs/src/introduction.md`** (PR 2): "No management GUI" claim corrected
+  to match README.
+- **`scripts/drift-scan.sh`** (new, PR 3): 60-line bash script that grep-scans
+  the workspace for stale narrative phrases. Current pattern list:
+  `"all land in R2"`, `"R2_AUDIT"`, `"pub code_plaintext"`,
+  `"No management GUI"`. Passes cleanly on current codebase.
+- **`.github/workflows/drift-scan.yml`** (new, PR 3): runs drift-scan on
+  every PR and main-branch push. No Rust toolchain required; < 10 seconds.
+- **`wrangler.toml`** (PR 4): added clarifying comment to `[[durable_objects]]`
+  block noting RATE_LIMIT = Durable Object (not KV); KV holds only
+  long-lived caches.
+- **`crates/core/src/migrate.rs` split** (PR 5): 2568-line monolith → facade
+  of ~35 lines + 7 focused submodules. Public API unchanged; all items
+  re-exported from facade. Submodule sizes: `error.rs` (75 lines),
+  `types.rs` (165 lines), `redaction.rs` (200 lines), `export.rs` (265 lines),
+  `verify.rs` (135 lines), `invariants.rs` (425 lines), `import.rs` (20 lines).
+  All 29 migrate tests pass unchanged.
+
+**RFC 007 — Attack surface review cadence**
+
+- `docs/src/expert/attack-surface-review-cadence.md` (new): process document
+  defining when reviews run (pre-major, pre-cross-cutting-refactor,
+  when new threat classes surface), the per-review deliverable shape
+  (structured Markdown in `docs/src/expert/security-review-<year>-<quarter>.md`),
+  the 8 starting surface categories from the 2026 initial review, and the
+  link to `drift-scan.sh` as the continuous inter-review gate.
+- `docs/src/SUMMARY.md`: entry added under Expert section.
+- `rfcs/done/007-attack-surface-review-cadence.md`: RFC status → Implemented.
+
+### RFC lifecycle
+
+- `rfcs/done/007-attack-surface-review-cadence.md`: moved from proposed.
+- `rfcs/done/012-doc-and-repo-hygiene.md`: moved from proposed.
+- `rfcs/README.md`: Done table updated.
+
+### Tests
+
+859 lib + 29 migrate = 888 total, all pass. No new tests needed (RFC 012
+is documentation; RFC 007 is process; migrate split is a mechanical refactor
+gated by the existing 29-test suite).
+
+### Schema / wire / DO changes
+
+None. Patch-only release.
+
+### Upgrade procedure
+
+```
+1. Deploy v0.52.1 (drop-in; no action required).
+2. Run scripts/drift-scan.sh in your pipeline to catch future drift.
+```
+
 ## [0.52.0] - 2026-05-06
 
 Minor release. Implements RFC 006 (CSP without `'unsafe-inline'`) and
