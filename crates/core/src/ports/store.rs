@@ -72,6 +72,29 @@ pub enum Challenge {
         attempts:      u32,
         expires_at:    i64,
     },
+    /// Intermediate state between successful primary auth (Magic
+    /// Link) and a fully-issued session, when the user has TOTP
+    /// configured. Parked by `complete_auth` when it detects a
+    /// confirmed TOTP authenticator; consumed by the TOTP verify
+    /// route. The handle goes into a short-lived `__Host-cesauth_totp`
+    /// cookie scoped to the TOTP prompt page; on successful
+    /// verification the original `complete_auth` flow resumes
+    /// (session start, AR resolution, redirect).
+    ///
+    /// `pending_ar_handle` is the handle of any parked
+    /// `PendingAuthorize` challenge that the TOTP prompt must
+    /// resolve once the user proves possession. None when the
+    /// user landed at `/login` directly without an OAuth `/authorize`
+    /// chain.
+    ///
+    /// ADR-009 §Q7. Wire-up in v0.27.0.
+    PendingTotp {
+        user_id:           String,
+        auth_method:       AuthMethod,
+        pending_ar_handle: Option<String>,
+        attempts:          u32,
+        expires_at:        i64,
+    },
 }
 
 impl Challenge {
@@ -82,6 +105,7 @@ impl Challenge {
             Self::WebauthnRegister     { expires_at, .. } => *expires_at,
             Self::WebauthnAuthenticate { expires_at, .. } => *expires_at,
             Self::MagicLink            { expires_at, .. } => *expires_at,
+            Self::PendingTotp          { expires_at, .. } => *expires_at,
         }
     }
 }

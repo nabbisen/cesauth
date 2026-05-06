@@ -407,19 +407,47 @@ This is documented in v0.27.0's redaction profile additions.
 
 ## Phasing
 
-- **v0.26.0** (this release) — ADR (this document) + schema
-  migration 0007 + `cesauth_core::totp` library skeleton
-  (pure functions: TOTP generation, verification with replay
-  protection, recovery-code generation, secret encryption
-  helpers). NO HTTP routes. NO enrollment UI. NO redaction
-  profile updates yet.
-- **v0.27.0** — enrollment flow at `/me/security/totp/*`,
-  verify wire-up in the post-Magic-Link interstitial,
-  recovery-code redemption flow, redaction profile drops the
-  new tables, ADR graduates to `Accepted`. Cron sweep
-  extension lands here too.
+The original plan was a two-release split (foundation + wire-up).
+During v0.27.0 implementation it became clear that the storage
+layer (port traits, in-memory adapter, D1 adapter, encryption
+key plumbing) was its own substantial slice and deserved a
+separate release for review-ability. The phasing was revised
+mid-release into three phases:
 
-## Acceptance criteria for v0.27.0
+- **v0.26.0** ✅ — ADR (this document, Draft) + schema migration
+  0007 + `cesauth_core::totp` pure-function library (TOTP
+  generation, verification with replay protection,
+  recovery-code generation, secret encryption helpers). NO
+  HTTP routes, NO enrollment UI, NO redaction profile updates.
+- **v0.27.0** ✅ — Storage layer: `TotpAuthenticatorRepository`
+  and `TotpRecoveryCodeRepository` port traits in
+  `cesauth_core::totp::storage`; in-memory adapters in
+  `cesauth-adapter-test` (19 tests); D1 adapters in
+  `cesauth-adapter-cloudflare`; `Challenge::PendingTotp`
+  variant for the post-MagicLink intermediate state;
+  `TOTP_ENCRYPTION_KEY` and `TOTP_ENCRYPTION_KEY_ID` env vars
+  with parser unit-tests (5 tests). NO HTTP routes still —
+  the storage layer alone is testable via the in-memory
+  adapter and the D1 adapter compiles against worker-rs.
+- **v0.28.0** (planned) — HTTP routes at `/me/security/totp/*`
+  (enroll, confirm, disable, recover), TOTP verify gate in
+  `complete_auth` after Magic Link primary, recovery-code
+  redemption flow, cron sweep extension (drops unconfirmed
+  rows older than 24h), redaction profile drops both new
+  tables for prod→staging, new chapter
+  `docs/src/deployment/totp.md`. ADR graduates to `Accepted`.
+
+Splitting v0.27.0 from v0.28.0 means an operator deploying
+v0.27.0 today gets:
+- Schema in place (migration 0007, applied at v0.26.0 if not
+  earlier).
+- Storage adapters compiled into the worker but unreachable
+  via HTTP (no routes wired).
+- `TOTP_ENCRYPTION_KEY` env var optional (worker boots without
+  it; reading routines return `None`).
+- No user-visible behavior change.
+
+## Acceptance criteria for v0.28.0
 
 - ADR graduates from `Draft` to `Accepted`.
 - All v0.26.0 library tests pass plus new HTTP-handler tests.

@@ -136,3 +136,128 @@ pub fn load_session_cookie_key(env: &Env) -> Result<Vec<u8>> {
 pub fn load_turnstile_secret(env: &Env) -> Option<String> {
     env.secret("TURNSTILE_SECRET").ok().map(|s| s.to_string())
 }
+
+/// Load the TOTP secret-encryption key. 32 bytes (AES-GCM-256).
+/// The wrangler secret stores the key base64-encoded; we decode here
+/// before returning the raw bytes for use with `aes_gcm`.
+///
+/// Operators provision with:
+/// ```sh
+/// openssl rand -base64 32 | wrangler secret put TOTP_ENCRYPTION_KEY
+/// ```
+///
+/// Returns `Ok(None)` (not an error) when the secret is unset, so
+/// deployments that haven't enabled TOTP yet still respond on
+/// non-TOTP routes. Routes that need to encrypt or decrypt TOTP
+/// secrets check the `Option` and return a clear "TOTP not
+/// configured" error if `None`.
+///
+/// See ADR-009 §Q5 for the encryption-at-rest design and key
+/// rotation procedure.
+pub fn load_totp_encryption_key(env: &Env) -> Result<Option<Vec<u8>>> {
+    let secret = match env.secret("TOTP_ENCRYPTION_KEY") {
+        Ok(s)  => s.to_string(),
+        Err(_) => return Ok(None),
+    };
+    parse_totp_encryption_key(&secret)
+        .map(Some)
+        .map_err(worker::Error::RustError)
+}
+
+/// Pure helper for parsing the TOTP encryption key string. Extracted
+/// from `load_totp_encryption_key` so the parsing rules (whitespace
+/// stripping, base64 decoding, length validation) are unit-testable
+/// without a Worker `Env`.
+fn parse_totp_encryption_key(raw: &str) -> std::result::Result<Vec<u8>, String> {
+    use base64::Engine;
+    // Strip whitespace (operators sometimes paste with newlines)
+    // before base64-decoding. `openssl rand -base64 32` emits a
+    // trailing newline that `wrangler secret put` may or may not
+    // strip depending on shell.
+    let cleaned: String = raw.chars().filter(|c| !c.is_whitespace()).collect();
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(cleaned.as_bytes())
+        .map_err(|e| format!("TOTP_ENCRYPTION_KEY is not valid base64: {e}"))?;
+    if bytes.len() != cesauth_core::totp::ENCRYPTION_KEY_LEN {
+        return Err(format!(
+            "TOTP_ENCRYPTION_KEY must decode to {} bytes (got {})",
+            cesauth_core::totp::ENCRYPTION_KEY_LEN,
+            bytes.len()
+        ));
+    }
+    Ok(bytes)
+}
+
+/// Load the TOTP encryption key id — a human-readable identifier for
+/// which key encrypted a row. Stored in `secret_key_id` column on
+/// `totp_authenticators`. Used by the rotation procedure: when a new
+/// key is provisioned, operators bump `TOTP_ENCRYPTION_KEY_ID` and
+/// new rows record the new id; old rows still decrypt because
+/// adapters look up the historical key by `secret_key_id`.
+///
+/// Returns `None` when unset (analogous to `load_totp_encryption_key`).
+/// Routes that need the id pair the two reads.
+pub fn load_totp_encryption_key_id(env: &Env) -> Option<String> {
+    env.var("TOTP_ENCRYPTION_KEY_ID").ok().map(|v| v.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- parse_totp_encryption_key (v0.27.0) -------------------------
+    //
+    // Pin the parsing rules: clean whitespace, decode base64, check
+    // length. Each branch's error is operator-facing so messages
+    // matter — test that unhelpful messages aren't emitted.
+
+    #[test]
+    fn parse_totp_key_accepts_well_formed() {
+        // 32 random bytes → standard base64 → 44 chars including
+        // one trailing `=`. Build deterministically with
+        // [0u8;32] for reproducibility.
+        let raw = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        let bytes = parse_totp_encryption_key(raw).expect("well-formed key parses");
+        assert_eq!(bytes.len(), 32);
+        assert!(bytes.iter().all(|b| *b == 0));
+    }
+
+    #[test]
+    fn parse_totp_key_strips_whitespace() {
+        // `openssl rand -base64 32` emits a trailing newline.
+        // `wrangler secret put` may or may not strip it.
+        let raw = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n";
+        assert!(parse_totp_encryption_key(raw).is_ok(),
+            "trailing newline must not break parsing");
+
+        let with_internal_ws = "AAAAAAAAAAAA AAAAAAAAAAAAAAAAAAAAAAAAAAAA AAA=";
+        assert!(parse_totp_encryption_key(with_internal_ws).is_ok(),
+            "internal whitespace stripped before decoding");
+    }
+
+    #[test]
+    fn parse_totp_key_rejects_invalid_base64() {
+        let bad = "this is not!!! base64 data $$$";
+        let err = parse_totp_encryption_key(bad).err().unwrap();
+        assert!(err.contains("base64"),
+            "error message must mention base64 (operator-facing): {err}");
+    }
+
+    #[test]
+    fn parse_totp_key_rejects_wrong_length() {
+        // 16 zero bytes — base64-encoded — is the wrong size for
+        // AES-GCM-256. The error must clearly say so.
+        let raw = "AAAAAAAAAAAAAAAAAAAAAA==";
+        let err = parse_totp_encryption_key(raw).err().unwrap();
+        assert!(err.contains("32") && err.contains("16"),
+            "length error must mention expected vs actual: {err}");
+    }
+
+    #[test]
+    fn parse_totp_key_rejects_empty() {
+        // Empty string decodes to 0 bytes — wrong length, clear
+        // error rather than silently accepting.
+        let err = parse_totp_encryption_key("").err().unwrap();
+        assert!(err.contains("0"), "empty input must report 0 bytes: {err}");
+    }
+}

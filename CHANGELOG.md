@@ -12,6 +12,216 @@ always be called out here.
 
 ---
 
+## [0.27.0] - 2026-04-29
+
+Security track Phase 4 of 8: TOTP Phase 2a — storage layer.
+
+This release ships the **storage layer** for TOTP: port traits,
+in-memory adapters, Cloudflare D1 adapters, and the encryption-
+key parser. **No HTTP routes**. **No verify gate**. **No
+enrollment UI**. The original v0.27.0 plan covered both storage
+and wire-up in one release; mid-implementation the storage
+layer alone proved substantial enough to deserve its own
+review-able release. v0.28.0 picks up the HTTP routes.
+
+The phasing change is documented in ADR-009's "Phasing" section
+(now reflects three releases: v0.26.0 library, v0.27.0 storage,
+v0.28.0 routes). The ADR remains in `Draft` status — it will
+graduate to `Accepted` when v0.28.0 ships and the design has
+been validated end-to-end.
+
+Operators deploying v0.27.0 today see:
+- Schema in place (migration 0007 applied at v0.26.0 if not
+  earlier).
+- Storage adapters compiled into the worker but unreachable
+  via HTTP (no routes wired).
+- `TOTP_ENCRYPTION_KEY` env var optional (worker boots without
+  it; reading routines return `None`).
+- **No user-visible behavior change.**
+
+### Added — `cesauth_core::totp::storage` module
+
+Two new traits and two new value types:
+
+- **`TotpAuthenticator`** struct — one row of
+  `totp_authenticators`. Stores ciphertext + nonce +
+  `secret_key_id` for rotation support; `last_used_step` for
+  replay-protection state; `confirmed_at` as the enrollment-
+  completion marker.
+- **`TotpRecoveryCodeRow`** struct — one row of
+  `totp_recovery_codes`. Stores `code_hash` + nullable
+  `redeemed_at`.
+- **`TotpAuthenticatorRepository`** trait — 7 methods:
+  `create`, `find_by_id`, `find_active_for_user`, `confirm`
+  (idempotent: rejects double-confirm with `NotFound`),
+  `update_last_used_step`, `delete`, and the cron-sweep
+  helper `list_unconfirmed_older_than`.
+- **`TotpRecoveryCodeRepository`** trait — 5 methods:
+  `bulk_create` (atomic: rolls back if any row conflicts),
+  `find_unredeemed_by_hash`, `mark_redeemed` (idempotent),
+  `count_remaining`, `delete_all_for_user`.
+
+### Added — `Challenge::PendingTotp` variant
+
+New variant on `cesauth_core::ports::store::Challenge` for the
+intermediate state between successful Magic Link primary auth
+and a fully-issued session, when the user has TOTP configured.
+Carries `user_id`, `auth_method`, `pending_ar_handle:
+Option<String>`, `attempts`, `expires_at`. Used by v0.28.0's
+post-MagicLink TOTP gate.
+
+`Challenge::expires_at()` match updated to handle the new
+variant.
+
+### Added — in-memory adapters in `cesauth-adapter-test`
+
+`InMemoryTotpAuthenticatorRepository` and
+`InMemoryTotpRecoveryCodeRepository`, each backed by a
+`Mutex<HashMap>`. The `find_active_for_user` semantic ("most
+recently confirmed") is pinned by a dedicated test against
+the multi-authenticator case (user with phone + tablet —
+returns whichever has the larger `confirmed_at`). The
+`bulk_create` atomicity property is pinned by a test where
+the middle row of a 3-row batch conflicts and the surrounding
+two MUST NOT land.
+
+### Added — D1 adapters in `cesauth-adapter-cloudflare`
+
+`CloudflareTotpAuthenticatorRepository` and
+`CloudflareTotpRecoveryCodeRepository`. Mirror the in-memory
+shape. Highlights:
+
+- **BLOB columns** (`secret_ciphertext`, `secret_nonce`) bind
+  as `Uint8Array` on the JS side, the same pattern as
+  `authenticators.public_key`.
+- **`confirm` UPDATE** uses `WHERE id = ?1 AND confirmed_at
+  IS NULL` to atomically reject double-confirmation — the
+  rowcount check turns "0 rows changed" into `NotFound`.
+- **`mark_redeemed` UPDATE** uses the same pattern with
+  `redeemed_at IS NULL` so concurrent redemption races
+  resolve cleanly.
+- **`bulk_create` for recovery codes** uses D1's `batch()`
+  API which gives all-or-nothing transactional semantics
+  matching the in-memory adapter's two-pass validation.
+- **`list_unconfirmed_older_than`** uses the partial index
+  `idx_totp_authenticators_unconfirmed` (created in migration
+  0007) so the cron-sweep query is cheap.
+
+### Added — `TOTP_ENCRYPTION_KEY` parsing in `cesauth_worker::config`
+
+Two new public functions:
+
+- `load_totp_encryption_key(env)` reads the
+  `TOTP_ENCRYPTION_KEY` wrangler secret, base64-decodes it,
+  validates 32-byte length, returns `Ok(None)` (not an
+  error) when unset so deployments without TOTP still respond
+  on non-TOTP routes.
+- `load_totp_encryption_key_id(env)` reads
+  `TOTP_ENCRYPTION_KEY_ID` env var (the human-readable id
+  recorded in `secret_key_id`).
+
+The parsing logic is factored into a private
+`parse_totp_encryption_key(raw)` helper so the rules
+(whitespace stripping, base64 decoding, length validation)
+are unit-testable without a Worker `Env`.
+
+### Tests
+
+Total: **526 passing** (+24 over v0.26.0):
+
+- core: 265 (unchanged).
+- adapter-test: **70** (was 51) — 19 new in `repo::tests::totp`:
+  - 11 `TotpAuthenticatorRepository` tests covering create,
+    find_by_id, conflict on duplicate id, find_active filters
+    to confirmed-only, find_active picks most recently
+    confirmed across multiple authenticators, find_active
+    does not cross user boundary, confirm flips state and
+    advances step, confirm rejects already-confirmed,
+    confirm rejects missing, update_last_used_step, delete,
+    list_unconfirmed_older_than filters correctly.
+  - 8 `TotpRecoveryCodeRepository` tests covering
+    bulk_create, atomic rollback on partial conflict,
+    find_unredeemed skips already-redeemed,
+    find_unredeemed does not cross users, mark_redeemed
+    flips timestamp, mark_redeemed rejects already-redeemed,
+    count_remaining excludes redeemed, delete_all_for_user
+    is user-scoped.
+- ui: 127 (unchanged).
+- worker: **35** (was 30) — 5 new in `config::tests`:
+  - 5 `parse_totp_encryption_key` tests covering well-formed
+    accept, whitespace stripping (trailing newline, internal
+    whitespace), invalid-base64 reject, wrong-length reject
+    (with operator-facing error message check), empty
+    reject.
+- migrate: 29 (unchanged).
+
+### Documentation
+
+- `docs/src/expert/adr/009-totp.md` — Phasing section
+  rewritten to reflect the three-release split (v0.26.0
+  library, v0.27.0 storage, v0.28.0 routes). Acceptance
+  criteria moved to v0.28.0. ADR remains in `Draft`.
+
+### Migration (0.26.0 → 0.27.0)
+
+Code-only release. **No schema migration.** No
+`wrangler.toml` changes. The `TOTP_ENCRYPTION_KEY` and
+`TOTP_ENCRYPTION_KEY_ID` env vars documented in ADR-009
+remain optional — they only become required when v0.28.0's
+enrollment routes land and a user actually attempts to
+enroll TOTP.
+
+**No route surface changes**, **no UI changes**, **no
+discovery doc changes**. Pure infrastructure.
+
+### Smoke test
+
+```sh
+cargo test --workspace                   # 526 passing
+# Verify the worker still boots without TOTP_ENCRYPTION_KEY
+# (it does — the loaders return Ok(None)).
+# Verify the new in-memory adapter test cases:
+cargo test -p cesauth-adapter-test --lib repo::tests::totp
+# 19 passing.
+```
+
+### Deferred (v0.28.0)
+
+- TOTP enrollment routes at `/me/security/totp/{enroll,
+  enroll/confirm, disable}`.
+- Verify gate insertion in `post_auth::complete_auth` —
+  before session start, if `auth_method == MagicLink` and
+  `find_active_for_user(user_id)` returns Some, park
+  `PendingTotp` and redirect to prompt instead of issuing
+  session cookie.
+- Recovery code redemption flow at
+  `/me/security/totp/recover`.
+- Server-side QR code SVG generation (no JS).
+- `__Host-cesauth_totp` short-lived cookie scoped to the
+  prompt page.
+- Cron sweep extension (extends ADR-004's 04:00 UTC daily
+  cron to drop unconfirmed rows older than 24h).
+- `cesauth-migrate` redaction profile drops both new
+  tables for prod→staging.
+- New chapter `docs/src/deployment/totp.md` documenting
+  encryption key provisioning, rotation, and admin reset
+  path.
+- Pre-production release gate update in
+  `docs/src/expert/security.md` (`TOTP_ENCRYPTION_KEY`
+  added to the checklist).
+- ADR-009 graduates from `Draft` to `Accepted`.
+
+### Deferred — unchanged
+
+- **OIDC `id_token` issuance (ADR-008)** — Drafted, queued
+  in ROADMAP "Later" behind the security track.
+- **Audit log hash chain (ADR-010)** — v0.29.0/v0.30.0
+  (renumbered downstream after the v0.27.0/v0.28.0 split).
+- **`oidc_clients.client_secret_hash` schema-comment
+  drift** — ROADMAP "Later" item.
+
+---
+
 ## [0.26.0] - 2026-04-29
 
 Security track Phase 3 of 8: TOTP (RFC 6238) Phase 1 of 2 —

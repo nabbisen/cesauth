@@ -27,12 +27,16 @@ mod authenticators;
 mod clients;
 mod grants;
 mod signing_keys;
+mod totp_authenticators;
+mod totp_recovery_codes;
 mod users;
 
 pub use authenticators::CloudflareAuthenticatorRepository;
 pub use clients::CloudflareClientRepository;
 pub use grants::CloudflareGrantRepository;
 pub use signing_keys::CloudflareSigningKeyRepository;
+pub use totp_authenticators::CloudflareTotpAuthenticatorRepository;
+pub use totp_recovery_codes::CloudflareTotpRecoveryCodeRepository;
 pub use users::CloudflareUserRepository;
 
 pub(crate) fn db<'a>(env: &'a Env) -> PortResult<D1Database> {

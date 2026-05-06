@@ -613,6 +613,14 @@ pub fn aad_for_id(id: &str) -> Vec<u8> {
 }
 
 // =====================================================================
+// Submodules
+// =====================================================================
+
+/// Storage port types and traits. Adapters in `cesauth-adapter-cloudflare`
+/// (D1) and `cesauth-adapter-test` (in-memory) implement these.
+pub mod storage;
+
+// =====================================================================
 // Tests
 // =====================================================================
 

@@ -49,7 +49,7 @@ fn frame_does_not_show_drill_in_tab_in_nav() {
 fn frame_footer_carries_version_marker() {
     let p = AdminPrincipal { id: "x".into(), name: None,role: Role::Super, user_id: None };
     let html = tenancy_console_frame("Test", p.role, p.name.as_deref(), TenancyConsoleTab::Overview, "");
-    assert!(html.contains("v0.26.0"),
+    assert!(html.contains("v0.27.0"),
         "footer should carry the version marker so operators can tell which build they're on");
 }
 
