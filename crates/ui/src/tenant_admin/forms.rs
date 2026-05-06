@@ -26,3 +26,5 @@ pub mod group_create;
 pub mod group_delete;
 pub mod role_assignment_grant;
 pub mod role_assignment_revoke;
+pub mod membership_add;
+pub mod membership_remove;

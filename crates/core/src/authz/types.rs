@@ -38,6 +38,14 @@ impl PermissionCatalog {
     pub const TENANT_UPDATE:  &'static str = "tenant:update";
     pub const TENANT_SUSPEND: &'static str = "tenant:suspend";
     pub const TENANT_DELETE:  &'static str = "tenant:delete";
+    /// Tenant-level membership management (added in v0.15.0 for
+    /// symmetry with `ORGANIZATION_MEMBER_*` and `GROUP_MEMBER_*`).
+    /// The v0.9.0/v0.10.0 system-admin paths used the coarse
+    /// `ManageTenancy` capability, but the tenant-scoped surface
+    /// gates per-action via `check_permission`, so the slug had to
+    /// be enumerated.
+    pub const TENANT_MEMBER_ADD:    &'static str = "tenant:member:add";
+    pub const TENANT_MEMBER_REMOVE: &'static str = "tenant:member:remove";
 
     // Organization
     pub const ORGANIZATION_CREATE: &'static str = "organization:create";
@@ -76,6 +84,7 @@ impl PermissionCatalog {
     /// snapshots of the catalog stay stable too.
     pub const ALL: &'static [&'static str] = &[
         Self::TENANT_READ, Self::TENANT_UPDATE, Self::TENANT_SUSPEND, Self::TENANT_DELETE,
+        Self::TENANT_MEMBER_ADD, Self::TENANT_MEMBER_REMOVE,
         Self::ORGANIZATION_CREATE, Self::ORGANIZATION_READ,
         Self::ORGANIZATION_UPDATE, Self::ORGANIZATION_DELETE,
         Self::ORGANIZATION_MEMBER_ADD, Self::ORGANIZATION_MEMBER_REMOVE,

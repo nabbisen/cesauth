@@ -29,11 +29,19 @@ pub fn role_assignments_page(
     principal: &AdminPrincipal,
     tenant:    &Tenant,
     input:     &TenantUserRoleAssignmentsInput<'_>,
+    aff:       &super::affordances::Affordances,
 ) -> String {
     let user_label = input.subject_user.display_name.as_deref()
         .unwrap_or(&input.subject_user.id);
     let title = format!("Role assignments — {}", user_label);
-    let body  = render_table(input);
+    let actions = if aff.can_assign_role {
+        format!(
+            r#"<p><a href="/admin/t/{slug}/users/{uid}/role_assignments/new" class="button">+ Grant role</a></p>"#,
+            slug = escape(&tenant.slug),
+            uid  = escape(&input.subject_user.id),
+        )
+    } else { String::new() };
+    let body = format!("{actions}\n{}", render_table(tenant, input, aff));
     tenant_admin_frame(
         &title,
         &tenant.slug,
@@ -45,22 +53,36 @@ pub fn role_assignments_page(
     )
 }
 
-fn render_table(input: &TenantUserRoleAssignmentsInput<'_>) -> String {
+fn render_table(
+    tenant: &Tenant,
+    input: &TenantUserRoleAssignmentsInput<'_>,
+    aff:    &super::affordances::Affordances,
+) -> String {
     if input.assignments.is_empty() {
         return r#"<p class="empty">No role assignments for this user.</p>"#.into();
     }
+    let show_actions = aff.can_unassign_role;
     let rows: String = input.assignments.iter().map(|a| {
-        let role_html = render_role_label(input.role_labels, &a.role_id);
+        let role_html  = render_role_label(input.role_labels, &a.role_id);
         let scope_html = render_scope(&a.scope);
+        let action = if show_actions {
+            format!(
+                r#"<td><a href="/admin/t/{slug}/role_assignments/{aid}/delete?user_id={uid}">revoke</a></td>"#,
+                slug = escape(&tenant.slug),
+                aid  = escape(&a.id),
+                uid  = escape(&input.subject_user.id),
+            )
+        } else { String::new() };
         format!(
-            r#"<tr><td>{role}</td><td>{scope}</td></tr>"#,
+            r#"<tr><td>{role}</td><td>{scope}</td>{action}</tr>"#,
             role  = role_html,
             scope = scope_html,
         )
     }).collect::<Vec<_>>().join("\n");
+    let action_header = if show_actions { r#"<th scope="col">Action</th>"# } else { "" };
     format!(
         r##"<table>
-  <thead><tr><th scope="col">Role</th><th scope="col">Scope</th></tr></thead>
+  <thead><tr><th scope="col">Role</th><th scope="col">Scope</th>{action_header}</tr></thead>
   <tbody>
 {rows}
   </tbody>

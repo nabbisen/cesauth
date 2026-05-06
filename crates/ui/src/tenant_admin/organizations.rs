@@ -5,18 +5,27 @@ use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
 use cesauth_core::tenancy::types::{Group, Organization, OrganizationStatus, Tenant};
 
+use super::affordances::Affordances;
 use super::frame::{tenant_admin_frame, TenantAdminTab};
 
 pub fn organizations_page(
     principal: &AdminPrincipal,
     tenant:    &Tenant,
     orgs:      &[Organization],
+    aff:       &Affordances,
 ) -> String {
-    let body = if orgs.is_empty() {
+    let create_button = if aff.can_create_organization {
+        format!(
+            r#"<p><a href="/admin/t/{slug}/organizations/new" class="button">+ New organization</a></p>"#,
+            slug = escape(&tenant.slug),
+        )
+    } else { String::new() };
+    let table = if orgs.is_empty() {
         r#"<p class="empty">No organizations under this tenant yet.</p>"#.to_owned()
     } else {
-        render_org_table(tenant, orgs)
+        render_org_table(tenant, orgs, aff)
     };
+    let body = format!("{create_button}\n{table}");
     tenant_admin_frame(
         "Organizations",
         &tenant.slug,
@@ -33,11 +42,14 @@ pub fn organization_detail_page(
     tenant:    &Tenant,
     org:       &Organization,
     groups:    &[Group],
+    aff:       &Affordances,
 ) -> String {
+    let actions = render_org_actions(tenant, org, aff);
     let body = format!(
-        "{card}\n{groups}",
-        card   = render_org_card(org),
-        groups = render_groups_section(groups),
+        "{actions}\n{card}\n{groups}",
+        actions = actions,
+        card    = render_org_card(org),
+        groups  = render_groups_section(tenant, groups, aff),
     );
     let title = format!("Organization — {}", org.display_name);
     tenant_admin_frame(
@@ -51,7 +63,33 @@ pub fn organization_detail_page(
     )
 }
 
-fn render_org_table(tenant: &Tenant, orgs: &[Organization]) -> String {
+fn render_org_actions(tenant: &Tenant, org: &Organization, aff: &Affordances) -> String {
+    let mut buttons: Vec<String> = Vec::new();
+    if aff.can_update_organization {
+        buttons.push(format!(
+            r#"<a href="/admin/t/{slug}/organizations/{oid}/status" class="button">Change status</a>"#,
+            slug = escape(&tenant.slug), oid = escape(&org.id),
+        ));
+    }
+    if aff.can_create_group {
+        buttons.push(format!(
+            r#"<a href="/admin/t/{slug}/organizations/{oid}/groups/new" class="button">+ New group</a>"#,
+            slug = escape(&tenant.slug), oid = escape(&org.id),
+        ));
+    }
+    if aff.can_add_org_member {
+        buttons.push(format!(
+            r#"<a href="/admin/t/{slug}/organizations/{oid}/memberships/new" class="button">+ Add member</a>"#,
+            slug = escape(&tenant.slug), oid = escape(&org.id),
+        ));
+    }
+    if buttons.is_empty() {
+        return String::new();
+    }
+    format!(r#"<p>{}</p>"#, buttons.join(" "))
+}
+
+fn render_org_table(tenant: &Tenant, orgs: &[Organization], _aff: &Affordances) -> String {
     let rows: String = orgs.iter().map(|o| {
         format!(
             r#"<tr>
@@ -93,23 +131,47 @@ fn render_org_card(o: &Organization) -> String {
     )
 }
 
-fn render_groups_section(groups: &[Group]) -> String {
+fn render_groups_section(
+    tenant: &Tenant, groups: &[Group], aff: &Affordances,
+) -> String {
     if groups.is_empty() {
         return r##"<section aria-label="Groups"><h2>Groups</h2>
 <p class="empty">No groups in this organization.</p></section>"##.into();
     }
     let rows: String = groups.iter().map(|g| {
+        let mut actions: Vec<String> = Vec::new();
+        if aff.can_delete_group {
+            actions.push(format!(
+                r#"<a href="/admin/t/{slug}/groups/{gid}/delete">delete</a>"#,
+                slug = escape(&tenant.slug), gid = escape(&g.id),
+            ));
+        }
+        if aff.can_add_group_member {
+            actions.push(format!(
+                r#"<a href="/admin/t/{slug}/groups/{gid}/memberships/new">+ member</a>"#,
+                slug = escape(&tenant.slug), gid = escape(&g.id),
+            ));
+        }
+        let actions_html = if actions.is_empty() {
+            String::new()
+        } else {
+            format!("<td>{}</td>", actions.join(" · "))
+        };
         format!(
-            r#"<tr><td>{name}</td><td><code>{slug}</code></td></tr>"#,
+            r#"<tr><td>{name}</td><td><code>{slug}</code></td>{actions}</tr>"#,
             name = escape(&g.display_name),
             slug = escape(&g.slug),
+            actions = actions_html,
         )
     }).collect::<Vec<_>>().join("\n");
+    let header_action = if aff.can_delete_group || aff.can_add_group_member {
+        r#"<th scope="col">Actions</th>"#
+    } else { "" };
     format!(
         r##"<section aria-label="Groups">
   <h2>Groups</h2>
   <table>
-    <thead><tr><th scope="col">Display name</th><th scope="col">Slug</th></tr></thead>
+    <thead><tr><th scope="col">Display name</th><th scope="col">Slug</th>{header_action}</tr></thead>
     <tbody>
 {rows}
     </tbody>

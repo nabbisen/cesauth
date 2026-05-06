@@ -176,6 +176,77 @@ pub async fn check_read<D>(
     ).await
 }
 
+/// Build an `Affordances` flag struct for the current tenant
+/// context, based on a single batched `check_permission` call.
+///
+/// One D1 round-trip for `list_for_user` plus one per distinct role
+/// the user holds (cached). Cheap enough that read pages call this
+/// unconditionally on every render — operators get their UI gated
+/// to what they can actually do, and the route handlers behind
+/// each affordance still re-check on submit (defense in depth).
+///
+/// Pages that don't render every affordance can ignore the unused
+/// fields. Adding a new affordance flag is a backward-compatible
+/// extension as long as `Default` keeps it as `false`.
+pub async fn build_affordances<D>(
+    ctx_ta: &TenantAdminContext,
+    ctx:    &RouteContext<D>,
+) -> Result<cesauth_ui::tenant_admin::Affordances> {
+    use cesauth_cf::authz::{CloudflareRoleAssignmentRepository, CloudflareRoleRepository};
+    use cesauth_core::authz::service::check_permissions_batch;
+    use cesauth_core::authz::types::{PermissionCatalog as P, ScopeRef};
+
+    let user_id = match &ctx_ta.principal.user_id {
+        Some(id) => id.as_str(),
+        None     => return Ok(cesauth_ui::tenant_admin::Affordances::default()),
+    };
+
+    let assignments = CloudflareRoleAssignmentRepository::new(&ctx.env);
+    let roles       = CloudflareRoleRepository::new(&ctx.env);
+
+    let scope = ScopeRef::Tenant { tenant_id: &ctx_ta.tenant.id };
+    // The slug list mirrors the `Affordances` struct's field
+    // order. Keep them aligned — if the struct grows a field, the
+    // queries Vec must grow with it.
+    let queries: &[(&str, ScopeRef<'_>)] = &[
+        (P::ORGANIZATION_CREATE,        scope),
+        (P::ORGANIZATION_UPDATE,        scope),
+        (P::GROUP_CREATE,               scope),
+        (P::GROUP_DELETE,               scope),
+        (P::ROLE_ASSIGN,                scope),
+        (P::ROLE_UNASSIGN,              scope),
+        (P::TENANT_MEMBER_ADD,          scope),
+        (P::TENANT_MEMBER_REMOVE,       scope),
+        (P::ORGANIZATION_MEMBER_ADD,    scope),
+        (P::ORGANIZATION_MEMBER_REMOVE, scope),
+        (P::GROUP_MEMBER_ADD,           scope),
+        (P::GROUP_MEMBER_REMOVE,        scope),
+    ];
+
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    let outcomes = match check_permissions_batch(
+        &assignments, &roles, user_id, queries, now,
+    ).await {
+        Ok(v)  => v,
+        Err(_) => return Ok(cesauth_ui::tenant_admin::Affordances::default()),
+    };
+
+    Ok(cesauth_ui::tenant_admin::Affordances {
+        can_create_organization:   outcomes[0].is_allowed(),
+        can_update_organization:   outcomes[1].is_allowed(),
+        can_create_group:          outcomes[2].is_allowed(),
+        can_delete_group:          outcomes[3].is_allowed(),
+        can_assign_role:           outcomes[4].is_allowed(),
+        can_unassign_role:         outcomes[5].is_allowed(),
+        can_add_tenant_member:     outcomes[6].is_allowed(),
+        can_remove_tenant_member:  outcomes[7].is_allowed(),
+        can_add_org_member:        outcomes[8].is_allowed(),
+        can_remove_org_member:     outcomes[9].is_allowed(),
+        can_add_group_member:      outcomes[10].is_allowed(),
+        can_remove_group_member:   outcomes[11].is_allowed(),
+    })
+}
+
 async fn emit_audit(
     env:       &Env,
     principal: &AdminPrincipal,

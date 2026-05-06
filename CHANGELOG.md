@@ -12,6 +12,223 @@ always be called out here.
 
 ---
 
+## [0.15.0] - 2026-04-28
+
+Tenant-scoped admin surface — additive mutation forms (membership
+add/remove × 3 flavors) plus affordance gating on every read and
+form page. Completes the v0.9.0 → v0.10.0 split applied to the
+tenant-scoped surface: v0.14.0 covered high-risk forms, v0.15.0
+covers additive forms and the UI-side gating that turns the gate's
+permission decisions into operator-visible affordances.
+
+The whole tenant-scoped surface now reaches the same feature
+parity that the system-admin tenancy console reached at v0.10.0.
+After this release, the tenant admin's day-to-day operations
+(organizations, groups, role assignments, memberships) are all
+form-driven from within `/admin/t/<slug>/...`, gated end-to-end on
+`check_permission`.
+
+### Added — tenant-scoped membership forms
+
+Three flavors mirroring the v0.10.0 system-admin shape, each at
+slug-relative URLs:
+
+- **Tenant membership** at `/admin/t/<slug>/memberships/...`.
+  Add (`POST .../memberships`) is one-click additive. Remove
+  (`POST .../memberships/<uid>/delete`) is a confirm page →
+  POST-with-`confirm=yes` apply.
+- **Organization membership** at
+  `/admin/t/<slug>/organizations/<oid>/memberships/...`.
+- **Group membership** at
+  `/admin/t/<slug>/groups/<gid>/memberships/...`. No role select
+  (group memberships don't carry a role variant in the schema).
+
+All six flavors run through the v0.13.0 gate composition:
+`auth::resolve_or_respond` → `gate::resolve_or_respond` →
+`gate::check_action` with the relevant permission slug, then the
+mutation, then audit emission with `via=tenant-admin,tenant=<id>`.
+
+**Defense in depth**: the target user_id (from the form body) is
+verified to belong to the current tenant before any add proceeds.
+The slug gate already verifies the principal's user; the new check
+prevents an in-tenant admin from typing in a sibling tenant's
+user_id and granting them membership.
+
+### Added — permission catalog
+
+Two new permission slugs filling the `*_MEMBER_*` symmetry:
+
+- `tenant:member:add` (`PermissionCatalog::TENANT_MEMBER_ADD`)
+- `tenant:member:remove` (`PermissionCatalog::TENANT_MEMBER_REMOVE`)
+
+The v0.9.0/v0.10.0 system-admin paths used the coarse
+`ManageTenancy` capability, but the tenant-scoped surface gates
+per-action via `check_permission`, so the slugs had to be
+enumerated. `ORGANIZATION_MEMBER_*` and `GROUP_MEMBER_*` already
+existed; tenant scope now matches.
+
+### Added — affordance gating
+
+Every tenant-scoped page (read or form) now renders mutation
+links/buttons only when the current operator can actually use
+them. The route handler runs **one** batched permission check per
+render and the template emits HTML conditionally:
+
+- **`Affordances` struct** in `cesauth_ui::tenant_admin::affordances`
+  — twelve boolean flags, one per affordance type. `Default` is
+  all-false (the safe default); `all_allowed()` is provided for
+  test convenience.
+- **`gate::build_affordances`** in worker — issues a single
+  `check_permissions_batch` call and maps the parallel `Vec<bool>`
+  back into the struct. Reads as well as forms call this; the cost
+  is one D1 round-trip per page render.
+- **Per-page rendering** — Overview shows quick-action buttons
+  (`+ New organization`, `+ Add tenant member`); Organizations
+  list shows `+ New organization`; Organization detail shows
+  `Change status` / `+ New group` / `+ Add member` and per-group
+  `delete` / `+ member` actions; Role assignments shows
+  `+ Grant role` and per-assignment `revoke` links.
+
+The route handlers behind each affordance still re-check on
+submit (defense in depth). The affordance gate is the operator's
+first signal — clicking what they can't do already returns 403,
+but they shouldn't have to find out by clicking.
+
+### Added — `check_permissions_batch`
+
+New function in `cesauth_core::authz::service`. Evaluates N
+`(permission, scope)` queries for one user, all at once:
+
+- One `assignments.list_for_user(user_id)` call.
+- One `roles.get(role_id)` per *distinct* role the user holds
+  (cached in a HashMap across queries).
+- N in-memory scope-walks against the prepared inputs.
+
+The naive alternative (call `check_permission` once per query)
+costs N round-trips for the assignment fetch alone. The batch
+helper collapses that to one. For affordance gating with 12
+flags per render, the speedup is the difference between "1 RTT"
+and "12 RTTs".
+
+The `scope_covers` and `role_has_permission` helpers became
+`pub(crate)` to support the batch implementation. Behaviour is
+intentionally identical to per-query `check_permission`; a
+test pins this equivalence.
+
+### Tests
+
+- Total: **276 passing** (+19 over v0.14.0).
+  - core: **119** (was 114) — 5 new in
+    `authz/tests.rs::check_permissions_batch_*` covering empty
+    query → empty result, batch == per-query equivalence (the
+    load-bearing test), no-assignments → `NoAssignments` for
+    every query, dangling role id → graceful
+    `PermissionMissing`, expiration handling.
+  - adapter-test: 36 (unchanged).
+  - ui: **121** (was 107) — 14 new tests:
+    - 8 affordance-gating tests covering hide-when-denied +
+      show-when-allowed for organizations / detail / overview /
+      role_assignments pages, including granular
+      per-flag-independence and "empty list → no orphan revoke
+      links even when can_unassign_role = true".
+    - 2 invariants tests pinning
+      `Affordances::default()` = all-false and
+      `all_allowed()` = all-true. Defends against a future
+      refactor that flips a default to `true`, which would
+      silently widen affordances for every test that uses
+      `Default::default()` as a fixture.
+    - 4 membership form template tests: slug-relative actions,
+      three-role / two-role pickers per scope, no-Owner role
+      at org level (organizations have only Admin/Member), and
+      confirm=yes hidden field on remove pages.
+
+### Defense-in-depth invariants pinned by tests
+
+Following the v0.14.0 convention. The new ones:
+
+- `target user_id` for membership add belongs to *this* tenant
+  — refused 403 otherwise.
+- `Affordances::default()` is all-false — a future refactor
+  that defaults a flag to `true` is a test failure, not a
+  silent UI widening.
+- Empty assignment list → no revoke links even when
+  `can_unassign_role = true` — the affordance gate doesn't
+  emit orphan buttons when there's nothing to act on.
+- Batch result equals per-query check — the affordance gate
+  cannot diverge from the per-route check.
+
+### Migration (0.14.0 → 0.15.0)
+
+Code-only release. No schema migration. No `wrangler.toml`
+change. New HTML routes are additive — existing
+`/admin/t/<slug>/*` GET routes from v0.13.0 and form routes from
+v0.14.0 are unchanged.
+
+For operators expecting to use the new membership forms or the
+affordance-gated UI:
+
+1. **Membership forms** at the URLs above. Permission slugs:
+   `TENANT_MEMBER_ADD/REMOVE`, `ORGANIZATION_MEMBER_ADD/REMOVE`,
+   `GROUP_MEMBER_ADD/REMOVE`. The two new tenant-level slugs
+   need to be granted to existing roles before any tenant admin
+   can use the tenant-membership flavor.
+2. **Affordance gating** is automatic — operators see only the
+   buttons they can use. A tenant admin who notices a button
+   missing should check their role assignments at the
+   appropriate scope.
+
+Existing `/admin/tenancy/*`, `/admin/console/*`, and the v0.13.0
+/v0.14.0 `/admin/t/<slug>/*` routes are unaffected.
+
+### Smoke test
+
+```bash
+USER_TOKEN=...  # user-bound token from /admin/tenancy/users/<uid>/tokens/new
+
+# 1) Overview now surfaces quick-action buttons gated by permission:
+curl -sS -H "Authorization: Bearer $USER_TOKEN" \
+  https://cesauth.example/admin/t/acme | grep -i 'Quick actions'
+# -> "Quick actions" appears iff the user has at least one
+#    of {ORGANIZATION_CREATE, TENANT_MEMBER_ADD} at tenant scope
+
+# 2) Tenant-membership add (additive, one-click):
+curl -sS -X POST -H "Authorization: Bearer $USER_TOKEN" \
+  -d "user_id=u-bob&role=member" \
+  https://cesauth.example/admin/t/acme/memberships
+# -> 303 redirect to /admin/t/acme
+
+# 3) Organization-membership remove (confirm-then-apply):
+curl -sS -X POST -H "Authorization: Bearer $USER_TOKEN" \
+  -d "confirm=yes" \
+  https://cesauth.example/admin/t/acme/organizations/o-eng/memberships/u-bob/delete
+# -> 303 redirect to /admin/t/acme/organizations/o-eng
+
+# 4) Cross-tenant target user attempt: refused with 403:
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  -X POST -H "Authorization: Bearer $USER_TOKEN" \
+  -d "user_id=u-other-tenant&role=member" \
+  https://cesauth.example/admin/t/acme/memberships
+# -> 403  (verify_user_in_tenant refused)
+```
+
+### Deferred to 0.15.1 or later
+
+- **Anonymous-trial promotion.** Spec §3.3 introduces
+  `Anonymous` as an account type and §11 priority 5 asks for
+  a promotion flow. Now the next planned slot, since the
+  tenant-scoped surface is feature-complete.
+- **`check_permission` integration on `/api/v1/...`.** The
+  v0.7.0 JSON API still uses `ensure_role_allows`. Now that
+  user-bound tokens exist, `check_permission` is validated in
+  the new HTML routes, AND `check_permissions_batch` is
+  available, extending it to the API surface is more
+  straightforward than before. Unscheduled — depends on
+  concrete need.
+- **External IdP federation.** `AccountType::ExternalFederatedUser`
+  is reserved; no IdP wiring exists yet.
+
+---
+
 ## [0.14.0] - 2026-04-27
 
 Tenant-scoped admin surface — high-risk mutation forms — plus a

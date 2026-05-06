@@ -86,8 +86,16 @@ this chapter implements §3-§5 and §16.1, §16.3, §16.6.
 > the grant form rejects `Scope::System` and pins tenant
 > scope to the current tenant; defense-in-depth checks
 > verify child resources (Organization, Group, User) belong
-> to the current tenant before mutating. Additive forms
-> (membership × 3 flavors) land in **0.15.0**.
+> to the current tenant before mutating.
+>
+> v0.15.0 completes the tenant-scoped surface: additive
+> membership forms (× 3 flavors — tenant, organization,
+> group) plus affordance gating on every read and form page
+> (mutation buttons render only when the operator's
+> `check_permission` would allow them). Two new permission
+> slugs (`TENANT_MEMBER_ADD/REMOVE`) fill the symmetry gap.
+> The new `check_permissions_batch` helper makes affordance
+> gating cheap — one D1 round-trip per page render.
 
 ---
 
@@ -774,30 +782,75 @@ ones in 0.15.0.
   page uses tenant slug not id. Total **257 tests** passing
   (+12 over v0.13.0).
 
+### Added in 0.15.0
+
+Additive membership forms plus affordance gating. The
+tenant-scoped surface now reaches feature parity with what the
+system-admin tenancy console reached at v0.10.0.
+
+- **Six membership form pairs** at slug-relative URLs:
+  - `memberships/new` + `memberships` (POST add) +
+    `memberships/<uid>/delete` (confirm + apply)
+  - `organizations/<oid>/memberships/...` — same shape.
+  - `groups/<gid>/memberships/...` — same shape, no role
+    select (group memberships don't carry a role variant).
+  Add forms are one-click additive submits; remove forms use
+  a confirm page → POST-with-`confirm=yes` to apply.
+  Defense-in-depth: target user_id is verified to belong to
+  the current tenant before any add proceeds.
+
+- **Two new permission slugs** filling the `*_MEMBER_*`
+  symmetry: `TENANT_MEMBER_ADD` (`tenant:member:add`) and
+  `TENANT_MEMBER_REMOVE` (`tenant:member:remove`). The
+  v0.9.0/v0.10.0 system-admin paths used the coarse
+  `ManageTenancy` capability, but the tenant-scoped surface
+  gates per-action via `check_permission`, so the slugs had
+  to be enumerated.
+
+- **Affordance gating** — every tenant-scoped page now
+  renders mutation links/buttons conditionally:
+  - **`Affordances` struct** in
+    `cesauth_ui::tenant_admin::affordances` — twelve boolean
+    flags, one per affordance type. `Default` is all-false
+    (the safe default); `all_allowed()` is provided for tests.
+  - **`gate::build_affordances`** in worker — issues a single
+    `check_permissions_batch` call and maps the parallel
+    `Vec<bool>` back into the struct. One D1 round-trip per
+    page render.
+  - **Templates** take `&Affordances` and emit conditional
+    HTML for `+ New organization`, `Change status`,
+    `+ New group`, `delete`, `+ Add member`, `+ Grant role`,
+    `revoke`, etc.
+
+  The route handlers behind each affordance still re-check on
+  submit (defense in depth). The affordance gate is the
+  operator's first signal — clicking what they can't do
+  already returned 403 since v0.13.0, but they shouldn't have
+  to find out by clicking.
+
+- **`check_permissions_batch`** new in
+  `cesauth_core::authz::service`. Evaluates N (permission,
+  scope) queries with **one** `assignments.list_for_user`
+  call + cached role lookups. The scope-walk is in-memory.
+  Naive callers paying N round-trips for the same N queries
+  collapse to one. Tested for equivalence to per-query
+  `check_permission`.
+
 ### Does NOT ship in v0.4.x (yet)
 
 The CHANGELOG `Deferred` sections and `ROADMAP.md` track each item.
 Headlines:
 
-- **Additive mutation forms for the tenant-scoped surface** —
-  membership add/remove (three flavors: tenant / organization
-  / group). Same shape as v0.10.0 system-admin equivalents,
-  scoped to one tenant via the existing gate composition.
-  **0.15.0.**
-- **Affordance gating on tenant-admin pages** — render
-  mutation links/buttons only when `check_permission` would
-  allow the relevant write. Currently the route handlers
-  refuse on denial, but the operator only finds out *after*
-  clicking. **0.15.0.**
 - **`check_permission` integration on `/api/v1/...`.** The
   v0.7.0 JSON API still uses `ensure_role_allows`. Now that
-  user-bound tokens exist and `check_permission` is
-  validated in the new HTML routes, extending it to the API
-  surface is mechanical. Unscheduled — depends on whether
-  there's a concrete need (most callers of `/api/v1` will be
-  system-admin scripts, not tenant admins).
+  user-bound tokens exist, `check_permission` is validated in
+  the new HTML routes, AND `check_permissions_batch` is
+  available, extending it to the API surface is more
+  straightforward than before. Unscheduled — depends on
+  concrete need.
 - **Anonymous-trial promotion.** The account type exists; the
   promotion lifecycle is unspecified. **0.15.1 or later.**
+  Now the next planned slot.
 - **External IdP federation.** `AccountType::ExternalFederatedUser`
   is reserved; no IdP wiring exists yet.
 

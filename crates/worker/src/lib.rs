@@ -182,6 +182,26 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .post_async("/admin/t/:slug/users/:uid/role_assignments/new",                        |req, ctx| async move { routes::admin::tenant_admin::forms::role_assignment_grant::submit(req, ctx).await })
         .get_async ("/admin/t/:slug/role_assignments/:id/delete",                            |req, ctx| async move { routes::admin::tenant_admin::forms::role_assignment_revoke::form(req, ctx).await })
         .post_async("/admin/t/:slug/role_assignments/:id/delete",                            |req, ctx| async move { routes::admin::tenant_admin::forms::role_assignment_revoke::submit(req, ctx).await })
+        // --- tenant-scoped membership forms (v0.15.0) ---------------
+        // Three flavors (tenant / organization / group). Add forms
+        // are one-click additive submits; Remove forms use
+        // confirm-page → POST-with-`confirm=yes` to apply. All run
+        // through the v0.13.0 gate composition with the relevant
+        // *_MEMBER_ADD / *_MEMBER_REMOVE permission. Defense-in-
+        // depth: target user_id is verified to belong to this
+        // tenant before any add proceeds.
+        .get_async ("/admin/t/:slug/memberships/new",                                        |req, ctx| async move { routes::admin::tenant_admin::forms::membership_add::form_tenant(req, ctx).await })
+        .post_async("/admin/t/:slug/memberships",                                            |req, ctx| async move { routes::admin::tenant_admin::forms::membership_add::submit_tenant(req, ctx).await })
+        .get_async ("/admin/t/:slug/memberships/:uid/delete",                                |req, ctx| async move { routes::admin::tenant_admin::forms::membership_remove::confirm_tenant(req, ctx).await })
+        .post_async("/admin/t/:slug/memberships/:uid/delete",                                |req, ctx| async move { routes::admin::tenant_admin::forms::membership_remove::submit_tenant(req, ctx).await })
+        .get_async ("/admin/t/:slug/organizations/:oid/memberships/new",                     |req, ctx| async move { routes::admin::tenant_admin::forms::membership_add::form_org(req, ctx).await })
+        .post_async("/admin/t/:slug/organizations/:oid/memberships",                         |req, ctx| async move { routes::admin::tenant_admin::forms::membership_add::submit_org(req, ctx).await })
+        .get_async ("/admin/t/:slug/organizations/:oid/memberships/:uid/delete",             |req, ctx| async move { routes::admin::tenant_admin::forms::membership_remove::confirm_org(req, ctx).await })
+        .post_async("/admin/t/:slug/organizations/:oid/memberships/:uid/delete",             |req, ctx| async move { routes::admin::tenant_admin::forms::membership_remove::submit_org(req, ctx).await })
+        .get_async ("/admin/t/:slug/groups/:gid/memberships/new",                            |req, ctx| async move { routes::admin::tenant_admin::forms::membership_add::form_group(req, ctx).await })
+        .post_async("/admin/t/:slug/groups/:gid/memberships",                                |req, ctx| async move { routes::admin::tenant_admin::forms::membership_add::submit_group(req, ctx).await })
+        .get_async ("/admin/t/:slug/groups/:gid/memberships/:uid/delete",                    |req, ctx| async move { routes::admin::tenant_admin::forms::membership_remove::confirm_group(req, ctx).await })
+        .post_async("/admin/t/:slug/groups/:gid/memberships/:uid/delete",                    |req, ctx| async move { routes::admin::tenant_admin::forms::membership_remove::submit_group(req, ctx).await })
         // --- system-admin token-mint UI (v0.14.0) -------------------
         // Lives on the system-admin surface so tenant admins cannot
         // self-mint per ADR-002 / ADR-003. Issues user-bound tokens

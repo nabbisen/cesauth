@@ -42,10 +42,12 @@ pub mod users;
 pub mod role_assignments;
 pub mod subscription;
 pub mod forms;
+pub mod affordances;
 
 #[cfg(test)]
 mod tests;
 
+pub use affordances::Affordances;
 pub use frame::{tenant_admin_frame, TenantAdminTab};
 pub use overview::{TenantOverviewCounts, overview_page};
 pub use organizations::{organizations_page, organization_detail_page};

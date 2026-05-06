@@ -53,7 +53,8 @@ pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let group_list = groups.list_for_organization(&oid).await
         .unwrap_or_default();
 
+    let aff = gate::build_affordances(&ctx_ta, &ctx).await?;
     render::html_response(organization_detail_page(
-        &ctx_ta.principal, &ctx_ta.tenant, &org, &group_list,
+        &ctx_ta.principal, &ctx_ta.tenant, &org, &group_list, &aff,
     ))
 }

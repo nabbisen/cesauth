@@ -75,5 +75,6 @@ pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
         assignments:  &assignments,
         role_labels:  &role_labels,
     };
-    render::html_response(role_assignments_page(&ctx_ta.principal, &ctx_ta.tenant, &input))
+    let aff = gate::build_affordances(&ctx_ta, &ctx).await?;
+    render::html_response(role_assignments_page(&ctx_ta.principal, &ctx_ta.tenant, &input, &aff))
 }

@@ -34,7 +34,8 @@ pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let counts = read_counts(&ctx.env, &ctx_ta.tenant.id).await
         .unwrap_or_default();
 
-    render::html_response(overview_page(&ctx_ta.principal, &ctx_ta.tenant, &counts))
+    let aff = gate::build_affordances(&ctx_ta, &ctx).await?;
+    render::html_response(overview_page(&ctx_ta.principal, &ctx_ta.tenant, &counts, &aff))
 }
 
 // -------------------------------------------------------------------------

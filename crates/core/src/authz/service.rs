@@ -177,7 +177,7 @@ where
 /// In a follow-up release we plan to add a `covers_hierarchy` helper
 /// that takes a tenancy-tree reader and does the full walk; for now
 /// the lattice-direct rule is sufficient.
-fn scope_covers(grant: &Scope, query: &ScopeRef<'_>) -> bool {
+pub(crate) fn scope_covers(grant: &Scope, query: &ScopeRef<'_>) -> bool {
     match (grant, query) {
         // System over anything.
         (Scope::System, _) => true,
@@ -196,6 +196,119 @@ fn scope_covers(grant: &Scope, query: &ScopeRef<'_>) -> bool {
     }
 }
 
-fn role_has_permission(role: &Role, permission: &str) -> bool {
+pub(crate) fn role_has_permission(role: &Role, permission: &str) -> bool {
     role.permissions.iter().any(|p: &Permission| p.as_str() == permission)
+}
+
+// ---------------------------------------------------------------------
+// Batch check (v0.15.0)
+// ---------------------------------------------------------------------
+
+/// Evaluate multiple `(permission, scope)` queries for one user, all
+/// at once. Loads the user's assignments and the relevant role rows
+/// once and reuses them across all queries — equivalent to N calls
+/// to `check_permission` but with one assignment-fetch and one
+/// role-fetch per *unique role*, not per query.
+///
+/// Used by the v0.15.0 affordance-gating layer: HTML pages list every
+/// mutation button, declare the `(permission, scope)` they want, and
+/// receive a `Vec<bool>` parallel to the input. Naive callers would
+/// pay N round-trips to D1 per page render; this helper collapses
+/// that to one + (number of distinct roles).
+///
+/// The returned Vec has one entry per input, in input order. Each
+/// entry is a `CheckOutcome` with the full `Allowed { role_id, scope }`
+/// detail — affordance-gating callers typically only care about
+/// `is_allowed()`, but other callers (e.g. an "explain why" UI) can
+/// inspect the role + scope that won.
+///
+/// Returns `Err` only if the *initial* assignment fetch fails — that
+/// is a storage-layer failure that prevents any decision. Per-role
+/// fetch failures inside the walk degrade gracefully (the affected
+/// assignment is treated as unsatisfied), the same way
+/// `check_permission` does.
+///
+/// Empty `queries` returns an empty Vec without I/O. The caller is
+/// responsible for short-circuiting in that case if it cares about
+/// the cost — but the empty case is essentially free anyway.
+pub async fn check_permissions_batch<'a, RA, RR>(
+    assignments: &RA,
+    roles:       &RR,
+    user_id:     &str,
+    queries:     &'a [(&'a str, ScopeRef<'a>)],
+    now_unix:    UnixSeconds,
+) -> PortResult<Vec<CheckOutcome>>
+where
+    RA: RoleAssignmentRepository,
+    RR: RoleRepository,
+{
+    if queries.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // 1. Load assignments once.
+    let raw = assignments.list_for_user(user_id).await?;
+    if raw.is_empty() {
+        return Ok(queries.iter()
+            .map(|_| CheckOutcome::Denied(DenyReason::NoAssignments))
+            .collect());
+    }
+
+    // 2. Filter by expiration once.
+    let (live, any_expired): (Vec<&RoleAssignment>, bool) = {
+        let mut live: Vec<&RoleAssignment> = Vec::with_capacity(raw.len());
+        let mut any_expired = false;
+        for a in raw.iter() {
+            match a.expires_at {
+                Some(t) if t <= now_unix => any_expired = true,
+                _                        => live.push(a),
+            }
+        }
+        (live, any_expired)
+    };
+
+    // 3. Pre-fetch every role referenced by a live assignment, once.
+    //    Most users hold a small number of distinct roles; a HashMap
+    //    here is cheap. Failures degrade to None so the per-query
+    //    walk treats the role as satisfying nothing.
+    use std::collections::HashMap;
+    let mut role_cache: HashMap<String, Option<Role>> = HashMap::new();
+    for a in &live {
+        if !role_cache.contains_key(&a.role_id) {
+            let r = roles.get(&a.role_id).await.ok().flatten();
+            role_cache.insert(a.role_id.clone(), r);
+        }
+    }
+
+    // 4. Walk each query against the prepared inputs.
+    let mut out = Vec::with_capacity(queries.len());
+    for (permission, scope) in queries {
+        let covering: Vec<&&RoleAssignment> = live.iter()
+            .filter(|a| scope_covers(&a.scope, scope))
+            .collect();
+
+        if covering.is_empty() {
+            out.push(CheckOutcome::Denied(
+                if any_expired { DenyReason::Expired }
+                else           { DenyReason::ScopeMismatch }
+            ));
+            continue;
+        }
+
+        let mut decided = None;
+        for a in &covering {
+            if let Some(Some(role)) = role_cache.get(&a.role_id) {
+                if role_has_permission(role, permission) {
+                    decided = Some(CheckOutcome::Allowed {
+                        role_id: a.role_id.clone(),
+                        scope:   a.scope.clone(),
+                    });
+                    break;
+                }
+            }
+        }
+        out.push(decided.unwrap_or(CheckOutcome::Denied(DenyReason::PermissionMissing)));
+    }
+
+    Ok(out)
 }

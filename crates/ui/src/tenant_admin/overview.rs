@@ -9,6 +9,7 @@ use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
 use cesauth_core::tenancy::types::{Tenant, TenantStatus};
 
+use super::affordances::Affordances;
 use super::frame::{tenant_admin_frame, TenantAdminTab};
 
 /// Per-tenant counters, scoped to `tenant.id`.
@@ -27,11 +28,13 @@ pub fn overview_page(
     principal: &AdminPrincipal,
     tenant:    &Tenant,
     counts:    &TenantOverviewCounts,
+    aff:       &Affordances,
 ) -> String {
     let body = format!(
-        "{tenant_card}\n{counters}\n{howto}",
+        "{tenant_card}\n{counters}\n{actions}\n{howto}",
         tenant_card = render_tenant_card(tenant),
         counters    = render_counters(counts),
+        actions     = render_quick_actions(tenant, aff),
         howto       = render_howto(),
     );
     tenant_admin_frame(
@@ -42,6 +45,31 @@ pub fn overview_page(
         principal.name.as_deref(),
         TenantAdminTab::Overview,
         &body,
+    )
+}
+
+/// Quick-action buttons surfaced on the overview page. Only the
+/// affordances the current user has at tenant scope appear.
+fn render_quick_actions(tenant: &Tenant, aff: &Affordances) -> String {
+    let mut buttons: Vec<String> = Vec::new();
+    if aff.can_create_organization {
+        buttons.push(format!(
+            r#"<a href="/admin/t/{slug}/organizations/new" class="button">+ New organization</a>"#,
+            slug = escape(&tenant.slug),
+        ));
+    }
+    if aff.can_add_tenant_member {
+        buttons.push(format!(
+            r#"<a href="/admin/t/{slug}/memberships/new" class="button">+ Add tenant member</a>"#,
+            slug = escape(&tenant.slug),
+        ));
+    }
+    if buttons.is_empty() {
+        return String::new();
+    }
+    format!(
+        r#"<section aria-label="Quick actions"><h2>Quick actions</h2><p>{}</p></section>"#,
+        buttons.join(" "),
     )
 }
 
@@ -100,8 +128,8 @@ fn render_howto() -> String {
   <p class="muted">This is the tenant-scoped admin surface — every page is
   filtered to your tenant. To do system-admin operations across all tenants,
   visit <code>/admin/tenancy/</code> instead (system-admin tokens only).</p>
-  <p class="muted">v0.14.0 adds high-risk mutation forms (organization
-  status changes, group create/delete, role assignment grant/revoke).
-  Additive forms (membership add/remove) land in v0.15.0.</p>
+  <p class="muted">v0.15.0 adds tenant-scoped membership forms (add/remove
+  for tenant, organization, and group memberships) and affordance gating —
+  buttons surface only when the current operator has permission to use them.</p>
 </section>"##.into()
 }
