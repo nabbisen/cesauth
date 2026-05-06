@@ -75,7 +75,7 @@ zero remaining issues.
 | **Cost &amp; Data Safety Admin Console** | ✅     | `/admin/console/*` — Overview, Cost, Safety, Audit, Config, Alerts (0.3.0); HTML two-step edit UI for bucket-safety + admin-token CRUD (0.4.0) |
 | Dev-only routes (`/__dev/*`)           | ✅       | Gated on `WRANGLER_LOCAL="1"`                      |
 | **Tenancy-service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.18.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.6.0). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.7.0). Read-only HTML console at `/admin/tenancy/*` (0.8.0, originally `/admin/saas/*`). Mutation forms with preview/confirm pattern (0.9.0) for tenant / organization / group / subscription. Membership add/remove + role grant/revoke forms (0.10.0) bring the HTML console to feature parity with the v0.7.0 JSON API. ADR-001/002/003 settle the tenant-scoped admin surface design (0.11.0) and ship the schema + type foundation (`admin_tokens.user_id`, `AdminPrincipal::user_id`, `is_system_admin()`). Project-hygiene release with naming-debt cleanup (0.12.0) — `saas/` → `tenancy_console/`, `/admin/saas/*` → `/admin/tenancy/*`, plus author/license metadata and `.github/` community documents. Buffer/follow-up release with stale-narrative cleanup + dependency audit (0.12.1). Tenant-scoped admin surface read pages shipped at `/admin/t/<slug>/*` with auth gate + `check_permission` integration (0.13.0). High-risk mutation forms plus a system-admin token-mint UI shipped (0.14.0). Additive membership forms (× 3 flavors) plus affordance gating shipped (0.15.0) — the tenant-scoped surface reaches feature parity with the system-admin tenancy console. Security-fix and audit-infrastructure release (0.15.1): RUSTSEC-2023-0071 in transitive `rsa` removed via `jsonwebtoken` feature narrowing, `cargo audit` integrated via initial sweep + GitHub Actions workflow + operator docs. Anonymous-trial promotion design (ADR-004) plus foundation (migration `0006_anonymous.sql`, `AnonymousSession` type + repository, in-memory + D1 adapters, 3 new audit event kinds) shipped (0.16.0). Anonymous-trial HTTP routes (`POST /api/v1/anonymous/begin` and `/promote`) shipped (0.17.0); ADR-004 graduates to `Accepted`. Anonymous-trial daily retention sweep (Cloudflare Workers Cron Trigger, `[triggers]` block in `wrangler.toml`, sweep handler with audit-before-delete ordering, operator runbook diagnostic) shipped (0.18.0); ADR-004 feature-complete. **Note: versioning was retroactively re-aligned with the [versioning policy](#versioning-policy) at 0.18.0; the version numbers shown for 0.5.0 through 0.18.0 in this row are the re-aligned values, not the original tarball numbers — see the [Versioning history note](../CHANGELOG.md#versioning-history-note) section in CHANGELOG for the full mapping.** Deployment guide build-out shipped (0.18.1) — eight new operator-facing chapters (pre-flight, cron, custom domains, multi-environment, backup/restore, observability, day-2 runbook, disaster recovery) covering the operational surface previously held in tribal knowledge. |
-| **Data migration tooling**             | 🚧       | ADR-005 + foundation shipped (0.19.0): `cesauth_core::migrate` library value types (`Manifest`, `TableSummary`, `PayloadLine`), redaction profile registry with two built-ins, `FORMAT_VERSION` + `SCHEMA_VERSION` constants, CLI skeleton with `list-profiles` implemented. Real export + verify shipped (0.20.0): typed `MigrateError` (8 kinds), `Exporter<W>` with single-use `ExportSigner` (per-export Ed25519 keypair, fingerprint handshake), streaming `verify` with per-table + whole-payload SHA-256 checks, `apply_redaction` with deterministic `HashedEmail` (preserves UNIQUE invariant). CLI's `export` subcommand wires `WranglerD1Source` → `Exporter` (refuses to clobber, prints fingerprint to stderr at start, walks `MIGRATION_TABLE_ORDER` of 18 tables in topological order, prints secrets-coordination checklist at end). CLI's `verify` subcommand has no D1 dependency. Real import shipped (0.21.0): `Violation` + `ViolationReport`, `InvariantCheckFn` + `SeenSnapshot` + four default checks (user→tenant, membership→user, membership→container, role_assignment→role+user), `ImportSink` trait with `WranglerD1Sink` impl (batched-INSERT-per-table commits, full rollback on decline). CLI's `import` subcommand walks five gates (verify → fingerprint handshake → `JWT_SIGNING_KEY` pre-flight → invariant checks → final commit confirmation) — destination D1 untouched until final yes. **ADR-005 graduated to Accepted (0.21.0)**. New deployment chapter `data-migration.md` makes the legacy `sed`-script prod→staging refresh pattern obsolete; new runbook section "Operation: cross-account data migration"; disaster-recovery Scenario 4 (account compromise) rewritten with concrete `cesauth-migrate` invocations. Phasing: polish (resume, multi-tenant filter, staging-refresh combinator, native HTTP API, per-row progress, custom invariants, email-uniqueness check) in 0.22.0. |
+| **Data migration tooling**             | ✅       | ADR-005 + foundation shipped (0.19.0): `cesauth_core::migrate` library value types (`Manifest`, `TableSummary`, `PayloadLine`), redaction profile registry with two built-ins, `FORMAT_VERSION` + `SCHEMA_VERSION` constants, CLI skeleton with `list-profiles` implemented. Real export + verify shipped (0.20.0): typed `MigrateError` (8 kinds), `Exporter<W>` with single-use `ExportSigner` (per-export Ed25519 keypair, fingerprint handshake), streaming `verify` with per-table + whole-payload SHA-256 checks, `apply_redaction` with deterministic `HashedEmail` (preserves UNIQUE invariant). CLI's `export` subcommand wires `WranglerD1Source` → `Exporter` (refuses to clobber, prints fingerprint to stderr at start, walks `MIGRATION_TABLE_ORDER` of 18 tables in topological order, prints secrets-coordination checklist at end). CLI's `verify` subcommand has no D1 dependency. Real import shipped (0.21.0): `Violation` + `ViolationReport`, `InvariantCheckFn` + `SeenSnapshot` + four default checks (user→tenant, membership→user, membership→container, role_assignment→role+user), `ImportSink` trait with `WranglerD1Sink` impl (batched-INSERT-per-table commits, full rollback on decline). CLI's `import` subcommand walks five gates (verify → fingerprint handshake → `JWT_SIGNING_KEY` pre-flight → invariant checks → final commit confirmation) — destination D1 untouched until final yes. **ADR-005 graduated to Accepted (0.21.0)**. New deployment chapter `data-migration.md` makes the legacy `sed`-script prod→staging refresh pattern obsolete; new runbook section "Operation: cross-account data migration"; disaster-recovery Scenario 4 (account compromise) rewritten with concrete `cesauth-migrate` invocations. Polish phase shipped (0.22.0): `--tenant <id>` filter on `export` (with manifest scope record + `TenantScope::Global` vs `OwnColumn` per-table classification), `cesauth-migrate refresh-staging` single-command combinator (export + redaction + import in one invocation, opinionated for single-operator runs, `--yes` for unattended use), email-uniqueness-within-tenant invariant check (redaction-aware, case-insensitive), per-row import progress via `ProgressSink` decorator. **Feature-complete for ADR-005's scope as of 0.22.0.** Deferred items (resume support, native Cloudflare HTTP API client, custom invariant registration via CLI) are tracked as post-1.0 polish — they don't change the design and don't have known operator demand. |
 | mdBook documentation                   | ✅       | `docs/`                                            |
 
 ---
@@ -398,30 +398,45 @@ started.
   `EventKind::AnonymousExpired` was pre-added in 0.16.0. 294
   tests pass (+5 over v0.17.0); zero warnings.
 
-- **Data migration tooling (server-to-server moves) — Phase 3:
-  real import (shipped in 0.21.0).** With the import path
-  shipped, ADR-005 graduates to Accepted: every design
-  question (six in total) now has a code answer that matches
-  the design. Two phases shipped:
+- **Data migration tooling (server-to-server moves) — Phase 4:
+  polish (shipped in 0.22.0).** All four phases of ADR-005 are
+  now shipped; the data-migration tooling is feature-complete
+  for the design's scope. Phasing summary:
 
-  - **0.20.0**: real export + verify, the source side.
-  - **0.21.0** (this release): real import, the destination
-    side. `Violation` accumulation, `ImportSink` trait,
-    `WranglerD1Sink` implementation, five-gate operator flow
-    in the CLI (verify → fingerprint handshake →
-    `JWT_SIGNING_KEY` pre-flight → invariant checks → final
-    commit confirmation), four default schema-invariant
-    checks. 358 tests pass (+21 over v0.20.0).
+  - **0.19.0** — design + foundation (ADR-005, library value
+    types, CLI skeleton).
+  - **0.20.0** — real export + verify, the source side.
+  - **0.21.0** — real import, the destination side; ADR-005
+    graduated to Accepted.
+  - **0.22.0** (this release) — polish: `--tenant <id>`
+    filter on `export` (with `TenantScope::Global` vs
+    `OwnColumn` per-table classification + manifest scope
+    record), `cesauth-migrate refresh-staging` single-command
+    combinator (export + redaction + import in one
+    invocation, opinionated for single-operator runs, `--yes`
+    for unattended use), email-uniqueness-within-tenant
+    invariant check (redaction-aware, case-insensitive,
+    `users.email` `COLLATE NOCASE`-matching), per-row import
+    progress via `ProgressSink` decorator. 379 tests pass
+    (+21 over v0.21.0).
 
-  Remaining phase:
+  **Deferred to post-1.0 polish** — these were originally on
+  the v0.22.0 list but are reclassified because they don't
+  change the design and don't have known operator demand:
 
-  - **0.22.0** — polish: resume support for interrupted
-    exports/imports, `--tenant <slug>` filter, first-class
-    staging-refresh combinator, native Cloudflare HTTP API
-    client, per-row progress reporting, custom-invariant
-    registration via CLI, email-uniqueness-within-tenant
-    check (deferred from 0.21.0's default set because of
-    redacted-dump semantics).
+  - **Resume on interruption** — checkpoint-file format is
+    real new design surface. The current Ctrl-C-then-restart-
+    from-zero workflow is acceptable for the dump sizes the
+    tool targets.
+  - **Native Cloudflare HTTP API client** — wrangler shell-out
+    works. A native client would avoid subprocess spawn costs
+    and the wrangler dependency, but it adds a non-trivial
+    HTTP auth surface to the binary.
+  - **Custom invariant registration via CLI** — the library
+    accepts a slice of `InvariantCheckFn` already; the CLI
+    just hardcodes `default_invariant_checks()`. When an
+    operator hits a case the defaults miss, the surface to
+    expose this is straightforward.
 
 - **OAuth 2.0 Token Introspection (RFC 7662).** `POST /introspect`.
   RFC 7009 (`/revoke`) shipped with the OIDC core; the

@@ -276,6 +276,19 @@ pub struct Manifest {
     /// data would be data loss).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub redaction_profile: Option<String>,
+
+    /// Tenant scope of this dump. `None` for a whole-database
+    /// dump (every tenant); `Some(ids)` for a `--tenant`-filtered
+    /// export. Recorded in the manifest so the importer knows
+    /// what scope it's getting; a future operator who runs
+    /// `cesauth-migrate verify` on the file sees the scope in
+    /// the summary. Empty `Some(vec![])` is technically valid
+    /// (nothing exported) but the CLI rejects it operator-side.
+    ///
+    /// Added in v0.22.0; older dumps that didn't carry the field
+    /// deserialize as `None` (i.e., whole-database).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tenants: Option<Vec<String>>,
 }
 
 impl Manifest {
@@ -538,6 +551,13 @@ pub struct ExportSpec<'a> {
     pub source_d1_database_id: Option<&'a str>,
     pub tables:                &'a [&'a str],
     pub profile:               Option<&'a RedactionProfile>,
+    /// `Some(ids)` if the export is tenant-scoped (--tenant
+    /// flag); `None` for a whole-database export. Added in
+    /// v0.22.0. The exporter records this in the manifest's
+    /// `tenants` field; the source side is responsible for
+    /// actually filtering rows on this list (the library
+    /// doesn't issue queries).
+    pub tenants:               Option<&'a [String]>,
 }
 
 /// Per-export Ed25519 signing key. Wrapped so the caller doesn't
@@ -675,6 +695,7 @@ impl<'a, W: std::io::Write> Exporter<'a, W> {
             payload_sha256:        String::new(),
             tables:                Vec::new(),
             redaction_profile:     None,
+            tenants:               None,
         };
         stub.fingerprint()
     }
@@ -757,6 +778,7 @@ impl<'a, W: std::io::Write> Exporter<'a, W> {
             payload_sha256,
             tables,
             redaction_profile:     self.spec.profile.map(|p| p.name.to_owned()),
+            tenants:               self.spec.tenants.map(|t| t.to_vec()),
         };
 
         // Write manifest line + payload.
@@ -978,10 +1000,16 @@ impl ViolationReport {
 /// the importer has staged. This lets a check ask "does
 /// `users.tenant_id` reference a tenant we've already imported"
 /// without a destination-side query.
+///
+/// As of v0.22.0 the parameter is `&mut SeenSnapshot` so checks
+/// that maintain secondary indexes (e.g., per-tenant email
+/// uniqueness) can populate them. Checks that only read still
+/// pass the parameter through; the borrow-check is unchanged
+/// for them.
 pub type InvariantCheckFn = fn(
     table: &str,
     row:   &serde_json::Value,
-    seen:  &SeenSnapshot,
+    seen:  &mut SeenSnapshot,
 ) -> Option<String>;
 
 /// Snapshot of staged rows. Keyed by table; each entry is a
@@ -993,9 +1021,25 @@ pub type InvariantCheckFn = fn(
 /// rows are NOT in `SeenSnapshot` — the importer's contract is
 /// "destination starts empty for the migrated tables", which the
 /// CLI enforces via a pre-flight check.
+///
+/// As of v0.22.0 the snapshot also tracks **scoped secondary
+/// indexes**: `(table, scope_key, scope_value, secondary_value)`
+/// → presence. Used by uniqueness checks that need to know
+/// whether a tuple like `(tenant_id, email)` has been seen
+/// within a tenant. Populated by the importer alongside primary
+/// keys; consulted by check functions.
 #[derive(Debug, Default, Clone)]
 pub struct SeenSnapshot {
     inner: std::collections::HashMap<String, std::collections::HashSet<String>>,
+    /// `(table, scope_key, scope_value)` → set of secondary values.
+    /// E.g., `("users", "tenant_id", "t-1")` → `{"alice@x", "bob@y"}`.
+    /// Populated only when a check function asks the snapshot to
+    /// remember secondary uniqueness, via
+    /// `record_scoped_secondary` (called from check fn).
+    scoped_secondary: std::collections::HashMap<
+        (String, String, String),
+        std::collections::HashSet<String>,
+    >,
 }
 
 impl SeenSnapshot {
@@ -1005,6 +1049,43 @@ impl SeenSnapshot {
     }
     fn insert(&mut self, table: &str, id: String) {
         self.inner.entry(table.to_owned()).or_default().insert(id);
+    }
+
+    /// Returns true if `(table, scope_key=scope_value, secondary)`
+    /// has been seen. Used by per-tenant uniqueness checks.
+    /// Always false until `record_scoped_secondary` is called for
+    /// the same key — checks that don't populate the index won't
+    /// observe anything.
+    pub fn contains_scoped_secondary(
+        &self,
+        table:        &str,
+        scope_key:    &str,
+        scope_value:  &str,
+        secondary:    &str,
+    ) -> bool {
+        self.scoped_secondary
+            .get(&(table.to_owned(), scope_key.to_owned(), scope_value.to_owned()))
+            .map(|s| s.contains(secondary))
+            .unwrap_or(false)
+    }
+
+    /// Insert into the scoped secondary index. Returns true if
+    /// the value was already present (which is the duplicate-
+    /// detection signal a uniqueness check uses).
+    pub fn record_scoped_secondary(
+        &mut self,
+        table:       &str,
+        scope_key:   &str,
+        scope_value: &str,
+        secondary:   String,
+    ) -> bool {
+        let already = self.scoped_secondary
+            .entry((table.to_owned(), scope_key.to_owned(), scope_value.to_owned()))
+            .or_default()
+            .insert(secondary);
+        // `insert` returns true if newly inserted, false if already present.
+        // Flip — caller wants "was already present".
+        !already
     }
 }
 
@@ -1042,7 +1123,7 @@ pub trait ImportSink {
 /// operator-supplied `--no-invariant-checks` flag disables them.
 /// New invariants land here as cesauth's schema evolves.
 ///
-/// Invariants in v0.21.0:
+/// Invariants in v0.22.0:
 ///
 /// 1. **Memberships' user_id references seen user.** Any row in
 ///    `user_tenant_memberships`, `user_organization_memberships`,
@@ -1054,11 +1135,11 @@ pub trait ImportSink {
 /// 3. **users.tenant_id references seen tenant.** A user with a
 ///    tenant_id not in `tenants` is flagged.
 /// 4. **role_assignments references seen role + user.**
+/// 5. **users.email unique per tenant.** Catches duplicate
+///    `(tenant_id, email)` tuples within the dump. Added in
+///    v0.22.0; redaction-aware (see check function docs).
 ///
 /// Not yet checked (deferred to follow-ups):
-/// - Email uniqueness within a tenant — requires destination-side
-///   query (the dump might be redacted, in which case the check
-///   becomes synthetic). Skipped for v0.21.0.
 /// - OIDC client `redirect_uris` JSON validity — out of scope for
 ///   the migration tool; the destination's `oidc_clients` repo
 ///   re-validates on first use.
@@ -1068,6 +1149,7 @@ pub fn default_invariant_checks() -> &'static [InvariantCheckFn] {
         check_membership_user_ref,
         check_membership_container_ref,
         check_role_assignment_refs,
+        check_user_email_unique_per_tenant,
     ]
 }
 
@@ -1082,7 +1164,7 @@ fn extract_str<'a>(row: &'a serde_json::Value, field: &str) -> Option<&'a str> {
 fn check_user_tenant_ref(
     table: &str,
     row:   &serde_json::Value,
-    seen:  &SeenSnapshot,
+    seen:  &mut SeenSnapshot,
 ) -> Option<String> {
     if table != "users" { return None; }
     let tenant_id = extract_str(row, "tenant_id")?;
@@ -1095,7 +1177,7 @@ fn check_user_tenant_ref(
 fn check_membership_user_ref(
     table: &str,
     row:   &serde_json::Value,
-    seen:  &SeenSnapshot,
+    seen:  &mut SeenSnapshot,
 ) -> Option<String> {
     let is_membership = matches!(table,
         "user_tenant_memberships"
@@ -1113,7 +1195,7 @@ fn check_membership_user_ref(
 fn check_membership_container_ref(
     table: &str,
     row:   &serde_json::Value,
-    seen:  &SeenSnapshot,
+    seen:  &mut SeenSnapshot,
 ) -> Option<String> {
     let (container_table, field) = match table {
         "user_tenant_memberships"       => ("tenants",       "tenant_id"),
@@ -1131,7 +1213,7 @@ fn check_membership_container_ref(
 fn check_role_assignment_refs(
     table: &str,
     row:   &serde_json::Value,
-    seen:  &SeenSnapshot,
+    seen:  &mut SeenSnapshot,
 ) -> Option<String> {
     if table != "role_assignments" { return None; }
     if let Some(role_id) = extract_str(row, "role_id") {
@@ -1143,6 +1225,49 @@ fn check_role_assignment_refs(
         if !seen.contains("users", user_id) {
             return Some(format!("user_id `{user_id}` references missing user"));
         }
+    }
+    None
+}
+
+/// Email-uniqueness within a tenant. Pinned to `users` table.
+/// Each `(tenant_id, email)` tuple must be seen at most once.
+///
+/// **Redaction-aware**: when emails come from a redacted dump
+/// (HashedEmail kind), the values are deterministic distinct
+/// hashes. The check still runs and still catches duplicates
+/// — same source emails produce same redacted values, so a
+/// duplicate at source remains a duplicate after redaction.
+/// What the check WON'T flag is "different source emails
+/// happen to hash to the same redacted value" — vanishingly
+/// improbable given SHA-256.
+///
+/// What about NULL emails? The cesauth schema declares
+/// `users.email TEXT UNIQUE COLLATE NOCASE` — NULL is
+/// permitted (anonymous users). The check skips rows with
+/// missing/NULL email.
+///
+/// Implemented in v0.22.0; deferred from v0.21.0 because of
+/// concerns about redaction semantics that turned out (after
+/// implementation) to not be problematic.
+fn check_user_email_unique_per_tenant(
+    table: &str,
+    row:   &serde_json::Value,
+    seen:  &mut SeenSnapshot,
+) -> Option<String> {
+    if table != "users" { return None; }
+    let Some(email)     = extract_str(row, "email")     else { return None; };
+    let Some(tenant_id) = extract_str(row, "tenant_id") else { return None; };
+    // Lower-case the email for comparison. cesauth's schema
+    // uses COLLATE NOCASE; emulating that here keeps the
+    // semantic match.
+    let email_norm = email.to_ascii_lowercase();
+    let already = seen.record_scoped_secondary(
+        "users", "tenant_id", tenant_id, email_norm.clone(),
+    );
+    if already {
+        return Some(format!(
+            "email `{email}` duplicates an earlier user in tenant `{tenant_id}`"
+        ));
     }
     None
 }
@@ -1213,7 +1338,7 @@ pub async fn import<S: ImportSink>(
         let row_id = extract_id(&pl.row);
         let mut row_violated = false;
         for chk in invariants {
-            if let Some(reason) = chk(&pl.table, &pl.row, &seen) {
+            if let Some(reason) = chk(&pl.table, &pl.row, &mut seen) {
                 violations.push(Violation {
                     table:  pl.table.clone(),
                     row_id: row_id.clone(),
@@ -1273,6 +1398,7 @@ mod tests {
                 TableSummary { name: "users".into(),   row_count: 42, sha256: "b".repeat(64) },
             ],
             redaction_profile: None,
+            tenants:           None,
         }
     }
 
@@ -1539,6 +1665,7 @@ mod tests {
             source_d1_database_id: Some("test-d1"),
             tables,
             profile:               None,
+            tenants:               None,
         }
     }
 
@@ -1806,16 +1933,16 @@ mod tests {
 
     #[test]
     fn check_user_tenant_ref_passes_for_known_tenant() {
-        let seen = fixture_seen();
+        let mut seen = fixture_seen();
         let row = serde_json::json!({"id":"u-3","tenant_id":"t-1"});
-        assert!(check_user_tenant_ref("users", &row, &seen).is_none());
+        assert!(check_user_tenant_ref("users", &row, &mut seen).is_none());
     }
 
     #[test]
     fn check_user_tenant_ref_fails_for_unknown_tenant() {
-        let seen = fixture_seen();
+        let mut seen = fixture_seen();
         let row = serde_json::json!({"id":"u-3","tenant_id":"t-missing"});
-        let r = check_user_tenant_ref("users", &row, &seen);
+        let r = check_user_tenant_ref("users", &row, &mut seen);
         assert!(r.is_some());
         assert!(r.unwrap().contains("missing tenant"));
     }
@@ -1825,64 +1952,64 @@ mod tests {
         // Defensive: a check function must only fire for its
         // owned table. Returning a violation for an unrelated
         // row is a worse failure than missing a violation.
-        let seen = fixture_seen();
+        let mut seen = fixture_seen();
         let row = serde_json::json!({"id":"t-1","tenant_id":"missing-but-irrelevant"});
-        assert!(check_user_tenant_ref("tenants", &row, &seen).is_none());
+        assert!(check_user_tenant_ref("tenants", &row, &mut seen).is_none());
     }
 
     #[test]
     fn check_membership_user_ref_fires_only_for_membership_tables() {
-        let seen = fixture_seen();
+        let mut seen = fixture_seen();
         let row = serde_json::json!({"user_id":"u-missing"});
         // Membership tables fire.
         for t in &["user_tenant_memberships", "user_organization_memberships", "user_group_memberships"] {
-            let r = check_membership_user_ref(t, &row, &seen);
+            let r = check_membership_user_ref(t, &row, &mut seen);
             assert!(r.is_some(), "should fire on {t}");
         }
         // Non-membership tables don't fire.
         for t in &["users", "tenants", "organizations"] {
-            let r = check_membership_user_ref(t, &row, &seen);
+            let r = check_membership_user_ref(t, &row, &mut seen);
             assert!(r.is_none(), "should not fire on {t}");
         }
     }
 
     #[test]
     fn check_membership_container_dispatches_per_table() {
-        let seen = fixture_seen();
+        let mut seen = fixture_seen();
 
         // tenant_id checked against tenants
         let r = check_membership_container_ref("user_tenant_memberships",
-            &serde_json::json!({"tenant_id":"t-missing"}), &seen);
+            &serde_json::json!({"tenant_id":"t-missing"}), &mut seen);
         assert!(r.unwrap().contains("missing tenants"));
 
         // organization_id checked against organizations
         let r = check_membership_container_ref("user_organization_memberships",
-            &serde_json::json!({"organization_id":"o-missing"}), &seen);
+            &serde_json::json!({"organization_id":"o-missing"}), &mut seen);
         assert!(r.unwrap().contains("missing organizations"));
 
         // group_id checked against groups
         let r = check_membership_container_ref("user_group_memberships",
-            &serde_json::json!({"group_id":"g-missing"}), &seen);
+            &serde_json::json!({"group_id":"g-missing"}), &mut seen);
         assert!(r.unwrap().contains("missing groups"));
     }
 
     #[test]
     fn check_role_assignment_refs_catches_both_sides() {
-        let seen = fixture_seen();
+        let mut seen = fixture_seen();
 
         // Missing role
         let r = check_role_assignment_refs("role_assignments",
-            &serde_json::json!({"role_id":"r-missing","user_id":"u-1"}), &seen);
+            &serde_json::json!({"role_id":"r-missing","user_id":"u-1"}), &mut seen);
         assert!(r.unwrap().contains("missing role"));
 
         // Missing user
         let r = check_role_assignment_refs("role_assignments",
-            &serde_json::json!({"role_id":"r-1","user_id":"u-missing"}), &seen);
+            &serde_json::json!({"role_id":"r-1","user_id":"u-missing"}), &mut seen);
         assert!(r.unwrap().contains("missing user"));
 
         // Both present
         let r = check_role_assignment_refs("role_assignments",
-            &serde_json::json!({"role_id":"r-1","user_id":"u-1"}), &seen);
+            &serde_json::json!({"role_id":"r-1","user_id":"u-1"}), &mut seen);
         assert!(r.is_none());
     }
 
@@ -2156,5 +2283,196 @@ mod tests {
         // number is allowed to grow as new checks land.
         let n = default_invariant_checks().len();
         assert!(n >= 4, "expected ≥4 default checks, got {n}");
+    }
+
+    // -----------------------------------------------------------------
+    // v0.22.0 — email uniqueness + scoped secondary index
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn scoped_secondary_index_tracks_per_tuple() {
+        // The `record_scoped_secondary` returns true on duplicate
+        // (i.e., the value was already present). Pin the
+        // semantic — checks rely on this exact return value.
+        let mut s = SeenSnapshot::default();
+        // First insert: not a duplicate.
+        let dup = s.record_scoped_secondary(
+            "users", "tenant_id", "t-1", "alice@x".into());
+        assert!(!dup, "first insert must report not-already-present");
+        // Second insert of same value: duplicate.
+        let dup = s.record_scoped_secondary(
+            "users", "tenant_id", "t-1", "alice@x".into());
+        assert!(dup, "second insert must report already-present");
+        // Different scope, same value: not a duplicate.
+        let dup = s.record_scoped_secondary(
+            "users", "tenant_id", "t-2", "alice@x".into());
+        assert!(!dup, "scope change must reset uniqueness");
+    }
+
+    #[test]
+    fn check_user_email_unique_skips_when_table_not_users() {
+        let mut s = SeenSnapshot::default();
+        let row = serde_json::json!({"email":"a@x","tenant_id":"t-1"});
+        assert!(check_user_email_unique_per_tenant("tenants", &row, &mut s).is_none());
+        assert!(check_user_email_unique_per_tenant("groups",  &row, &mut s).is_none());
+    }
+
+    #[test]
+    fn check_user_email_unique_passes_for_distinct_emails() {
+        let mut s = SeenSnapshot::default();
+        let r1 = check_user_email_unique_per_tenant("users",
+            &serde_json::json!({"email":"alice@x","tenant_id":"t-1"}), &mut s);
+        let r2 = check_user_email_unique_per_tenant("users",
+            &serde_json::json!({"email":"bob@x","tenant_id":"t-1"}), &mut s);
+        assert!(r1.is_none());
+        assert!(r2.is_none());
+    }
+
+    #[test]
+    fn check_user_email_unique_flags_duplicate_within_tenant() {
+        let mut s = SeenSnapshot::default();
+        let r1 = check_user_email_unique_per_tenant("users",
+            &serde_json::json!({"email":"alice@x","tenant_id":"t-1"}), &mut s);
+        assert!(r1.is_none());
+        let r2 = check_user_email_unique_per_tenant("users",
+            &serde_json::json!({"email":"alice@x","tenant_id":"t-1"}), &mut s);
+        let reason = r2.expect("duplicate must be flagged");
+        assert!(reason.contains("duplicates an earlier user"));
+        assert!(reason.contains("alice@x"));
+        assert!(reason.contains("t-1"));
+    }
+
+    #[test]
+    fn check_user_email_unique_allows_same_email_in_different_tenants() {
+        // Per-tenant uniqueness, not global uniqueness. The
+        // schema permits the same email in two distinct tenants.
+        let mut s = SeenSnapshot::default();
+        let r1 = check_user_email_unique_per_tenant("users",
+            &serde_json::json!({"email":"alice@x","tenant_id":"t-1"}), &mut s);
+        let r2 = check_user_email_unique_per_tenant("users",
+            &serde_json::json!({"email":"alice@x","tenant_id":"t-2"}), &mut s);
+        assert!(r1.is_none());
+        assert!(r2.is_none(), "same email in distinct tenants must pass");
+    }
+
+    #[test]
+    fn check_user_email_unique_is_case_insensitive() {
+        // cesauth's schema declares email UNIQUE COLLATE NOCASE.
+        // The check must mirror that semantic.
+        let mut s = SeenSnapshot::default();
+        let r1 = check_user_email_unique_per_tenant("users",
+            &serde_json::json!({"email":"Alice@example.COM","tenant_id":"t-1"}), &mut s);
+        assert!(r1.is_none());
+        let r2 = check_user_email_unique_per_tenant("users",
+            &serde_json::json!({"email":"alice@example.com","tenant_id":"t-1"}), &mut s);
+        assert!(r2.is_some(), "case difference must NOT escape the check");
+    }
+
+    #[test]
+    fn check_user_email_unique_skips_users_without_email() {
+        // Anonymous users have no email; the check must not
+        // panic or flag them. The first row sets up the tenant;
+        // the second is anonymous (no email field).
+        let mut s = SeenSnapshot::default();
+        let r = check_user_email_unique_per_tenant("users",
+            &serde_json::json!({"id":"u-anon","tenant_id":"t-1"}), &mut s);
+        assert!(r.is_none(), "missing email field must not trigger the check");
+    }
+
+    #[test]
+    fn import_flags_duplicate_email_within_tenant() {
+        // End-to-end through the import driver. Two users in the
+        // same tenant with the same email — the second is
+        // flagged.
+        let tables = ["tenants", "users"];
+        let rows = vec![
+            ("tenants", serde_json::json!({"id":"t-1"})),
+            ("users",   serde_json::json!({"id":"u-1","tenant_id":"t-1","email":"alice@x"})),
+            ("users",   serde_json::json!({"id":"u-2","tenant_id":"t-1","email":"alice@x"})),
+        ];
+        let mut cursor = build_dump(&tables, rows, None);
+        let mut sink = VecSink::new();
+        let report = run_import(&mut cursor, &mut sink,
+            default_invariant_checks(), false).unwrap();
+        assert!(!report.is_clean());
+        // Find the email violation specifically — other checks
+        // shouldn't fire on this fixture.
+        let email_v = report.violations.iter()
+            .find(|v| v.reason.contains("duplicates"))
+            .expect("email-uniqueness violation should be present");
+        assert_eq!(email_v.row_id, "u-2");
+        assert_eq!(email_v.table, "users");
+    }
+
+    // -----------------------------------------------------------------
+    // v0.22.0 — manifest carries tenant scope
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn manifest_records_tenant_scope_when_filtered() {
+        let mut buf = Vec::new();
+        let tables = ["tenants", "users"];
+        let mut spec = make_spec(&tables);
+        let scoped = vec!["t-acme".to_string(), "t-corp".to_string()];
+        spec.tenants = Some(&scoped);
+        let mut exp = Exporter::new(spec, &mut buf).unwrap();
+        exp.push("tenants", serde_json::json!({"id":"t-acme"})).unwrap();
+        exp.push("tenants", serde_json::json!({"id":"t-corp"})).unwrap();
+        exp.push("users",   serde_json::json!({"id":"u-1","tenant_id":"t-acme"})).unwrap();
+        exp.finish().unwrap();
+
+        let report = verify(std::io::Cursor::new(&buf)).unwrap();
+        let recorded = report.manifest.tenants.expect("tenants must be in manifest");
+        assert_eq!(recorded, vec!["t-acme".to_string(), "t-corp".to_string()]);
+    }
+
+    #[test]
+    fn manifest_omits_tenant_scope_for_full_export() {
+        // Round-trip: a full-database export emits no tenants
+        // field, and the deserializer doesn't synthesize one.
+        let mut buf = Vec::new();
+        let tables = ["users"];
+        let exp = Exporter::new(make_spec(&tables), &mut buf).unwrap();
+        exp.finish().unwrap();
+
+        let report = verify(std::io::Cursor::new(&buf)).unwrap();
+        assert!(report.manifest.tenants.is_none(),
+            "whole-database export must not set the tenants field");
+    }
+
+    #[test]
+    fn manifest_round_trips_tenants_through_serde() {
+        // Pin the wire format: tenants serializes as a JSON
+        // array of strings, deserializes back equivalently.
+        let mut m = sample_manifest();
+        m.tenants = Some(vec!["t-alpha".into(), "t-beta".into()]);
+        let s  = serde_json::to_string(&m).unwrap();
+        // Field name on the wire.
+        assert!(s.contains("\"tenants\""));
+        let m2 = serde_json::from_str::<Manifest>(&s).unwrap();
+        assert_eq!(m, m2);
+    }
+
+    #[test]
+    fn manifest_deserializes_dumps_without_tenants_field() {
+        // Forward compatibility: a 0.21.0-shaped manifest (no
+        // tenants field) must still parse against the 0.22.0
+        // type. `#[serde(default)]` on the field makes this
+        // work.
+        let mut m = sample_manifest();
+        let s = serde_json::to_string(&m).unwrap();
+        // Manually strip the field if present (sample_manifest
+        // emits None which already skips serialization, but be
+        // paranoid).
+        m.tenants = None;
+        let s2 = serde_json::to_string(&m).unwrap();
+        // Search for the exact field name as it would appear on the
+        // wire. `"tenants":` is unambiguous (won't match `"tables":`
+        // or any other substring).
+        assert!(!s2.contains("\"tenants\":"),
+            "tenants field must be skipped when None: {s2}");
+        // Round-trip without the field.
+        let m3 = serde_json::from_str::<Manifest>(&s).unwrap();
+        assert_eq!(m3.tenants, None);
     }
 }

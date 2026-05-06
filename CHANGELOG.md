@@ -12,6 +12,259 @@ always be called out here.
 
 ---
 
+## [0.22.0] - 2026-04-28
+
+Data migration tooling — Phase 4 of 4: polish. **The data-
+migration tooling is feature-complete for ADR-005's scope as
+of this release.** Three of the seven items deferred from
+v0.21.0 land here; the remaining four are tracked as post-1.0
+polish in the ROADMAP rather than continuing to defer through
+the data-migration phasing.
+
+After this release, the next operator-prioritized slot is
+**RFC 7662 Token Introspection**.
+
+### Added — `--tenant <id>` filter on `export`
+
+The exporter now scopes to operator-named tenants when the
+`--tenant <id>` flag is passed (repeat for multiple). Tables
+classified `TenantScope::Global` (e.g., `plans`,
+`permissions`, `oidc_clients`, `jwt_signing_keys`) export in
+full regardless — the destination needs them to function.
+Tenant-scoped tables (`tenants`, `users`, `organizations`,
+`groups`, `subscriptions`, `roles`, `user_tenant_memberships`,
+`anonymous_sessions`) filter on the operator's id list.
+
+The dump's manifest records the filter in a new `tenants`
+field — `verify` surfaces it in its summary. Pre-v0.22.0
+dumps without the field deserialize as `None` (whole-database)
+via `#[serde(default)]`.
+
+Empty `--tenant ""` slugs are rejected at the boundary.
+Indirect-FK tables (`authenticators`, `consent`, `grants`,
+`admin_tokens`) export in full — sharper indirect scoping is
+tracked as post-1.0 polish.
+
+### Added — `cesauth-migrate refresh-staging` combinator
+
+A single command for the common operational task of
+refreshing staging's data from a production source. Wraps
+`export --profile prod-to-staging` followed by
+`import --commit`, with operator-attended prompts collapsed
+to a single up-front confirmation:
+
+```sh
+cesauth-migrate refresh-staging \
+  --source-account-id <prod-account> \
+  --source-database   cesauth-prod \
+  --dest-account-id   <staging-account> \
+  --dest-database     cesauth-staging
+```
+
+Trade-offs vs. running export + import separately:
+
+- **Trusts the caller to be in control of both endpoints.**
+  Skips the cross-operator fingerprint handshake. For
+  cross-organization moves, operators should still use
+  export + verify + import separately.
+- **Tolerates invariant violations.** Staging is allowed to
+  be a little messy; the prompt at the end of `import`
+  proper would block on violations, but the combinator
+  treats them as informational.
+- **Skips the secret pre-flight.** Operators using
+  refresh-staging have already configured the destination's
+  secrets out of band.
+
+`--yes` flag skips the up-front confirmation for unattended
+runs (CI staging refresh, scheduled jobs). `--profile`
+defaults to `prod-to-staging` but accepts any built-in
+profile name. `--tenant <id>` works on the combinator the
+same way it works on plain `export`.
+
+The dump is written to a per-process temp file under
+`$TMPDIR`. On success the temp file is deleted; on failure
+it's preserved at the printed path so the operator can
+diagnose.
+
+### Added — email-uniqueness-within-tenant invariant check
+
+The fifth default invariant: `(tenant_id, email)` must be
+unique within the dump. Catches schema-violation rows where
+two users in the same tenant share an email.
+
+Redaction-aware: the `HashedEmail` redaction kind produces
+deterministic distinct values, so duplicates at source remain
+duplicates after redaction. Case-insensitive (matches the
+schema's `COLLATE NOCASE` semantic on `users.email`). Skips
+rows without an email field (anonymous trial users).
+
+This check was deferred from v0.21.0's default set because of
+concerns about redaction semantics that turned out (after
+implementation) to not be problematic.
+
+### Added — per-row import progress
+
+`ProgressSink` decorator wraps `WranglerD1Sink` and prints a
+`.` to stderr every 1000 staged rows. The `do_import` handler
+uses it by default. Long-running imports no longer "appear
+hung" mid-staging.
+
+The exporter side gained equivalent dot-tick progress in this
+release too (every 1000 rows on `--tenant`-able tables).
+
+### Library — `cesauth_core::migrate` changes
+
+- **`Manifest.tenants: Option<Vec<String>>`** — new field
+  with `#[serde(default, skip_serializing_if =
+  "Option::is_none")]`. Forward-compatible with 0.21.0
+  dumps.
+- **`ExportSpec.tenants: Option<&[String]>`** — propagated
+  through `Exporter::finish` to the manifest.
+- **`SeenSnapshot` extended** with a scoped secondary index
+  (`HashMap<(table, scope_key, scope_value),
+  HashSet<value>>`) for per-tuple uniqueness checks.
+  `record_scoped_secondary` returns true on duplicate (the
+  uniqueness signal); `contains_scoped_secondary` for read
+  access.
+- **`InvariantCheckFn` signature changed** from
+  `&SeenSnapshot` to `&mut SeenSnapshot` so checks can
+  populate their own secondary indexes. **Breaking change
+  to the typedef** — any operator who had built custom
+  checks against the v0.21.0 type alias must update them.
+  Since custom-check registration is not yet exposed via
+  the CLI in v0.22.0, no real-world users are affected; the
+  ROADMAP "post-1.0 polish" entry for custom-invariant
+  registration will pick up the new signature.
+
+### CLI — `crates/migrate/`
+
+- **`d1_source` module** — `D1Source::fetch_table` now
+  takes `Option<TenantFilter<'_>>`. `WranglerD1Source`
+  builds a `WHERE column IN (...) ORDER BY rowid` clause
+  when filtered, plain `SELECT *` otherwise. Empty filter
+  list short-circuits to `Vec::new()` without spawning
+  wrangler. SQL identifier check on filter column too.
+- **`schema` module** — new `TenantScope` enum and
+  `TENANT_SCOPES` slice (parallel to `MIGRATION_TABLE_ORDER`).
+  `tenant_scope_for(table)` lookup. Two new tests pin
+  length-alignment and known-table scopes.
+- **`d1_sink` module** — new `ProgressSink<S>` decorator.
+- **`do_export`** — real `--tenant` handling. Per-table
+  filter computed via `build_table_filter()`. Per-row
+  dot-progress every 1000 rows.
+- **`do_refresh_staging`** — new handler. Inlines
+  `export_to_path` and `import_from_path` helpers (smaller
+  versions of `do_export`/`do_import` with refresh-staging-
+  specific UX).
+
+### Tests
+
+Total: **379 passing** (+21 over v0.21.0):
+
+- core: **178** (was 166) — 12 new in `migrate::tests`:
+  - `scoped_secondary_index_tracks_per_tuple` — pin the
+    duplicate-detection return-value semantic.
+  - `check_user_email_unique_skips_when_table_not_users`.
+  - `check_user_email_unique_passes_for_distinct_emails`.
+  - `check_user_email_unique_flags_duplicate_within_tenant`.
+  - `check_user_email_unique_allows_same_email_in_different_tenants`
+    — per-tenant uniqueness, not global.
+  - `check_user_email_unique_is_case_insensitive` —
+    matches `COLLATE NOCASE`.
+  - `check_user_email_unique_skips_users_without_email` —
+    anonymous trial users have no email.
+  - `import_flags_duplicate_email_within_tenant` —
+    end-to-end through the import driver.
+  - `manifest_records_tenant_scope_when_filtered`.
+  - `manifest_omits_tenant_scope_for_full_export`.
+  - `manifest_round_trips_tenants_through_serde`.
+  - `manifest_deserializes_dumps_without_tenants_field` —
+    forward compat from 0.21.0-shaped dumps.
+- adapter-test: 51 (unchanged).
+- ui: 121 (unchanged).
+- migrate: **29** (was 25):
+  - 2 new in `d1_source::tests`:
+    `mock_filter_keeps_matching_tenant_rows`,
+    `mock_filter_empty_ids_returns_no_rows`.
+  - 4 new schema scope tests (length-alignment + known-
+    table scopes + unknown-table-is-None defensive).
+  - 4 new integration tests:
+    - `export_rejects_empty_tenant_value`.
+    - `refresh_staging_help_includes_one_command_summary`.
+    - `refresh_staging_aborts_on_operator_decline`.
+    - `refresh_staging_rejects_unknown_profile`.
+
+### Documentation
+
+- **`docs/src/deployment/data-migration.md`** updated to
+  v0.22.0:
+  - Status table reflects feature-complete state.
+  - New "Refreshing staging from production" section with
+    sample invocation, default behavior, unattended-run
+    flag.
+  - New "Tenant-scoped exports" section with sample
+    invocations and explanation of what tenant-scoped
+    means in practice (which tables filter, which export
+    in full).
+  - "Limitations as of v0.22.0" rewritten — most v0.21.0
+    items are addressed; remaining items (resume, native
+    HTTP API, custom invariants) are tracked as post-1.0
+    polish.
+
+### Migration (0.21.0 → 0.22.0)
+
+Code-only release. No schema, no `wrangler.toml`. The
+deployed Worker is unaffected.
+
+For operators using the migration tool:
+
+```sh
+cargo install --path crates/migrate --force
+cesauth-migrate refresh-staging --help
+cesauth-migrate export --help     # see the new --tenant flag
+```
+
+### Smoke test
+
+```sh
+cargo test --workspace                          # 379 passing
+./target/debug/cesauth-migrate --version        # cesauth-migrate 0.22.0
+./target/debug/cesauth-migrate --help           # 5 subcommands listed
+./target/debug/cesauth-migrate refresh-staging --help
+
+# Decline path returns non-zero exit, doesn't touch destination.
+echo "" | ./target/debug/cesauth-migrate refresh-staging \
+  --source-account-id src --source-database srcdb \
+  --dest-account-id   dst --dest-database   dstdb
+```
+
+### Deferred to post-1.0 polish (no scheduled release)
+
+These three items were originally scheduled for v0.22.0 but
+are reclassified as post-1.0 polish — they don't change the
+data-migration design and don't have a known operator
+demand:
+
+- **Resume on interruption.** Two-pass design + checkpoint-
+  file format is real new design surface. The current
+  Ctrl-C-then-restart-from-zero workflow is acceptable for
+  the dump sizes the tool targets.
+- **Native Cloudflare HTTP API client.** wrangler shell-out
+  works. Native client would avoid subprocess spawn costs
+  and the wrangler dependency, but it adds a non-trivial
+  HTTP auth surface to the binary.
+- **Custom invariant registration via CLI.** The library
+  accepts a slice of `InvariantCheckFn`, but no operator
+  has asked for runtime-supplied custom checks. When one
+  does, the surface is straightforward.
+
+### Deferred — unchanged
+
+- **`check_permission` integration on `/api/v1/...`.** Unscheduled.
+- **External IdP federation.** Out of scope.
+
+---
+
 ## [0.21.0] - 2026-04-28
 
 Data migration tooling — Phase 3 of 4: real `import` subcommand.

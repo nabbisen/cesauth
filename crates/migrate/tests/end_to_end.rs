@@ -24,6 +24,7 @@ fn write_dump(path: &std::path::Path, profile: Option<&str>) {
         source_d1_database_id: Some("e2e-d1"),
         tables: &tables,
         profile: prof,
+        tenants: None,
     };
     let mut exp = Exporter::new(spec, &mut buf).unwrap();
     exp.push("tenants", serde_json::json!({
@@ -238,4 +239,88 @@ fn tempdir() -> std::path::PathBuf {
     let p = std::path::PathBuf::from(format!("/tmp/cesauth-migrate-test-{nanos}"));
     std::fs::create_dir_all(&p).unwrap();
     p
+}
+
+// =====================================================================
+// v0.22.0 — --tenant filter and refresh-staging
+// =====================================================================
+
+#[test]
+fn export_rejects_empty_tenant_value() {
+    // `--tenant ""` is an operator typo; reject at the boundary
+    // rather than producing a malformed dump.
+    let dir = tempdir();
+    let path = dir.join("e2e-empty-tenant.cdump");
+    let out = cli().args([
+        "export", "-o",
+    ])
+        .arg(&path)
+        .args([
+            "--account-id", "test",
+            "--database",   "test",
+            "--tenant",     "",
+        ])
+        .output().unwrap();
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("must be non-empty"),
+        "should reject empty tenant slug: {stderr}");
+}
+
+#[test]
+fn refresh_staging_help_includes_one_command_summary() {
+    // The help text is the first thing a future operator looks
+    // at. Pin a couple of phrases so a refactor doesn't drop
+    // important context.
+    let out = cli().args(["refresh-staging", "--help"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // The "convenience not security-critical" disclaimer must
+    // be visible in --help, not just the source code.
+    assert!(stdout.contains("Convenience"),
+        "help must surface the convenience-vs-security guidance: {stdout}");
+    assert!(stdout.contains("--profile"));
+    assert!(stdout.contains("--yes"));
+    assert!(stdout.contains("--tenant"));
+}
+
+#[test]
+fn refresh_staging_aborts_on_operator_decline() {
+    // Closed stdin → prompt's read_line returns 0 → CLI treats
+    // as decline. Same shape as `import` decline path.
+    let out = cli().args([
+        "refresh-staging",
+        "--source-account-id", "src",
+        "--source-database",   "srcdb",
+        "--dest-account-id",   "dst",
+        "--dest-database",     "dstdb",
+    ]).output().unwrap();
+    assert!(!out.status.success(),
+        "refresh-staging must abort when handshake declined");
+    let combined = format!("{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr));
+    // Diagnostic must mention the abort.
+    assert!(combined.contains("aborted") || combined.contains("declined"),
+        "abort must be diagnosable. combined: {combined}");
+    // Source/dest details should appear in the pre-prompt summary.
+    assert!(combined.contains("srcdb"));
+    assert!(combined.contains("dstdb"));
+    // Default profile name should print.
+    assert!(combined.contains("prod-to-staging"));
+}
+
+#[test]
+fn refresh_staging_rejects_unknown_profile() {
+    let out = cli().args([
+        "refresh-staging",
+        "--source-account-id", "src",
+        "--source-database",   "srcdb",
+        "--dest-account-id",   "dst",
+        "--dest-database",     "dstdb",
+        "--profile",           "this-profile-does-not-exist",
+    ]).output().unwrap();
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("unknown redaction profile"),
+        "should fail-fast on bad profile name: {stderr}");
 }

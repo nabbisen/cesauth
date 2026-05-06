@@ -219,6 +219,62 @@ fn is_sql_identifier(s: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
+// ---------------------------------------------------------------------
+// Progress wrapper (v0.22.0)
+// ---------------------------------------------------------------------
+
+/// `ImportSink` decorator that prints a dot to stderr every
+/// `chunk` staged rows. Use to give the operator confidence the
+/// import is making progress on a large dump. Pass-through for
+/// commit and rollback.
+///
+/// The decorator is a CLI concern — tests use raw sinks, so the
+/// progress noise doesn't pollute test output.
+pub struct ProgressSink<S: cesauth_core::migrate::ImportSink> {
+    pub inner: S,
+    pub chunk: u64,
+    pub seen:  u64,
+}
+
+impl<S: cesauth_core::migrate::ImportSink> ProgressSink<S> {
+    pub fn new(inner: S, chunk: u64) -> Self {
+        Self { inner, chunk: chunk.max(1), seen: 0 }
+    }
+
+    /// Consume the wrapper and return the inner sink. Use after
+    /// `import` returns and before commit/rollback if the inner
+    /// is needed for additional methods (e.g.,
+    /// `WranglerD1Sink::total_staged`).
+    #[allow(dead_code)] // public accessor — kept for future use
+    pub fn into_inner(self) -> S { self.inner }
+}
+
+impl<S: cesauth_core::migrate::ImportSink> cesauth_core::migrate::ImportSink for ProgressSink<S> {
+    async fn stage_row(&mut self, table: &str, row: &Value) -> Result<(), String> {
+        self.inner.stage_row(table, row).await?;
+        self.seen += 1;
+        if self.seen.is_multiple_of(self.chunk) {
+            use std::io::Write as _;
+            eprint!(".");
+            std::io::stderr().flush().ok();
+        }
+        Ok(())
+    }
+    async fn commit(&mut self) -> Result<u64, String> {
+        if self.seen >= self.chunk {
+            // Newline after the dot stream.
+            eprintln!();
+        }
+        self.inner.commit().await
+    }
+    async fn rollback(&mut self) -> Result<(), String> {
+        if self.seen >= self.chunk {
+            eprintln!();
+        }
+        self.inner.rollback().await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

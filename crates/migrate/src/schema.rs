@@ -84,6 +84,81 @@ pub const MIGRATION_TABLE_ORDER: &[&str] = &[
     "anonymous_sessions",
 ];
 
+// ---------------------------------------------------------------------
+// Tenant-filter metadata (v0.22.0)
+// ---------------------------------------------------------------------
+
+/// How a table participates in tenant-scoped exports.
+///
+/// `--tenant <slug>` exports just one tenant's worth of data.
+/// The exporter has to know which tables to filter and how —
+/// this enum captures both pieces. A table that's
+/// `TenantScope::Global` is exported in full regardless of
+/// `--tenant`; that's correct for `plans`, `permissions`,
+/// `oidc_clients` (today — see note below), `jwt_signing_keys`.
+///
+/// **A note on `oidc_clients`**: in cesauth 0.x the table has
+/// no `tenant_id` column. OIDC clients are deployment-global.
+/// A future schema migration that adds tenant scoping to OIDC
+/// clients will flip this to `TenantScope::OwnColumn`.
+///
+/// **A note on tenant-scoped indirection**: `authenticators`
+/// references `users`, and `users` is tenant-scoped, but
+/// `authenticators` itself has no `tenant_id` column. We treat
+/// it as `Global` for the SQL-level WHERE clause and rely on
+/// the FK graph: a tenant-filtered export of `users` rows
+/// constrains which `authenticators` rows the importer's
+/// invariant checks would accept downstream. For v0.22.0,
+/// indirection through users is **not** filtered at export time
+/// — every authenticator ships in a `--tenant` export. That's
+/// acceptable for the current threat model (operator running
+/// the export trusts the source side); future sharper scoping
+/// is tracked in the ROADMAP under post-1.0 polish.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TenantScope {
+    /// Table has no tenant association; export in full.
+    Global,
+    /// Table has its own `tenant_id`-shaped column. Filter on
+    /// `WHERE <column> = ?`. The column name is usually
+    /// `tenant_id`, but `tenants` itself uses `id`.
+    OwnColumn(&'static str),
+}
+
+/// Tenant-scope metadata for every table in `MIGRATION_TABLE_ORDER`.
+/// Same length, same order — accessed by index. A test pins the
+/// invariant.
+pub const TENANT_SCOPES: &[TenantScope] = &[
+    TenantScope::OwnColumn("id"),                 // tenants
+    TenantScope::OwnColumn("tenant_id"),          // organizations
+    TenantScope::OwnColumn("tenant_id"),          // groups
+    TenantScope::OwnColumn("tenant_id"),          // users
+    TenantScope::Global,                          // authenticators (FK users; see module note)
+    TenantScope::Global,                          // oidc_clients (deployment-global today)
+    TenantScope::Global,                          // consent (FK users + oidc_clients)
+    TenantScope::Global,                          // grants (FK users + oidc_clients)
+    TenantScope::Global,                          // jwt_signing_keys (deployment-global)
+    TenantScope::Global,                          // admin_tokens (FK users; see module note)
+    TenantScope::Global,                          // plans (deployment-global)
+    TenantScope::OwnColumn("tenant_id"),          // subscriptions
+    TenantScope::Global,                          // subscription_history (FK subscriptions)
+    TenantScope::Global,                          // permissions (deployment-global)
+    TenantScope::OwnColumn("tenant_id"),          // roles
+    TenantScope::Global,                          // role_assignments (FK roles+users)
+    TenantScope::OwnColumn("tenant_id"),          // user_tenant_memberships
+    TenantScope::Global,                          // user_organization_memberships (FK orgs)
+    TenantScope::Global,                          // user_group_memberships (FK groups)
+    TenantScope::OwnColumn("tenant_id"),          // anonymous_sessions
+];
+
+/// Look up the tenant scope for a table. Returns `None` for
+/// tables not in `MIGRATION_TABLE_ORDER` — caller should bail
+/// rather than guess.
+pub fn tenant_scope_for(table: &str) -> Option<TenantScope> {
+    MIGRATION_TABLE_ORDER.iter()
+        .position(|t| *t == table)
+        .map(|i| TENANT_SCOPES[i])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,5 +211,40 @@ mod tests {
         // Subscriptions and their history.
         assert!(pos("subscriptions") < pos("subscription_history"));
         assert!(pos("plans")         < pos("subscriptions"));
+    }
+
+    #[test]
+    fn tenant_scopes_aligns_with_table_order() {
+        // Length and order must match. A new table added to
+        // MIGRATION_TABLE_ORDER without a corresponding
+        // TENANT_SCOPES entry would silently mis-attribute
+        // scopes; pin the invariant.
+        assert_eq!(MIGRATION_TABLE_ORDER.len(), TENANT_SCOPES.len(),
+            "MIGRATION_TABLE_ORDER and TENANT_SCOPES must be the same length");
+    }
+
+    #[test]
+    fn tenant_scope_for_known_tables() {
+        // tenants is tenant-scoped on its own id.
+        assert_eq!(tenant_scope_for("tenants"),
+            Some(TenantScope::OwnColumn("id")));
+        // users is tenant-scoped on tenant_id.
+        assert_eq!(tenant_scope_for("users"),
+            Some(TenantScope::OwnColumn("tenant_id")));
+        // plans is global.
+        assert_eq!(tenant_scope_for("plans"), Some(TenantScope::Global));
+        // jwt_signing_keys is global.
+        assert_eq!(tenant_scope_for("jwt_signing_keys"),
+            Some(TenantScope::Global));
+        // anonymous_sessions is tenant-scoped.
+        assert_eq!(tenant_scope_for("anonymous_sessions"),
+            Some(TenantScope::OwnColumn("tenant_id")));
+    }
+
+    #[test]
+    fn tenant_scope_for_unknown_table_is_none() {
+        // Defensive — typos surface as None, caller bails.
+        assert!(tenant_scope_for("does_not_exist").is_none());
+        assert!(tenant_scope_for("").is_none());
     }
 }

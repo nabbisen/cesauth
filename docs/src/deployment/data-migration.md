@@ -7,19 +7,20 @@ operator-facing chapter; the design is in
 on-disk format is documented in the `cesauth_core::migrate`
 module.
 
-## Status as of v0.21.0
+## Status as of v0.22.0
 
 | Subcommand | Status |
 |---|---|
-| `cesauth-migrate list-profiles` | Implemented (v0.19.0) |
-| `cesauth-migrate export`        | Implemented (v0.20.0) |
-| `cesauth-migrate verify`        | Implemented (v0.20.0) |
-| `cesauth-migrate import`        | **Implemented (v0.21.0, this release)** |
+| `cesauth-migrate list-profiles`   | Implemented (v0.19.0) |
+| `cesauth-migrate export`          | Implemented (v0.20.0); `--tenant` filter added (v0.22.0) |
+| `cesauth-migrate verify`          | Implemented (v0.20.0) |
+| `cesauth-migrate import`          | Implemented (v0.21.0); per-row progress added (v0.22.0) |
+| `cesauth-migrate refresh-staging` | **Implemented (v0.22.0, this release)** |
 
-This means the cross-account move workflow is end-to-end functional
-as of v0.21.0. The polish work (resume support, multi-tenant
-filtered exports, the staging-refresh combinator, native HTTP API
-client, per-row progress) lands in v0.22.0.
+**The data-migration tooling is feature-complete for ADR-005's
+scope as of v0.22.0.** Future work (resume on interruption,
+native Cloudflare HTTP API client) is tracked in the ROADMAP as
+post-1.0 polish.
 
 ## When to use this versus `wrangler d1 export`
 
@@ -479,41 +480,150 @@ After the commit:
   source admin tokens, retire source signing keys
   (after the configured grace window).
 
-## Limitations as of v0.21.0
+## Refreshing staging from production
 
-- **`--tenant` filtering is not yet implemented.** Export is
-  whole-database. Filtered exports land in v0.22.0.
-- **Resume on interruption is not implemented.** A
-  Ctrl-C during export leaves a partial file behind; delete it
-  and start over. Mid-import Ctrl-C rolls back staged rows
-  without writing — safe to retry from scratch.
-  Streaming-resume support lands in v0.22.0.
+For the common operational task — refresh staging's data with
+a sanitized snapshot of production — `cesauth-migrate
+refresh-staging` (added in v0.22.0) collapses the export +
+verify + import sequence into one command:
+
+```sh
+cesauth-migrate refresh-staging \
+  --source-account-id <prod-account-id> \
+  --source-database   cesauth-prod \
+  --dest-account-id   <staging-account-id> \
+  --dest-database     cesauth-staging
+```
+
+Default behavior:
+
+- Applies the `prod-to-staging` redaction profile (override
+  with `--profile <name>` for stricter scrubbing such as
+  `prod-to-dev`).
+- Writes the dump to a temp file under `$TMPDIR`. On success
+  the temp file is deleted; on failure it's preserved at
+  the path printed in the error message so the operator can
+  re-run `verify` to diagnose.
+- Tolerates schema-invariant violations — staging is allowed
+  to be a little messy.
+- Skips the cross-operator fingerprint handshake because one
+  operator drives both ends.
+
+**This is convenience, not security-critical.** For
+cross-organization moves where source and destination
+operators are different people, use `export` + `verify` +
+`import` separately so the fingerprint handshake protects
+against in-transit substitution. The chapter's earlier
+sections walk that flow.
+
+### Unattended refresh
+
+For a CI job or scheduled refresh:
+
+```sh
+cesauth-migrate refresh-staging \
+  --source-account-id <prod-account-id> \
+  --source-database   cesauth-prod \
+  --dest-account-id   <staging-account-id> \
+  --dest-database     cesauth-staging \
+  --yes
+```
+
+`--yes` skips the up-front confirmation prompt. The destination
+**must already have its secrets configured** — the refresh-
+staging command does not run the secret pre-flight that the
+full `import` does.
+
+## Tenant-scoped exports
+
+For operations that target a subset of the deployment — moving
+one tenant out of a multi-tenant deployment, exporting a
+single tenant's data for a customer DSAR request, etc. —
+`--tenant` (added in v0.22.0) restricts the export:
+
+```sh
+cesauth-migrate export \
+  --output     cesauth-acme-2026-04-28.cdump \
+  --account-id <source-account-id> \
+  --database   cesauth-prod \
+  --tenant     t-acme
+```
+
+Repeat the flag for multiple tenants:
+
+```sh
+  --tenant t-acme \
+  --tenant t-corp
+```
+
+Same flag works on `refresh-staging`.
+
+### What "tenant-scoped" means in practice
+
+Tenant-scoped tables (`tenants`, `users`, `organizations`,
+`groups`, `subscriptions`, `roles`, `user_tenant_memberships`,
+`anonymous_sessions`) filter their rows on the operator-
+supplied tenant id list.
+
+Deployment-global tables (`plans`, `permissions`,
+`oidc_clients`, `jwt_signing_keys`, `admin_tokens`) are
+exported in full, regardless of the filter. The destination
+needs them to function regardless of which tenant's data it's
+receiving.
+
+The dump's manifest records the tenant filter; `verify`
+surfaces it in its summary so operators on the receiving end
+can confirm what scope they're getting.
+
+### Limitations of `--tenant` in v0.22.0
+
+- **Indirect tenant scoping is not filtered.** Tables that
+  reference `users` (`authenticators`, `consent`, `grants`,
+  `admin_tokens`) export every row, not just those whose
+  user belongs to the requested tenants. The receiving side's
+  schema-invariant checks would notice and flag, but the
+  current `--accept-violations`-by-default behavior on
+  `refresh-staging` still allows the import. Sharper
+  scoping on indirect tables is tracked as post-1.0 polish.
+- **Empty tenant id strings are rejected.** `--tenant ""` is
+  a typo; the CLI bails at the boundary rather than producing
+  a malformed dump.
+- **The operator is trusted to know tenant ids.** The CLI
+  doesn't pre-validate that the requested tenant ids exist in
+  the source D1; an export of non-existent tenants produces
+  an empty dump with a clean manifest.
+
+## Limitations as of v0.22.0
+
+The four limitations the v0.21.0 chapter listed have been
+addressed in this release. Two remain, scheduled as post-1.0
+polish rather than data-migration phasing:
+
 - **No incremental dumps.** Every export is a fresh full
   snapshot. Not on the roadmap; the use cases for incremental
   migration are narrow enough that the engineering cost
   exceeds the benefit.
-- **Progress reporting is per-table, not per-row.** A 50 MB
-  `users` table will appear to "hang" during the wrangler
-  fetch. No streaming progress until v0.22.0.
+- **Resume on interruption is not yet implemented.** A
+  Ctrl-C during export leaves a partial file behind; delete
+  it and start over. Mid-import Ctrl-C rolls back staged
+  rows without writing — safe to retry from scratch. A
+  checkpoint-based resume is tracked in the ROADMAP under
+  post-1.0 polish.
 - **Native Cloudflare HTTP API client is not implemented.**
   Both export and import shell out to `wrangler`. A native
   client (no wrangler dependency, faster, fewer subprocess
-  spawn costs) lands in v0.22.0.
-- **Schema invariant set is fixed.** v0.21.0 ships four
-  default checks (user→tenant, membership→user,
-  membership→container, role_assignment→role+user).
-  Custom invariants supplied at the CLI are not yet
-  exposed; the library accepts a slice but the CLI
+  spawn costs) is tracked in the ROADMAP under post-1.0
+  polish.
+- **Schema invariant set is fixed.** As of v0.22.0 there are
+  five default checks (user→tenant, membership→user,
+  membership→container, role_assignment→role+user, email
+  uniqueness within tenant). Operator-supplied custom
+  invariants are not yet exposed via the CLI; the library
+  accepts a slice of `InvariantCheckFn` but the binary
   hardcodes `default_invariant_checks()`. Custom-check
   registration lands when an operator hits a case the
-  defaults miss.
-- **Email-uniqueness-within-tenant is not checked.** This
-  is the one obvious invariant the v0.21.0 set deliberately
-  omits, because a redacted dump may collapse emails into
-  shapes that look duplicate but resolve under the
-  destination's redaction profile (which is identity, not a
-  re-redaction). A future check that's redaction-aware lands
-  in v0.22.0 or later.
+  defaults miss — file a feature request with the specific
+  invariant.
 
 ## See also
 

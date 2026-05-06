@@ -23,6 +23,20 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
 
+/// Fully-resolved tenant filter for a single table. The caller
+/// (the export driver) computes this from the table's
+/// `TenantScope` and the operator's `--tenant` list, then hands
+/// it to the source implementation. `column` is the SQL column
+/// name; `ids` is the operator-supplied tenant list.
+///
+/// Tables with `TenantScope::Global` or no operator filter pass
+/// `None` instead of constructing this struct.
+#[derive(Debug, Clone)]
+pub struct TenantFilter<'a> {
+    pub column: &'a str,
+    pub ids:    &'a [String],
+}
+
 /// Read-only access to a D1 database. Each call returns rows
 /// from one table, in primary-key order. Caller iterates tables
 /// in topological order.
@@ -30,19 +44,16 @@ use serde_json::Value;
 /// The trait is `async` because real implementations call out to
 /// network or shell. The mock blocks immediately. No assumption
 /// about thread safety — callers use one source at a time.
+///
+/// `filter` (added in v0.22.0): optional per-table tenant scope.
+/// `None` returns every row; `Some(TenantFilter)` returns rows
+/// whose `column` is in `ids`.
 #[allow(async_fn_in_trait)]
 pub trait D1Source {
-    /// Return all rows from one table, ordered by primary key.
-    /// Each row is a JSON object keyed by column name. The
-    /// migrate library doesn't know the schema; rows pass
-    /// through as-is.
-    ///
-    /// Pagination is the source's problem, not the caller's —
-    /// the trait deliberately has no cursor parameter. Real
-    /// `WranglerD1Source` is expected to internally paginate
-    /// for tables larger than what fits in one wrangler
-    /// response.
-    async fn fetch_table(&self, table: &str) -> Result<Vec<Value>>;
+    /// Return rows from one table, ordered by primary key,
+    /// optionally filtered.
+    async fn fetch_table(&self, table: &str, filter: Option<TenantFilter<'_>>)
+        -> Result<Vec<Value>>;
 }
 
 // ---------------------------------------------------------------------
@@ -65,7 +76,9 @@ pub struct WranglerD1Source {
 }
 
 impl D1Source for WranglerD1Source {
-    async fn fetch_table(&self, table: &str) -> Result<Vec<Value>> {
+    async fn fetch_table(&self, table: &str, filter: Option<TenantFilter<'_>>)
+        -> Result<Vec<Value>>
+    {
         // SQL injection note: `table` flows directly into the
         // SELECT. cesauth tables are an enumerated set; the
         // exporter's caller passes a fixed list, not a value
@@ -80,7 +93,35 @@ impl D1Source for WranglerD1Source {
                 "table name `{table}` is not a valid SQL identifier"
             );
         }
-        let sql = format!("SELECT * FROM {table} ORDER BY rowid");
+
+        // Build SQL. With a filter, add a WHERE column IN ('id1','id2',...).
+        // Without a filter, plain SELECT.
+        let sql = match &filter {
+            None => format!("SELECT * FROM {table} ORDER BY rowid"),
+            Some(f) => {
+                if !is_sql_identifier(f.column) {
+                    anyhow::bail!(
+                        "filter column `{}` for table `{table}` is not a valid SQL identifier",
+                        f.column,
+                    );
+                }
+                if f.ids.is_empty() {
+                    // Empty filter list — no rows match anything.
+                    // Return early without spawning wrangler.
+                    return Ok(Vec::new());
+                }
+                // Quote each id with single quotes; SQLite-style escape.
+                let in_list = f.ids.iter()
+                    .map(|id| format!("'{}'", id.replace('\'', "''")))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(
+                    "SELECT * FROM {table} WHERE {column} IN ({in_list}) ORDER BY rowid",
+                    column = f.column,
+                )
+            }
+        };
+
         // Build the wrangler command. Use `--json` for parseable
         // output. Spawn under tokio's blocking pool because
         // tokio::process::Command is async-friendly.
@@ -159,8 +200,24 @@ impl MockD1Source {
 
 #[cfg(test)]
 impl D1Source for MockD1Source {
-    async fn fetch_table(&self, table: &str) -> Result<Vec<Value>> {
-        Ok(self.tables.get(table).cloned().unwrap_or_default())
+    async fn fetch_table(&self, table: &str, filter: Option<TenantFilter<'_>>)
+        -> Result<Vec<Value>>
+    {
+        let rows = self.tables.get(table).cloned().unwrap_or_default();
+        let Some(f) = filter else { return Ok(rows); };
+        if f.ids.is_empty() { return Ok(Vec::new()); }
+        // Naive filter: keep rows whose `column` value is a string
+        // present in `ids`. Sufficient for tests; real wrangler
+        // path uses SQL.
+        let kept = rows.into_iter()
+            .filter(|row| {
+                row.get(f.column)
+                    .and_then(|v| v.as_str())
+                    .map(|v| f.ids.iter().any(|id| id == v))
+                    .unwrap_or(false)
+            })
+            .collect();
+        Ok(kept)
     }
 }
 
@@ -197,7 +254,7 @@ mod tests {
                 serde_json::json!({"id": "u-1"}),
                 serde_json::json!({"id": "u-2"}),
             ]);
-        let rows = src.fetch_table("users").await.unwrap();
+        let rows = src.fetch_table("users", None).await.unwrap();
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0]["id"], "u-1");
     }
@@ -205,7 +262,38 @@ mod tests {
     #[tokio::test]
     async fn mock_returns_empty_for_unknown_table() {
         let src = MockD1Source::new();
-        let rows = src.fetch_table("nope").await.unwrap();
+        let rows = src.fetch_table("nope", None).await.unwrap();
+        assert!(rows.is_empty());
+    }
+
+    #[tokio::test]
+    async fn mock_filter_keeps_matching_tenant_rows() {
+        // The filter is the load-bearing part of --tenant: only
+        // rows whose `tenant_id` is in the operator-supplied list
+        // come through.
+        let src = MockD1Source::new()
+            .with("users", vec![
+                serde_json::json!({"id": "u-1", "tenant_id": "t-acme"}),
+                serde_json::json!({"id": "u-2", "tenant_id": "t-other"}),
+                serde_json::json!({"id": "u-3", "tenant_id": "t-acme"}),
+            ]);
+        let ids = vec!["t-acme".to_string()];
+        let f = TenantFilter { column: "tenant_id", ids: &ids };
+        let rows = src.fetch_table("users", Some(f)).await.unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|r| r["tenant_id"] == "t-acme"));
+    }
+
+    #[tokio::test]
+    async fn mock_filter_empty_ids_returns_no_rows() {
+        // Empty filter list = no tenants requested = no rows.
+        // (The CLI rejects empty filter at the operator boundary,
+        // but the source must handle it cleanly anyway.)
+        let src = MockD1Source::new()
+            .with("users", vec![serde_json::json!({"id":"u-1","tenant_id":"t-1"})]);
+        let ids: Vec<String> = vec![];
+        let f = TenantFilter { column: "tenant_id", ids: &ids };
+        let rows = src.fetch_table("users", Some(f)).await.unwrap();
         assert!(rows.is_empty());
     }
 }
