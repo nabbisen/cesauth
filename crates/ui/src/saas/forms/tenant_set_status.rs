@@ -13,7 +13,7 @@
 //!    Apply button POSTs again with `confirm=yes`, which commits.
 //!
 //! The confirm step is mandatory because status changes affect every
-//! user in the tenant and the v0.4.2 audit trail records who made
+//! user in the tenant and the v0.7.0 audit trail records who made
 //! the change. We want operators to read what they're about to do
 //! before they click.
 
@@ -193,7 +193,7 @@ mod tests {
     use cesauth_core::tenancy::types::{Tenant, TenantStatus};
 
     fn p() -> AdminPrincipal {
-        AdminPrincipal { id: "x".into(), name: None, role: Role::Operations }
+        AdminPrincipal { id: "x".into(), name: None,role: Role::Operations, user_id: None }
     }
     fn t() -> Tenant {
         Tenant {

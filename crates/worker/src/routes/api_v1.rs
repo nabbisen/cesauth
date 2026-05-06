@@ -1,6 +1,6 @@
-//! Tenancy service API routes (v0.4.2).
+//! Tenancy API routes (v0.7.0).
 //!
-//! These routes wire the v0.4.0/0.4.1 service layer + adapters to a
+//! These routes wire the v0.5.0/0.6.0 service layer + adapters to a
 //! JSON HTTP surface under `/api/v1/`. Authentication is the same
 //! admin-bearer mechanism the 0.3.x admin console uses; gating is
 //! through the new [`AdminAction::ViewTenancy`] /
@@ -13,13 +13,13 @@
 //! correspond to rows in `users`, and the user-as-bearer path
 //! (issuing a JWT/session bearer that the gateway parses into a
 //! tenant-scoped request) hasn't landed yet — that work is part of
-//! the multi-tenant admin console (0.4.3). So 0.4.2 ships an API
+//! the multi-tenant admin console (0.8.0). So 0.7.0 ships an API
 //! surface that the cesauth deployment's *operator staff* uses to
 //! provision tenants, and defers self-service tenant operations.
 //!
 //! The route handlers therefore go through `ensure_role_allows` (an
 //! admin-side capability) rather than `check_permission` (a tenancy-
-//! side capability). The two converge in 0.4.3+ when we mint user
+//! side capability). The two converge in 0.8.0+ when we mint user
 //! bearers and route them through the same handlers.
 //!
 //! ## URL shape

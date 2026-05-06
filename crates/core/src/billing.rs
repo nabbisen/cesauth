@@ -18,7 +18,7 @@
 //! so the audit question "when did this tenant move plans?" has a
 //! deterministic answer.
 //!
-//! # What's NOT in 0.4.0
+//! # What's NOT in 0.5.0
 //!
 //! * Actual billing, invoicing, or payment-provider integration. The
 //!   module is purely the state machine + catalog. Hooking to Stripe

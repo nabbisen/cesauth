@@ -136,7 +136,7 @@ mod tests {
     use cesauth_core::admin::types::Role;
 
     fn p() -> AdminPrincipal {
-        AdminPrincipal { id: "admin".into(), name: None, role: Role::ReadOnly }
+        AdminPrincipal { id: "admin".into(), name: None,role: Role::ReadOnly, user_id: None }
     }
 
     #[test]
@@ -194,12 +194,12 @@ mod tests {
     }
 
     // ---------------------------------------------------------------------
-    // v0.4.5: affordance gating for grant / revoke
+    // v0.10.0: affordance gating for grant / revoke
     // ---------------------------------------------------------------------
 
     #[test]
     fn read_only_does_not_see_grant_or_revoke() {
-        let p = AdminPrincipal { id: "x".into(), name: None, role: Role::ReadOnly };
+        let p = AdminPrincipal { id: "x".into(), name: None,role: Role::ReadOnly, user_id: None };
         let assignments = vec![RoleAssignment {
             id: "a-1".into(), user_id: "u".into(), role_id: "role-x".into(),
             scope: Scope::System,
@@ -217,7 +217,7 @@ mod tests {
 
     #[test]
     fn operations_sees_grant_and_per_row_revoke() {
-        let p = AdminPrincipal { id: "x".into(), name: None, role: Role::Operations };
+        let p = AdminPrincipal { id: "x".into(), name: None,role: Role::Operations, user_id: None };
         let assignments = vec![RoleAssignment {
             id: "a-1".into(), user_id: "u".into(), role_id: "role-x".into(),
             scope: Scope::Tenant { tenant_id: "t".into() },

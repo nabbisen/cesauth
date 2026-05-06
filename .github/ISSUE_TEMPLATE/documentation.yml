@@ -1,0 +1,33 @@
+name: Documentation issue
+description: Report missing, outdated, or unclear documentation.
+title: "[docs] "
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Documentation issues are welcome — including small ones.
+        Typos, outdated examples, missing sections, broken links,
+        and confusing explanations all qualify.
+  - type: input
+    id: location
+    attributes:
+      label: Where in the docs
+      description: File path, URL, section heading, or commit SHA. "All over README" is also fine.
+      placeholder: "docs/src/expert/tenancy.md, section 'Adding in 0.11.0'"
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: What's wrong
+      description: Quote or paraphrase the part that's confusing, missing, or out of date.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested fix (optional)
+      description: A draft of the corrected text, or a sketch of what should change. Optional.
+    validations:
+      required: false

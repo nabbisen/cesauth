@@ -5,7 +5,7 @@
 //! settings you should eyeball" surface), and the operator-editable
 //! thresholds.
 //!
-//! Editing thresholds and safety attestations via the UI is a 0.3.1
+//! Editing thresholds and safety attestations via the UI is a 0.4.0
 //! item; for now the JSON API at `/admin/console/thresholds/:name` and
 //! `/admin/console/config/:bucket/preview` + `/apply` is the canonical
 //! path.

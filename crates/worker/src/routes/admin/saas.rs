@@ -1,6 +1,6 @@
-//! `/admin/saas/...` HTML console route handlers (v0.4.3).
+//! `/admin/saas/...` HTML console route handlers (v0.8.0).
 //!
-//! Read-only operator surface for the v0.4.x tenancy service state.
+//! Read-only operator surface for the v0.4.x tenancy state.
 //! Sits parallel to the v0.3.x cost / data-safety console at
 //! `/admin/console/...` — different mental model, different
 //! navigation, but the same admin-bearer auth.

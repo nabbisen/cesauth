@@ -23,7 +23,7 @@
 //!
 //! Write handlers always return JSON; the HTML forms in v0.3.0 just
 //! POST through and re-navigate to the matching GET page. (The two-step
-//! confirm-UI flow for dangerous edits is a 0.3.1 item — for now the
+//! confirm-UI flow for dangerous edits is a 0.4.0 item — for now the
 //! preview/apply pair is scripted from JSON.)
 
 pub mod actions;

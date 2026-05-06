@@ -21,9 +21,9 @@ pub trait SubscriptionRepository {
 
     /// Exactly one current subscription per tenant, or None if the
     /// tenant has never subscribed. (A freshly-created tenant is
-    /// expected to get a Trial subscription immediately; 0.4.0's
+    /// expected to get a Trial subscription immediately; 0.5.0's
     /// tenant-create helper does NOT yet do this — see the CHANGELOG
-    /// for the deferred-to-0.4.1 wiring item.)
+    /// for the deferred-to-0.6.0 wiring item.)
     async fn current_for_tenant(&self, tenant_id: &str) -> PortResult<Option<Subscription>>;
 
     async fn set_plan(

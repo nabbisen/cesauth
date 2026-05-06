@@ -79,9 +79,9 @@ impl UserRepository for CloudflareUserRepository<'_> {
         // case-insensitively. We still lowercase in the adapter-test
         // impl for parity; here the DB handles it.
         //
-        // Note: post-0.4.1 email is unique PER TENANT, not globally.
+        // Note: post-0.6.0 email is unique PER TENANT, not globally.
         // This method's contract — "find any user with this email" —
-        // becomes ambiguous in a multi-tenant deployment. For 0.4.1
+        // becomes ambiguous in a multi-tenant deployment. For 0.6.0
         // we keep the global lookup (returning the first match) so
         // existing magic-link / OIDC flows continue to work for the
         // single bootstrap tenant. A `find_by_email_in_tenant`

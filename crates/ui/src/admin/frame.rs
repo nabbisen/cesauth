@@ -188,7 +188,7 @@ pub fn admin_frame(
 <h1>{title_esc}</h1>
 {body}
 </main>
-<footer>cesauth Cost &amp; Data Safety Admin Console — v0.3.1</footer>
+<footer>cesauth Cost &amp; Data Safety Admin Console — v0.4.0</footer>
 </body>
 </html>
 "##,

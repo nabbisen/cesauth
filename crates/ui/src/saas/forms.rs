@@ -1,9 +1,9 @@
-//! Mutation HTML forms for the SaaS console (v0.4.4).
+//! Mutation HTML forms for the SaaS console (v0.9.0).
 //!
 //! Every form here matches one of the `/api/v1/...` JSON endpoints
-//! v0.4.2 already exposes — the HTML is just the operator-friendly
+//! v0.7.0 already exposes — the HTML is just the operator-friendly
 //! wrapper. The two-step preview/confirm pattern is the same one
-//! v0.3.1 introduced for bucket safety: low-risk mutations go in
+//! v0.4.0 introduced for bucket safety: low-risk mutations go in
 //! one click, destructive mutations re-render the form with a diff
 //! and a separate "Confirm" button before committing.
 //!
@@ -24,19 +24,19 @@
 //! `Authorization` header — same as the read pages and same as the
 //! v0.3.x edit forms. Operators must use a tool that sets the
 //! header (curl, browser extension, or — once it lands — the
-//! v0.4.5+ user-as-bearer cookie path). The forms themselves carry
+//! v0.10.0+ user-as-bearer cookie path). The forms themselves carry
 //! no CSRF token because the bearer header is already a same-origin
 //! credential a third-party site cannot forge.
 //!
-//! ## What's NOT here (still deferred to 0.4.5+)
+//! ## What's NOT here (still deferred to 0.10.0+)
 //!
 //! - Tenant-scoped admin surface (where tenant admins administer
 //!   their own tenant rather than the cesauth operator
 //!   administering every tenant). Requires user-as-bearer auth +
-//!   login → tenant resolution + cookie auth. **0.4.5+.**
+//!   login → tenant resolution + cookie auth. **0.10.0+.**
 //!
-//! 0.4.5 added the membership add/remove and role grant/revoke
-//! forms that 0.4.4 had carved out — the 0.4.4 docstring listed
+//! 0.10.0 added the membership add/remove and role grant/revoke
+//! forms that 0.9.0 had carved out — the 0.9.0 docstring listed
 //! them as deferred; they are now available.
 
 pub mod group_create;

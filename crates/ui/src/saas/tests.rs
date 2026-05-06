@@ -10,7 +10,7 @@ use cesauth_core::admin::types::{AdminPrincipal, Role};
 
 #[test]
 fn frame_renders_role_badge() {
-    let p = AdminPrincipal { id: "x".into(), name: None, role: Role::Operations };
+    let p = AdminPrincipal { id: "x".into(), name: None,role: Role::Operations, user_id: None };
     let html = saas_frame("Test", p.role, p.name.as_deref(), SaasTab::Overview, "<p>body</p>");
     assert!(html.contains(r#"class="badge operations"#));
     assert!(html.contains("Operations"));
@@ -19,7 +19,7 @@ fn frame_renders_role_badge() {
 
 #[test]
 fn frame_marks_active_tab_with_aria_current() {
-    let p = AdminPrincipal { id: "x".into(), name: None, role: Role::ReadOnly };
+    let p = AdminPrincipal { id: "x".into(), name: None,role: Role::ReadOnly, user_id: None };
     let html = saas_frame("Test", p.role, p.name.as_deref(), SaasTab::Tenants, "");
     // The Tenants tab should carry aria-current="page".
     assert!(html.contains(r#"href="/admin/saas/tenants" aria-current="page""#));
@@ -34,7 +34,7 @@ fn frame_does_not_show_drill_in_tab_in_nav() {
     // UserRoleAssignments is reachable via drill-through, not nav.
     // Even when it's the active tab, it should not appear in the
     // navigation list.
-    let p = AdminPrincipal { id: "x".into(), name: None, role: Role::ReadOnly };
+    let p = AdminPrincipal { id: "x".into(), name: None,role: Role::ReadOnly, user_id: None };
     let html = saas_frame("Test", p.role, p.name.as_deref(), SaasTab::UserRoleAssignments, "");
     // The navigation should still contain Overview + Tenants only.
     assert!(html.contains(r#"href="/admin/saas""#));
@@ -47,8 +47,8 @@ fn frame_does_not_show_drill_in_tab_in_nav() {
 
 #[test]
 fn frame_footer_carries_version_marker() {
-    let p = AdminPrincipal { id: "x".into(), name: None, role: Role::Super };
+    let p = AdminPrincipal { id: "x".into(), name: None,role: Role::Super, user_id: None };
     let html = saas_frame("Test", p.role, p.name.as_deref(), SaasTab::Overview, "");
-    assert!(html.contains("v0.4.5"),
+    assert!(html.contains("v0.10.0"),
         "footer should carry the version marker so operators can tell which build they're on");
 }

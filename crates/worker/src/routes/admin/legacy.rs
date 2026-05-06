@@ -62,7 +62,7 @@ pub async fn create_user<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Re
     let body: CreateUserBody = req.json().await.unwrap_or_default();
     let now  = OffsetDateTime::now_utc().unix_timestamp();
     // The legacy admin API creates users in the bootstrap tenant. A
-    // multi-tenant create endpoint will land alongside the v0.4.2
+    // multi-tenant create endpoint will land alongside the v0.7.0
     // routes; for now this matches pre-0.4 behavior verbatim.
     let user = User {
         id:             Uuid::new_v4().to_string(),

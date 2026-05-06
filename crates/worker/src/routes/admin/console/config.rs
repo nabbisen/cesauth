@@ -13,7 +13,7 @@
 //! `EditBucketSafety` (Operations+). The handler audits before AND
 //! after write so the trail records both attempt and outcome.
 //!
-//! v0.3.1 adds the HTML-form pair under the same role gate:
+//! v0.4.0 adds the HTML-form pair under the same role gate:
 //!
 //!   * `GET  /admin/console/config/:bucket/edit` — editable form
 //!     pre-populated with the current attested state.

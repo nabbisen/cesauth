@@ -1,0 +1,62 @@
+name: audit
+
+# Dependency audit against the rustsec advisory database.
+#
+# Triggers:
+#   - push to main: catches direct merges that bypassed PR review.
+#   - pull_request: blocks PRs that introduce a new vulnerable dep
+#     before they merge (the cheapest place to catch one).
+#   - weekly cron: catches advisories that newly *appear* against
+#     deps we already have. The dep tree didn't change, but the
+#     world's understanding of it did. Runs Mondays at 06:00 UTC
+#     so the result lands at the start of the work week.
+#   - manual dispatch: lets a maintainer kick off an audit on demand.
+#
+# Failure semantics:
+#   The rustsec/audit-check action exits non-zero on any new
+#   advisory matching a dep in Cargo.lock. We let that fail the
+#   workflow rather than warning — a passing main branch should
+#   mean "no known CVEs in our dep tree". If a finding turns out
+#   to be a false positive or doesn't apply to our usage, we
+#   add it to the `ignore` list in .cargo/audit.toml with a
+#   one-line justification (we don't have one yet; create it
+#   only when the first ignore is actually needed).
+#
+# Why we don't run `cargo audit` directly via a step that
+# installs the binary: the rustsec/audit-check action caches
+# both the binary and the advisory-db checkout across runs,
+# which makes the typical run sub-30-seconds instead of
+# multi-minute compile-from-source.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Every Monday at 06:00 UTC. The cron is what catches "an
+    # advisory appeared against a dep we already had" — neither
+    # the push nor the PR trigger sees that.
+    - cron: '0 6 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  # Only what audit-check needs to surface findings. The action
+  # opens issues for new advisories on push events; that needs
+  # `issues: write`. Keep contents read-only.
+  contents: read
+  issues: write
+  checks: write
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: rustsec/audit-check@v2.0.0
+        with:
+          # The default token is fine; the workflow's own
+          # GITHUB_TOKEN has the permissions declared above.
+          token: ${{ secrets.GITHUB_TOKEN }}

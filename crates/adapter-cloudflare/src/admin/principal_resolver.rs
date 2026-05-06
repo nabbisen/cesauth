@@ -46,6 +46,10 @@ struct AdminTokenRow {
     role:        String,
     name:        Option<String>,
     disabled_at: Option<i64>,
+    /// v0.11.0: nullable, populated by migration `0005`. v0.11.0
+    /// reads it but never gates on it; v0.12.0 introduces the
+    /// resolution path that uses it for the tenant-scoped surface.
+    user_id:     Option<String>,
 }
 
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
@@ -85,6 +89,12 @@ impl AdminPrincipalResolver for CloudflareAdminPrincipalResolver<'_> {
                     id:   "super-bootstrap".to_owned(),
                     name: Some("bootstrap".to_owned()),
                     role: Role::Super,
+                    // The bootstrap principal is structurally a system-
+                    // admin token (no user binding). Even after v0.12.0
+                    // wires up user-as-bearer this stays `None` —
+                    // ADMIN_API_KEY is for emergency access, not for
+                    // tenant-admin work.
+                    user_id: None,
                 });
             }
         }
@@ -93,7 +103,7 @@ impl AdminPrincipalResolver for CloudflareAdminPrincipalResolver<'_> {
         let hash = hash_hex(bearer.as_bytes());
         let db = db(self.env)?;
         let stmt = db.prepare(
-            "SELECT id, role, name, disabled_at \
+            "SELECT id, role, name, disabled_at, user_id \
              FROM admin_tokens WHERE token_hash = ?1"
         )
             .bind(&[hash.into()])
@@ -108,7 +118,7 @@ impl AdminPrincipalResolver for CloudflareAdminPrincipalResolver<'_> {
         let role = Role::from_str(&row.role)
             .ok_or(PortError::PreconditionFailed("unknown role on token row"))?;
 
-        Ok(AdminPrincipal { id: row.id, name: row.name, role })
+        Ok(AdminPrincipal { id: row.id, name: row.name, role, user_id: row.user_id })
     }
 
     async fn touch_last_used(&self, principal_id: &str, now_unix: i64) -> PortResult<()> {

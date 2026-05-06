@@ -16,12 +16,12 @@ members = [
 # `[workspace.package].rust-version`) and the wasm32 target installed.
 
 [workspace.package]
-version      = "0.4.5"
+version      = "0.11.0"
 edition      = "2024"
 rust-version = "1.85"
 license      = "Apache-2.0"
 repository   = "https://github.com/nabbisen/cesauth"
-authors      = ["nabbisen <nabbisen@scqr.net>"]
+authors      = ["nabbisen"]
 
 [workspace.dependencies]
 # --- Cloudflare Workers ---

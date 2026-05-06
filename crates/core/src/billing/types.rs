@@ -34,7 +34,7 @@ pub struct Plan {
     pub updated_at:  UnixSeconds,
 }
 
-/// Built-in plan slugs shipped with 0.4.0. Operators may add their
+/// Built-in plan slugs shipped with 0.5.0. Operators may add their
 /// own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlanId {

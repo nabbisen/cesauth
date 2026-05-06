@@ -70,7 +70,7 @@ mod tests {
     use cesauth_core::admin::types::Role;
 
     fn p() -> AdminPrincipal {
-        AdminPrincipal { id: "admin".into(), name: None, role: Role::ReadOnly }
+        AdminPrincipal { id: "admin".into(), name: None,role: Role::ReadOnly, user_id: None }
     }
 
     fn tenant(slug: &str, status: TenantStatus) -> Tenant {
@@ -120,7 +120,7 @@ mod tests {
     fn read_only_role_does_not_see_new_tenant_button() {
         // ReadOnly cannot mutate; the affordance must be hidden so
         // a click doesn't lead to a blank 403 page.
-        let p = AdminPrincipal { id: "x".into(), name: None, role: Role::ReadOnly };
+        let p = AdminPrincipal { id: "x".into(), name: None,role: Role::ReadOnly, user_id: None };
         let html = tenants_page(&p, &[]);
         assert!(!html.contains(r#"href="/admin/saas/tenants/new""#),
             "ReadOnly must not see the New tenant link");
@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn operations_role_sees_new_tenant_button() {
-        let p = AdminPrincipal { id: "x".into(), name: None, role: Role::Operations };
+        let p = AdminPrincipal { id: "x".into(), name: None,role: Role::Operations, user_id: None };
         let html = tenants_page(&p, &[]);
         assert!(html.contains(r#"href="/admin/saas/tenants/new""#),
             "Operations must see the New tenant link");

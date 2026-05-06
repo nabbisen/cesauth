@@ -25,6 +25,7 @@ impl InMemoryAdminPrincipalResolver {
                 id: format!("inmem-{name}"),
                 name: Some(name.to_owned()),
                 role,
+                user_id: None,
             },
         );
     }

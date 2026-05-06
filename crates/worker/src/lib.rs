@@ -84,7 +84,7 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .post_async("/admin/console/config/:bucket/apply",     |req, ctx| async move { routes::admin::console::config::apply(req, ctx).await })
         .get_async ("/admin/console/alerts",                   |req, ctx| async move { routes::admin::console::alerts::page(req, ctx).await })
         .post_async("/admin/console/thresholds/:name",         |req, ctx| async move { routes::admin::console::actions::threshold(req, ctx).await })
-        // --- Admin Console (v0.3.1) ----------------------------------
+        // --- Admin Console (v0.4.0) ----------------------------------
         // HTML two-step confirmation for bucket-safety edits.
         .get_async ("/admin/console/config/:bucket/edit",      |req, ctx| async move { routes::admin::console::config::edit_form(req, ctx).await })
         .post_async("/admin/console/config/:bucket/edit",      |req, ctx| async move { routes::admin::console::config::edit_submit(req, ctx).await })
@@ -93,8 +93,8 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async ("/admin/console/tokens/new",               |req, ctx| async move { routes::admin::console::tokens::new_form(req, ctx).await })
         .post_async("/admin/console/tokens",                   |req, ctx| async move { routes::admin::console::tokens::create(req, ctx).await })
         .post_async("/admin/console/tokens/:id/disable",       |req, ctx| async move { routes::admin::console::tokens::disable(req, ctx).await })
-        // --- SaaS console (v0.4.3 read pages) ------------------------
-        // Operator-facing inspection of the v0.4.x tenancy service
+        // --- SaaS console (v0.8.0 read pages) ------------------------
+        // Operator-facing inspection of the v0.4.x tenancy
         // state. Every read route is open to ViewTenancy (every
         // valid role); see `routes/admin/saas.rs`.
         .get_async("/admin/saas",                                            |req, ctx| async move { routes::admin::saas::overview::page(req, ctx).await })
@@ -103,12 +103,12 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async("/admin/saas/tenants/:tid/subscription/history",          |req, ctx| async move { routes::admin::saas::subscription::page(req, ctx).await })
         .get_async("/admin/saas/organizations/:oid",                         |req, ctx| async move { routes::admin::saas::organizations::page(req, ctx).await })
         .get_async("/admin/saas/users/:uid/role_assignments",                |req, ctx| async move { routes::admin::saas::role_assignments::page(req, ctx).await })
-        // --- SaaS console mutations (v0.4.4) -------------------------
-        // HTML forms wrapping the v0.4.2 JSON API. All gated through
+        // --- SaaS console mutations (v0.9.0) -------------------------
+        // HTML forms wrapping the v0.7.0 JSON API. All gated through
         // `AdminAction::ManageTenancy` (Operations+); see
         // `routes/admin/saas/forms.rs`. Destructive mutations
         // (status changes, group delete, plan/status changes) go
-        // through the v0.3.1-style preview/confirm flow.
+        // through the v0.4.0-style preview/confirm flow.
         .get_async ("/admin/saas/tenants/new",                                |req, ctx| async move { routes::admin::saas::forms::tenant_create::form(req, ctx).await })
         .post_async("/admin/saas/tenants/new",                                |req, ctx| async move { routes::admin::saas::forms::tenant_create::submit(req, ctx).await })
         .get_async ("/admin/saas/tenants/:tid/status",                        |req, ctx| async move { routes::admin::saas::forms::tenant_set_status::form(req, ctx).await })
@@ -127,7 +127,7 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .post_async("/admin/saas/tenants/:tid/subscription/plan",             |req, ctx| async move { routes::admin::saas::forms::subscription_set_plan::submit(req, ctx).await })
         .get_async ("/admin/saas/tenants/:tid/subscription/status",           |req, ctx| async move { routes::admin::saas::forms::subscription_set_status::form(req, ctx).await })
         .post_async("/admin/saas/tenants/:tid/subscription/status",           |req, ctx| async move { routes::admin::saas::forms::subscription_set_status::submit(req, ctx).await })
-        // --- SaaS console mutations (v0.4.5: memberships + role assignments) ---
+        // --- SaaS console mutations (v0.10.0: memberships + role assignments) ---
         // Three flavors of membership add/remove (one-click submit
         // for add, single-step confirm for remove) plus role
         // assignment grant/revoke. Gated through `ManageTenancy`.
@@ -147,7 +147,7 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .post_async("/admin/saas/users/:uid/role_assignments/new",                    |req, ctx| async move { routes::admin::saas::forms::role_assignment_create::submit(req, ctx).await })
         .get_async ("/admin/saas/role_assignments/:id/delete",                        |req, ctx| async move { routes::admin::saas::forms::role_assignment_delete::confirm(req, ctx).await })
         .post_async("/admin/saas/role_assignments/:id/delete",                        |req, ctx| async move { routes::admin::saas::forms::role_assignment_delete::submit(req, ctx).await })
-        // --- Tenancy service API (v0.4.2) ----------------------------
+        // --- Tenancy API (v0.7.0) ----------------------------
         // JSON-only surface for operator-driven tenant / org / group /
         // role-assignment / subscription provisioning. Gated through
         // the same admin-bearer auth as `/admin/console/*`. See

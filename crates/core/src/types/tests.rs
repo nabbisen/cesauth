@@ -18,7 +18,7 @@ fn scopes_restrict_drops_unknown() {
 }
 
 // ---------------------------------------------------------------------
-// v0.4.1: User gained `tenant_id` and `account_type`.
+// v0.6.0: User gained `tenant_id` and `account_type`.
 // ---------------------------------------------------------------------
 
 #[test]
@@ -43,7 +43,7 @@ fn user_serializes_with_tenant_and_account_type() {
 
 #[test]
 fn user_deserializes_pre_0_4_1_payload_with_defaults() {
-    // Pre-0.4.1 payloads (in tests, in cached caches anywhere) had
+    // Pre-0.6.0 payloads (in tests, in cached caches anywhere) had
     // neither `tenant_id` nor `account_type`. The `serde(default)`
     // attributes on those fields make the rounder-trip safe across
     // a version bump without forcing a coordinated rollout.
@@ -64,7 +64,7 @@ fn user_deserializes_pre_0_4_1_payload_with_defaults() {
 #[test]
 fn account_type_default_is_human_user() {
     // Documentation-style check: this is what the migration also
-    // assumes when backfilling pre-0.4.1 rows.
+    // assumes when backfilling pre-0.6.0 rows.
     let u: User = serde_json::from_str(r#"{
         "id": "u1", "tenant_id": "t",
         "email": null, "email_verified": false, "display_name": null,

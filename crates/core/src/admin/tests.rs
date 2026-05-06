@@ -4,7 +4,7 @@ use super::policy::{
     evaluate_bucket_safety, evaluate_cost_thresholds, format_change, format_metric, role_allows,
 };
 use super::types::{
-    AdminAction, AlertLevel, BucketSafetyState, Metric, MetricUnit, Role, ServiceId,
+    AdminAction, AdminPrincipal, AlertLevel, BucketSafetyState, Metric, MetricUnit, Role, ServiceId,
     Threshold, threshold_names,
 };
 
@@ -51,7 +51,7 @@ fn read_only_cannot_change_anything() {
 }
 
 // -------------------------------------------------------------------------
-// v0.4.2: tenancy API capabilities
+// v0.7.0: tenancy API capabilities
 // -------------------------------------------------------------------------
 
 #[test]
@@ -94,6 +94,59 @@ fn role_roundtrips_through_str() {
         assert_eq!(Role::from_str(r.as_str()), Some(r));
     }
     assert_eq!(Role::from_str("nope"), None);
+}
+
+// -------------------------------------------------------------------------
+// v0.11.0 foundation work: AdminPrincipal::user_id and is_system_admin
+//
+// These don't yet drive any authorization logic — they're the seam
+// 0.12.0 will use to introduce the tenant-scoped admin surface (see
+// ADR-002). The tests pin down the invariants 0.12.0 will rely on.
+// -------------------------------------------------------------------------
+
+#[test]
+fn principal_with_no_user_binding_is_system_admin() {
+    let p = AdminPrincipal {
+        id: "tk-1".into(), name: None, role: Role::Operations,
+        user_id: None,
+    };
+    assert!(p.is_system_admin(),
+        "user_id == None must classify as system-admin (the v0.3.x/0.4.x default)");
+}
+
+#[test]
+fn principal_with_user_binding_is_not_system_admin() {
+    let p = AdminPrincipal {
+        id: "tk-1".into(), name: None, role: Role::Operations,
+        user_id: Some("u-alice".into()),
+    };
+    assert!(!p.is_system_admin(),
+        "user_id == Some(_) must classify as user-as-bearer; \
+         /admin/saas/* should refuse such principals in 0.12.0+");
+}
+
+#[test]
+fn principal_user_id_round_trips_through_default_serialization() {
+    // The serde default + skip_serializing_if combination on
+    // user_id means: `None` is omitted on the wire (preserving
+    // v0.3.x JSON shape for callers that consume the Serialize
+    // impl), and `Some(_)` survives. We pin both directions.
+    let none_p = AdminPrincipal {
+        id: "tk".into(), name: None, role: Role::Super,
+        user_id: None,
+    };
+    let json = serde_json::to_string(&none_p).expect("serialize");
+    assert!(!json.contains("user_id"),
+        "AdminPrincipal {{ user_id: None, .. }} must omit user_id on the wire \
+         to preserve v0.3.x JSON shape; got {json}");
+
+    let some_p = AdminPrincipal {
+        id: "tk".into(), name: None, role: Role::Operations,
+        user_id: Some("u-alice".into()),
+    };
+    let json = serde_json::to_string(&some_p).expect("serialize");
+    assert!(json.contains(r#""user_id":"u-alice""#),
+        "AdminPrincipal {{ user_id: Some(_), .. }} must include user_id; got {json}");
 }
 
 // -------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 name: Question
 description: Ask a usage or support question
-title: "[Question]: "
+title: "[question]: "
 labels: ["question"]
 body:
   - type: markdown

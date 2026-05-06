@@ -6,7 +6,7 @@
 //!
 //! Delete policy: `delete` sets `status = Deleted` (soft delete); the
 //! row remains for audit continuity. A background job purges after
-//! retention. The 0.4.0 API exposes only soft delete; hard purge is a
+//! retention. The 0.5.0 API exposes only soft delete; hard purge is a
 //! separate port added when the retention job lands.
 
 use crate::ports::PortResult;
@@ -29,7 +29,7 @@ pub trait TenantRepository {
     async fn find_by_slug(&self, slug: &str) -> PortResult<Option<Tenant>>;
 
     /// List all non-deleted tenants. Pagination is intentionally
-    /// omitted for 0.4.0 — the operator surface that consumes this
+    /// omitted for 0.5.0 — the operator surface that consumes this
     /// expects O(10-100) tenants. Pagination lands with the SaaS
     /// control plane.
     async fn list_active(&self) -> PortResult<Vec<Tenant>>;

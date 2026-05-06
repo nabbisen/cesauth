@@ -48,6 +48,7 @@ impl AdminTokenRepository for InMemoryAdminTokenRepository {
             id: id.clone(),
             name: name.map(str::to_owned),
             role,
+            user_id: None,  // v0.11.0: system-admin token (no user binding)
         };
         m.insert(id, Row {
             principal:    p.clone(),

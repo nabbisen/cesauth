@@ -1,7 +1,7 @@
-//! Multi-tenancy domain model (v0.4.0).
+//! Multi-tenancy domain model (v0.5.0).
 //!
 //! This module implements the top-level boundary concepts from the
-//! tenancy service extension spec §3:
+//! tenancy extension spec §3:
 //!
 //!   * [`Tenant`] — the outermost logical boundary. Every piece of
 //!     user-facing data that is not a shared catalog (plans, system
@@ -22,13 +22,13 @@
 //! The spec is deliberate about separating concerns: `tenancy` covers
 //! who-is-in-what; [`crate::authz`] covers what-can-they-do;
 //! [`crate::billing`] covers what-does-the-tenant-pay-for. Those three
-//! modules form the tenancy service foundation together.
+//! modules form the tenancy foundation together.
 //!
-//! # What's in 0.4.0
+//! # What's in 0.5.0
 //!
 //! Types, repository ports, and in-memory/D1 adapter implementations.
 //! HTTP routes for CRUD and the migration of existing tables to
-//! become tenant-aware are deferred to 0.4.1; today every existing
+//! become tenant-aware are deferred to 0.6.0; today every existing
 //! row belongs to the `DEFAULT_TENANT_ID` by convention (see the
 //! migration 0003_tenancy.sql).
 

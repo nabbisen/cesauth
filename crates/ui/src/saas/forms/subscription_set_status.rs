@@ -118,7 +118,7 @@ mod tests {
     use cesauth_core::billing::types::{Subscription, SubscriptionLifecycle, SubscriptionStatus};
 
     fn p() -> AdminPrincipal {
-        AdminPrincipal { id: "x".into(), name: None, role: Role::Operations }
+        AdminPrincipal { id: "x".into(), name: None,role: Role::Operations, user_id: None }
     }
     fn s(status: SubscriptionStatus) -> Subscription {
         Subscription {

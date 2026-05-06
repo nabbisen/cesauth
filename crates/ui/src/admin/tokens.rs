@@ -1,4 +1,4 @@
-//! Admin-token management UI (v0.3.1, Super-only).
+//! Admin-token management UI (v0.4.0, Super-only).
 //!
 //! Three screens:
 //!

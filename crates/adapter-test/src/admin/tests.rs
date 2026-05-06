@@ -20,7 +20,7 @@ use super::{
 };
 
 fn alice(role: Role) -> AdminPrincipal {
-    AdminPrincipal { id: "alice-id".into(), name: Some("alice".into()), role }
+    AdminPrincipal { id: "alice-id".into(), name: Some("alice".into()), role, user_id: None }
 }
 
 fn default_thresholds() -> Vec<Threshold> {
@@ -325,7 +325,7 @@ async fn cost_snapshot_repo_dedups_within_hour() {
 }
 
 // -------------------------------------------------------------------------
-// Admin token CRUD (v0.3.1)
+// Admin token CRUD (v0.4.0)
 // -------------------------------------------------------------------------
 
 #[tokio::test]

@@ -16,6 +16,7 @@ fn principal(role: Role) -> AdminPrincipal {
         id:   "test-id".to_owned(),
         name: Some("pytest".to_owned()),
         role,
+        user_id: None,
     }
 }
 

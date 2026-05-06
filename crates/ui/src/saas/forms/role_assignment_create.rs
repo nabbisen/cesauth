@@ -10,7 +10,7 @@
 //! - expires_at (optional unix timestamp)
 //!
 //! The scope picker is the form's interesting part — `Scope` is a
-//! sum type and the v0.4.2 JSON API takes a structured value. The
+//! sum type and the v0.7.0 JSON API takes a structured value. The
 //! form encodes it as `(scope_type, scope_id?)` and the route
 //! handler reconstructs the `Scope` enum.
 
@@ -148,7 +148,7 @@ mod tests {
     use cesauth_core::admin::types::Role as AdminRole;
 
     fn p() -> AdminPrincipal {
-        AdminPrincipal { id: "x".into(), name: None, role: AdminRole::Operations }
+        AdminPrincipal { id: "x".into(), name: None,role: AdminRole::Operations, user_id: None }
     }
     fn role(id: &str, slug: &str, tenant: Option<&str>) -> Role {
         Role {

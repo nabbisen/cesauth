@@ -160,7 +160,7 @@ where
 /// # Caveat
 ///
 /// "o in t" / "g in o" / "u in t" containments require cross-table
-/// knowledge. In 0.4.0 we only know the ids, not who-is-in-whom, so
+/// knowledge. In 0.5.0 we only know the ids, not who-is-in-whom, so
 /// this function returns `true` only for *structural* containment —
 /// System covers everything, and otherwise a grant covers a query
 /// when the id (and discriminant) match exactly. "My tenant grant

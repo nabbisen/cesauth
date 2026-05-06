@@ -1,6 +1,6 @@
-//! SaaS operator console (v0.4.3).
+//! SaaS operator console (v0.8.0).
 //!
-//! Read-only HTML view of the v0.4.x tenancy service state for the
+//! Read-only HTML view of the v0.4.x tenancy state for the
 //! cesauth deployment's operator staff. Sits at `/admin/saas/*`,
 //! parallel to (and visually distinct from) the cost / data-safety
 //! console at `/admin/console/*`. The two share the admin-bearer
@@ -9,18 +9,18 @@
 //!
 //! ## What's read-only here
 //!
-//! Every mutation continues to go through the v0.4.2 JSON API at
+//! Every mutation continues to go through the v0.7.0 JSON API at
 //! `/api/v1/...`. This console renders the same data with operator
 //! convenience: sortable tables, drill-through links, the
 //! subscription history reverse-chronologically. There are no
-//! `<form>` POSTs in 0.4.3 — those land in 0.4.4 with the same
-//! preview/confirm pattern that 0.3.1 introduced for bucket safety.
+//! `<form>` POSTs in 0.8.0 — those land in 0.9.0 with the same
+//! preview/confirm pattern that 0.4.0 introduced for bucket safety.
 //!
 //! ## What's NOT here
 //!
 //! - **Tenant-scoped admins** (tenant admins administering their own
 //!   tenant, as opposed to cesauth operators administering all
-//!   tenants). That requires user-as-bearer auth which 0.4.4 will
+//!   tenants). That requires user-as-bearer auth which 0.9.0 will
 //!   address.
 //! - **Mutation forms / preview-confirm flow.** Same release.
 //! - **Login → tenant resolution** for tenant-side users.

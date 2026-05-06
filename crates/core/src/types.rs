@@ -20,9 +20,9 @@ pub type UnixSeconds = i64;
 /// passkey-first registration: a user can exist with a pure WebAuthn
 /// credential and no email at all.
 ///
-/// Starting in v0.4.1 every user belongs to exactly one tenant
+/// Starting in v0.6.0 every user belongs to exactly one tenant
 /// (`tenant_id`). The default tenant id is
-/// [`crate::tenancy::DEFAULT_TENANT_ID`] (`"tenant-default"`); pre-0.4.0
+/// [`crate::tenancy::DEFAULT_TENANT_ID`] (`"tenant-default"`); pre-0.5.0
 /// rows are migrated into that tenant by `0004_user_tenancy_backfill.sql`.
 /// `email` uniqueness is per-tenant (not global) starting with that
 /// migration.
@@ -34,14 +34,14 @@ pub type UnixSeconds = i64;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
     pub id:             Id,
-    /// New in 0.4.1. Defaults to [`crate::tenancy::DEFAULT_TENANT_ID`]
+    /// New in 0.6.0. Defaults to [`crate::tenancy::DEFAULT_TENANT_ID`]
     /// when constructed in code that hasn't been updated.
     #[serde(default = "default_tenant_id")]
     pub tenant_id:      Id,
     pub email:          Option<String>,
     pub email_verified: bool,
     pub display_name:   Option<String>,
-    /// New in 0.4.1. Defaults to `HumanUser` for code paths that do
+    /// New in 0.6.0. Defaults to `HumanUser` for code paths that do
     /// not yet specify; `serde(default)` ensures pre-existing JSON
     /// payloads still deserialize.
     #[serde(default = "default_account_type")]

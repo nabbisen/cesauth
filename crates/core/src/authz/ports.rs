@@ -15,7 +15,7 @@ use super::types::{Permission, Role, RoleAssignment, Scope};
 /// operators may add rows, but nothing in cesauth's code path writes
 /// here at runtime. The port exists so the service can list-all
 /// without hardcoding against the in-memory [`PermissionCatalog`] in
-/// [`super::types`]. (That constant is the shipped-with-0.4.0 set;
+/// [`super::types`]. (That constant is the shipped-with-0.5.0 set;
 /// operators can extend the table past it.)
 pub trait PermissionRepository {
     /// Every permission in the catalog.

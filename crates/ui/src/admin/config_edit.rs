@@ -1,4 +1,4 @@
-//! HTML form surface for bucket-safety edits (v0.3.1).
+//! HTML form surface for bucket-safety edits (v0.4.0).
 //!
 //! Two screens:
 //!

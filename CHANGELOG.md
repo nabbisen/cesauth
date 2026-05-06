@@ -12,21 +12,170 @@ always be called out here.
 
 ---
 
-## [0.4.5] - 2026-04-25
+## [0.11.0] - 2026-04-26
 
-Completes the SaaS console mutation surface. v0.4.4 covered the
+Foundation for the tenant-scoped admin surface. This is a deliberately
+small release: 0.10.0 left three open design questions on URL shape,
+user-as-bearer mechanism, and system-admin from inside the tenant
+view. v0.11.0 settles those questions in three architecture decision
+records (ADR-001/002/003) and ships only the minimum schema + type
+changes implied by the decisions. v0.12.0 will use this foundation to
+build the full tenant-scoped console.
+
+The split between "decide" (0.11.0) and "implement" (0.12.0) follows
+the pattern this codebase has used elsewhere — 0.3.0 → 0.4.0 (read
+pages → write UI) and 0.8.0 → 0.9.0 → 0.10.0 (read pages →
+high-risk forms → low-risk forms). Mixing design judgment and
+implementation in one release tends to lock in choices that should
+have been revisited; doing them in sequence keeps each release small
+and reviewable.
+
+### Added
+
+- **Three Architecture Decision Records** at
+  `docs/src/expert/adr/`:
+  - **ADR-001: URL shape** — path-based
+    (`/admin/t/<slug>/...`) wins over subdomain-based
+    (`<slug>.cesauth.example`). Single cert, single origin,
+    same-origin auth model carries over from
+    `/admin/saas/*`. Tenant identity is visible in the URL,
+    routing has no `Host`-header surface to coordinate.
+  - **ADR-002: User-as-bearer mechanism** — extend
+    `admin_tokens` with an optional `user_id` column. Continue
+    using `Authorization: Bearer <token>` as the wire format.
+    No new CSRF surface; no new cryptographic key to rotate;
+    one auth path covers both system-admin tokens
+    (`user_id IS NULL`) and user-as-bearer tokens
+    (`user_id IS NOT NULL`).
+  - **ADR-003: System-admin from inside tenant view** —
+    complete URL-prefix separation, no in-page mode switch.
+    `/admin/saas/*` is system-admin; `/admin/t/<slug>/*` is
+    tenant-admin. The two surfaces share no view code, no
+    auth state, no precedence rules. Tenant-boundary leakage
+    is structurally impossible because there is no view-layer
+    code that conditions on "what mode am I in?"
+  - Index page at `docs/src/expert/adr/README.md` with the ADR
+    contract: when to write one, when not to.
+
+- **Migration `0005_admin_token_user_link.sql`** adding a
+  nullable `user_id` column to `admin_tokens` and a partial
+  index on it (`WHERE user_id IS NOT NULL`). The migration is
+  foundation-only — no code in v0.11.0 *gates* on the column.
+
+- **`AdminPrincipal::user_id: Option<String>`** field, with
+  documentation pointing at ADR-002. Every existing call site
+  that constructs an `AdminPrincipal` defaults it to `None`,
+  preserving v0.3.x and v0.4.x behavior. The Cloudflare D1
+  adapters are updated to read the column from the
+  `admin_tokens` table and propagate it onto the constructed
+  principal.
+
+- **`AdminPrincipal::is_system_admin()`** helper, returning
+  `true` iff `user_id.is_none()`. v0.12.0 will use this to gate
+  `/admin/saas/*` to system-admin tokens only and
+  `/admin/t/<slug>/*` to user-as-bearer tokens only — the
+  ADR-003 separation. v0.11.0 itself does not invoke the
+  helper from any handler; the test suite pins down the
+  invariant that 0.12.0 will rely on.
+
+- **Three new core tests** locking in the principal-shape
+  invariants:
+  - `principal_with_no_user_binding_is_system_admin`
+  - `principal_with_user_binding_is_not_system_admin`
+  - `principal_user_id_round_trips_through_default_serialization`
+    (v0.3.x JSON shape preserved when `user_id == None` via
+    `#[serde(skip_serializing_if = "Option::is_none")]`).
+
+### Changed
+
+- **`admin_tokens` D1 row deserialization** in
+  `crates/adapter-cloudflare/src/admin/principal_resolver.rs`
+  and `tokens.rs` now selects `user_id` from the schema and
+  populates `AdminPrincipal::user_id`. The existing v0.3.x +
+  v0.4.x code paths are unaffected because `user_id` reads
+  back as `None` for every existing row (which is what every
+  existing row contains, since 0005 only added the column).
+
+- **Book SUMMARY** grows an "Architecture decision records"
+  section in the Expert chapter, indexed by ADR number.
+
+### Tests
+
+- Total: **219 passing** (+3 over 0.10.0's 216).
+  - core: 105 (was 102) — 3 new tests.
+  - adapter-test: 32 (unchanged).
+  - ui: 82 (unchanged).
+
+The bulk of the v0.11.0 change is the ADR documents and the
+schema migration. The code change is intentionally narrow —
+adding a field to a struct, threading it through D1
+deserialization, and touching the 50-odd test fixtures that
+construct an `AdminPrincipal` directly. v0.12.0 will be the
+larger code change.
+
+### Why no UI changes in v0.11.0
+
+The decision to ship the ADRs and the foundation seam *separately*
+from the implementation is intentional. Two reasons:
+
+- Schema migrations are easier to review in isolation. Mixing a
+  migration with new HTML routes makes both harder to review and
+  splits the failure modes across review boundaries.
+- ADRs that ship alongside their implementation tend to be
+  written backwards — capturing what was already built rather
+  than guiding what gets built. Writing them as foundation
+  documents (with no UI yet) forces the design rationale to
+  precede the code. v0.12.0's review can then check that the
+  code matches the ADRs, not the reverse.
+
+### Auth caveat (unchanged from 0.3.x and 0.10.0)
+
+Forms POST same-origin and the bearer rides on the
+`Authorization` header. Operators must use a tool that sets the
+header (curl, browser extension). Cookie-based admin auth is
+explicitly *not* part of the v0.11.0 user-as-bearer choice — see
+ADR-002. The decision to keep `Authorization`-bearer as the wire
+format means v0.12.0's tenant-scoped surface inherits the same
+operator-tooling expectation.
+
+### Deferred — still tracked for 0.12.0+
+
+- **Tenant-scoped admin surface implementation**. The URL
+  pattern, the per-route auth gate that requires
+  `is_system_admin()`-vs-not, the views, and the mutation
+  forms scoped to one tenant. **0.12.0.**
+- **Admin-token mint flow with `user_id`**. The
+  `AdminTokenRepository::create` method continues to mint
+  system-admin tokens (no `user_id` parameter); v0.12.0 adds a
+  parallel path or extends the existing one to mint
+  user-bound tokens.
+- **`check_permission` integration on the API surface** —
+  v0.12.0 makes this cleanly possible because `AdminPrincipal`
+  now carries the `user_id` that
+  `check_permission(user_id, …)` needs.
+- **Cookie-based auth** — explicitly *not* the user-as-bearer
+  mechanism per ADR-002. May be revisited as an *additional*
+  mechanism in a later ADR.
+- **Anonymous-trial promotion.** **0.12.1.**
+- **External IdP federation.**
+
+---
+
+## [0.10.0] - 2026-04-25
+
+Completes the SaaS console mutation surface. v0.9.0 covered the
 high-risk operations (status changes, plan changes, group delete);
-v0.4.5 fills in the additive ones that were carved out of 0.4.4 to
+v0.10.0 fills in the additive ones that were carved out of 0.9.0 to
 keep its scope contained — three flavors of membership add/remove
 and role-assignment grant/revoke. With this release the HTML
-console reaches feature parity with the v0.4.2 JSON API for
+console reaches feature parity with the v0.7.0 JSON API for
 operator-driven mutations.
 
 The larger "tenant-scoped admin surface" item (where tenant admins
 administer their own tenant rather than every tenant) is **not**
 in this release — it has unresolved design questions on URL
 shape, user-as-bearer mechanism, and tenant-boundary leakage that
-deserve their own design pass. **0.4.6+** picks it up.
+deserve their own design pass. **0.11.0+** picks it up.
 
 ### Added
 
@@ -59,13 +208,13 @@ deserve their own design pass. **0.4.6+** picks it up.
   `membership_remove` (3 GET/POST pairs),
   `role_assignment_create` (1 GET/POST pair),
   `role_assignment_delete` (1 GET/POST pair).
-  Each handler delegates to the existing v0.4.0/0.4.1
+  Each handler delegates to the existing v0.5.0/0.6.0
   service-layer adapters and emits the appropriate audit event
   (`MembershipAdded`, `MembershipRemoved`, `RoleGranted`,
   `RoleRevoked`) with the `via=saas-console` reason marker.
 
 - **16 new routes** wired in `lib.rs` under a new
-  `// SaaS console mutations (v0.4.5: memberships + role assignments)`
+  `// SaaS console mutations (v0.10.0: memberships + role assignments)`
   block:
   - `GET/POST /admin/saas/tenants/:tid/memberships/new`
   - `GET/POST /admin/saas/tenants/:tid/memberships/:uid/delete`
@@ -98,12 +247,12 @@ deserve their own design pass. **0.4.6+** picks it up.
 ### Changed
 
 - **Frame footer** updated from
-  "v0.4.4 (mutation forms enabled for Operations+)" to
-  "v0.4.5 (full mutation surface for Operations+)".
+  "v0.9.0 (mutation forms enabled for Operations+)" to
+  "v0.10.0 (full mutation surface for Operations+)".
 
 ### Tests
 
-- Total: **216 passing** (+20 over 0.4.4's 196).
+- Total: **216 passing** (+20 over 0.9.0's 196).
   - core: 102 (unchanged).
   - adapter-test: 32 (unchanged).
   - ui: 82 (was 62) — 18 new tests across the four new form
@@ -116,12 +265,12 @@ deserve their own design pass. **0.4.6+** picks it up.
     `role_assignments` page (ReadOnly does not see grant /
     revoke; Operations does).
 
-### Auth caveat (unchanged from 0.3.x and 0.4.4)
+### Auth caveat (unchanged from 0.3.x and 0.9.0)
 
 Forms POST same-origin and the bearer rides on the
 `Authorization` header. Operators still need a tool that sets
 the header (curl, browser extension). Cookie-based admin auth
-remains a 0.4.6+ design pass alongside user-as-bearer.
+remains a 0.11.0+ design pass alongside user-as-bearer.
 
 ### Design decisions worth recording
 
@@ -139,7 +288,7 @@ remains a 0.4.6+ design pass alongside user-as-bearer.
   one yes/no button) but don't render a diff because there's
   nothing structural to diff.
 - **Form's scope picker is structured, not free-text.** The
-  v0.4.2 JSON API takes a tagged Scope enum. Asking operators
+  v0.7.0 JSON API takes a tagged Scope enum. Asking operators
   to write JSON in a textarea is a footgun — the radio +
   conditional id field encodes the same shape with no syntax to
   get wrong.
@@ -155,15 +304,15 @@ remains a 0.4.6+ design pass alongside user-as-bearer.
   failed". The form re-renders preserving sticky values so the
   operator only fixes the failed field.
 
-### Deferred — still tracked for 0.4.6+
+### Deferred — still tracked for 0.11.0+
 
-- **Tenant-scoped admin surface**. The v0.4.3-0.4.5 console
+- **Tenant-scoped admin surface**. The v0.8.0-0.10.0 console
   serves the cesauth deployment's operator staff — one console,
   every tenant. A tenant-scoped admin surface (where tenant
   admins administer their own tenant rather than every tenant)
   is a parallel UI reachable from a tenant-side login, gated
   through user-as-bearer plus `check_permission`, and filtered
-  to the caller's tenant. **0.4.6+.** Three open design
+  to the caller's tenant. **0.11.0+.** Three open design
   questions deserve their own pass:
   1. URL shape — `/admin/t/<slug>/...` vs subdomain
      `<slug>.cesauth.example`.
@@ -175,18 +324,18 @@ remains a 0.4.6+ design pass alongside user-as-bearer.
   user-as-bearer design pass.
 - **`check_permission` integration on the API surface** —
   blocked on user-as-bearer.
-- **Anonymous-trial promotion.** **0.4.7.**
+- **Anonymous-trial promotion.** **0.12.0.**
 - **External IdP federation.**
 
 ---
 
-## [0.4.4] - 2026-04-25
+## [0.9.0] - 2026-04-25
 
-The mutation surface for the SaaS console. v0.4.3 shipped the read
-pages; v0.4.4 wraps the v0.4.2 JSON API in HTML forms with a
+The mutation surface for the SaaS console. v0.8.0 shipped the read
+pages; v0.9.0 wraps the v0.7.0 JSON API in HTML forms with a
 preview/confirm flow for destructive operations, mirroring the
-v0.3.1 pattern used for bucket safety edits. Operations+ only;
-ReadOnly continues to see the read pages from v0.4.3 with mutation
+v0.4.0 pattern used for bucket safety edits. Operations+ only;
+ReadOnly continues to see the read pages from v0.8.0 with mutation
 buttons hidden.
 
 ### Added
@@ -201,7 +350,7 @@ buttons hidden.
     `tenant_set_status`, `organization_set_status`,
     `group_delete`, `subscription_set_plan`,
     `subscription_set_status`.
-  - The pattern is the same one v0.3.1 introduced: first POST
+  - The pattern is the same one v0.4.0 introduced: first POST
     (without `confirm=yes`) re-renders the page with a diff
     banner and an Apply button; the Apply button POSTs again
     with `confirm=yes` and commits.
@@ -263,12 +412,12 @@ buttons hidden.
   form with the operator's existing inputs preserved so they
   only fix the failed field. Test coverage added.
 
-- **Footer marker** updated from "v0.4.3 (read-only)" to
-  "v0.4.4 (mutation forms enabled for Operations+)".
+- **Footer marker** updated from "v0.8.0 (read-only)" to
+  "v0.9.0 (mutation forms enabled for Operations+)".
 
 ### Tests
 
-- Total: **196 passing** (+30 over 0.4.3's 166).
+- Total: **196 passing** (+30 over 0.8.0's 166).
   - core: 102 (was 101) — 1 new test:
     `role_can_manage_tenancy_helper_matches_policy`.
   - adapter-test: 32 (unchanged).
@@ -286,7 +435,7 @@ buttons hidden.
   their service-layer delegation is covered by the existing
   host tests.
 
-### Auth caveat (unchanged from 0.3.x and 0.4.3)
+### Auth caveat (unchanged from 0.3.x and 0.8.0)
 
 Forms POST same-origin and the bearer rides on the
 `Authorization: Bearer ...` header — same as the read pages
@@ -294,9 +443,9 @@ and same as the v0.3.x edit forms. The `Authorization` header
 is not auto-forged by browsers across origins, which is the
 CSRF defense; but it also means operators must use a tool
 that sets the header (curl, browser extension, or once it
-lands, the v0.4.5+ user-as-bearer cookie path). This is the
-existing 0.3.x limitation; v0.4.4 inherits rather than
-relaxes it. The v0.4.5+ cookie-based auth design pass is
+lands, the v0.10.0+ user-as-bearer cookie path). This is the
+existing 0.3.x limitation; v0.9.0 inherits rather than
+relaxes it. The v0.10.0+ cookie-based auth design pass is
 where this changes.
 
 ### Design decisions worth recording
@@ -328,36 +477,36 @@ where this changes.
   these prevent the failure mode where a refactor changes the
   policy but leaves a stale UI gate.
 
-### Deferred — still tracked for 0.4.5+
+### Deferred — still tracked for 0.10.0+
 
-The 0.4.4 surface focuses on the mutations operators do most
+The 0.9.0 surface focuses on the mutations operators do most
 often. Items still pending:
 
 - **Role grant / revoke forms.** Today these go through the
-  v0.4.2 JSON API or wrangler. A "Grant role" form on a user's
+  v0.7.0 JSON API or wrangler. A "Grant role" form on a user's
   role assignments page is the natural fit. Slated for the
   next iteration.
 - **Membership add / remove forms.** Same as above — frequent,
   low-risk; the JSON API handles them today.
 - **Tenant-scoped admin surface.** Tenant admins administering
-  their own tenant rather than every tenant. **0.4.5+.** This
+  their own tenant rather than every tenant. **0.10.0+.** This
   is the user-as-bearer / login → tenant resolution / cookie-
   auth design pass.
 - **`check_permission` integration on the API surface.**
   Blocked on user-as-bearer.
-- **Anonymous-trial promotion.** **0.4.6.**
+- **Anonymous-trial promotion.** **0.11.0.**
 - **External IdP federation.**
 
 ---
 
-## [0.4.3] - 2026-04-25
+## [0.8.0] - 2026-04-25
 
 A read-only HTML console at `/admin/saas/*` for cesauth's operator
 staff to inspect tenancy / billing state. Sits parallel to (and
 visually distinct from) the v0.3.x cost / data-safety console at
-`/admin/console/*`. Mutation continues to flow through the v0.4.2
+`/admin/console/*`. Mutation continues to flow through the v0.7.0
 JSON API; the HTML preview/confirm flow that wraps those mutations
-is slated for v0.4.4 with the same two-step pattern v0.3.1
+is slated for v0.9.0 with the same two-step pattern v0.4.0
 introduced for bucket safety edits.
 
 ### Added
@@ -400,9 +549,9 @@ introduced for bucket safety edits.
   (`Overview`, `Tenants`); the `UserRoleAssignments` tab is a
   drill-in destination only and is filtered out of the nav even
   when active. Footer bears a `read-only` marker so operators
-  cannot mistake this surface for the writable v0.4.4 follow-up.
+  cannot mistake this surface for the writable v0.9.0 follow-up.
 
-- **Tests** (+22 over 0.4.2's 144, total 166):
+- **Tests** (+22 over 0.7.0's 144, total 166):
   - `ui::saas::tests` (4) — frame role badge, active-tab
     `aria-current`, drill-in tab not in nav, footer read-only
     marker.
@@ -421,19 +570,19 @@ introduced for bucket safety edits.
 
 ### Changed
 
-No breaking changes. The 0.4.2 JSON API at `/api/v1/...` continues
-to work identically. The 0.4.3 console only **reads** through the
+No breaking changes. The 0.7.0 JSON API at `/api/v1/...` continues
+to work identically. The 0.8.0 console only **reads** through the
 existing service-layer ports + D1 adapters.
 
-### Deferred — still tracked for 0.4.4+
+### Deferred — still tracked for 0.9.0+
 
-The 0.4.3 console is read-only by design. The mutation surface
-(create / update / delete forms with the v0.3.1 preview/confirm
-pattern) is the headline 0.4.4 feature. Other still-deferred items
-are unchanged from 0.4.2:
+The 0.8.0 console is read-only by design. The mutation surface
+(create / update / delete forms with the v0.4.0 preview/confirm
+pattern) is the headline 0.9.0 feature. Other still-deferred items
+are unchanged from 0.7.0:
 
-- **HTML mutation forms with two-step confirmation** (0.4.4) —
-  same preview-then-confirm pattern v0.3.1 introduced for bucket
+- **HTML mutation forms with two-step confirmation** (0.9.0) —
+  same preview-then-confirm pattern v0.4.0 introduced for bucket
   safety edits, applied to tenant create / update, org create /
   status change, role grant / revoke, subscription plan/status
   change.
@@ -450,11 +599,11 @@ are unchanged from 0.4.2:
 
 ---
 
-## [0.4.2] - 2026-04-25
+## [0.7.0] - 2026-04-25
 
-The HTTP API surface for the tenancy service data model. v0.4.0
-shipped the data model and central authz function; v0.4.1 shipped
-the Cloudflare D1 adapters and made `users` tenant-aware; v0.4.2
+The HTTP API surface for the tenancy data model. v0.5.0
+shipped the data model and central authz function; v0.6.0 shipped
+the Cloudflare D1 adapters and made `users` tenant-aware; v0.7.0
 ships the routes operators use to drive that machinery from the
 outside.
 
@@ -486,8 +635,8 @@ outside.
     at archived (`active = false`) plans. Every plan / status
     change appends a `subscription_history` entry.
 
-- **27 routes wired** into `lib.rs` under a `// --- Tenancy service
-  API (v0.4.2)` block, contiguous with the existing
+- **27 routes wired** into `lib.rs` under a `// --- Tenancy
+  API (v0.7.0)` block, contiguous with the existing
   `/admin/console/...` routes.
 
 - **Two new admin capabilities** in
@@ -527,7 +676,7 @@ outside.
 
 ### Tests
 
-- Total: **144 passing** (+8 over 0.4.1's 136).
+- Total: **144 passing** (+8 over 0.6.0's 136).
   - core: 101 (was 93) — 2 new admin-policy tests
     (`every_valid_role_may_view_tenancy`,
     `manage_tenancy_is_operations_plus`) + 6 new
@@ -549,14 +698,14 @@ outside.
   are operator credentials with no row in `users`, and the
   user-as-bearer path (issuing a JWT/session bearer that the
   gateway parses into a tenant-scoped request) is part of the
-  multi-tenant admin console (0.4.3). So 0.4.2 ships an API
+  multi-tenant admin console (0.8.0). So 0.7.0 ships an API
   surface for *cesauth's operator staff* to provision tenants.
   Self-service tenant operations are deferred. The route handlers
   go through `ensure_role_allows` (admin-side capability) rather
   than `check_permission` (tenancy-side capability); the two
-  converge in 0.4.3+ when user bearers arrive.
+  converge in 0.8.0+ when user bearers arrive.
 
-- **JSON-only, no Accept negotiation.** HTML belongs in 0.4.3 with
+- **JSON-only, no Accept negotiation.** HTML belongs in 0.8.0 with
   the multi-tenant admin console.
 
 - **URL hierarchy is the natural tree** (`/api/v1/tenants/:tid/
@@ -573,27 +722,27 @@ outside.
   to a counter-with-occasional-reconcile pattern; until then the
   simple read wins.
 
-### Deferred — still tracked for 0.4.3+
+### Deferred — still tracked for 0.8.0+
 
-- **Multi-tenant admin console** (0.4.3) — HTML surface for
+- **Multi-tenant admin console** (0.8.0) — HTML surface for
   tenant-scoped admins. Opens user-as-bearer, login → tenant
   resolution, and Accept negotiation as one design pass.
-- **Anonymous-trial promotion** (0.4.4).
+- **Anonymous-trial promotion** (0.9.0).
 - **External IdP federation**.
 
 ---
 
-## [0.4.1] - 2026-04-25
+## [0.6.0] - 2026-04-25
 
-The runtime backing for v0.4.0's tenancy service data model.
-Implements the Cloudflare D1 adapters for every port the 0.4.0 core
+The runtime backing for v0.5.0's tenancy data model.
+Implements the Cloudflare D1 adapters for every port the 0.5.0 core
 defined, and migrates the existing `users` table to be tenant-aware.
 Routes / multi-tenant admin console / login-tenant resolution remain
 deferred (see "Deferred" below).
 
 ### Added
 
-- **Cloudflare D1 adapters for every 0.4.0 port** (10 adapters
+- **Cloudflare D1 adapters for every 0.5.0 port** (10 adapters
   in `cesauth-adapter-cloudflare`):
   - `tenancy::{CloudflareTenantRepository,
     CloudflareOrganizationRepository, CloudflareGroupRepository,
@@ -624,14 +773,14 @@ deferred (see "Deferred" below).
   `account_type` (TEXT, CHECK enumerating spec §5's five values) to
   `users`. Uses the SQLite-standard "rename, recreate, copy" pattern
   because D1 cannot ADD COLUMN with a foreign key in one step.
-  Backfills every pre-0.4.1 user into `tenant-default` with
+  Backfills every pre-0.6.0 user into `tenant-default` with
   `account_type = 'human_user'`. Also auto-inserts a
   `user_tenant_memberships` row so every user has a membership in
   their bootstrap tenant — no orphaned users post-migration.
 
 - **`User` struct gains `tenant_id` and `account_type`** in
   `cesauth_core::types`. Both fields use `serde(default = ...)` so
-  pre-0.4.1 cached payloads continue to deserialize cleanly. The
+  pre-0.6.0 cached payloads continue to deserialize cleanly. The
   defaults are `tenancy::DEFAULT_TENANT_ID` and
   `tenancy::AccountType::HumanUser`, matching the migration's
   backfill values exactly. New core tests
@@ -643,7 +792,7 @@ deferred (see "Deferred" below).
   `UNIQUE(email)` is replaced in 0004 with `UNIQUE(tenant_id, email)`.
   `find_by_email` adds an explicit `LIMIT 1` and a comment about
   the contract change; the spec'd `find_by_email_in_tenant`
-  variant arrives with the multi-tenant login flow in 0.4.2+.
+  variant arrives with the multi-tenant login flow in 0.7.0+.
 
 ### Changed
 
@@ -656,7 +805,7 @@ deferred (see "Deferred" below).
 
 ### Tests
 
-- Total: **136 passing** (+3 over 0.4.0's 133).
+- Total: **136 passing** (+3 over 0.5.0's 133).
   - core: 93 (was 90) — three new `User` serde tests covering
     forward, backward, and default-value behavior.
   - adapter-test: 32 (unchanged).
@@ -667,7 +816,7 @@ deferred (see "Deferred" below).
   in-memory adapters; the CF adapters' contract correctness is
   verified at deploy time via `wrangler dev`.
 
-### Deferred — still tracked for 0.4.2+
+### Deferred — still tracked for 0.7.0+
 
 - **HTTP routes** for tenant / organization / group / role-assignment
   CRUD. The service layer + adapters are now both ready; what
@@ -685,13 +834,13 @@ deferred (see "Deferred" below).
 
 ---
 
-## [0.4.0] - 2026-04-25
+## [0.5.0] - 2026-04-25
 
-The tenancy service foundation. Implements the data model and core
+The tenancy foundation. Implements the data model and core
 authorization engine from
-`cesauth-Tenancy service + authz 拡張開発指示書.md` §3-§5 and §16.1,
+`cesauth-Tenancy 化可能な構成への拡張開発指示書.md` §3-§5 and §16.1,
 §16.3, §16.6. Routes / UI / multi-tenant admin console are deferred
-to 0.4.1 by design (see "Deferred" below).
+to 0.6.0 by design (see "Deferred" below).
 
 ### Added
 
@@ -700,7 +849,7 @@ to 0.4.1 by design (see "Deferred" below).
     suspended, deleted.
   - `Organization` — business unit within a tenant (§3.2).
     `parent_organization_id` column reserved for future hierarchy;
-    flat in 0.4.0.
+    flat in 0.5.0.
   - `Group` — membership/authz unit (§3.3) with `GroupParent`
     explicit enum: `Tenant` (tenant-wide group) or
     `Organization { organization_id }` (org-scoped). The CHECK in
@@ -736,7 +885,7 @@ to 0.4.1 by design (see "Deferred" below).
   - Scope-covering lattice: a `System` grant covers every scope; a
     same-id `Tenant`/`Organization`/`Group`/`User` grant covers
     the matching `ScopeRef`. Cross-tier coverage ("my tenant grant
-    applies to this org") is tagged as a follow-up — for 0.4.0 the
+    applies to this org") is tagged as a follow-up — for 0.5.0 the
     caller is expected to query at the natural scope of the
     operation, which it always knows.
 
@@ -773,7 +922,7 @@ to 0.4.1 by design (see "Deferred" below).
   InMemorySubscriptionHistoryRepository}`. All ten implement the
   shipped ports.
 
-- **Tests** (+30 over 0.3.1's 103, total 133):
+- **Tests** (+30 over 0.4.0's 103, total 133):
   - core: 18 new (5 tenancy types, 7 authz scope-covering / catalog /
     deny-reason, 5 billing types, 1 dangling-role-id resilience).
   - adapter-test: 12 new — end-to-end tenant→org→group flow, slug
@@ -787,9 +936,9 @@ to 0.4.1 by design (see "Deferred" below).
 - `cesauth_core::lib.rs` exports three new modules: `tenancy`,
   `authz`, `billing`. No existing module changes.
 
-### Deferred — not in 0.4.0, tracked for 0.4.1+
+### Deferred — not in 0.5.0, tracked for 0.6.0+
 
-The spec's §16 receive criteria are broad. 0.4.0 ships the data
+The spec's §16 receive criteria are broad. 0.5.0 ships the data
 model and the central authz engine; the items below are
 prerequisites for a fully-receivable v0.4 but each carries enough
 design surface to deserve its own release:
@@ -797,7 +946,7 @@ design surface to deserve its own release:
 - **HTTP routes** for tenant / organization / group / role CRUD.
   The service layer has one function per operation; the route layer
   needs an admin-bearer extension carrying `(user, tenant?, org?)`
-  context that a 0.4.1 design pass should specify before wiring.
+  context that a 0.6.0 design pass should specify before wiring.
 - **Cloudflare D1 adapters** for the new ports. The schema is in
   place; mapping each port to D1 statements is mechanical but
   voluminous.
@@ -824,12 +973,12 @@ design surface to deserve its own release:
 
 ---
 
-## [0.3.1] - 2026-04-24
+## [0.4.0] - 2026-04-24
 
 ### Added
 
 - **HTML two-step confirmation UI for bucket-safety edits.** The
-  pre-0.3.1 preview/apply JSON API is unchanged; 0.3.1 adds a
+  pre-0.4.0 preview/apply JSON API is unchanged; 0.4.0 adds a
   form-based wrapper that the Configuration Review page now links to
   per bucket (Operations+ only). The flow:
   1. `GET /admin/console/config/:bucket/edit` renders an edit form
@@ -891,7 +1040,7 @@ design surface to deserve its own release:
   adapters build these from their own row shapes, and nothing on the
   wire should revive one from a client blob.
 
-- **Configuration Review's "Editing" section rewritten.** Pre-0.3.1
+- **Configuration Review's "Editing" section rewritten.** Pre-0.4.0
   it pointed operators at the JSON API only; it now describes the
   in-UI edit flow first and keeps the JSON recipes as a scripted
   alternative.
@@ -1042,7 +1191,7 @@ design surface to deserve its own release:
   Configuration Review page surfaces each bucket's lifecycle
   attestation; the Alert Center flags staleness).
 
-### Deferred (for 0.3.1)
+### Deferred (for 0.4.0)
 
 None of these block §13 of the extension spec — the initial
 completion criteria are met. They are recorded here so the scope
@@ -1056,11 +1205,11 @@ of 0.3.0 is unambiguous:
 - **Admin-token CRUD UI.** 0.3.0 requires operators to INSERT rows
   into `admin_tokens` via a `wrangler d1 execute` command
   (documented in the expert chapter). A Super-only `/admin/tokens`
-  HTML surface lands in 0.3.1.
+  HTML surface lands in 0.4.0.
 - **Workers-request counter hot-path instrumentation.** 0.3.0 reads
   the `counter:workers:requests:*` KV keys and will report whatever
   is there; the actual `.increment()` call on every request is the
-  0.3.1 work. Fresh deployments see zeros.
+  0.4.0 work. Fresh deployments see zeros.
 - **DO-instance enumeration.** Blocked on the Cloudflare Workers
   runtime API, which does not expose DO listing. Shipped as
   "unavailable — see CF dashboard" with a note; wired once CF
@@ -1249,5 +1398,5 @@ Each future release will have sections in this order:
 - **Security** — vulnerability fixes or security-relevant posture
   changes. See also [.github/SECURITY.md](.github/SECURITY.md).
 
-[Unreleased]: https://github.com/cesauth/cesauth/compare/v0.2.1...HEAD
-[0.2.1]:      https://github.com/cesauth/cesauth/releases/tag/v0.2.1
+[Unreleased]: https://github.com/nabbisen/cesauth/compare/v0.2.1...HEAD
+[0.2.1]:      https://github.com/nabbisen/cesauth/releases/tag/v0.2.1

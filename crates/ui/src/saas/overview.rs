@@ -102,10 +102,10 @@ fn render_howto() -> String {
     role. Drill into a tenant or organization to see the available
     actions; destructive actions (status changes, group deletes,
     plan changes) go through a preview/confirm step before they
-    commit, mirroring the v0.3.1 bucket-safety flow.</p>
+    commit, mirroring the v0.4.0 bucket-safety flow.</p>
   <p class="muted">For the JSON API equivalents (often easier for
     automation), see <code>/api/v1/...</code>. For the full operator
-    runbook, see the <em>Tenancy &amp; commercial SaaS</em> chapter
+    runbook, see the <em>Tenancy</em> chapter
     of the operator documentation.</p>
 </section>"##.to_owned()
 }
@@ -120,6 +120,7 @@ mod tests {
             id: "admin-1".into(),
             name: Some("alice".into()),
             role: Role::ReadOnly,
+            user_id: None,
         }
     }
 

@@ -1,9 +1,9 @@
-//! HTML mutation form handlers for the SaaS console (v0.4.4).
+//! HTML mutation form handlers for the SaaS console (v0.9.0).
 //!
 //! Every handler here runs the same prelude: resolve the bearer,
 //! gate on `AdminAction::ManageTenancy` (Operations+), and parse
 //! the form body. The work itself delegates to the existing
-//! v0.4.0/0.4.1 service-layer ports — no new domain code lives
+//! v0.5.0/0.6.0 service-layer ports — no new domain code lives
 //! here.
 
 pub mod common;

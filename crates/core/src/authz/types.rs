@@ -13,7 +13,7 @@ use crate::types::{Id, UnixSeconds};
 /// Stored as a string rather than an enum: the catalog grows as
 /// features land, and a closed enum would force a migration every
 /// time. The [`PermissionCatalog`] constant lists the ones we ship
-/// with 0.4.0; operators may add rows to the `permissions` table for
+/// with 0.5.0; operators may add rows to the `permissions` table for
 /// their own use.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Permission(pub String);
@@ -72,7 +72,7 @@ impl PermissionCatalog {
     // Audit
     pub const AUDIT_READ: &'static str = "audit:read";
 
-    /// Every permission shipped with 0.4.0. Order is stable, so test
+    /// Every permission shipped with 0.5.0. Order is stable, so test
     /// snapshots of the catalog stay stable too.
     pub const ALL: &'static [&'static str] = &[
         Self::TENANT_READ, Self::TENANT_UPDATE, Self::TENANT_SUSPEND, Self::TENANT_DELETE,

@@ -78,7 +78,7 @@ pub fn for_group(
 ) -> String {
     let title = format!("Add group member: {group_slug}");
     // Group's "back" target is the owning tenant — there is no
-    // standalone /admin/saas/groups/:gid page in 0.4.4.
+    // standalone /admin/saas/groups/:gid page in 0.9.0.
     render(
         principal, &title,
         &format!("/admin/saas/tenants/{}", escape(tenant_id)),
@@ -162,7 +162,7 @@ mod tests {
     use cesauth_core::admin::types::Role;
 
     fn p() -> AdminPrincipal {
-        AdminPrincipal { id: "x".into(), name: None, role: Role::Operations }
+        AdminPrincipal { id: "x".into(), name: None,role: Role::Operations, user_id: None }
     }
 
     #[test]

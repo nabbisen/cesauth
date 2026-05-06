@@ -153,7 +153,7 @@ mod tests {
     };
 
     fn p() -> AdminPrincipal {
-        AdminPrincipal { id: "x".into(), name: None, role: Role::Operations }
+        AdminPrincipal { id: "x".into(), name: None,role: Role::Operations, user_id: None }
     }
 
     fn plan(id: &str, slug: &str, active: bool, quotas: Vec<Quota>) -> Plan {

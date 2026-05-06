@@ -127,7 +127,7 @@ Every other principal is a row in `admin_tokens`, storing
 never stored; the server mints it, hands it to the operator exactly
 once, then forgets it.
 
-**Via the UI (v0.3.1+, recommended).** Sign in as a Super principal
+**Via the UI (v0.4.0+, recommended).** Sign in as a Super principal
 (the `ADMIN_API_KEY` bootstrap bearer qualifies on a fresh
 deployment), navigate to `/admin/console/tokens`, click "+ create new".
 Pick a role and a label; the server responds with a one-shot page
@@ -278,11 +278,11 @@ operator dismiss, and remember rather than silently pass.
 ## Change-op protocol (§7 two-step confirmation)
 
 Two equivalent flows reach the same underlying `apply_bucket_safety_change`
-service function: a form-driven HTML flow (new in v0.3.1) and the
+service function: a form-driven HTML flow (new in v0.4.0) and the
 scripted JSON pair (unchanged since v0.3.0). Both audit the attempt
 before the write and the outcome after.
 
-### HTML flow (v0.3.1, Operations+)
+### HTML flow (v0.4.0, Operations+)
 
 1. From Configuration Review, click **edit** next to a bucket row.
    That navigates to `GET /admin/console/config/:bucket/edit`, which
@@ -421,7 +421,7 @@ not allowed to do *this*.
 - **v0.3.0** — the six dashboard pages, JSON-scripted preview+apply
   API, alert engine, D1 schema, `ADMIN_API_KEY` bootstrap, wrangler
   token-insert recipe.
-- **v0.3.1** — HTML two-step confirmation UI for bucket-safety edits,
+- **v0.4.0** — HTML two-step confirmation UI for bucket-safety edits,
   admin-token CRUD UI (Super-only), Tokens tab conditional on role,
   role-badge propagation fix on Cost/Audit/Alerts pages.
 

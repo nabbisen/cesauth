@@ -5,8 +5,8 @@
 //! - `GET/POST /admin/saas/organizations/:oid/memberships/new`
 //! - `GET/POST /admin/saas/groups/:gid/memberships/new`
 //!
-//! Each delegates to the existing v0.4.0 service layer +
-//! `MembershipRepository` adapter from v0.4.1. One-click submit;
+//! Each delegates to the existing v0.5.0 service layer +
+//! `MembershipRepository` adapter from v0.6.0. One-click submit;
 //! no preview/confirm step.
 
 use cesauth_cf::tenancy::{

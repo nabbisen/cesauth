@@ -95,7 +95,7 @@ fn render_subscription(s: Option<&Subscription>, p: Option<&Plan>, tenant_id: &s
   <h2>Subscription</h2>
   <p class="muted">No subscription on file. Provision one with
     <code>POST /api/v1/tenants/{tid}/subscription</code> (route lands
-    in 0.4.4) or insert a row directly in <code>subscriptions</code>.</p>
+    in 0.9.0) or insert a row directly in <code>subscriptions</code>.</p>
 </section>"##,
             tid = escape(tenant_id)),
         (Some(s), p) => {
@@ -247,7 +247,7 @@ mod tests {
     };
 
     fn p() -> AdminPrincipal {
-        AdminPrincipal { id: "admin".into(), name: None, role: Role::ReadOnly }
+        AdminPrincipal { id: "admin".into(), name: None,role: Role::ReadOnly, user_id: None }
     }
     fn t() -> Tenant {
         Tenant {
@@ -337,7 +337,7 @@ mod tests {
 
     #[test]
     fn operations_role_sees_action_buttons() {
-        let p = AdminPrincipal { id: "x".into(), name: None, role: Role::Operations };
+        let p = AdminPrincipal { id: "x".into(), name: None,role: Role::Operations, user_id: None };
         let html = tenant_detail_page(&p, &input(&t(), &[], &[]));
         assert!(html.contains(r#"href="/admin/saas/tenants/t-acme/organizations/new""#));
         assert!(html.contains(r#"href="/admin/saas/tenants/t-acme/status""#));
@@ -349,7 +349,7 @@ mod tests {
         // Without a subscription, the "Change plan" / "Change
         // subscription status" buttons should not render — there's
         // nothing to change yet.
-        let p = AdminPrincipal { id: "x".into(), name: None, role: Role::Operations };
+        let p = AdminPrincipal { id: "x".into(), name: None,role: Role::Operations, user_id: None };
         let tenant = t();
         let html_no_sub = tenant_detail_page(&p, &input(&tenant, &[], &[]));
         assert!(!html_no_sub.contains(r#"/subscription/plan""#),

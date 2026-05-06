@@ -34,10 +34,10 @@ pub enum EventKind {
     AdminBucketSafetyVerified,
     AdminBucketSafetyChanged,
     AdminThresholdUpdated,
-    // Admin token management (v0.3.1)
+    // Admin token management (v0.4.0)
     AdminTokenCreated,
     AdminTokenDisabled,
-    // Tenancy service API (v0.4.2)
+    // Tenancy API (v0.7.0)
     TenantCreated,
     TenantUpdated,
     TenantStatusChanged,

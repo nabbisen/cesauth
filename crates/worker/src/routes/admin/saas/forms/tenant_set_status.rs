@@ -1,6 +1,6 @@
 //! `GET/POST /admin/saas/tenants/:tid/status` — tenant status change.
 //!
-//! Two phases per the v0.3.1 pattern: first POST without
+//! Two phases per the v0.4.0 pattern: first POST without
 //! `confirm=yes` shows the diff/preview; second POST with
 //! `confirm=yes` commits.
 

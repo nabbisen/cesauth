@@ -146,7 +146,7 @@ async fn resolve_or_create_user(
         id:             Uuid::new_v4().to_string(),
         // Magic-link self-signup goes into the bootstrap tenant in
         // 0.4.x. Multi-tenant signup (where the user picks/lands on
-        // a tenant first) is a 0.4.2+ design pass.
+        // a tenant first) is a 0.7.0+ design pass.
         tenant_id:      cesauth_core::tenancy::DEFAULT_TENANT_ID.to_owned(),
         email:          Some(email.to_owned()),
         email_verified: true,

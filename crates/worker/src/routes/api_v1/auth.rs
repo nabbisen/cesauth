@@ -1,4 +1,4 @@
-//! Auth + JSON helpers shared across the v0.4.2 API handlers.
+//! Auth + JSON helpers shared across the v0.7.0 API handlers.
 //!
 //! Route handlers funnel through `require(action, req, env)` which
 //! resolves the admin bearer, gates on the requested capability, and

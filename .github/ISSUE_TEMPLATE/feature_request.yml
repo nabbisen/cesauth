@@ -1,34 +1,51 @@
 name: Feature request
-description: Suggest an idea or enhancement
-title: "[Feature]: "
+description: Suggest a new capability or an enhancement to an existing one.
+title: "[feature] "
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for the idea.
-        Please describe the problem you're trying to solve and the outcome you want.
+        Before opening a feature request, please check
+        [`ROADMAP.md`](../../ROADMAP.md) — the planned items
+        section may already cover what you have in mind, and the
+        explicitly-out-of-scope section may explain why a feature
+        isn't being pursued.
   - type: textarea
     id: problem
     attributes:
-      label: Problem statement
-      description: What limitation or pain point are you trying to address?
+      label: Problem
+      description: What can't you do today, or what's awkward to do? Describe the user-facing situation, not the technical solution.
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
       label: Proposed solution
-      description: Describe the feature or change you'd like to see.
+      description: One or two paragraphs sketching what you'd like to see. A specific endpoint, type, or UI element is fine; a directional ask is also fine.
     validations:
       required: true
   - type: textarea
     id: alternatives
     attributes:
       label: Alternatives considered
-      description: What alternatives or workarounds have you considered?
+      description: Other ways the problem might be addressed. Helpful even if you've ruled them out.
+    validations:
+      required: false
   - type: textarea
-    id: additional
+    id: scope
     attributes:
-      label: Additional context
-      description: Links, screenshots, mockups, or other context.
+      label: Scope
+      description: How big do you think this is? "A small change to one form" or "a new crate" both help us triage.
+    validations:
+      required: false
+  - type: dropdown
+    id: willing_to_pr
+    attributes:
+      label: Are you willing to open a PR?
+      options:
+        - I'd like to try
+        - I'd like guidance on where to start
+        - I'm reporting only — happy to test a PR from someone else
+    validations:
+      required: false

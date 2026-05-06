@@ -22,7 +22,7 @@
 //! through this surface is already a one-per-second-tops operation
 //! (operator-driven, not end-user signup), and the counts are
 //! already-indexed. Caching would force invalidation discipline that
-//! 0.4.2 has not earned yet.
+//! 0.7.0 has not earned yet.
 //!
 //! When user self-signup lands on this surface, we will need to
 //! migrate to a counter-with-occasional-reconcile pattern; until

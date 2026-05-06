@@ -96,7 +96,7 @@ mod tests {
     use cesauth_core::admin::types::Role;
 
     fn p() -> AdminPrincipal {
-        AdminPrincipal { id: "admin".into(), name: None, role: Role::ReadOnly }
+        AdminPrincipal { id: "admin".into(), name: None,role: Role::ReadOnly, user_id: None }
     }
 
     #[test]

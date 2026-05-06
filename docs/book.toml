@@ -1,7 +1,7 @@
 [book]
 title       = "cesauth"
-description = "Headless-first IDaaS on Cloudflare Workers."
-authors     = ["nabbisen <nabbisen@scqr.net>"]
+description = "Headless-first IDaaS on Cloudflare Workers, written in Rust."
+authors     = ["nabbisen"]
 language    = "en"
 src         = "src"
 

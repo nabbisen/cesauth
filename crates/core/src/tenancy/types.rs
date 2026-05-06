@@ -62,7 +62,7 @@ pub enum TenantStatus {
 
 /// A business unit within a tenant. Spec §3.2.
 ///
-/// For 0.4.0 organizations are flat — no parent/child hierarchy. The
+/// For 0.5.0 organizations are flat — no parent/child hierarchy. The
 /// `parent_organization_id` column exists in D1 (NULLable) so a
 /// follow-up can wire hierarchy without a schema change, but the
 /// service layer today ignores it.
@@ -156,7 +156,7 @@ pub enum AccountType {
     /// Anonymous trial principal. Not a permanent user in the sense
     /// of `HumanUser`; lifecycle is bounded, data retention is
     /// narrow. The promotion flow (anonymous → human_user) is a
-    /// 0.5.0 item.
+    /// 0.18.0 item.
     Anonymous,
     /// Ordinary end-user, created by self-registration or invitation.
     HumanUser,
@@ -169,7 +169,7 @@ pub enum AccountType {
     SystemOperator,
     /// External IdP-federated user. Credentials live elsewhere; the
     /// local row exists to carry role assignments and audit history.
-    /// Federation wiring is 0.5.0.
+    /// Federation wiring is 0.18.0.
     ExternalFederatedUser,
 }
 
