@@ -12,6 +12,341 @@ always be called out here.
 
 ---
 
+## [0.30.0] - 2026-04-29
+
+Security track Phase 7 of 11: TOTP Phase 2d — polish + operations.
+
+**This is the final TOTP release.** v0.26.0 shipped the library,
+v0.27.0 the storage adapters, v0.28.0 the presentation layer,
+v0.29.0 wired the HTTP routes + verify gate. v0.30.0 closes the
+track with the disable flow, cron sweep extension, redaction
+profile updates, operator chapter, pre-production release gate
+update, and **ADR-009 graduates from `Draft` to `Accepted`**.
+
+After v0.30.0 deploys, the TOTP track is feature-complete for the
+0.x series. Future iterations (the v0.32.0+ `/me/security` self-
+service UI, dual-key rotation tooling, audit-log integration)
+build on top of the foundation laid in 0.26.0–0.30.0 without
+touching the underlying primitives.
+
+**Note on UI/UX scope**: per the user-stated project value
+"重要な予定が完了したタイミングで、UI/UX 改善に取り組みます", the
+disable flow in this release is intentionally **minimal** — a
+single-page confirmation, a redirect home, no flash-message
+infrastructure. The TOTP track concludes here; UX work
+(`/me/security` index page, flash messages, error-slot in the
+enroll template, CSS polish for warning/danger button states)
+naturally belongs in the next release where the UI/UX iteration
+will consolidate it across the surface, not just for TOTP.
+
+### Added — disable flow
+
+- **`GET /me/security/totp/disable`** — confirmation page
+  rendered by the new `cesauth_ui::templates::totp_disable_confirm_page`
+  template. Single-form POST/Redirect/GET pattern (arriving at
+  this URL doesn't disable TOTP, only POSTing the confirm form
+  does). The page warns explicitly that recovery codes are wiped
+  too, offers a cancel link, and uses one-click confirmation
+  rather than a "type DISABLE to confirm" double-prompt — the
+  consequences are clearly stated, re-enrolling takes one
+  minute, and the user already authenticated for primary to
+  reach this page.
+- **`POST /me/security/totp/disable`** — validates CSRF, deletes
+  ALL TOTP authenticator rows for the calling user (active or
+  unconfirmed) plus all recovery codes (redeemed or unredeemed).
+  Authenticators-first ordering: an authenticator without
+  recovery codes is still a working credential, while recovery
+  codes without an authenticator are useless. Best-effort
+  failure semantics: authenticators-delete failure → 500 (TOTP
+  remains enabled, user sees this on next login); recovery-codes
+  delete failure → silently logged (the authenticator is gone,
+  recovery codes are useless). Redirects to `/`. No flash
+  message — that infrastructure is deferred to the UI/UX release.
+
+### Added — `TotpAuthenticatorRepository::delete_all_for_user`
+
+Trait method + in-memory + D1 adapter implementations.
+Single-statement user-scoped DELETE (no list-then-delete shape
+because there's no per-row audit invariant to preserve — TOTP
+rows are credentials, not principals; contrast with the
+anonymous-user sweep where audit-trail integrity is load-bearing
+per ADR-004 §Q5).
+
+In-memory adapter: `m.retain(|_, r| r.user_id != user_id)`. D1
+adapter: `DELETE FROM totp_authenticators WHERE user_id = ?1`.
+Both no-op-on-empty / idempotent across retries (deliberately
+NOT mapped to `NotFound` like the existing `delete(id)` because
+the disable flow is idempotent).
+
+Two new tests in `cesauth-adapter-test::repo::tests`:
+- `delete_all_for_user_scopes_to_user` — pins that Alice's
+  disable doesn't wipe Bob's TOTP rows. A bug here would be a
+  cross-user security incident, not a UX glitch.
+- `delete_all_for_user_is_idempotent_on_missing` — pins that
+  retries / double-clicks don't 500.
+
+### Added — TOTP unconfirmed-enrollment cron sweep
+
+Extension to the existing 04:00 UTC daily cron in
+`crates/worker/src/sweep.rs`. New private
+`totp_unconfirmed_sweep(env, cfg, now)` helper called after the
+anonymous-trial sweep within the same `run()` body. Drops
+`totp_authenticators` rows where `confirmed_at IS NULL AND
+created_at < now - 86400` (24-hour retention per ADR-009 §Q9).
+
+The 24-hour window is "long enough that a user who got
+distracted mid-enrollment can come back the same day, short
+enough that abandoned enrollment doesn't pollute storage". Per
+ADR-009 §Q9.
+
+The partial index `idx_totp_authenticators_unconfirmed` (created
+in migration 0007) makes the lookup query cheap. Same
+list-then-delete shape as the anonymous sweep, same best-effort
+failure semantics. **No audit emission per row** — TOTP rows
+are credentials, not principals; the row count is logged as
+`totp unconfirmed sweep complete: N rows deleted`.
+
+The module-level doc in `sweep.rs` is rewritten to cover both
+passes; the "Why not a single SQL DELETE" section is consolidated
+into the top doc rather than living per-sweep.
+
+### Added — `RedactionProfile.drop_tables`
+
+New field on `cesauth_core::migrate::RedactionProfile`. Tables
+listed are **dropped entirely** from the export when the
+profile is active (vs the existing per-column `rules` which
+scrub fields within preserved tables).
+
+Both built-in profiles updated:
+- **`prod-to-staging`**: drops `totp_authenticators` +
+  `totp_recovery_codes`. Per ADR-009 §Q5/§Q11: TOTP secrets must
+  NOT survive redaction even encrypted, because a staging
+  deployment with real users' encrypted TOTP secrets would let
+  any staging operator authenticate as those users (the
+  encryption key is just a deployment secret, which staging has
+  access to).
+- **`prod-to-dev`**: same TOTP-drop, plus its existing
+  display-name nullification. The threat surface on a
+  developer's laptop is even worse than on staging.
+
+CLI export loop in `crates/migrate/src/main.rs` updated to honor
+`prof.drop_tables` — both the main export path (~line 369) and
+the round-trip verify path (~line 627) skip listed tables.
+Operator-facing message during export:
+`Exporting <table>... 0 rows (dropped by `<profile>` profile)`.
+
+The `MIGRATION_TABLE_ORDER` and `TENANT_SCOPES` constants in
+`cesauth-migrate/schema.rs` are extended with both new tables
+(both `TenantScope::Global` since they reference users via FK
+without their own `tenant_id` column — same shape as the
+existing `authenticators` table for WebAuthn).
+
+3 new core::migrate tests:
+- `prod_to_staging_drops_totp_tables` — pins ADR-009 §Q5/§Q11.
+- `prod_to_dev_drops_totp_tables` — same for the stricter
+  profile.
+- `built_in_profile_drop_tables_reference_known_tables` —
+  defense-in-depth: catches typos in `drop_tables` (e.g.,
+  `totp_authenticator` without the s) against a hard-coded
+  `KNOWN_DROPPABLE` list. A typo would silently NOT drop the
+  table, leaving a privacy hole.
+
+### Added — operator chapter `docs/src/deployment/totp.md`
+
+New ~270-line operator chapter covering:
+- When TOTP fires (post-MagicLink only; WebAuthn skips per
+  ADR-009 §Q7).
+- Required configuration: `TOTP_ENCRYPTION_KEY` secret +
+  `TOTP_ENCRYPTION_KEY_ID` var, with `openssl rand -base64 32 |
+  wrangler secret put TOTP_ENCRYPTION_KEY` example.
+- Pre-production release gate cross-reference.
+- Key rotation procedure: dual-key deployment + re-encryption
+  (Phase 2). **With explicit caveat** that the dual-key
+  resolution path is NOT yet implemented in 0.30.0; operators
+  who need to rotate today must either re-enroll all users or
+  write a one-shot migration helper. Tracked in ROADMAP under
+  "Later".
+- Admin reset path for lockout recovery: direct D1 deletion
+  procedure (`wrangler d1 execute ... DELETE FROM
+  totp_authenticators WHERE user_id = ...`).
+- Cron sweep semantics + diagnostic query.
+- Disable flow operator perspective + the no-current-code-
+  required rationale.
+- Redaction profile behavior + ADR-009 §Q5/§Q11
+  cross-reference.
+- Operational invariants: `secret_key_id` is load-bearing for
+  rotation, partial index is load-bearing for sweep, cookie is
+  SameSite=Strict, recovery codes are SHA-256-hashed
+  irretrievably, multi-authenticator semantics.
+- Diagnostic queries: how many users have TOTP, how many have
+  fewer than N recovery codes left, how many in the sweep
+  window right now.
+
+Added to `docs/src/SUMMARY.md` between the security-headers
+chapter and the runbook.
+
+### Added — pre-production release gate update
+
+`docs/src/expert/security.md` — `TOTP_ENCRYPTION_KEY` added as
+item 6 to the pre-production checklist with the caveat that
+TOTP is opt-in at the operator level. Cross-references the new
+operator chapter.
+
+### Added — totp_disable_confirm_page UI template
+
+5 new template tests in `cesauth-ui::templates::tests`:
+- CSRF token inclusion (matches the POST validator).
+- Form action correctness (`/me/security/totp/disable`,
+  POST method).
+- Recovery-codes-loss warning text present (`recovery codes`
+  string match — pin so a future UX softening doesn't hide the
+  consequence).
+- Cancel link offered (`<a href="/">Cancel`) — destructive
+  flow must offer a no-op exit.
+- CSRF escape behavior (e.g., `t<>k` becomes `t&lt;&gt;k`).
+
+### Status — ADR-009 graduates Draft → Accepted
+
+The TOTP track has been validated end-to-end across five
+releases. Operator-visible flows work, the cron sweep prunes
+abandoned enrollments, redaction profiles drop TOTP secrets,
+the operator chapter exists, and there are no outstanding
+design questions. ADR header status changes from `Draft
+(v0.26.0)` to `Accepted (v0.30.0)`. The ADR index in
+`docs/src/expert/adr/README.md` is updated.
+
+### Tests
+
+Total: **573 passing** (+10 over v0.29.0):
+
+- core: **275** (was 272) — 3 new in `migrate::tests`:
+  - `prod_to_staging_drops_totp_tables`
+  - `prod_to_dev_drops_totp_tables`
+  - `built_in_profile_drop_tables_reference_known_tables`
+- adapter-test: **72** (was 70) — 2 new in `repo::tests`:
+  - `delete_all_for_user_scopes_to_user`
+  - `delete_all_for_user_is_idempotent_on_missing`
+- ui: **150** (was 145) — 5 new in `templates::tests`:
+  - `disable_page_includes_csrf_token`
+  - `disable_page_form_posts_to_disable_endpoint`
+  - `disable_page_warns_about_recovery_code_loss`
+  - `disable_page_offers_cancel_link`
+  - `disable_page_escapes_csrf`
+- worker: 47 (unchanged — disable handler integration tests
+  deferred to UI/UX release per scope-cap; see CHANGELOG note
+  on UI/UX scope above).
+- migrate: 29 (unchanged).
+
+### Documentation
+
+- `docs/src/expert/adr/009-totp.md` — Status changed to
+  Accepted. Phasing v0.30.0 entry added with implementation
+  details.
+- `docs/src/expert/adr/README.md` — index updated.
+- `docs/src/expert/security.md` — `TOTP_ENCRYPTION_KEY` added to
+  pre-production checklist (item 6).
+- `docs/src/deployment/totp.md` — new chapter (~270 lines).
+- `docs/src/SUMMARY.md` — TOTP chapter linked in deployment
+  section.
+
+### Migration (0.29.0 → 0.30.0)
+
+Code-only release. **No schema migration.** No `wrangler.toml`
+changes required (the existing `0 4 * * *` cron entry already
+runs the extended sweep — no new cron needed).
+
+Operators who want to start using the redaction-profile drop
+behavior should expect their next `cesauth-migrate export
+--profile prod-to-staging` to NOT include TOTP rows. Existing
+exports (pre-v0.30.0) that included TOTP rows are unchanged on
+disk; the importer doesn't reject them.
+
+The disable flow `GET/POST /me/security/totp/disable` is
+available immediately after deploy. Users with confirmed TOTP
+authenticators can navigate there to remove TOTP from their
+account.
+
+The TOTP unconfirmed-enrollment cron sweep starts running at the
+next 04:00 UTC tick after deploy. The first run will prune any
+unconfirmed rows older than 24h that have accumulated since
+v0.26.0+ (likely a small handful in most deployments).
+
+### Smoke test
+
+```sh
+cargo test --workspace                              # 573 passing
+cargo test -p cesauth-core --lib migrate            # 62 passing
+                                                    # (59 prior + 3 new)
+cargo test -p cesauth-adapter-test --lib totp       # ~15 passing
+
+# End-to-end disable flow (deployed worker, signed-in user
+# with confirmed TOTP):
+# 1. Visit /me/security/totp/disable.
+# 2. Click "Yes, disable TOTP".
+# 3. Verify totp_authenticators + totp_recovery_codes rows for
+#    the user are gone via wrangler d1.
+# 4. Logout, login again via Magic Link.
+# 5. TOTP gate does NOT fire — user lands directly in their
+#    session.
+```
+
+### Discovered
+
+No new findings this release. The dual-key rotation gap is
+documented honestly in the operator chapter rather than papered
+over.
+
+### Deferred — to v0.31.0 (UI/UX improvement release)
+
+Per the user-stated project value, UI/UX improvements come at
+TOTP-track-completion time. The natural scope for the next
+release:
+
+- **`/me/security` index page** — listing TOTP enabled-or-not,
+  remaining recovery codes count, link to disable, link to
+  enroll-second-authenticator. Currently users navigate
+  directly to `/me/security/totp/enroll` or `/me/security/totp/disable`
+  with no overview page.
+- **Flash-message infrastructure** — "TOTP disabled
+  successfully" notice on `/` after a successful disable.
+  Currently the disable handler redirects silently.
+- **Error slot in `totp_enroll_page`** — when confirm fails
+  (wrong first code), the worker re-renders the enroll page
+  unchanged. An `error: Option<&str>` parameter (matching
+  `totp_verify_page`) would polish the experience.
+- **`me::auth::resolve_or_redirect` `next` parameter** — the
+  redirect destination is hard-coded `/login`. A `next`
+  parameter to come back to the originally-requested URL after
+  login would polish the enroll-while-not-signed-in flow.
+- **CSS for warning/danger button states** — the disable page
+  uses `class="danger"` but no CSS exists yet (v0.5.0-era frame
+  styling).
+- **Handler integration tests** — v0.29.0+ TOTP route handlers
+  lack dedicated unit tests beyond the pure-helper layer
+  (templates, cookie shape, library functions). The UI/UX
+  release will likely refactor handlers as part of UX cleanup;
+  testing them after the refactor is more efficient than
+  writing tests now and rewriting them.
+
+### Deferred — to v0.32.0+ (audit log hash chain)
+
+- ADR-010 + audit-log-hash-chain Phase 1 (chain design,
+  `previous_hash` column, transition strategy).
+- ADR-010 Phase 2 (integrity sweep cron + admin verification UI).
+
+### Deferred — unchanged
+
+- **OIDC `id_token` issuance (ADR-008)** — Drafted, queued in
+  ROADMAP "Later" behind the security track and the UI/UX
+  release.
+- **TOTP dual-key rotation tooling** — `cesauth-migrate totp
+  re-encrypt` subcommand. Operator chapter documents the
+  workaround (re-enroll all users, or write a one-shot helper).
+- **`oidc_clients.client_secret_hash` schema-comment drift** —
+  ROADMAP "Later" item.
+
+---
+
 ## [0.29.0] - 2026-04-29
 
 Security track Phase 6 of 11: TOTP Phase 2c — HTTP routes +

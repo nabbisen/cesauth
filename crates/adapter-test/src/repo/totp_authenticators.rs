@@ -77,6 +77,16 @@ impl TotpAuthenticatorRepository for InMemoryTotpAuthenticatorRepository {
         Ok(())
     }
 
+    async fn delete_all_for_user(&self, user_id: &str) -> PortResult<()> {
+        // No-op-on-empty mirrors the recovery-codes adapter and
+        // the trait contract. The disable-TOTP flow is best-effort
+        // idempotent (see disable.rs module doc) so a second call
+        // is harmless.
+        let mut m = self.by_id.lock().map_err(|_| PortError::Unavailable)?;
+        m.retain(|_, r| r.user_id != user_id);
+        Ok(())
+    }
+
     async fn list_unconfirmed_older_than(&self, cutoff_unix: i64)
         -> PortResult<Vec<String>>
     {

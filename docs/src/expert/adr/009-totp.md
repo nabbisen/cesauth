@@ -1,7 +1,15 @@
 # ADR-009: TOTP (RFC 6238) as a second factor
 
-**Status**: Draft (v0.26.0). Will graduate to `Accepted` in
-v0.27.0 when enrollment + verify wire-up lands.
+# ADR-009: TOTP (RFC 6238) as a second factor
+
+**Status**: **Accepted (v0.30.0)**. Originally drafted v0.26.0.
+The implementation arrived in five releases (library v0.26.0,
+storage v0.27.0, presentation v0.28.0, routes v0.29.0, polish
+v0.30.0) — see the Phasing section. ADR graduates to Accepted
+at v0.30.0 because the design has been validated end-to-end:
+operator-visible flows work, the cron sweep prunes abandoned
+enrollments, redaction profiles drop TOTP secrets, the operator
+chapter exists, and there are no outstanding design questions.
 
 **Context**: cesauth's two existing credential paths (Magic Link
 and WebAuthn) cover most of the IDaaS authentication surface.
@@ -473,16 +481,40 @@ currently spans **five releases**:
   Lax for pending-authorize) and `__Host-cesauth_totp_enroll`
   semantics including the must-not-cross-context property
   between gate and enroll cookies.
-- **v0.30.0** (planned) — Polish + operations: disable flow
-  (`POST /me/security/totp/disable`), cron sweep extension
-  (drops unconfirmed rows older than 24h), `cesauth-migrate`
-  redaction profile drops both new tables for prod→staging,
-  new chapter `docs/src/deployment/totp.md` documenting
-  encryption key configuration / rotation / admin reset path,
-  `TOTP_ENCRYPTION_KEY` added to pre-production release gate
-  in `docs/src/expert/security.md`. **ADR graduates from
-  Draft to Accepted** at this point — the design has been
-  validated end-to-end by the prior releases.
+- **v0.30.0** ✅ — Polish + operations + ADR Accepted. Disable
+  flow at `GET/POST /me/security/totp/disable`: GET renders a
+  single-page confirmation (per POST/Redirect/GET pattern; the
+  page warns recovery codes are wiped too and offers a cancel
+  link); POST validates CSRF and does authenticators-first then
+  recovery-codes deletion (rationale: an authenticator without
+  recovery codes is still a working credential, while recovery
+  codes without an authenticator are useless). New
+  `delete_all_for_user(user_id)` on `TotpAuthenticatorRepository`
+  (in-memory + D1 adapters, both no-op-on-empty / idempotent
+  across retries). Cron sweep extended in
+  `crates/worker/src/sweep.rs`: new private
+  `totp_unconfirmed_sweep` helper called after the existing
+  anonymous-trial sweep, drops `confirmed_at IS NULL` rows older
+  than 24h (`TOTP_UNCONFIRMED_RETENTION_SECONDS=86400`); same
+  best-effort failure semantics, no audit per row (TOTP rows are
+  credentials, not principals — distinct from anonymous-user
+  pruning which preserves audit trail). `cesauth-migrate`
+  redaction profiles `prod-to-staging` and `prod-to-dev` both
+  drop `totp_authenticators` and `totp_recovery_codes` entirely
+  via new `RedactionProfile.drop_tables` field — TOTP secrets
+  must NOT survive redaction, even encrypted (a staging operator
+  with the deployment's encryption key could authenticate as
+  real users). New chapter `docs/src/deployment/totp.md`
+  documents encryption key provisioning, key rotation procedure
+  (with explicit caveat that dual-key resolution is deferred —
+  current implementation requires re-enrollment or a one-shot
+  helper for rotation), admin reset path for lockout recovery,
+  cron sweep semantics, diagnostic queries.
+  `TOTP_ENCRYPTION_KEY` added to pre-production release gate in
+  `docs/src/expert/security.md` (with note that TOTP is opt-in
+  at operator level — single-factor magic-link or passkey-only
+  deployments don't need it). 10 new tests (3 redaction profile
+  + 5 disable template + 2 adapter-test for delete_all_for_user).
 
 Each operator-deploy boundary leaves the system in a
 coherent state. v0.27.0 → v0.28.0 is code-only. v0.28.0 →

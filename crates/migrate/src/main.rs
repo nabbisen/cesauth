@@ -369,6 +369,22 @@ async fn do_export(
     let mut totals: Vec<(&str, u64)> = Vec::with_capacity(MIGRATION_TABLE_ORDER.len());
     let mut total_rows = 0_u64;
     for table in MIGRATION_TABLE_ORDER {
+        // Skip tables the active redaction profile asks to drop
+        // entirely. Used by `prod-to-staging` and `prod-to-dev`
+        // for the TOTP tables (ADR-009 §Q5/§Q11) — TOTP secrets
+        // must NOT survive redaction. We fetch zero rows and
+        // record `0 rows (dropped by profile)` in the operator
+        // summary so the operator can verify what happened.
+        let dropped_by_profile = prof
+            .map(|p| p.drop_tables.iter().any(|t| t == table))
+            .unwrap_or(false);
+        if dropped_by_profile {
+            eprintln!("Exporting {table}... 0 rows (dropped by `{}` profile)",
+                prof.unwrap().name);
+            totals.push((table, 0));
+            continue;
+        }
+
         eprint!("Exporting {table}...");
         let table_filter = build_table_filter(table, tenant_filter)?;
         let rows = src.fetch_table(table, table_filter).await
@@ -609,6 +625,19 @@ async fn export_to_path(
 
     let mut total_rows = 0_u64;
     for table in MIGRATION_TABLE_ORDER {
+        // Same drop_tables honoring as the main export path —
+        // see the comment there. Without this, `cesauth-migrate
+        // round-trip --profile prod-to-staging` would attempt
+        // to dump TOTP tables despite the profile asking us not
+        // to.
+        let dropped_by_profile = profile
+            .map(|p| p.drop_tables.iter().any(|t| t == table))
+            .unwrap_or(false);
+        if dropped_by_profile {
+            eprintln!("  {table}... 0 (dropped by profile)");
+            continue;
+        }
+
         eprint!("  {table}...");
         let table_filter = build_table_filter(table, tenants)?;
         let rows = src.fetch_table(table, table_filter).await

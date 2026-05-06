@@ -249,6 +249,44 @@ mod totp {
     }
 
     #[tokio::test]
+    async fn delete_all_for_user_scopes_to_user() {
+        // ADR-009 §Q9 disable flow. Pin that the user-scoped
+        // delete only touches the calling user's rows — a bug
+        // here would let one user's disable wipe another user's
+        // TOTP, which is a security incident not a UX glitch.
+        let r = InMemoryTotpAuthenticatorRepository::default();
+        r.create(&auth("alice-1", "alice", Some(100))).await.unwrap();
+        r.create(&auth("alice-2", "alice", None)).await.unwrap();
+        r.create(&auth("bob-1",   "bob",   Some(100))).await.unwrap();
+
+        r.delete_all_for_user("alice").await.unwrap();
+
+        // Both Alice's rows gone (active + unconfirmed).
+        assert!(r.find_by_id("alice-1").await.unwrap().is_none());
+        assert!(r.find_by_id("alice-2").await.unwrap().is_none());
+        // Bob's row untouched.
+        assert!(r.find_by_id("bob-1").await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn delete_all_for_user_is_idempotent_on_missing() {
+        // The disable-TOTP flow is idempotent across retries
+        // (see disable.rs module doc). A user clicking "Disable"
+        // twice quickly, or a network retry, must not 500. Pin
+        // by calling delete_all_for_user on a user with no rows.
+        let r = InMemoryTotpAuthenticatorRepository::default();
+        r.create(&auth("bob-1", "bob", Some(100))).await.unwrap();
+
+        // No rows for "alice" → no-op, no error.
+        r.delete_all_for_user("alice").await.unwrap();
+        // Bob still there.
+        assert!(r.find_by_id("bob-1").await.unwrap().is_some());
+
+        // Retry on the same no-op.
+        r.delete_all_for_user("alice").await.unwrap();
+    }
+
+    #[tokio::test]
     async fn list_unconfirmed_older_than_filters_correctly() {
         let r = InMemoryTotpAuthenticatorRepository::default();
         // Unconfirmed + old → IN

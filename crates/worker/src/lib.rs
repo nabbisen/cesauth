@@ -121,6 +121,12 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .post_async("/me/security/totp/recover",        |req, ctx| async move {
             routes::me::totp::recover::post_handler(req, ctx.env).await
         })
+        .get_async ("/me/security/totp/disable",        |req, ctx| async move {
+            routes::me::totp::disable::get_handler(req, ctx.env).await
+        })
+        .post_async("/me/security/totp/disable",        |req, ctx| async move {
+            routes::me::totp::disable::post_handler(req, ctx.env).await
+        })
         // --- Admin API ------------------------------------------------
         .post_async("/admin/users",          |req, ctx| async move { routes::admin::create_user(req, ctx).await })
         .delete_async("/admin/sessions/:id", |req, ctx| async move { routes::admin::revoke_session(req, ctx).await })

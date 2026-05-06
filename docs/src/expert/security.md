@@ -130,6 +130,16 @@ Before the first `wrangler deploy`:
    bytes of entropy.
 5. Set `TURNSTILE_SECRET` if the deployment needs anti-abuse
    protection beyond pure rate limits.
+6. **If you plan to allow users to enable TOTP**, set
+   `TOTP_ENCRYPTION_KEY` (32-byte AES-256-GCM key, base64) and
+   `TOTP_ENCRYPTION_KEY_ID` (a short label like `k-2026-04`).
+   Without these, `GET /me/security/totp/enroll` responds 503 —
+   harmless, but no users can enroll TOTP. See the
+   [TOTP configuration chapter](../deployment/totp.md) for the
+   key rotation procedure and admin reset path. Setting
+   `TOTP_ENCRYPTION_KEY` in production is **not required** if
+   the deployment is single-factor-magic-link or passkey-only —
+   TOTP is opt-in at the operator level.
 
 ## Dependency vulnerability scanning
 

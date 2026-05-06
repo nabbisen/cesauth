@@ -114,6 +114,16 @@ pub trait TotpAuthenticatorRepository {
     /// per-user, not per-authenticator.
     async fn delete(&self, id: &str) -> PortResult<()>;
 
+    /// Delete all authenticators belonging to a user. Used by the
+    /// disable-TOTP flow (v0.30.0): a single user-scoped DELETE
+    /// rather than list+per-row delete because there's no per-row
+    /// audit invariant to preserve here (TOTP rows are credentials
+    /// not principals — see anonymous-sweep contrast in
+    /// `crates/worker/src/sweep.rs` module doc).
+    ///
+    /// No-op when the user has no rows. Idempotent across retries.
+    async fn delete_all_for_user(&self, user_id: &str) -> PortResult<()>;
+
     /// Cron-sweep helper. Returns ids of rows where
     /// `confirmed_at IS NULL AND created_at < cutoff_unix`.
     /// The caller (the daily 04:00 UTC cron) deletes them in a

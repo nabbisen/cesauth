@@ -25,11 +25,13 @@
 //!   if AR was parked, redirect).
 //! - `POST /me/security/totp/recover` — single-use recovery
 //!   code redemption, alternative to the verify path.
-//!
-//! Disable flow (`POST /me/security/totp/disable`) is
-//! deferred to v0.30.0 alongside the cron sweep, redaction
-//! profile, and operator chapter — see ROADMAP.
+//! - `GET  /me/security/totp/disable` — render confirmation
+//!   page (v0.30.0).
+//! - `POST /me/security/totp/disable` — execute removal
+//!   (v0.30.0). Deletes all TOTP authenticator rows + recovery
+//!   codes for the calling user.
 
+pub mod disable;
 pub mod enroll;
 pub mod recover;
 pub mod verify;

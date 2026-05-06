@@ -451,5 +451,45 @@ authenticator app. Enter the 6-digit code your app shows now.</p>
     frame("Enter your code - cesauth", &body)
 }
 
+/// TOTP disable confirmation page. Shown by `GET /me/security/totp/disable`
+/// when the user requests TOTP removal. The form POSTs to the same
+/// path; on success the worker deletes the user's TOTP authenticators
+/// + recovery codes and redirects with a success notice.
+///
+/// Disabling TOTP is destructive in the sense that the user loses
+/// MFA on their account, and any unredeemed recovery codes are
+/// also wiped. The page emphasizes both consequences and requires
+/// an explicit confirm click — no "are you sure" double-prompt
+/// (one click is enough; the consequences are clearly stated and
+/// re-enrolling takes one minute).
+///
+/// `csrf_token` matches the `__Host-cesauth-csrf` cookie value
+/// for the POST guard. v0.30.0 surface.
+pub fn totp_disable_confirm_page(csrf_token: &str) -> String {
+    let body = format!(
+        r#"<h1>Disable two-factor authentication?</h1>
+<div class="warning" role="alert" aria-live="polite">
+  <strong>This will turn off TOTP for your account.</strong>
+  Your authenticator app's entry will stop working, and any unused
+  recovery codes will also be deleted. You can re-enable TOTP
+  later by enrolling a new authenticator.
+</div>
+
+<p>If you've lost access to your authenticator, you can recover
+with a one-time code from your enrollment instead — that path is
+on the sign-in screen, not here.</p>
+
+<form method="POST" action="/me/security/totp/disable" aria-labelledby="disable-heading">
+  <h2 id="disable-heading" class="muted">Confirm</h2>
+  <input type="hidden" name="csrf" value="{csrf}">
+  <button type="submit" class="danger">Yes, disable TOTP</button>
+</form>
+
+<p class="muted"><a href="/">Cancel and go back</a></p>"#,
+        csrf = escape(csrf_token),
+    );
+    frame("Disable TOTP - cesauth", &body)
+}
+
 #[cfg(test)]
 mod tests;

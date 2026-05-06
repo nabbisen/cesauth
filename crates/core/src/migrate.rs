@@ -381,6 +381,24 @@ pub struct RedactionProfile {
     /// Per-table column transformations. `(table, column,
     /// transform)`. A column not listed is preserved as-is.
     pub rules: &'static [RedactionRule],
+
+    /// Tables to drop entirely from the export. Used when
+    /// per-column scrubbing isn't safe enough — TOTP secrets
+    /// must not survive redaction (ADR-009 §Q5/§Q11) even
+    /// hashed, because a staging deployment with real users'
+    /// hashed TOTP secrets would let any staging operator
+    /// brute-force the secret offline (the search space is
+    /// 2^160 in theory but in practice an attacker only needs
+    /// to enumerate plausible 160-bit secrets generated from
+    /// the staging worker's CSPRNG, which they can re-run with
+    /// staging entropy).
+    ///
+    /// Added in v0.30.0 alongside the TOTP track conclusion.
+    /// The CLI export loop checks this list and skips the
+    /// matching tables; the manifest records them as
+    /// `dropped_tables` so the importer can verify the
+    /// redacted dump matches the profile description.
+    pub drop_tables: &'static [&'static str],
 }
 
 /// Single column-level transformation in a redaction profile.
@@ -438,10 +456,19 @@ the UNIQUE invariant; drop display names. Authenticator \
 public-key material is preserved (it's not PII; passkey \
 challenges live in DO state and aren't dumped). Audit-event \
 subject IDs are preserved (they're already pseudonyms — user \
-ids, not raw identifiers).",
+ids, not raw identifiers). \
+\n\nTOTP authenticators and recovery codes are dropped entirely \
+(see ADR-009 §Q5/§Q11) — TOTP secrets must NOT survive \
+redaction, even encrypted, because a staging deployment with \
+real users' encrypted TOTP secrets would let any staging \
+operator authenticate as those users.",
         rules: &[
             RedactionRule { table: "users",       column: "email",        kind: RedactionKind::HashedEmail   },
             RedactionRule { table: "users",       column: "display_name", kind: RedactionKind::StaticString  },
+        ],
+        drop_tables: &[
+            "totp_authenticators",
+            "totp_recovery_codes",
         ],
     },
     RedactionProfile {
@@ -450,12 +477,19 @@ ids, not raw identifiers).",
 Stricter than `prod-to-staging`: also nulls out OIDC clients' \
 display names and admin tokens' display names, on the theory \
 that a developer machine has weaker isolation than a staging \
-environment. Use for `wrangler dev`-bound dumps.",
+environment. Use for `wrangler dev`-bound dumps. \
+\n\nLike `prod-to-staging`, drops TOTP authenticators and \
+recovery codes entirely — the threat surface is even worse on \
+a developer's laptop than on staging.",
         rules: &[
             RedactionRule { table: "users",        column: "email",         kind: RedactionKind::HashedEmail  },
             RedactionRule { table: "users",        column: "display_name",  kind: RedactionKind::StaticString },
             RedactionRule { table: "oidc_clients", column: "name",          kind: RedactionKind::StaticString },
             RedactionRule { table: "admin_tokens", column: "name",          kind: RedactionKind::Null         },
+        ],
+        drop_tables: &[
+            "totp_authenticators",
+            "totp_recovery_codes",
         ],
     },
 ];
@@ -1487,6 +1521,57 @@ mod tests {
     fn lookup_profile_returns_none_for_unknown() {
         assert!(lookup_profile("does-not-exist").is_none());
         assert!(lookup_profile("").is_none());
+    }
+
+    #[test]
+    fn prod_to_staging_drops_totp_tables() {
+        // ADR-009 §Q5/§Q11. TOTP secrets must NOT survive
+        // redaction even encrypted; the staging deployment
+        // would otherwise let any operator authenticate as
+        // those users. Pin so a future profile-edit can't
+        // silently regress this property.
+        let p = lookup_profile("prod-to-staging").unwrap();
+        assert!(p.drop_tables.contains(&"totp_authenticators"),
+            "prod-to-staging must drop totp_authenticators: {:?}", p.drop_tables);
+        assert!(p.drop_tables.contains(&"totp_recovery_codes"),
+            "prod-to-staging must drop totp_recovery_codes: {:?}", p.drop_tables);
+    }
+
+    #[test]
+    fn prod_to_dev_drops_totp_tables() {
+        // Stricter than prod-to-staging — same TOTP-drop
+        // requirement applies all the more.
+        let p = lookup_profile("prod-to-dev").unwrap();
+        assert!(p.drop_tables.contains(&"totp_authenticators"));
+        assert!(p.drop_tables.contains(&"totp_recovery_codes"));
+    }
+
+    #[test]
+    fn built_in_profile_drop_tables_reference_known_tables() {
+        // Defense in depth: the dropped table names should be
+        // tables that actually exist in our schema. A typo
+        // in `drop_tables` (e.g., "totp_authenticator" without
+        // the s) would silently NOT drop the table, leaving
+        // a privacy hole.
+        //
+        // We can't easily import MIGRATION_TABLE_ORDER from
+        // cesauth-migrate (cyclic — migrate depends on core),
+        // but we can pin the names against a hard-coded list
+        // of known TOTP tables that MUST stay in sync. Any
+        // future addition of a "drop entire table" rule
+        // referencing a non-TOTP table will fail this test
+        // and force the developer to update both lists.
+        const KNOWN_DROPPABLE: &[&str] = &[
+            "totp_authenticators",
+            "totp_recovery_codes",
+        ];
+        for p in built_in_profiles() {
+            for t in p.drop_tables {
+                assert!(KNOWN_DROPPABLE.contains(t),
+                    "profile {} references unknown table to drop: {t}",
+                    p.name);
+            }
+        }
     }
 
     #[test]

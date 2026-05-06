@@ -250,3 +250,44 @@ fn verify_page_does_not_leak_user_id() {
     assert!(!html.contains("@"),
         "no `@` character should appear (would imply email is being echoed): {html}");
 }
+
+// =====================================================================
+// TOTP disable confirmation page (v0.30.0)
+// =====================================================================
+
+#[test]
+fn disable_page_includes_csrf_token() {
+    let html = totp_disable_confirm_page("tok-abc");
+    assert!(html.contains(r#"<input type="hidden" name="csrf" value="tok-abc">"#));
+}
+
+#[test]
+fn disable_page_form_posts_to_disable_endpoint() {
+    let html = totp_disable_confirm_page("t");
+    assert!(html.contains(r#"action="/me/security/totp/disable""#));
+    assert!(html.contains(r#"method="POST""#));
+}
+
+#[test]
+fn disable_page_warns_about_recovery_code_loss() {
+    // The disable flow wipes recovery codes too. Pin so a future
+    // UX iteration that softens the warning doesn't accidentally
+    // hide the consequence.
+    let html = totp_disable_confirm_page("t");
+    assert!(html.contains("recovery codes"),
+        "disable page must mention recovery codes are wiped: {html}");
+}
+
+#[test]
+fn disable_page_offers_cancel_link() {
+    let html = totp_disable_confirm_page("t");
+    assert!(html.contains(r#"<a href="/">Cancel"#),
+        "destructive flow must offer a no-op exit: {html}");
+}
+
+#[test]
+fn disable_page_escapes_csrf() {
+    let html = totp_disable_confirm_page("t<>k");
+    assert!(html.contains("t&lt;&gt;k"));
+    assert!(!html.contains(r#"value="t<>k""#));
+}

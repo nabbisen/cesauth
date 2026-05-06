@@ -209,6 +209,21 @@ impl TotpAuthenticatorRepository for CloudflareTotpAuthenticatorRepository<'_> {
         Ok(())
     }
 
+    async fn delete_all_for_user(&self, user_id: &str) -> PortResult<()> {
+        // No-op when the user has no rows. We deliberately do NOT
+        // map zero `changes` to NotFound (unlike `delete(id)`)
+        // because the disable-TOTP flow is idempotent — a second
+        // call after a successful first call should succeed
+        // silently rather than 500.
+        let db = db(self.env)?;
+        db.prepare("DELETE FROM totp_authenticators WHERE user_id = ?1")
+            .bind(&[user_id.into()])
+            .map_err(|e| run_err("totp_authenticators.delete_all_for_user bind", e))?
+            .run().await
+            .map_err(|e| run_err("totp_authenticators.delete_all_for_user run", e))?;
+        Ok(())
+    }
+
     async fn list_unconfirmed_older_than(&self, cutoff_unix: i64)
         -> PortResult<Vec<String>>
     {

@@ -82,6 +82,19 @@ pub const MIGRATION_TABLE_ORDER: &[&str] = &[
 
     // Anonymous trial — separate cleanup lifecycle (ADR-004).
     "anonymous_sessions",
+
+    // TOTP authenticators + recovery codes (ADR-009 Q11).
+    // Both are user-scoped via FK to `users.id` but the tables
+    // themselves don't carry a `tenant_id` column — same shape as
+    // `authenticators` (WebAuthn). Treated as `Global` for the
+    // SQL-level WHERE clause; the FK graph constrains
+    // tenant-filtered exports indirectly through `users`.
+    //
+    // The `prod-to-staging` redaction profile drops both of these
+    // entirely (drop_tables) — TOTP secrets must NOT survive
+    // redaction, even hashed. See ADR-009 §Q5 / §Q11.
+    "totp_authenticators",
+    "totp_recovery_codes",
 ];
 
 // ---------------------------------------------------------------------
@@ -148,6 +161,8 @@ pub const TENANT_SCOPES: &[TenantScope] = &[
     TenantScope::Global,                          // user_organization_memberships (FK orgs)
     TenantScope::Global,                          // user_group_memberships (FK groups)
     TenantScope::OwnColumn("tenant_id"),          // anonymous_sessions
+    TenantScope::Global,                          // totp_authenticators (FK users; see authenticators note)
+    TenantScope::Global,                          // totp_recovery_codes (FK users; see authenticators note)
 ];
 
 /// Look up the tenant scope for a table. Returns `None` for
