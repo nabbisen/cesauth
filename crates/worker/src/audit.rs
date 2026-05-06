@@ -153,6 +153,18 @@ pub enum EventKind {
     /// `touch()`. Payload includes the configured ttl + the
     /// session's age.
     SessionAbsoluteTimeout,
+    /// **v0.40.0** — D1-DO session index drift detected by
+    /// the daily reconciliation cron (ADR-012 §Q1,
+    /// detection-only resolution). Payload includes
+    /// `session_id`, `user_id` (so per-user dashboards can
+    /// correlate), and a `drift_kind` discriminator
+    /// (`do_vanished` / `do_newer_revoke` /
+    /// `anomalous_d1_revoked_do_active`). For
+    /// `do_newer_revoke` the payload also carries the DO's
+    /// `do_revoked_at` timestamp so operators can see how
+    /// stale the D1 mirror was. v0.40.0 emits but does NOT
+    /// auto-repair; repair is ADR-012 §Q1.5 follow-up.
+    SessionIndexDrift,
     // Anonymous trial (v0.16.0, ADR-004)
     AnonymousCreated,
     AnonymousExpired,
@@ -211,6 +223,7 @@ impl EventKind {
             Self::SessionRevokedByAdmin        => "session_revoked_by_admin",
             Self::SessionIdleTimeout           => "session_idle_timeout",
             Self::SessionAbsoluteTimeout       => "session_absolute_timeout",
+            Self::SessionIndexDrift            => "session_index_drift",
             Self::AnonymousCreated             => "anonymous_created",
             Self::AnonymousExpired             => "anonymous_expired",
             Self::AnonymousPromoted            => "anonymous_promoted",

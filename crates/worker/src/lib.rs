@@ -26,6 +26,7 @@ pub mod post_auth;
 pub mod routes;
 pub mod sweep;
 pub mod audit_chain_cron;
+pub mod session_index_audit;
 pub mod turnstile;
 
 #[allow(clippy::wildcard_imports)]
@@ -65,6 +66,13 @@ pub async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
             }
             if let Err(e) = audit_chain_cron::run(&env).await {
                 console_error!("audit chain verification failed: {e:?}");
+            }
+            // v0.40.0: session-index drift detection
+            // (ADR-012 §Q1). Detection-only — emits
+            // audit events for drifts, no D1 repair
+            // (deferred to §Q1.5).
+            if let Err(e) = session_index_audit::run(&env).await {
+                console_error!("session index audit failed: {e:?}");
             }
         }
         // Unknown schedule. Either a misconfigured `wrangler.toml`

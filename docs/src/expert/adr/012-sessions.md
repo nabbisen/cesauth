@@ -320,12 +320,49 @@ who want the v0.34.0 behavior can set
 
 ## Open questions
 
-- **Q1**: D1-DO reconciliation tool. Operators who notice
-  index drift (e.g., from a D1 outage during a revoke
-  cascade) need a way to repair it. v0.35.0 ships with the
-  drift documented; the reconciliation tool is post-Phase
-  work. Likely a `cesauth-migrate sessions reconcile` admin
-  subcommand.
+- **Q1**: ~~D1-DO reconciliation tool.~~ **Detection
+  resolved in v0.40.0; repair deferred to §Q1.5.**
+  v0.35.0 ships D1 mirror writes as best-effort,
+  meaning a successful DO write whose D1 mirror failed
+  leaves the index drifted. v0.40.0 ships the
+  detection half: a daily reconciliation cron
+  (extending the existing 04:00 UTC sweep) walks the
+  first 1000 active `user_sessions` rows, peeks the
+  corresponding `ActiveSession` DO, classifies via
+  `cesauth_core::session_index::classify` into one of
+  four outcomes (`InSync`, `DoVanished`,
+  `DoNewerRevoke`, `AnomalousD1RevokedDoActive`) and
+  emits one `EventKind::SessionIndexDrift` audit
+  event per drift detected. Operators get a dashboard
+  signal (`session_index_drift` audit kind) without
+  cesauth taking destructive D1 actions yet — the
+  rationale being that **operational visibility comes
+  before automated repair**: until we have data on
+  drift volumes and patterns, we don't know whether
+  auto-repair is the right answer or whether the
+  appropriate response is "alert a human". v0.40.0
+  also surfaces a structural-bug signal: a high rate
+  of `anomalous_d1_revoked_do_active` would indicate
+  the mirror write paths have a regression
+  somewhere, and fixing the root cause is the right
+  move rather than auto-rewriting D1.
+- **Q1.5** (NEW, v0.40.0): D1 repair tool. Once we
+  have observed a few weeks of `session_index_drift`
+  events in production, ship the repair half: D1
+  delete for `do_vanished` rows, D1 update for
+  `do_newer_revoke` rows. `anomalous_d1_revoked_do_active`
+  remains alert-only — automated repair would mask
+  whatever upstream bug produced it. Likely shape: a
+  `cesauth-migrate sessions repair` admin
+  subcommand that talks to a new admin HTTP endpoint
+  on the worker, or a separate cron switch
+  (`SESSION_INDEX_AUTO_REPAIR=true`) for trusted
+  deployments. **Limitation already documented**:
+  this approach cannot detect a DO that exists with no
+  D1 row (orphan DO) — Cloudflare doesn't support DO
+  namespace iteration. Pre-v0.35.0 sessions and
+  start-time-mirror-failures are invisible. Tracked
+  as Q5.
 - **Q2**: User notification on idle / absolute timeout. The
   current behavior is silent (the user just gets redirected
   to /login on the next request). A notification "your
@@ -338,6 +375,22 @@ who want the v0.34.0 behavior can set
   list page. The page has 50 rows max; for users with
   multiple sessions a bulk option would be friendlier than
   clicking each row. Defer, low priority.
+- **Q5** (surfaced by v0.40.0 work): orphan DOs.
+  Cloudflare doesn't support enumerating DOs in a
+  namespace, so a session whose D1 mirror write failed
+  at start time exists in the DO with no D1 row. The
+  v0.40.0 reconcile cron (which walks D1 outward to
+  the DO) cannot detect these. Two follow-up shapes
+  are possible: (a) accept the limitation (these
+  sessions are still revocable from the device that
+  originated them, and absolute timeout will eventually
+  reap the DO; the user just doesn't see the row in
+  their list). (b) Add a "rebuild D1 from DO" admin
+  endpoint that would require an operator-supplied
+  list of session_ids to peek (which they could
+  source from worker logs of failed mirror writes).
+  v0.40.0 documents the limitation; no chosen
+  resolution path.
 
 ## Considered alternatives (rejected)
 

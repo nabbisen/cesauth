@@ -6,6 +6,7 @@
 > oscillation defines the SI second. cesauth aspires to the same
 > precision in authentication and authorization.
 
+![Status](https://img.shields.io/badge/status-unstable-red)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 ---

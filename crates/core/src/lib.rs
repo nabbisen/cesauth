@@ -40,6 +40,7 @@ pub mod ports;
 pub mod security_headers;
 pub mod service;
 pub mod session;
+pub mod session_index;
 pub mod tenancy;
 pub mod tenant_admin;
 pub mod totp;

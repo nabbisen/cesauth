@@ -12,6 +12,245 @@ changes will always be called out here.
 
 ---
 
+## [0.40.0] - 2026-05-03
+
+D1-DO sessions index drift detection (ADR-012 §Q1
+detection-only resolution). First security-track release
+after the v0.36-v0.39 i18n + feature track sprint. Closes
+half of the operator-visibility gap that v0.35.0 left
+behind: the daily 04:00 UTC sweep now also walks
+`user_sessions`, peeks the corresponding `ActiveSession`
+DOs, and emits one `session_index_drift` audit event per
+detected drift. Repair is deliberately **not** shipped in
+this release — operational visibility comes before
+automated D1 mutations.
+
+### Why this matters
+
+v0.35.0's `/me/security/sessions` page is backed by a
+denormalized D1 mirror at `user_sessions(session_id,
+user_id, created_at, revoked_at, auth_method,
+client_id)`. The DO is source of truth; D1 is a
+best-effort eventually-consistent index that lets the
+page answer "what sessions does this user have" without
+DO namespace iteration (which Cloudflare doesn't
+support). "Best-effort" means a successful DO write
+whose D1 mirror failed leaves the index drifted: users
+see ghost rows they can't actually revoke, or miss
+legitimate sessions in their list. ADR-012 §Q1
+documented the gap and deferred the reconcile tool;
+v0.40.0 ships the detection half.
+
+### Why detection-only
+
+Two reasons to ship detection without repair:
+
+1. **Operational visibility comes first.** Until we have
+   data on drift volume and pattern, we don't know
+   whether automated repair is the right response or
+   whether the appropriate response is "alert a human
+   and let them decide". The detection signal lets
+   operators build the dashboard panel and watch for a
+   few weeks before we wire up destructive D1
+   mutations.
+2. **Repair is safer to ship after observing
+   classification.** If the cron emits, say, 10000
+   `anomalous_d1_revoked_do_active` events after
+   deployment, that's a structural bug in the mirror
+   write paths — the right move is fixing the root
+   cause, not auto-rewriting D1.
+
+The repair half is now ADR-012 **§Q1.5** (NEW).
+
+### What ships
+
+#### `cesauth_core::session_index` module — pure classification logic
+
+```rust
+pub fn classify(d1: &D1SessionRow, do_status: &SessionStatus) -> ReconcileOutcome
+```
+
+Four outcome variants:
+
+| Outcome | Meaning | Repair (deferred) |
+|---|---|---|
+| `InSync` | D1 and DO agree. Dominant case. | none |
+| `DoVanished` | D1 says active, DO has no record (likely sweep cascade). | D1 delete row |
+| `DoNewerRevoke { do_revoked_at }` | DO is revoked, D1 still says active OR has stale `revoked_at`. | D1 update revoked_at |
+| `AnomalousD1RevokedDoActive` | D1 says revoked but DO says active. **No production code path produces this** — implies manual SQL edit or deeper drift. | alert-only; never auto-repair |
+
+The module has no I/O — it's a `(d1_row, do_status) ->
+outcome` function. Trivially testable. 11 dedicated
+tests covering every (active/revoked) × (active/revoked
+/ vanished) cross product including the IdleExpired and
+AbsoluteExpired DO terminal states (both classified as
+`DoNewerRevoke` because from reconcile's perspective
+they're indistinguishable from explicit revoke), plus
+two defensive tests for malformed inputs (Active variant
+with non-None `state.revoked_at`, Revoked variant with
+None `state.revoked_at`).
+
+#### `cesauth_worker::session_index_audit` cron
+
+Extends the existing daily 04:00 UTC scheduled handler.
+Walks the first **1000** active rows of `user_sessions`
+(oldest-first so long-living drift surfaces even when
+the table has many newer rows), peeks each DO, classifies,
+emits a `SessionIndexDrift` audit event per drift,
+accumulates counters, logs a summary line.
+
+The cap of 1000 is sized for known cesauth deployments;
+larger populations need cursor pagination across cron
+ticks, tracked under ADR-012 §Q1.5 follow-up.
+
+Per-row DO query failures count as a separate `errors`
+counter — distinguishes "drift" (correctness signal) from
+"cron is unhealthy" (operational signal). Persistent
+errors show up as a growing counter operators alert on
+independently.
+
+#### `EventKind::SessionIndexDrift` audit kind
+
+Snake-case `session_index_drift`. Payload:
+
+```json
+{
+  "session_id":     "...",
+  "user_id":        "...",
+  "drift_kind":     "do_vanished" | "do_newer_revoke" | "anomalous_d1_revoked_do_active",
+  "do_revoked_at":  1714000000     // only for do_newer_revoke
+}
+```
+
+`do_revoked_at` (where applicable) lets operators see
+how stale the D1 mirror was when the cron caught the
+drift — useful for sizing the recovery window if/when
+auto-repair ships in §Q1.5.
+
+#### Best-effort failure semantics
+
+The cron is non-transactional. A single per-row DO query
+failure logs and continues; the next day's cron will
+re-walk and either re-detect or self-heal (for transient
+conditions). A D1 read failure aborts the cron with an
+error log — re-tries the next day. An audit-write failure
+is silently dropped (the drift is real, but unsignalled
+this run; next day's cron will surface it again).
+
+### Tests
+
+889 → **900** (+11).
+
+- core: 342 → 353 (+11). All 11 in
+  `session_index::tests`:
+  - `in_sync_when_both_active`
+  - `in_sync_when_both_revoked_with_matching_timestamp`
+  - `do_vanished_when_d1_active_do_notstarted`
+  - `do_vanished_when_d1_revoked_do_notstarted`
+  - `do_newer_revoke_when_d1_still_thinks_active`
+  - `idle_expired_classifies_as_do_newer_revoke`
+  - `absolute_expired_classifies_as_do_newer_revoke`
+  - `do_newer_revoke_when_d1_has_stale_timestamp`
+  - `anomalous_when_d1_revoked_do_active`
+  - `defensive_active_variant_with_revoked_at_set_treated_as_do_newer_revoke`
+  - `defensive_revoked_variant_with_no_revoked_at_falls_back_to_created_at`
+- ui: 230 → 230 (no UI changes).
+- worker: 171 → 171. The cron orchestrator is glue;
+  the testable logic is in `cesauth_core::session_index`
+  which has full coverage. The cron's D1 query / DO peek /
+  audit-write paths are integration-test territory and
+  hard to exercise without a workers-rs harness; deferred
+  to a future operational-test PR.
+- adapter-test, do, migrate, adapter-cloudflare: unchanged.
+
+### Schema / wire / DO
+
+- Schema unchanged from v0.39.0 (still SCHEMA_VERSION 9).
+  No migration.
+- Wire format unchanged.
+- DO state unchanged.
+- No new dependencies.
+- Cron schedule unchanged (`0 4 * * *` daily). The
+  scheduled handler now runs three independent passes
+  (sweep, audit_chain_cron, session_index_audit) — each
+  failure-isolated from the others.
+
+### Operator-visible changes
+
+- **New audit kind to monitor**: `session_index_drift`.
+  Add a panel on the audit dashboard. The expected
+  baseline is **0 events per day** in steady state. A
+  non-zero count indicates either:
+  - Recent operational disturbance (D1 outage during a
+    revoke cascade) → expect to see `do_newer_revoke`
+    spike then settle.
+  - Sweep cascade lag → expect `do_vanished` events for
+    sessions whose absolute timeout fired on a day the
+    mirror write failed. These should self-clear over
+    time once §Q1.5 ships repair.
+  - Structural bug → `anomalous_d1_revoked_do_active`
+    should always be 0. Any non-zero count is an
+    investigation trigger.
+- **No production behavior change** for end users. The
+  cron is detection-only; D1 and DO state remain exactly
+  as the live paths leave them.
+
+### ADR changes
+
+- **No new ADR.** ADR-012 §Q1 marked partially
+  resolved; new §Q1.5 (D1 repair) and §Q5 (orphan DOs
+  limitation) added inline.
+- ADR README + mdBook SUMMARY unchanged (no new ADR
+  document).
+
+### Doc / metadata changes
+
+- `Cargo.toml` version 0.39.0 → 0.40.0.
+- UI footers + tests bumped to v0.40.0.
+- ROADMAP: v0.40.0 Shipped table row added.
+- This CHANGELOG entry.
+
+### Upgrade path 0.39.0 → 0.40.0
+
+1. `git pull` or extract this tarball over your working
+   tree.
+2. `cargo build --workspace --target wasm32-unknown-unknown
+   --release`. No new production dependencies.
+3. `wrangler deploy`. **No schema migration.** No
+   `wrangler.toml` change. No new bindings. The new cron
+   pass piggybacks on the existing `0 4 * * *` schedule.
+4. **No operator action required** for the production
+   path. The next 04:00 UTC cron tick will run the
+   detector for the first time. Watch the audit log for
+   `session_index_drift` events over the following few
+   days.
+5. Add a dashboard panel for the new audit kind.
+
+### Forward roadmap
+
+- **v0.40.1 / v0.41.0** candidate: ADR-012 §Q1.5 D1
+  repair tool. Likely a worker admin endpoint
+  (auth-gated) plus a `cesauth-migrate sessions repair`
+  CLI wrapper. Decision on shape blocked on observing
+  v0.40.0 drift patterns for a few weeks.
+- **i18n-2 continued (v0.39.1+)**: TOTP recovery codes
+  display, TOTP disable confirm, magic link request +
+  sent, error pages, `PrimaryAuthMethod::label`,
+  Security Center enabled-state recovery-codes row
+  (blocked on pluralization — ADR-013 §Q4).
+- **Future security-track items still open**: user
+  notification on session timeout (ADR-012 §Q2), device
+  fingerprint columns (ADR-012 §Q3), bulk revoke other
+  sessions (ADR-012 §Q4), introspection
+  resource-server audience scoping (ADR-014 §Q1),
+  introspection rate limit (ADR-014 §Q2), audit
+  retention policy (ADR-014 §Q3), multi-key
+  access-token introspection (ADR-014 §Q4).
+- **Feature track candidates**: RFC 7009 token
+  revocation for confidential clients.
+
+---
+
 ## [0.39.0] - 2026-05-03
 
 i18n-2 continued: login + TOTP + Security Center page chrome
@@ -7010,7 +7249,7 @@ review cost.
 ### Added
 
 - **`.github/CODE_OF_CONDUCT.md`** — Contributor Covenant 2.1,
-  with `nabbisen@scqr.net` as the enforcement contact.
+  with `nabbisen` as the enforcement contact.
 - **`.github/CONTRIBUTING.md`** — practical guide covering the
   workspace test flow, code-review priorities (make invalid
   states unrepresentable; pure decision in core, side effects
