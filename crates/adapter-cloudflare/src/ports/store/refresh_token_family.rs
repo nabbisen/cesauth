@@ -25,7 +25,10 @@ enum FamilyReply {
     Ok,
     Rotated { new_current_jti: String },
     AlreadyRevoked,
-    ReusedAndRevoked,
+    /// **v0.34.0**: carries forensic data so the worker can emit a
+    /// distinct audit event (`refresh_token_reuse_detected`) and so
+    /// `peek` results post-revocation surface the cause.
+    ReusedAndRevoked { reused_jti: String, was_retired: bool },
     NotInitialized,
     Conflict,
     State { state: FamilyState },
@@ -84,7 +87,8 @@ impl RefreshTokenFamilyStore for CloudflareRefreshTokenFamilyStore<'_> {
             FamilyReply::Rotated { new_current_jti } =>
                 Ok(RotateOutcome::Rotated { new_current_jti }),
             FamilyReply::AlreadyRevoked              => Ok(RotateOutcome::AlreadyRevoked),
-            FamilyReply::ReusedAndRevoked            => Ok(RotateOutcome::ReusedAndRevoked),
+            FamilyReply::ReusedAndRevoked { reused_jti, was_retired } =>
+                Ok(RotateOutcome::ReusedAndRevoked { reused_jti, was_retired }),
             FamilyReply::NotInitialized              => Err(PortError::NotFound),
             _                                        => Err(PortError::Unavailable),
         }

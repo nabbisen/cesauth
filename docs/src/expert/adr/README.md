@@ -30,7 +30,8 @@ don't change observable behavior.
 | 007 | HTTP security response headers                      | Accepted |
 | 008 | OIDC `id_token` issuance                            | Draft    |
 | 009 | TOTP (RFC 6238) as a second factor                  | Accepted |
-| 010 | Audit log hash chain                                | Draft    |
+| 010 | Audit log hash chain                                | Accepted |
+| 011 | Refresh token reuse hardening                       | Accepted |
 
 ADRs 001-003 were authored together in v0.11.0 to settle the design
 questions deferred from v0.10.0. Their decisions ship as the

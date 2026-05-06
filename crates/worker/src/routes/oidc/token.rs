@@ -137,14 +137,68 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
                     log::emit(&cfg.log, Level::Warn, Category::Auth,
                         &format!("rotate_refresh failed: {e:?}"),
                         Some(&g.client_id));
-                    audit::write_owned(
-                        &ctx.env, EventKind::TokenRefreshRejected,
-                        None, Some(g.client_id.to_owned()),
-                        Some(format!("{e:?}")),
-                    ).await.ok();
+
+                    // v0.34.0: dispatch on the variant. A reuse
+                    // detection emits the dedicated audit event
+                    // with forensic payload (family_id, presented
+                    // jti, was_retired); other rotate failures
+                    // (revoked, expired, unknown family) emit the
+                    // generic refresh_rejected. The HTTP response
+                    // is the same `invalid_grant` for both — see
+                    // `oauth_error_response` for the rationale.
+                    match &e {
+                        cesauth_core::CoreError::RefreshTokenReuse { reused_jti, was_retired } => {
+                            // Decode family_id from the presented
+                            // refresh token. If the token is
+                            // malformed we still record the event
+                            // with an empty family — better
+                            // partial visibility than no event at
+                            // all.
+                            let family_id = decode_family_id_lossy(g.refresh_token);
+                            let payload = serde_json::json!({
+                                "family_id":     family_id,
+                                "client_id":     g.client_id,
+                                "presented_jti": reused_jti,
+                                "was_retired":   was_retired,
+                            }).to_string();
+                            audit::write_owned(
+                                &ctx.env, EventKind::RefreshTokenReuseDetected,
+                                None, Some(g.client_id.to_owned()),
+                                Some(payload),
+                            ).await.ok();
+                        }
+                        _ => {
+                            audit::write_owned(
+                                &ctx.env, EventKind::TokenRefreshRejected,
+                                None, Some(g.client_id.to_owned()),
+                                Some(format!("{e:?}")),
+                            ).await.ok();
+                        }
+                    }
                     oauth_error_response(&e)
                 }
             }
         }
     }
+}
+
+/// Audit-only lossy decode of a refresh token's family_id. The
+/// authoritative decode lives inside `cesauth_core::service::token`
+/// and propagates errors as `CoreError::InvalidGrant`; we don't want
+/// to fail-closed on the audit-write path just because a token is
+/// malformed (we'd lose the reuse-detection signal we're trying to
+/// record). On any decode failure this returns `"<malformed>"` so
+/// the audit row carries SOMETHING to correlate against.
+///
+/// Mirrors the encoder in `core::service::token`:
+/// `base64url(family_id "." jti "." expiry)`.
+fn decode_family_id_lossy(token: &str) -> String {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    let Ok(bytes) = URL_SAFE_NO_PAD.decode(token.as_bytes()) else {
+        return "<malformed>".to_owned();
+    };
+    let Ok(s) = std::str::from_utf8(&bytes) else {
+        return "<malformed>".to_owned();
+    };
+    s.split('.').next().unwrap_or("<malformed>").to_owned()
 }

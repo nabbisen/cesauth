@@ -14,6 +14,238 @@ changes will always be called out here.
 
 ---
 
+## [0.34.0] - 2026-05-03
+
+Refresh token reuse hardening (ADR-011 Accepted). The
+family-based rotation invariant from RFC 9700 §4.14.2
+(formerly OAuth 2.0 Security BCP §4.13.2) was already
+implemented and atomic since v0.4 — this release closes
+**observability** gaps surfaced by an audit of the
+v0.33.0 baseline against the BCP. Reuse detection events
+are now emitted as a distinct audit kind with forensic
+payload, while the wire-level response stays identical to
+`invalid_grant` so attackers can't probe family state via
+error-code differentiation.
+
+### What changed
+
+This is a security-track release with no new
+deployment-affecting moving parts. Schema unchanged. KV
+unchanged. No wire-format break for OAuth clients. The
+diff is concentrated in the type layer (refresh family
+state + rotate outcome + core error) plus a handful of
+worker plumbing lines.
+
+#### `FamilyState` gains forensic fields
+
+```rust
+pub struct FamilyState {
+    // ... existing fields ...
+    pub reused_jti:        Option<String>,
+    pub reused_at:         Option<i64>,
+    pub reuse_was_retired: Option<bool>,
+}
+```
+
+All three use `#[serde(default)]` so existing DO storage
+records (which don't carry these fields) deserialize cleanly
+and just see `None`. **No DO migration needed**; the fields
+populate lazily on the next reuse event for any given family.
+
+`reuse_was_retired = Some(true)` means the presented jti was
+in `retired_jtis` (= a real, previously-rotated-out token —
+the classic leaked-session case).
+`reuse_was_retired = Some(false)` means the jti was wholly
+unknown (= forged or shotgun attempt). `None` is the
+"never had a reuse" state, including admin-revoked
+families.
+
+Admin-initiated `revoke()` does NOT populate any reuse
+field, and once a family is revoked, subsequent rotation
+attempts do NOT overwrite the recorded forensics. The
+first reuse is the investigation anchor; later attacker
+pokes are recorded only as `AlreadyRevoked` outcomes.
+
+#### `RotateOutcome::ReusedAndRevoked` carries forensic payload
+
+```rust
+RotateOutcome::ReusedAndRevoked {
+    reused_jti:  String,
+    was_retired: bool,
+}
+```
+
+The caller doesn't have to peek the family again — the
+rotate operation already had this information at the
+decision point.
+
+#### New `CoreError::RefreshTokenReuse` distinct from `InvalidGrant`
+
+```rust
+CoreError::RefreshTokenReuse {
+    reused_jti:  String,
+    was_retired: bool,
+}
+```
+
+The service layer's `rotate_refresh` now distinguishes:
+
+- `RotateOutcome::AlreadyRevoked` →
+  `CoreError::InvalidGrant("refresh token revoked")` (as
+  before).
+- `RotateOutcome::ReusedAndRevoked { .. }` →
+  `CoreError::RefreshTokenReuse { reused_jti, was_retired }`.
+
+#### Same wire response for both error variants
+
+`oauth_error_response` maps both to `error: "invalid_grant"`
+with HTTP 400. Wire-level observers cannot distinguish
+reuse from a normally-revoked family — the BCP §4.13 / spec
+§10.3 internal/external separation. Internally, audit + logs
+see the distinct variants.
+
+The `(code, status)` decision is extracted as
+`oauth_error_code_status(&CoreError) -> (&'static str, u16)`
+so tests can pin the wire-equivalence without constructing
+`worker::Response` (which is wasm-bindgen-backed and panics
+on the host test target).
+
+#### New audit event `EventKind::RefreshTokenReuseDetected`
+
+Snake-case discriminant: `refresh_token_reuse_detected`.
+Emitted ONLY on `CoreError::RefreshTokenReuse`. Other
+rotation failures (already-revoked, expired, malformed
+token) continue emitting `token_refresh_rejected`.
+
+Payload JSON:
+
+```json
+{
+  "family_id":     "fam_...",
+  "client_id":     "...",
+  "presented_jti": "...",
+  "was_retired":   true
+}
+```
+
+`family_id` is decoded from the presented refresh token
+via `decode_family_id_lossy` — a separate, audit-only
+decoder that returns `"<malformed>"` rather than fail-
+closing on a malformed token. Losing the audit signal is
+worse than recording an empty family_id; the authoritative
+decoder used by the rotation path stays in core where its
+errors propagate normally.
+
+### Tests
+
+777 → 783 (+6).
+
+- adapter-test: 100 → 103 (+3): one strengthened
+  `refresh_reuse_burns_family` test now pins the new
+  forensic outputs; two new tests for the
+  unknown-jti subcase (`refresh_reuse_with_unknown_jti_marks_was_retired_false`)
+  and the preserve-first-forensics invariant
+  (`refresh_reuse_then_more_attempts_preserve_first_forensics`,
+  `admin_revoke_does_not_populate_reuse_forensics`).
+- worker: 159 → 162 (+3): three error-mapper tests in
+  `error::tests` covering wire-equivalence between
+  reuse and revoked, wire-equivalence between
+  was_retired=true vs false, and the RFC 6749 §5.2
+  `invalid_grant` code pin.
+- core, ui, do, migrate, adapter-cloudflare: unchanged
+  (300, 189, 16, 13, 0).
+
+### Schema
+
+Unchanged from v0.33.0. SCHEMA_VERSION still 8. No
+migration in this release.
+
+### Wire format
+
+Unchanged for OAuth clients. The HTTP-visible response on
+refresh-token reuse is byte-identical to the response on
+legitimate revocation (`{"error":"invalid_grant"}` with
+HTTP 400). This is a deliberate property — see ADR-011
+"Same wire-level response for both error variants".
+
+### Operator-visible changes
+
+Audit events split into two streams. Operators monitoring
+for compromise should now alert on
+`refresh_token_reuse_detected` specifically rather than on
+the generic `token_refresh_rejected` (which fires for any
+expired/revoked rotation, not just reuse).
+
+A high-confidence "stolen token" alert pattern:
+
+```sql
+SELECT * FROM audit_events
+WHERE kind = 'refresh_token_reuse_detected'
+  AND json_extract(payload, '$.was_retired') = 1
+ORDER BY ts DESC LIMIT 50
+```
+
+`was_retired = 0` events are also worth reviewing but at
+lower urgency.
+
+### ADR changes
+
+- **ADR-011: Refresh token reuse hardening** added,
+  status Accepted. Documents the v0.33.0 baseline audit
+  findings, the four observability gaps closed in v0.34.0,
+  the type-layer changes, the wire-equivalence rationale,
+  and the deferred items (per-family rate limiting,
+  user notification, admin aggregate view).
+- ADR README index updated.
+- mdBook `SUMMARY.md` updated with the new ADR entry,
+  plus ADR-010's `(Draft)` annotation removed (it
+  graduated to Accepted in v0.33.0).
+
+### Doc / metadata changes
+
+- `Cargo.toml` version 0.33.0 → 0.34.0.
+- UI footers in `tenancy_console/frame.rs` +
+  `tenant_admin/frame.rs` (and matching test asserts)
+  bumped to v0.34.0.
+- ROADMAP: v0.34.0 marked ✅ in the security track.
+- This CHANGELOG entry.
+
+### Notable changes (operator perspective)
+
+- **No DO state migration.** Existing
+  `RefreshTokenFamily` DO instances continue to work;
+  they'll start populating the new forensic fields on
+  their next reuse event (or never, if they never see one).
+- **Audit dashboards may need an update.** Any operator
+  dashboards keyed only on `token_refresh_rejected` will
+  miss the v0.34.0 reuse signal. Add a panel for
+  `refresh_token_reuse_detected`.
+- **Wire response unchanged.** OAuth clients see no
+  difference. Library compatibility unaffected.
+
+### Upgrade path 0.33.0 → 0.34.0
+
+1. `git pull` or extract this tarball over your working tree.
+2. `cargo build --workspace --target wasm32-unknown-unknown
+   --release`. No new production dependencies.
+3. `wrangler deploy`. **No schema migration.** No
+   `wrangler.toml` change. The DO state migration is
+   automatic via `#[serde(default)]`.
+
+### Forward roadmap
+
+- **v0.35.0** — Session hardening + `/me/security/sessions`
+  page (rotation on login, idle + absolute timeouts, "new
+  device" notification, user-facing list of active
+  sessions with revoke buttons).
+- **i18n track** (parallel) — `MessageKey` lookup
+  infrastructure + `ja` / `en` MVP coverage of end-user
+  surfaces.
+- **Future security-track item** — per-family rate
+  limiting on `/token` refresh attempts (ADR-011 §Q1).
+
+---
+
 ## [0.33.0] - 2026-05-02
 
 Audit log hash chain Phase 2 — verification surface. ADR-010

@@ -22,6 +22,28 @@ pub enum CoreError {
     #[error("invalid grant: {0}")]
     InvalidGrant(&'static str),
 
+    /// **v0.34.0** — Refresh token reuse detected (RFC 9700
+    /// §4.14.2). Distinct from `InvalidGrant` because the
+    /// worker MUST emit a different audit event for reuse vs
+    /// for an already-revoked or expired family — operators
+    /// monitoring for compromise need the signal isolated, and
+    /// the BCP §4.13 explicitly recommends observable reuse
+    /// detection. The variant carries the same forensic
+    /// payload as `RotateOutcome::ReusedAndRevoked`, so the
+    /// worker doesn't have to peek the family again.
+    ///
+    /// Maps to OAuth `invalid_grant` with `error_description`
+    /// "refresh token reuse detected" at the wire layer — the
+    /// same HTTP-visible response as the legitimate-revoked
+    /// path, so attackers can't probe whether a presented
+    /// jti is currently retired (which would let them
+    /// distinguish "jti unknown" from "jti retired" externally).
+    #[error("refresh token reuse detected (was_retired={was_retired})")]
+    RefreshTokenReuse {
+        reused_jti:  String,
+        was_retired: bool,
+    },
+
     #[error("invalid client")]
     InvalidClient,
 

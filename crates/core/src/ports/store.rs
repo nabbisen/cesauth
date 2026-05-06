@@ -141,6 +141,15 @@ pub trait AuthChallengeStore {
 
 // -------------------------------------------------------------------------
 // Refresh token family.
+//
+// Family-based rotation per RFC 9700 §4.14.2 (formerly OAuth 2.0 Security
+// BCP §4.13.2). The invariant the rotation protects: presenting any
+// previously-rotated-out refresh token MUST atomically revoke the entire
+// family. v0.34.0 extends the family state with forensic fields
+// (reused_jti, reused_at, reuse_was_retired) so reuse events can be
+// triaged after the fact — the bare "revoked_at" of v0.30-v0.33 didn't
+// distinguish "admin revoked" from "reuse detected", and operators
+// investigating a possible token leak need to know which.
 // -------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -154,6 +163,26 @@ pub struct FamilyState {
     pub created_at:      i64,
     pub last_rotated_at: i64,
     pub revoked_at:      Option<i64>,
+
+    // ---------- v0.34.0: reuse forensics ----------
+    /// The jti that triggered reuse detection, if any. Set together
+    /// with `reused_at` and `reuse_was_retired`. Cleared back to None
+    /// only on a fresh family — never overwritten on a revoked family
+    /// (the first reuse is the interesting one).
+    #[serde(default)]
+    pub reused_jti:        Option<String>,
+    /// When the reuse was detected (Unix seconds). Note this is the
+    /// detection timestamp, not when the token was leaked — those
+    /// can be very different.
+    #[serde(default)]
+    pub reused_at:         Option<i64>,
+    /// `true` if the reused jti was in the `retired_jtis` ring (= a
+    /// real token that was previously rotated out). `false` if the
+    /// jti was wholly unknown — that's a stronger signal of a forged
+    /// or shotgun-attack request, since attackers without prior
+    /// access wouldn't normally know a valid retired jti.
+    #[serde(default)]
+    pub reuse_was_retired: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -178,10 +207,27 @@ pub enum RotateOutcome {
     /// Happy path. `new_current_jti` is what the caller should now sign.
     Rotated { new_current_jti: String },
     /// The family was already revoked before this rotation attempt.
+    /// Carries the original revocation timestamp so the caller can
+    /// decide whether to re-emit reuse-detection audit events (it
+    /// shouldn't — the family was already burned).
     AlreadyRevoked,
     /// The presented jti is not the current one. The family has been
     /// revoked as a side effect.
-    ReusedAndRevoked,
+    ///
+    /// **v0.34.0 forensic fields:** `was_retired` distinguishes a
+    /// retired jti (= real token that was rotated out at some prior
+    /// time) from an entirely-unknown jti (= forged or shotgun
+    /// attack). The audit event payload uses this to surface stronger
+    /// vs weaker reuse-detection signals.
+    ReusedAndRevoked {
+        /// The jti that was presented. Surfaced in audit so
+        /// investigators can correlate against client logs.
+        reused_jti:  String,
+        /// Whether the presented jti was in the family's
+        /// `retired_jtis` ring (= recognized) or wholly unknown
+        /// (= forged / not previously seen by this family).
+        was_retired: bool,
+    },
 }
 
 pub trait RefreshTokenFamilyStore {

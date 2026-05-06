@@ -27,13 +27,19 @@ enum Command {
 /// We keep it local so the DO's wire format is not structurally tied
 /// to the core enum's `serde` layout - if core ever adds a variant
 /// for a new rotation outcome, we can update this mapping explicitly.
+///
+/// **v0.34.0**: `ReusedAndRevoked` now carries `reused_jti` and
+/// `was_retired` for forensic audit. The wire format is forward-
+/// compatible with v0.33.0 readers — they'd see the new fields and
+/// (depending on the deserializer) ignore them; in practice all
+/// readers in this repo bump together.
 #[derive(Debug, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 enum Outcome {
     Ok,
     Rotated { new_current_jti: String },
     AlreadyRevoked,
-    ReusedAndRevoked,
+    ReusedAndRevoked { reused_jti: String, was_retired: bool },
     NotInitialized,
     Conflict,
     State { state: FamilyState },
@@ -80,6 +86,9 @@ impl DurableObject for RefreshTokenFamily {
                     created_at:      init.now_unix,
                     last_rotated_at: init.now_unix,
                     revoked_at:      None,
+                    reused_jti:        None,
+                    reused_at:         None,
+                    reuse_was_retired: None,
                 };
                 storage.put(KEY, &fam).await?;
                 Response::from_json(&Outcome::Ok)
@@ -107,9 +116,23 @@ impl DurableObject for RefreshTokenFamily {
                     // Either a retired jti or something wholly unknown.
                     // In both cases, revoke the family immediately
                     // (RFC 9700 §4.14.2 reuse detection).
-                    fam.revoked_at = Some(now_unix);
+                    //
+                    // v0.34.0: capture forensic fields so audit
+                    // surfaces the cause. `was_retired` distinguishes
+                    // the recognized-retired-jti case from the
+                    // unknown-jti case (= forged or shotgun attack).
+                    let was_retired = fam.retired_jtis.iter().any(|j| j == &presented_jti);
+
+                    fam.revoked_at        = Some(now_unix);
+                    fam.reused_jti        = Some(presented_jti.clone());
+                    fam.reused_at         = Some(now_unix);
+                    fam.reuse_was_retired = Some(was_retired);
                     storage.put(KEY, &fam).await?;
-                    Response::from_json(&Outcome::ReusedAndRevoked)
+
+                    Response::from_json(&Outcome::ReusedAndRevoked {
+                        reused_jti: presented_jti,
+                        was_retired,
+                    })
                 }
             }
 

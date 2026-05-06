@@ -246,8 +246,23 @@ where
                 scope: scopes.to_space_separated(),
             })
         }
-        RotateOutcome::AlreadyRevoked | RotateOutcome::ReusedAndRevoked => {
+        RotateOutcome::AlreadyRevoked => {
             Err(CoreError::InvalidGrant("refresh token revoked"))
+        }
+        RotateOutcome::ReusedAndRevoked { reused_jti, was_retired } => {
+            // Distinct error from AlreadyRevoked. The worker
+            // dispatches on the variant to emit a
+            // `refresh_token_reuse_detected` audit event with
+            // forensic payload (BCP §4.13 / RFC 9700 §4.14.2).
+            //
+            // To the wire, this still surfaces as
+            // `invalid_grant` so the HTTP-level response is
+            // indistinguishable from a legitimate-revoked
+            // family — see `oauth_error_response` in the
+            // worker's token route. Distinguishing them
+            // externally would let an attacker probe whether a
+            // presented jti is in `retired_jtis`.
+            Err(CoreError::RefreshTokenReuse { reused_jti, was_retired })
         }
     }
 }

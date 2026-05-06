@@ -76,6 +76,18 @@ pub enum EventKind {
     TokenIssued,
     TokenRefreshed,
     TokenRefreshRejected,
+    /// **v0.34.0** — Refresh-token reuse detected (RFC 9700
+    /// §4.14.2 / OAuth 2.0 Security BCP §4.13). Distinct from
+    /// `TokenRefreshRejected` because reuse detection is a
+    /// security-critical signal that operators monitor for
+    /// compromise. The payload includes `family_id`,
+    /// `presented_jti`, `was_retired` (true if the presented
+    /// jti was a real-but-rotated-out token, false if wholly
+    /// unknown), and the family's `client_id`. The HTTP-visible
+    /// response is the same `invalid_grant` as legitimate
+    /// revocation; only audit + Workers logs see the
+    /// distinction (spec §10.3 internal/external separation).
+    RefreshTokenReuseDetected,
     RevocationRequested,
     // WebAuthn
     WebauthnRegistered,
@@ -130,6 +142,7 @@ impl EventKind {
             Self::TokenIssued                  => "token_issued",
             Self::TokenRefreshed               => "token_refreshed",
             Self::TokenRefreshRejected         => "token_refresh_rejected",
+            Self::RefreshTokenReuseDetected    => "refresh_token_reuse_detected",
             Self::RevocationRequested          => "revocation_requested",
             Self::WebauthnRegistered           => "webauthn_registered",
             Self::WebauthnVerified             => "webauthn_verified",

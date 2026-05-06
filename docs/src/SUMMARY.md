@@ -45,7 +45,8 @@
     - [ADR-007: HTTP security response headers](./expert/adr/007-security-response-headers.md)
     - [ADR-008: OIDC id_token issuance (Draft)](./expert/adr/008-id-token-issuance.md)
     - [ADR-009: TOTP as a second factor](./expert/adr/009-totp.md)
-    - [ADR-010: Audit log hash chain (Draft)](./expert/adr/010-audit-log-hash-chain.md)
+    - [ADR-010: Audit log hash chain](./expert/adr/010-audit-log-hash-chain.md)
+    - [ADR-011: Refresh token reuse hardening](./expert/adr/011-refresh-token-reuse-hardening.md)
 - [Security considerations](./expert/security.md)
 
 ---
