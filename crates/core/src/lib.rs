@@ -32,6 +32,7 @@ pub mod billing;
 pub mod error;
 pub mod jwt;
 pub mod magic_link;
+pub mod migrate;
 pub mod oidc;
 pub mod ports;
 pub mod service;

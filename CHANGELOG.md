@@ -12,6 +12,253 @@ always be called out here.
 
 ---
 
+## [0.19.0] - 2026-04-28
+
+Data migration tooling — design (ADR-005) plus the foundation
+work that makes the next two releases mechanical. Same v0.16.0 →
+v0.17.0 → v0.18.0 phasing as the anonymous-trial track: this
+release ships the design, the value types, the format spec, the
+redaction profile registry, and the CLI skeleton. Real export
+and import logic land in v0.20.0 and v0.21.0 respectively.
+
+This release is the **first under the post-renumbering versioning
+policy** — see the
+[Versioning history note](#versioning-history-note) below if
+the jump from 0.18.1 → 0.19.0 looks unfamiliar.
+
+### Decision (ADR-005)
+
+The new ADR at `docs/src/expert/adr/005-data-migration-tooling.md`
+walks six design questions:
+
+- **Q1 What is migrated** — Data, not secrets. The dump
+  carries the D1 schema's user-facing rows but never JWT
+  signing key private halves, session cookie keys, admin
+  tokens. A stolen `.cdump` cannot forge tokens.
+- **Q2 Source-side trust boundary** — Operator-mediated CLI
+  invocation, not a Worker self-export endpoint. CLI uses
+  D1 API credentials that already exist; no new HTTP
+  surface to defend.
+- **Q3 Destination-side trust boundary** — Per-export Ed25519
+  signature with operator-mediated fingerprint verification.
+  The exporter generates a fresh keypair, signs the payload,
+  embeds the public key + signature in the manifest, then
+  discards the private key. The importer prompts the
+  operator to confirm the public-key fingerprint
+  out-of-band before accepting the dump.
+- **Q4 CLI vs library shape** — Both, layered. Library types
+  in `cesauth-core::migrate` (testable on host); CLI in
+  new `crates/migrate/` (wires library to D1 + clap).
+- **Q5 Schema invariants** — Verify on import, not assume
+  correct. Per-row invariant checks accumulate into a
+  violation report; commit refused unless the report is
+  empty or `--accept-violations` is supplied.
+- **Q6 Secrets coordination** — Tool-supported runbook task,
+  not tool-managed transport. Export prints a checklist of
+  secrets the destination will need to mint; import refuses
+  `--commit` until the destination's `JWT_SIGNING_KEY` is
+  set.
+
+The ADR rejects, with reasoning: a `/admin/migrate/*` HTTP
+self-export (revocation, attack surface), reusing
+`wrangler d1 export` raw SQL (no invariant preservation, no
+PII redaction, no signature), bundling secrets in the dump
+(repudiation impact of leak), ZIP-of-CSV format (no signed
+manifest, no schema versioning).
+
+### Added — `cesauth_core::migrate` (library)
+
+New module with:
+
+- **`Manifest`** — first-line value type carrying format
+  version, cesauth version, schema version, source
+  identifiers, signature, payload SHA-256, per-table
+  summary, redaction profile name. `fingerprint()`
+  produces a 16-hex-char value derived from SHA-256 of the
+  raw public key — what the operator confirms during the
+  import handshake.
+- **`TableSummary`** — per-table row of the manifest, with
+  row count and per-table SHA-256 for early-failure
+  detection.
+- **`PayloadLine<T>`** — generic over the row type. CLI
+  uses `serde_json::Value` to stay schema-version-agnostic
+  during streaming.
+- **`RedactionProfile` / `RedactionRule` / `RedactionKind`**
+  — column-level transformation registry. Two built-in
+  profiles ship: `prod-to-staging` (email hashing +
+  display-name scrubbing) and `prod-to-dev` (also clears
+  OIDC client + admin token names). `HashedEmail` is the
+  load-bearing kind — it preserves `users.email` UNIQUE
+  invariant after redaction.
+- **`FORMAT_VERSION`** = 1 (file format), **`SCHEMA_VERSION`**
+  = 6 (migration count). A test pins
+  `SCHEMA_VERSION == count(migrations/*.sql)` so a forgotten
+  bump on schema change fails CI.
+
+The on-disk format is documented in the module's `//!`
+header — manifest at line 0, NDJSON payload below, signature
+covers SHA-256 of payload only.
+
+### Added — `crates/migrate/` (CLI skeleton)
+
+New workspace member. CLI binary `cesauth-migrate` with four
+subcommands:
+
+- **`export`** — *not yet implemented (lands in v0.20.0)*.
+  Returns an explanatory error.
+- **`import`** — *not yet implemented (lands in v0.21.0)*.
+- **`verify`** — *not yet implemented (lands in v0.20.0)*.
+- **`list-profiles`** — implemented. Enumerates
+  `built_in_profiles()` with descriptions and rules.
+  Shipping early so operators can confirm "what redaction
+  is available" without waiting for export to land.
+
+The skeleton ships in v0.19.0 so:
+
+- Operators can `cargo install --path crates/migrate` ahead
+  of v0.20.0 — no last-minute install at the moment of the
+  move.
+- `--help` text serves as authoritative spec; reviewers can
+  comment on UX before implementation locks it in.
+- Documentation links to a real CLI invocation rather than a
+  placeholder.
+
+### Added — workspace dependency additions
+
+- `clap = "4"` (`derive` feature) — CLI parsing.
+- `tokio = "1"` (limited features for host-side I/O) — async
+  runtime for v0.20.0+ I/O paths. Host-side only; not
+  pulled into Workers crates.
+
+Both at `[workspace.dependencies]`. Workers crates do not see
+them; the size budget remains untouched.
+
+### Tests
+
+- Total: **305 passing** (+11 over v0.18.1).
+  - core: **133** (was 122) — 11 new in `migrate::tests`:
+    - `manifest_round_trips_through_serde_json` —
+      load-bearing for every importer.
+    - `manifest_fingerprint_is_stable_for_same_pubkey` —
+      handshake relies on determinism. Tests it's 16 hex
+      chars, all valid hex.
+    - `manifest_fingerprint_changes_with_pubkey` — distinct
+      keys produce distinct fingerprints (the mismatch
+      detection contract).
+    - `manifest_fingerprint_handles_invalid_pubkey` —
+      garbage in returns sentinel `<invalid>` instead of
+      panicking.
+    - `payload_line_round_trips` — payload format under
+      `serde_json::Value`.
+    - `lookup_profile_finds_built_ins` — registry sanity.
+    - `lookup_profile_returns_none_for_unknown` — graceful
+      bad-input handling.
+    - `built_in_profiles_have_unique_names` — duplicate
+      profile names would make `--profile <n>` ambiguous;
+      catch in CI.
+    - `prod_to_staging_redacts_email_with_hashed_kind` —
+      pins the load-bearing kind. A future refactor that
+      flipped `HashedEmail` → `StaticString` would collapse
+      every redacted email to one literal and explode
+      UNIQUE on import; the test catches that.
+    - `format_version_constant_is_one` — defensive bump
+      detection.
+    - `schema_version_matches_migration_count` — reads
+      `migrations/` and asserts equality. Forgetting to
+      bump `SCHEMA_VERSION` on a new migration fails CI.
+  - adapter-test: 51 (unchanged).
+  - ui: 121 (unchanged).
+  - migrate: 0 (CLI skeleton; tests come with v0.20.0+).
+
+### Status changes
+
+- **ADR-005** — `Draft`. Graduates to `Accepted` in v0.21.0
+  when the import path completes the round trip.
+- **ROADMAP** — "Data migration tooling" item moves from
+  "next minor releases" to in-progress, with the four-phase
+  plan visible in the ADR's Implementation Phases section.
+
+### Migration (0.18.1 → 0.19.0)
+
+Code-only release. No schema change. No new env var or
+`wrangler.toml` change required for the deployed Worker —
+`cesauth-migrate` is a host-side tool that runs on operator
+machines, not inside the Worker. `wrangler deploy` carries
+no new requirements.
+
+For operators who want to install the CLI in advance:
+
+```bash
+cargo install --path crates/migrate
+cesauth-migrate --help
+cesauth-migrate list-profiles
+```
+
+`list-profiles` is the only working subcommand in v0.19.0;
+the others return explanatory error messages pointing at the
+release where they will land.
+
+### Smoke test
+
+```bash
+# CLI binary builds + runs
+cargo build -p cesauth-migrate
+./target/debug/cesauth-migrate --help
+
+# list-profiles works
+./target/debug/cesauth-migrate list-profiles
+
+# stubs surface explanatory errors, not panics
+./target/debug/cesauth-migrate export \
+  --output /tmp/x --account-id abc --database d
+# -> "export not implemented yet (lands in v0.20.0; ...)"
+```
+
+### Deferred to 0.20.0
+
+- **Real export path** — `cesauth-migrate export` against a
+  live D1 via Cloudflare's HTTP API. Signed manifest
+  emission. Redaction profile application during export.
+- **`verify` subcommand** — read a `.cdump`, check format
+  version, verify signature, print summary, exit. No D1
+  contact.
+- **Format spec finalization** — module-level `//!` block
+  in `cesauth_core::migrate` becomes the authoritative
+  reference; the ADR-005 sketch is superseded by the
+  actual spec at that point.
+
+### Deferred to 0.21.0
+
+- **Real import path** — operator handshake (fingerprint
+  prompt), payload streaming with per-row invariant
+  checks, accumulate-then-commit/rollback, `--commit`
+  gate that refuses if destination's `JWT_SIGNING_KEY` is
+  unset, `--accept-violations` recovery escape hatch.
+- **Day-2 runbook integration** — new section
+  "Pre-flight before invoking `cesauth-migrate`" + "Post-
+  import verification".
+- **Disaster recovery integration** — the cross-account
+  compromise scenario in `disaster-recovery.md` gains
+  concrete `cesauth-migrate` invocations.
+- **ADR-005 → Accepted.**
+
+### Deferred to 0.22.0
+
+- **Resume support** for interrupted imports.
+- **Multi-tenant filtered exports** (`--tenant
+  <slug>,<slug>`) — v0.20.0's export is whole-database
+  only.
+- **First-class staging refresh** combining export +
+  redaction + import in one invocation.
+
+### Deferred — unchanged
+
+- **`check_permission` integration on `/api/v1/...`.**
+  Unscheduled.
+- **External IdP federation.** Out of scope.
+
+---
+
 ## [0.18.1] - 2026-04-28
 
 Documentation release. Deployment guide expanded from three
@@ -2774,7 +3021,7 @@ deferred (see "Deferred" below).
 
 ---
 
-## [0.5.0] - 2026-04-25
+## [0.18.0] - 2026-04-25
 
 The tenancy-service foundation. Implements the data model and core
 authorization engine from
@@ -2913,7 +3160,7 @@ design surface to deserve its own release:
 
 ---
 
-## [0.4.0] - 2026-04-24
+## [0.5.0] - 2026-04-24
 
 ### Added
 
@@ -3012,6 +3259,59 @@ design surface to deserve its own release:
 - **Durable Objects enumeration.** Still blocked on a Cloudflare
   runtime API that does not exist.
 
+
+---
+
+## Versioning history note
+
+**Range affected: 0.5.0 through 0.18.1 (entries above this note).**
+
+The version numbers shown in those entries were retroactively
+re-aligned with cesauth's
+[versioning policy](../ROADMAP.md#versioning-policy)
+(introduced at 0.18.0 / formerly 0.18.0).
+
+Each "minor-shaped" change — new HTTP route surface, new schema
+migration, new public type or trait, new permission slug, new
+operator-visible config — earns a minor bump. Each "patch-shaped"
+change — internal refactor, security fix preserving wire
+compatibility, doc-only — earns a patch bump.
+
+When the policy was applied to past releases, several earlier
+"patch" bumps that should have been minors got promoted. The
+shipped tarballs themselves did not change (those are immutable
+artifacts) — only the version numbers used in this changelog,
+in `Cargo.toml`, and in subsequent VCS commits were re-aligned.
+The mapping is:
+
+| Tarball file (immutable) | Re-aligned version (this changelog &amp; VCS) |
+|---|---|
+| `cesauth-0.18.1.tar.gz`  | **0.18.1** |
+| `cesauth-0.18.0.tar.gz`  | **0.18.0** |
+| `cesauth-0.17.0.tar.gz` | **0.17.0** |
+| `cesauth-0.16.0.tar.gz` | **0.16.0** |
+| `cesauth-0.15.1.tar.gz` | **0.15.1** |
+| `cesauth-0.15.0.tar.gz` | **0.15.0** |
+| `cesauth-0.14.0.tar.gz` | **0.14.0** |
+| `cesauth-0.13.0.tar.gz`  | **0.13.0** |
+| `cesauth-0.12.1.tar.gz`  | **0.12.1** |
+| `cesauth-0.12.0.tar.gz`  | **0.12.0** |
+| `cesauth-0.11.0.tar.gz`  | **0.11.0** |
+| `cesauth-0.10.0.tar.gz`  | **0.10.0** |
+| `cesauth-0.9.0.tar.gz`  | **0.9.0**  |
+| `cesauth-0.8.0.tar.gz`  | **0.8.0**  |
+| `cesauth-0.7.0.tar.gz`  | **0.7.0**  |
+| `cesauth-0.6.0.tar.gz`  | **0.6.0**  |
+| `cesauth-0.5.0.tar.gz`  | **0.18.0**  |
+| `cesauth-0.4.0.tar.gz`  | **0.5.0**  |
+| `cesauth-0.3.0.tar.gz`  | 0.3.0 (unchanged) |
+| `cesauth-0.2.1.tar.gz`  | 0.2.1 (unchanged) |
+
+Below this note, the entries for 0.3.0 and 0.2.1 retain their
+original tarball numbering — they pre-date the mapping.
+
+Going forward, the next release after 0.18.1 will be **0.19.0**,
+following the policy without further re-alignment.
 
 ---
 

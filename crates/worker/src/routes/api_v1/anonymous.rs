@@ -56,7 +56,7 @@ use crate::routes::api_v1::auth::{bad_request, json};
 ///
 /// `n=20` over 5 minutes = one new anonymous user every 15 seconds
 /// from a single IP, sustained. Honest visitors mint once per
-/// browser session at most. The Cron Trigger sweep (v0.6.05) is
+/// browser session at most. The Cron Trigger sweep (v0.18.0) is
 /// the second line of defense; this is the first.
 const BEGIN_WINDOW_SECS: i64 = 300;
 const BEGIN_LIMIT:       u32 = 20;

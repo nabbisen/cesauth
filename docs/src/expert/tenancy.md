@@ -841,7 +841,7 @@ system-admin tenancy console reached at v0.10.0.
 Anonymous trial — design (ADR-004) and foundation. Lays the
 schema, types, repository port, and adapters for the visitor-
 without-an-account flow. HTTP routes and the daily retention
-sweep ship in v0.17.0 and v0.6.05 respectively.
+sweep ship in v0.17.0 and v0.18.0 respectively.
 
 - **ADR-004** at `docs/src/expert/adr/004-anonymous-trial-promotion.md`
   walks five design questions and picks one coherent point.

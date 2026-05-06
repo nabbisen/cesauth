@@ -318,6 +318,19 @@ The general defense: **multiple independent backup destinations
 with different access paths**. cesauth doesn't prescribe a
 specific architecture; this is operator territory.
 
+## Cross-account moves — see `cesauth-migrate`
+
+The procedures above cover **same-account** backup and restore.
+For **cross-account** moves (M&A events, regional separation,
+isolating a compromised account, operator preference shifts),
+the dedicated `cesauth-migrate` CLI lands in v0.20.0+ following
+ADR-005's phasing. v0.19.0 ships the CLI skeleton + format
+foundation; check `cesauth-migrate --help` for the
+finalized UX. The `prod-to-staging` refresh sketched above
+becomes a single first-class command (`cesauth-migrate export
+--profile prod-to-staging | cesauth-migrate import`) once
+v0.22.0 lands.
+
 ## See also
 
 - [Pre-flight checklist § K](./preflight.md#k---backup-baseline)

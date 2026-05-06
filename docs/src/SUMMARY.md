@@ -37,6 +37,7 @@
     - [ADR-002: User-as-bearer mechanism](./expert/adr/002-user-as-bearer-mechanism.md)
     - [ADR-003: System-admin from tenant view](./expert/adr/003-system-admin-from-tenant-view.md)
     - [ADR-004: Anonymous trial promotion](./expert/adr/004-anonymous-trial-promotion.md)
+    - [ADR-005: Data migration tooling](./expert/adr/005-data-migration-tooling.md)
 - [Security considerations](./expert/security.md)
 
 ---

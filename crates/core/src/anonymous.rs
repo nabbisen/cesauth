@@ -29,7 +29,7 @@
 //!   `AnonymousExpired`, `AnonymousPromoted`).
 //!
 //! HTTP routes (`/api/v1/anonymous/begin`, `/promote`) and
-//! the daily retention sweep ship in v0.17.0 and v0.6.05
+//! the daily retention sweep ship in v0.17.0 and v0.18.0
 //! respectively.
 
 use serde::{Deserialize, Serialize};
@@ -45,7 +45,7 @@ use crate::types::{Id, UnixSeconds};
 /// enough that an unattended browser tab doesn't carry a working
 /// session indefinitely, long enough to cover normal "I came back
 /// after lunch" patterns. The retention sweep (§Q3, ships in
-/// v0.6.05) uses a longer 7-day window for the user row itself.
+/// v0.18.0) uses a longer 7-day window for the user row itself.
 pub const ANONYMOUS_TOKEN_TTL_SECONDS: i64 = 24 * 60 * 60;
 
 /// Default retention window for an unpromoted anonymous user row.
@@ -163,7 +163,7 @@ pub trait AnonymousSessionRepository {
     async fn revoke_for_user(&self, user_id: &str) -> PortResult<usize>;
 
     /// Delete every session whose `expires_at` is at or before
-    /// `now_unix`. Called by the daily sweep handler (v0.6.05).
+    /// `now_unix`. Called by the daily sweep handler (v0.18.0).
     /// Returns the number of rows deleted.
     ///
     /// The user-row sweep is a separate operation against the

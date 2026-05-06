@@ -4,6 +4,7 @@ members = [
     "crates/core",
     "crates/adapter-cloudflare",
     "crates/adapter-test",
+    "crates/migrate",
     "crates/ui",
     "crates/worker",
 ]
@@ -16,7 +17,7 @@ members = [
 # `[workspace.package].rust-version`) and the wasm32 target installed.
 
 [workspace.package]
-version      = "0.18.1"
+version      = "0.19.0"
 edition      = "2024"
 rust-version = "1.85"
 license      = "Apache-2.0"
@@ -70,6 +71,12 @@ uuid       = { version = "1", features = ["v4", "serde", "js"] }
 # --- Time ---
 # `time` with `wasm-bindgen` gives us UTC inside Workers without std-time ops.
 time = { version = "0.3", features = ["serde", "wasm-bindgen"] }
+
+# --- CLI tooling (migrate, v0.19.0+) ---
+# Used only by host-side binaries (`crates/migrate`). Workers crates
+# do not pull these in.
+clap  = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util"] }
 
 # --- Internal crates ---
 cesauth-core                = { path = "crates/core" }
