@@ -181,7 +181,15 @@ async fn introspect_refresh<FS>(
 where
     FS: RefreshTokenFamilyStore,
 {
+    use crate::oidc::introspect::{
+        CesauthIntrospectionExt, FamilyClassification, RevokeReason,
+    };
+
     let Some((family_id, presented_jti, exp)) = decode_refresh_token(token) else {
+        // Token didn't parse as a refresh token shape.
+        // Don't surface x_cesauth — we have no signal to
+        // give. Return None so the orchestrator falls
+        // through to "inactive" terminal.
         return Ok(None);
     };
 
@@ -189,11 +197,96 @@ where
         .await
         .map_err(|_| CoreError::Internal)?;
 
-    let Some(fam) = fam else { return Ok(None); };
-    if fam.revoked_at.is_some() { return Ok(None); }
-    if fam.current_jti != presented_jti { return Ok(None); }
+    let Some(fam) = fam else {
+        // **v0.46.0** — surface "unknown" classification.
+        // Token decoded but the family doesn't exist.
+        // Could be: never-issued (forged), already-swept,
+        // wrong deployment. Conflated by design (privacy
+        // — the introspecter shouldn't be able to
+        // distinguish "never existed" from "swept" by
+        // response shape).
+        return Ok(Some(IntrospectionResponse::inactive_with_ext(
+            CesauthIntrospectionExt {
+                family_state:  Some(FamilyClassification::Unknown),
+                revoked_at:    None,
+                revoke_reason: None,
+                current_jti:   None,
+            },
+        )));
+    };
 
-    Ok(Some(IntrospectionResponse::active_refresh(
+    // **v0.46.0** — revoked-family path now surfaces
+    // revocation metadata. Pre-v0.46.0 we returned a
+    // bare `Ok(None)` for revoked families; the
+    // introspecter could only see `active=false` with
+    // no further context. Now they get
+    // `family_state="revoked"` + revoked_at +
+    // revoke_reason.
+    if let Some(revoked_at) = fam.revoked_at {
+        // Distinguish reuse-detected from explicit
+        // revoke. v0.34.0's forensic fields make this
+        // possible: a non-None `reused_jti` means the
+        // family was killed by the rotation-reuse
+        // defense (ADR-011 §Q1).
+        let reason = if fam.reused_jti.is_some() {
+            RevokeReason::ReuseDetected
+        } else {
+            RevokeReason::Explicit
+        };
+        return Ok(Some(IntrospectionResponse::inactive_with_ext(
+            CesauthIntrospectionExt {
+                family_state:  Some(FamilyClassification::Revoked),
+                revoked_at:    Some(revoked_at),
+                revoke_reason: Some(reason),
+                current_jti:   None,
+            },
+        )));
+    }
+
+    if fam.current_jti != presented_jti {
+        // Either the presented jti was in the family's
+        // history (retired) or it never matched
+        // (malformed-but-decoded, or wrong family).
+        // **v0.46.0** — distinguish these two:
+        // `retired_jtis.contains(&presented_jti)` is a
+        // strong signal the introspecter has a stale-
+        // but-once-valid token; absence is a weak signal
+        // that the token was forged or wildly stale.
+        //
+        // The current_jti is surfaced ONLY for the
+        // retired path — gives the resource server
+        // enough context to know "the user has a
+        // newer token" without revealing it for the
+        // forged-jti path (where the introspecter
+        // shouldn't learn anything about the family's
+        // internals).
+        let (classification, current_jti_field) = if fam.retired_jtis.contains(&presented_jti) {
+            (FamilyClassification::Retired, Some(fam.current_jti.clone()))
+        } else {
+            // Mismatch with no retired-jti membership.
+            // Treat as Unknown — same conflation as the
+            // no-family case. Otherwise an attacker
+            // submitting a guessed jti could distinguish
+            // "this family exists but you don't know its
+            // current jti" from "this family doesn't
+            // exist", which leaks family-id existence.
+            (FamilyClassification::Unknown, None)
+        };
+        return Ok(Some(IntrospectionResponse::inactive_with_ext(
+            CesauthIntrospectionExt {
+                family_state:  Some(classification),
+                revoked_at:    None,
+                revoke_reason: None,
+                current_jti:   current_jti_field,
+            },
+        )));
+    }
+
+    // Active refresh token. Use the v0.46.0 ext-aware
+    // constructor so the introspecter sees
+    // `family_state="current"` consistently with the
+    // inactive responses.
+    Ok(Some(IntrospectionResponse::active_refresh_with_ext(
         fam.scopes.join(" "),
         fam.client_id,
         fam.user_id,

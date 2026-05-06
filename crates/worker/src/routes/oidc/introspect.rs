@@ -188,11 +188,53 @@ pub async fn handler<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
     } else {
         "refresh_token"
     };
-    let payload = serde_json::json!({
+
+    // **v0.46.0** — capture the cesauth-extension family
+    // classification + revoke reason when present. This
+    // gives operators a per-introspection breakdown of WHY
+    // a token was inactive (reuse_detected vs explicit-
+    // revoked vs retired vs unknown) without having to
+    // correlate against the family DO state externally.
+    // The fields are present only on refresh-token
+    // introspection paths that surface x_cesauth (current,
+    // retired, revoked, unknown); access-token paths set
+    // them all to None and the JSON omits them.
+    let ext_family_state = resp.x_cesauth.as_ref()
+        .and_then(|e| e.family_state)
+        .map(|c| match c {
+            cesauth_core::oidc::introspect::FamilyClassification::Current => "current",
+            cesauth_core::oidc::introspect::FamilyClassification::Retired => "retired",
+            cesauth_core::oidc::introspect::FamilyClassification::Revoked => "revoked",
+            cesauth_core::oidc::introspect::FamilyClassification::Unknown => "unknown",
+        });
+    let ext_revoke_reason = resp.x_cesauth.as_ref()
+        .and_then(|e| e.revoke_reason)
+        .map(|r| match r {
+            cesauth_core::oidc::introspect::RevokeReason::ReuseDetected => "reuse_detected",
+            cesauth_core::oidc::introspect::RevokeReason::Explicit       => "explicit",
+        });
+
+    let mut payload_obj = serde_json::json!({
         "introspecter_client_id": creds.client_id,
         "token_type":             token_type,
         "active":                 resp.active,
-    }).to_string();
+    });
+    // Inject ext fields only when present so audit rows
+    // stay compact for the non-refresh paths.
+    if let Some(fs) = ext_family_state {
+        payload_obj.as_object_mut().unwrap().insert(
+            "family_state".into(),
+            serde_json::Value::String(fs.into()),
+        );
+    }
+    if let Some(rr) = ext_revoke_reason {
+        payload_obj.as_object_mut().unwrap().insert(
+            "revoke_reason".into(),
+            serde_json::Value::String(rr.into()),
+        );
+    }
+    let payload = payload_obj.to_string();
+
     audit::write_owned(
         &ctx.env, EventKind::TokenIntrospected,
         None, Some(creds.client_id),

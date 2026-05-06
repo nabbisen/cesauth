@@ -128,6 +128,131 @@ pub struct IntrospectionResponse {
     pub sub: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jti: Option<String>,
+
+    /// **v0.46.0** — cesauth-specific extensions namespaced
+    /// under `x_cesauth` per RFC 7662 §2.2 ("Specific
+    /// implementations MAY extend this structure with their
+    /// own service-specific response names as top-level
+    /// members"). Present only when the introspect path has
+    /// extension data to surface — when `None`, serializes
+    /// out entirely (no key in the JSON body). Resource
+    /// servers consuming only the RFC 7662 fields are
+    /// unaffected.
+    ///
+    /// Currently surfaced for refresh-token introspection
+    /// to expose: family-state classification (current /
+    /// retired / revoked / unknown), revocation reason
+    /// (admin / reuse-detected / user-revoke), and the
+    /// current_jti (lets a resource server detect "the
+    /// token I have is stale" without trying to refresh).
+    /// Access-token introspection currently returns no
+    /// x_cesauth field; the access-token claim shape is
+    /// already self-descriptive.
+    #[serde(skip_serializing_if = "Option::is_none", rename = "x_cesauth")]
+    pub x_cesauth: Option<CesauthIntrospectionExt>,
+}
+
+/// **v0.46.0** — cesauth-specific extension fields
+/// surfaced under the `x_cesauth` key in introspection
+/// responses. RFC 7662 §2.2 explicitly permits this.
+///
+/// All fields are optional; the struct serializes only
+/// the fields present (`#[serde(skip_serializing_if =
+/// "Option::is_none")]`).
+///
+/// **Privacy note**: introspection is gated on
+/// confidential-client authentication (RFC 7662 §2.1 +
+/// v0.38.0's `verify_client_credentials`). Public clients
+/// can't hit the endpoint. So these fields are only
+/// returned to authenticated resource servers /
+/// confidential clients. Even so, we deliberately don't
+/// expose the family_id (treated as opaque token-internal
+/// state) or full reuse-jti payloads (could be abused as
+/// an oracle).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CesauthIntrospectionExt {
+    /// Classification of why this token is or isn't
+    /// active. See [`FamilyState`] for variants.
+    ///
+    /// Distinct from the spec's `active` field: a token
+    /// can be `active=false` for many reasons, and an RS
+    /// dashboard wants to break those down. A token with
+    /// `active=true` always has `family_state="current"`;
+    /// a token with `active=false` has one of the other
+    /// three (`retired`, `revoked`, or `unknown`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub family_state: Option<FamilyClassification>,
+
+    /// When the family was revoked (Unix seconds), if the
+    /// family_state is `revoked`. Set together with
+    /// [`Self::revoke_reason`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revoked_at: Option<i64>,
+
+    /// Why the family was revoked. See [`RevokeReason`]
+    /// for variants. Distinguishes admin-initiated vs
+    /// reuse-detected revocation — operationally
+    /// significant.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revoke_reason: Option<RevokeReason>,
+
+    /// On a `family_state="retired"` response, the
+    /// `current_jti` of the family — i.e., the jti that
+    /// IS currently valid. Lets a resource server
+    /// holding a stale token recognize "my token is
+    /// behind by one rotation; the user has a fresh
+    /// token now". Not surfaced for revoked families
+    /// (no current jti exists) or unknown families
+    /// (no family).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_jti: Option<String>,
+}
+
+/// Classification of refresh-token introspection states.
+/// Maps to the family-state machine.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FamilyClassification {
+    /// The presented jti matches `family.current_jti`
+    /// AND the family isn't revoked. Active path.
+    Current,
+    /// The presented jti is in `family.retired_jtis` —
+    /// it was once valid, but has since been rotated
+    /// past. The user has a fresher token; this one is
+    /// inactive but not "lost". RS dashboards can
+    /// distinguish "stale due to rotation" from "stale
+    /// due to revocation" via this state.
+    Retired,
+    /// The family was revoked (`family.revoked_at`
+    /// is Some). Pair with [`CesauthIntrospectionExt::revoked_at`]
+    /// + [`CesauthIntrospectionExt::revoke_reason`].
+    Revoked,
+    /// The family doesn't exist in the store. Could be:
+    /// already-swept, never-issued, malformed-token-
+    /// after-decode-but-no-record. Conflated for the
+    /// usual privacy reasons.
+    Unknown,
+}
+
+/// Why a family was revoked. Surfaced under
+/// `x_cesauth.revoke_reason` to let resource-server
+/// dashboards distinguish operationally-different
+/// revocation paths.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RevokeReason {
+    /// Reuse-detected revocation: a retired jti was
+    /// presented to `/token`, ADR-011 §Q1 defense
+    /// kicked in, family was revoked. Security teams
+    /// alert on this.
+    ReuseDetected,
+    /// Explicit revocation via `/revoke` endpoint or
+    /// admin-initiated session revocation. v0.46.0
+    /// can't distinguish those two further (the
+    /// family-state machine doesn't track WHO
+    /// initiated the revoke); future work could split
+    /// this into `User`/`Admin` if demand surfaces.
+    Explicit,
 }
 
 impl IntrospectionResponse {
@@ -141,6 +266,29 @@ impl IntrospectionResponse {
             active: false,
             scope: None, client_id: None, token_type: None,
             exp: None, iat: None, sub: None, jti: None,
+            x_cesauth: None,
+        }
+    }
+
+    /// **v0.46.0** — `inactive` response with a cesauth
+    /// extension envelope. Used by the refresh-token
+    /// introspection path to surface family-state
+    /// classification (retired / revoked / unknown) +
+    /// revocation metadata, when the introspecter has
+    /// authenticated as a confidential client and may
+    /// benefit from the operational context.
+    ///
+    /// The spec-required `active=false` is preserved
+    /// (RFC 7662 §2.2). The extension fields are namespaced
+    /// under `x_cesauth` and serialize out entirely if
+    /// every field inside is `None` (rare but possible —
+    /// the test pin checks).
+    pub fn inactive_with_ext(ext: CesauthIntrospectionExt) -> Self {
+        Self {
+            active: false,
+            scope: None, client_id: None, token_type: None,
+            exp: None, iat: None, sub: None, jti: None,
+            x_cesauth: Some(ext),
         }
     }
 
@@ -164,6 +312,7 @@ impl IntrospectionResponse {
             iat: Some(iat),
             sub: Some(sub),
             jti: Some(jti),
+            x_cesauth: None,
         }
     }
 
@@ -193,6 +342,31 @@ impl IntrospectionResponse {
             iat: Some(iat),
             sub: Some(sub),
             jti: Some(jti),
+            x_cesauth: None,
         }
+    }
+
+    /// **v0.46.0** — Active refresh-token response with the
+    /// cesauth extension envelope (always
+    /// `family_state: Current` for an active response).
+    /// The current_jti is omitted because the response
+    /// already carries `jti` at the top level for the
+    /// active path.
+    pub fn active_refresh_with_ext(
+        scope:     String,
+        client_id: String,
+        sub:       String,
+        jti:       String,
+        iat:       i64,
+        exp:       i64,
+    ) -> Self {
+        let mut resp = Self::active_refresh(scope, client_id, sub, jti, iat, exp);
+        resp.x_cesauth = Some(CesauthIntrospectionExt {
+            family_state:  Some(FamilyClassification::Current),
+            revoked_at:    None,
+            revoke_reason: None,
+            current_jti:   None,
+        });
+        resp
     }
 }

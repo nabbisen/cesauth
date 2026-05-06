@@ -12,6 +12,274 @@ changes will always be called out here.
 
 ---
 
+## [0.46.0] - 2026-05-04
+
+Refresh-token introspection enhancements. Per-operator-
+request order: tech-debt sweep first (v0.44.0), bulk-
+revoke second (v0.45.0), refresh-introspection
+enhancements third (this release).
+
+### Why this matters
+
+Pre-v0.46.0, refresh-token introspection collapsed
+every "inactive" path — revoked, jti-mismatched, never-
+existed — into a bare `{"active": false}`. Spec-
+compliant per RFC 7662 §2.2 but **operationally
+opaque**:
+
+- A resource server caching introspection results
+  couldn't distinguish "this token was rotated past;
+  the user has a fresher one" from "this token was
+  killed by reuse-defense; alert security".
+- An audit dashboard couldn't break down inactive-
+  introspection events by reason without external
+  correlation against the family DO state.
+- Stale-token-due-to-rotation looked identical to
+  forged-token in the response, masking real
+  attacker probing in the noise of legitimate
+  rotations.
+
+v0.46.0 surfaces this signal under an `x_cesauth`
+extension envelope, namespaced per RFC 7662 §2.2
+("Specific implementations MAY extend this structure
+with their own service-specific response names").
+Resource servers consuming only the spec-defined
+fields are unaffected; resource servers reading the
+extension get four-way classification + revocation
+metadata.
+
+### What ships
+
+#### `cesauth_core::oidc::introspect::CesauthIntrospectionExt`
+
+New struct serializing under the `x_cesauth` key. All
+fields are `Option`-typed and `skip_serializing_if =
+"Option::is_none"`, so a response with no extension
+data renders without the key entirely.
+
+```rust
+pub struct CesauthIntrospectionExt {
+    pub family_state:  Option<FamilyClassification>,
+    pub revoked_at:    Option<i64>,
+    pub revoke_reason: Option<RevokeReason>,
+    pub current_jti:   Option<String>,
+}
+```
+
+`FamilyClassification` (snake_case serde):
+
+| Variant | When | x_cesauth fields |
+|---|---|---|
+| `Current` | jti matches `family.current_jti` AND not revoked | `family_state` only |
+| `Retired` | jti in `family.retired_jtis` | `family_state` + `current_jti` (stale-token hint) |
+| `Revoked` | `family.revoked_at.is_some()` | `family_state` + `revoked_at` + `revoke_reason` |
+| `Unknown` | family doesn't exist OR jti mismatch with no retired-membership | `family_state` only |
+
+`RevokeReason` (snake_case serde):
+
+- `ReuseDetected` — family killed by ADR-011 §Q1
+  reuse defense (a retired jti was presented to
+  `/token`). Distinguished by `family.reused_jti.is_some()`.
+- `Explicit` — `/revoke` endpoint, admin revocation,
+  or bulk-revoke (v0.45.0). Future work could split
+  this into User vs Admin if demand surfaces.
+
+#### Privacy invariant
+
+The `Unknown` classification is the **conflation
+point**. Distinct underlying states map to it:
+
+- Family doesn't exist (never issued, already swept,
+  wrong deployment).
+- Family exists but the presented jti is neither
+  `current_jti` nor in `retired_jtis` (forged jti
+  against a real family).
+
+Surfacing `Retired` for a forged jti would let an
+attacker confirm that a guessed family_id exists
+(by seeing the response shape change between
+`Unknown` and `Retired`). v0.46.0 explicitly maps
+the no-retired-membership case to `Unknown` to
+prevent this — pinned by the
+`jti_mismatch_without_retired_membership_is_unknown_not_retired`
+test.
+
+`current_jti` is surfaced **only** on the Retired
+path — the introspecter has proven possession of a
+once-valid jti, so revealing the current one is no
+fresh information leak. It lets RS dashboards
+recognize "stale due to rotation; user has a newer
+token" without trying to refresh.
+
+#### `service::introspect::introspect_refresh` rewrite
+
+The five-line decision tree (no-decode, no-family,
+revoked, jti-mismatch, current) now produces five
+distinct response shapes:
+
+```text
+no-decode     → Ok(None)              [orchestrator falls through to access]
+no-family     → Ok(Some(inactive_with_ext{Unknown}))
+revoked       → Ok(Some(inactive_with_ext{Revoked, revoked_at, revoke_reason}))
+jti-mismatch  → Ok(Some(inactive_with_ext{
+                  Retired+current_jti  if jti in retired_jtis,
+                  Unknown              otherwise }))
+current       → Ok(Some(active_refresh_with_ext{Current}))
+```
+
+The pre-v0.46.0 behavior of falling through to the
+access-token verify path on revoked/mismatched
+families is **removed**. Reasoning: a token that
+successfully decoded as refresh shape isn't a JWT
+(JWTs fail the refresh decode at the `exp.parse::<i64>()`
+step). Falling through was already a no-op in
+practice; v0.46.0 makes this explicit by returning
+`Some(inactive_with_ext)` instead of `None`.
+
+#### Worker audit-payload extension
+
+`EventKind::TokenIntrospected` payload gains two
+optional fields when `x_cesauth` is present:
+
+```diff
+  {
+    "introspecter_client_id": "...",
+    "token_type":             "...",
+    "active":                 false,
++   "family_state":           "retired" | "revoked" | "unknown",
++   "revoke_reason":          "reuse_detected" | "explicit"
+  }
+```
+
+Access-token paths set neither, keeping audit rows
+compact for the high-volume happy path. Refresh-
+token paths set `family_state` always, and
+`revoke_reason` only when `family_state="revoked"`.
+
+This unlocks operator-side breakdowns:
+
+- **Spike in `family_state="unknown"` events** →
+  someone is probing forged family_ids. Could be
+  scanner traffic; could be targeted reconnaissance.
+- **Spike in `revoke_reason="reuse_detected"`** →
+  a token-leak event affecting multiple users.
+  Security alert.
+- **Steady-state `family_state="retired"`** →
+  legitimate background level of stale-RS-cache
+  introspection; expected.
+
+### Tests
+
+937 → **948** lib (+11). With migrate integration:
+966 → **977**.
+
+- core: 403 → 414 (+11). All in
+  `service::introspect::tests::refresh_ext`:
+  - `active_refresh_response_carries_x_cesauth_current`
+  - `revoked_family_returns_inactive_with_explicit_reason`
+  - `reuse_detected_family_returns_inactive_with_reuse_reason`
+  - `retired_jti_returns_inactive_with_current_jti_hint`
+  - `unknown_family_returns_unknown_classification`
+  - `jti_mismatch_without_retired_membership_is_unknown_not_retired`
+    (the privacy invariant pin)
+  - `truly_malformed_token_falls_through_no_ext`
+    (preserves pre-v0.46.0 access-fallback behavior
+    for tokens that don't decode as refresh shape)
+  - `access_token_path_does_not_set_x_cesauth`
+  - `x_cesauth_field_serializes_under_correct_key`
+  - `x_cesauth_omitted_when_none`
+  - `revoke_reason_serializes_as_snake_case`
+- ui: 235 → 235 (no UI changes).
+- worker: 182 → 182 (handler payload extended, no
+  new tests; the testable transformation is in the
+  pure core service).
+
+### Schema / wire / DO
+
+- Schema unchanged (still SCHEMA_VERSION 9). No
+  migration.
+- DO state unchanged.
+- **Wire format additive only**:
+  - Introspection response gains optional
+    `x_cesauth` envelope. Spec-conformant clients
+    consuming only the RFC 7662 fields are
+    unaffected (they ignore unknown top-level
+    keys per RFC 7662 §2.2).
+  - Audit payload gains optional `family_state` +
+    `revoke_reason` fields when present.
+- **No new dependencies.**
+
+### Operator-visible changes
+
+- **Resource servers reading `x_cesauth`** can now
+  distinguish four families of inactive responses.
+  Recommend updating dashboard queries to break out
+  by `family_state` / `revoke_reason`.
+- **Audit dashboards**: `token_introspected` events
+  now carry `family_state` (refresh-token paths) +
+  `revoke_reason` (revoked-family paths). Add
+  panels:
+  - `family_state` breakdown (Current / Retired /
+    Revoked / Unknown).
+  - `revoke_reason` for the revoked subset
+    (ReuseDetected = security alert, Explicit =
+    expected).
+- **No production behavior change for happy-path
+  introspection.** Active responses gain `x_cesauth.family_state="current"`
+  but the spec fields (active/scope/exp/etc.) are
+  byte-identical to v0.45.0.
+- No `wrangler.toml` change. No new bindings. No
+  schema migration.
+
+### ADR changes
+
+- **No new ADR.** v0.46.0 is an additive extension
+  under RFC 7662 §2.2's allowance for service-
+  specific response names. No cesauth-specific
+  decision points beyond what the family-state
+  machine already records.
+
+### Doc / metadata changes
+
+- `Cargo.toml` workspace version 0.45.0 → 0.46.0.
+- UI footers + tests bumped to v0.46.0.
+- ROADMAP: v0.46.0 Shipped table row.
+- This CHANGELOG entry.
+
+### Upgrade path 0.45.0 → 0.46.0
+
+1. `git pull` or extract this tarball.
+2. `cargo build --workspace --target
+   wasm32-unknown-unknown --release`. **No new
+   production dependencies.**
+3. `wrangler deploy`. **No schema migration. No new
+   bindings.**
+4. **For resource servers** that want the extra
+   signal: update introspection-response parsers to
+   read `x_cesauth.family_state` (snake_case) and
+   `x_cesauth.revoke_reason`. Both are optional —
+   absent on access-token responses and on refresh-
+   token responses where no extension data exists.
+5. **For audit dashboards**: add panels grouping
+   `token_introspected` events by `family_state` and
+   `revoke_reason`. Steady-state baseline:
+   `current` + `retired` are normal; `unknown` should
+   be near-zero unless scanner traffic is present;
+   `reuse_detected` should be near-zero — non-zero
+   warrants security investigation.
+
+### Forward roadmap
+
+- **Next up (per operator request)**: i18n-2
+  continuation (TOTP recovery codes / disable /
+  magic link / error pages).
+- Then: ADR-014 §Q3 audit retention policy, ADR-012
+  §Q1.5 D1 repair tool.
+- **Future security-track items still open**:
+  ADR-012 §Q2-§Q3, §Q5; ADR-014 §Q1 audience scoping.
+
+---
+
 ## [0.45.0] - 2026-05-04
 
 Bulk "revoke all other sessions" UX (ADR-012 §Q4
