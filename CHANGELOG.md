@@ -12,6 +12,117 @@ always be called out here.
 
 ---
 
+## [0.18.1] - 2026-04-28
+
+Documentation release. Deployment guide expanded from three
+chapters (Wrangler / Secrets / Production walkthrough) to eleven,
+covering the operational surface that previously lived only in
+team tribal knowledge.
+
+This is a **patch bump** under the new versioning policy
+(introduced in 0.18.0): doc-only release with no code, schema,
+public-type, permission-slug, or operator-visible-config
+changes. The added chapters describe operator practice against
+existing surfaces; they do not introduce new ones.
+
+### Added — deployment chapters
+
+- **`docs/src/deployment/preflight.md`** — consolidated
+  pre-deploy readiness checklist. Twelve sections (Cloudflare
+  account, resources, schema, secrets, vars, Cron Triggers,
+  custom domain, mail provider, dependencies, smoke tests,
+  backups, communication) with a tier-by-tier degradation
+  table for "what breaks if I skip this section".
+- **`docs/src/deployment/cron-triggers.md`** — covers the
+  v0.18.0 `[triggers]` block, the dispatcher pattern in
+  `crates/worker/src/lib.rs::scheduled`, manual invocation
+  for smoke-testing (local `wrangler dev --test-scheduled`,
+  production schedule-flip pattern), Cloudflare-side limits
+  and best-effort semantics.
+- **`docs/src/deployment/custom-domains.md`** — Custom Domain
+  vs Route decision (cesauth needs Custom Domain),
+  `ISSUER` consistency rules, WebAuthn RP ID/origin coupling,
+  multi-tenant DNS options, common mistakes
+  (workers.dev URL as `ISSUER`, trailing slash, grey-cloud
+  proxy).
+- **`docs/src/deployment/environments.md`** — staging →
+  production promotion workflow. `wrangler.toml` shape with
+  `[env.staging]` and `[env.production]` blocks, what to
+  override per environment vs share, migration ordering
+  across environments, when (rarely) to skip staging.
+- **`docs/src/deployment/backup-restore.md`** — D1 export
+  procedure, automated daily backup via GitHub Actions, R2
+  audit-bucket lifecycle, secrets-as-vault pattern, full
+  restore procedure, prod-to-staging refresh with PII
+  redaction, what backups don't protect against.
+- **`docs/src/deployment/observability.md`** — structured
+  logs (`wrangler tail`, Logpush), the audit trail in R2 and
+  how to query it, Cloudflare-native metrics, alert
+  recommendations, what NOT to obsess over.
+- **`docs/src/deployment/runbook.md`** — Day-2 runbook
+  organized by symptom: session-expired storms, anonymous
+  accumulation, single-user login failures, 5xx spikes,
+  signing-key rotation, admin-token leaks, discovery-doc
+  mismatch. Periodic-task table (daily / weekly / monthly /
+  quarterly / annually).
+- **`docs/src/deployment/disaster-recovery.md`** — eight
+  worst-case scenarios with detailed recovery procedures:
+  bad deploy, bad migration, D1 corruption, account
+  compromise, region outage, key compromise, key loss,
+  `database_id` misdirection. Suggested RPO/RTO targets.
+  Annual drill recommendations.
+
+### Updated — existing chapters
+
+- **`docs/src/deployment/production.md`** — first-deploy
+  walkthrough refocused as the entry point. New introduction
+  pointing at the topic-specific chapters for operational
+  use. New "Step 7.5 — Configure Cron Triggers" makes the
+  v0.18.0 `[triggers]` requirement explicit. "Rolling back"
+  section gains a pointer to the new disaster-recovery
+  chapter.
+- **`docs/src/SUMMARY.md`** — gains the seven new chapter
+  entries under the Deployment section. Also adds the
+  ADR-004 entry that was missing from earlier ADR releases.
+
+### Tests
+
+- Unchanged: 294 passing (122 + 51 + 121).
+- Footer-version assertions in `crates/ui/src/tenancy_console/tests.rs`
+  and `crates/ui/src/tenant_admin/tests.rs` updated to expect
+  `v0.18.1`.
+
+### Migration (0.18.0 → 0.18.1)
+
+Code-only release. No schema change, no `wrangler.toml`
+change, no operator action required. `wrangler deploy`.
+
+### Smoke test
+
+```bash
+# Build the documentation locally to confirm cross-links resolve.
+mdbook build docs/
+# Serve and skim the new chapters.
+mdbook serve docs/ --port 3000
+```
+
+The mdbook build is what would break if a cross-link is wrong;
+no other smoke test applies to a doc-only release.
+
+### Deferred
+
+- **Per-tenant runbook content.** The per-tenant operations
+  surface (the `/admin/t/<slug>/*` console) deserves its own
+  operator-facing docs separate from the system-admin runbook
+  this release ships. Not scheduled.
+- **Multi-region deployment guide.** Operators running cesauth
+  across regional Cloudflare accounts have the
+  multi-environment workflow as a starting point, but the
+  region-orchestration tooling is operator-specific and
+  out of scope for this release.
+
+---
+
 ## [0.18.0] - 2026-04-28
 
 Anonymous-trial daily retention sweep — ADR-004 Phase 3, the final

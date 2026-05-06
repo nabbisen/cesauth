@@ -8,6 +8,24 @@ changes when you point cesauth at real Cloudflare resources.
 > Service and Acceptable Use Policy; deploying is your agreement
 > to operate within them.
 
+This chapter is the **first-deploy walkthrough**. For ongoing
+operation, the rest of the Deployment section has dedicated
+chapters:
+
+- [Pre-flight checklist](./preflight.md) — the consolidated
+  "did I forget anything" before going live.
+- [Cron Triggers](./cron-triggers.md) — required for the
+  v0.18.0 anonymous-trial sweep.
+- [Custom domains & DNS](./custom-domains.md) — `ISSUER`
+  consistency rules, Custom Domain vs Route.
+- [Multi-environment workflow](./environments.md) — staging
+  → production promotion.
+- [Backup & restore](./backup-restore.md), [Observability](./observability.md),
+  [Day-2 operations runbook](./runbook.md), [Disaster recovery](./disaster-recovery.md).
+
+Read this chapter once. Then bookmark the runbook and the
+pre-flight checklist for the operator-facing day-to-day.
+
 ## Step 1 — Provision real resources
 
 ```sh
@@ -131,6 +149,21 @@ the run reports findings, **stop and triage** before deploying:
 - Last resort: add the advisory id to `.cargo/audit.toml`
   with a one-line justification. Do not silently ignore.
 
+## Step 7.5 — Configure Cron Triggers
+
+The v0.18.0 anonymous-trial retention sweep requires the
+`[triggers]` block in `wrangler.toml`. Without it, the
+scheduled handler ships in the binary but Cloudflare never
+invokes it, and anonymous users accumulate indefinitely.
+
+```toml
+# Append to wrangler.toml:
+[triggers]
+crons = ["0 4 * * *"]
+```
+
+Full chapter: [Cron Triggers](./cron-triggers.md).
+
 ## Step 8 — Deploy
 
 ```sh
@@ -168,3 +201,7 @@ Worker must be paired with a migration rollback plan if the schema
 changed between versions. Add a `0002_rollback_something.sql` if
 you need to undo a change; `wrangler d1 migrations apply` runs each
 numbered migration in order.
+
+For more involved recovery scenarios (bad migration, account
+compromise, key loss, region outage), see
+[Disaster recovery](./disaster-recovery.md).

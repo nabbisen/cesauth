@@ -1,0 +1,366 @@
+# Day-2 operations runbook
+
+This is the page on-call reaches for at 3am. Each section is a
+specific symptom, the diagnostic sequence, and the most-common
+remediation. Optimized for speed of reading, not depth of
+explanation; see linked chapters for the why.
+
+This runbook complements (does not replace) the operational
+runbook content in [Tenancy → Operator runbook](../expert/tenancy.md)
+which covers tenancy-API-specific operations. Page-specific
+runbooks for each scheduled task are in their respective
+chapters.
+
+## Symptom: users report "session expired" en masse
+
+**Severity:** High if many users; otherwise low.
+
+### Diagnose
+
+```sh
+# Was SESSION_COOKIE_KEY recently rotated?
+wrangler secret list --env production | grep SESSION_COOKIE_KEY
+# (timestamp of last rotation visible in the output)
+
+# Are sessions writing to the active_session DO?
+wrangler tail --env production --format=json \
+  | jq 'select(.category == "Session" and .level == "error")'
+
+# Has the SESSION_TTL_SECS [var] changed?
+git log -p wrangler.toml | head -100
+```
+
+### Common causes
+
+1. **`SESSION_COOKIE_KEY` rotated.** Every existing session
+   becomes unverifiable; every user must re-authenticate.
+   This is by design — see [Secrets → Rotation](./secrets.md#rotation).
+2. **`SESSION_TTL_SECS` reduced.** Existing sessions older
+   than the new TTL are immediately stale.
+3. **`active_session` DO storage corrupted.** Rare; would
+   show up as `Session/error` log entries.
+
+### Remediate
+
+If (1) was deliberate (e.g., post-incident response): nothing
+to do; users will re-authenticate.
+
+If (1) was accidental (e.g., someone ran the command without
+intending to): cesauth doesn't keep the old key around. The
+sessions are gone. Users will re-auth; communicate the cause
+internally so the postmortem captures it.
+
+If (2): adjust `SESSION_TTL_SECS` back. Already-stale sessions
+stay stale; new sessions get the new TTL.
+
+If (3): file a Cloudflare support ticket; provide the timestamp
+of the failure burst.
+
+---
+
+## Symptom: anonymous user count is growing unbounded
+
+**Severity:** Medium. Not user-visible immediately; eventual
+storage cost.
+
+### Diagnose
+
+```sh
+# How many anonymous rows past the retention window?
+wrangler d1 execute cesauth-prod --remote --command=\
+"SELECT count(*) FROM users
+   WHERE account_type='anonymous' AND email IS NULL
+     AND created_at < unixepoch() - 7 * 86400;"
+# Healthy: 0 shortly after each daily sweep.
+
+# Did the sweep run yesterday?
+# In your Logpush destination:
+#   category=Storage AND msg=*"anonymous sweep complete"*
+#     AND ts > yesterday_04_00 AND ts < yesterday_04_30
+
+# Is the [triggers] block in wrangler.toml?
+grep -A2 '\[triggers\]' wrangler.toml
+```
+
+### Common causes
+
+1. **`[triggers]` block missing from `wrangler.toml`** — the
+   most common cause. The deployed Worker has the
+   `#[event(scheduled)]` handler in its bundle, but
+   Cloudflare doesn't invoke it without the trigger
+   registration.
+2. **Sweep is running but row deletes are failing** — visible
+   in the per-row `Warn` log: `"anonymous sweep delete user_id=…
+   failed:"`. Storage backend issue.
+3. **Sweep is running but the cutoff math is wrong** — would
+   only happen after a code change to `sweep::run`. Check
+   recent commits.
+
+### Remediate
+
+(1): Add the block, `wrangler deploy`. The first run is at the
+next 04:00 UTC. To force-run sooner, see
+[Cron Triggers → Manual invocation](./cron-triggers.md#manual-invocation-for-smoke-testing).
+
+(2): Each failed-delete `Warn` line names the user_id. If a
+single row is poisoning the sweep (e.g., an FK constraint
+that shouldn't exist), delete it manually:
+
+```sh
+wrangler d1 execute cesauth-prod --remote --command=\
+"DELETE FROM users WHERE id='<the-id>';"
+```
+
+(3): Revert the sweep code change; investigate the cutoff
+arithmetic.
+
+---
+
+## Symptom: a specific user can't log in
+
+**Severity:** Low (one user); High if many.
+
+### Diagnose
+
+```sh
+# Does the user exist?
+wrangler d1 execute cesauth-prod --remote --command=\
+"SELECT id, email, status, account_type
+   FROM users WHERE email = 'alice@example.com' COLLATE NOCASE;"
+
+# Recent auth events for this user:
+# (in Logpush, or via the admin console audit page)
+#   subject="<user-id>" AND category=Auth
+#   ORDER BY ts DESC LIMIT 20
+
+# Did the user trigger rate limiting?
+# Check the rate_limit DO state via the admin console.
+```
+
+### Common causes
+
+1. **`status='disabled'` or `'deleted'`** — admin action
+   suspended the user.
+2. **Email mismatch** — the user is typing an email that's
+   close to but not exactly the one in `users`. Check for
+   typos.
+3. **Magic Link delivery failure** — the OTP email isn't
+   arriving. Check the mail provider's logs.
+4. **Rate-limit lockout** — too many recent attempts have
+   triggered the rate limiter.
+5. **WebAuthn authenticator decommissioned** — the user lost
+   their security key. They need a recovery path.
+
+### Remediate
+
+(1): If the disable was deliberate, do not undo it. If
+accidental, an admin can re-enable via the admin console.
+
+(2): User-side issue; instruct them on the correct email.
+
+(3): Check `MAGIC_LINK_MAIL_API_KEY` is set and the mail
+provider is healthy. Check the cesauth audit log for
+`magic_link_issued` events for this email.
+
+(4): Wait for the rate-limit window to reset (default 5–10
+minutes), or as a system-admin, clear the bucket via the
+admin console.
+
+(5): The user needs at least one alternative authenticator
+(another passkey, magic link to a verified email). cesauth
+doesn't ship a "reset all my authenticators" admin flow as of
+0.5.x; the recovery path is admin-mediated case-by-case.
+
+---
+
+## Symptom: 5xx error rate spike
+
+**Severity:** Critical.
+
+### Diagnose
+
+```sh
+# Is the spike concentrated on one route?
+# Cloudflare dashboard → Analytics → Status code → Filter by URL.
+
+# Storage errors?
+wrangler tail --env production --format=json \
+  | jq 'select(.category == "Storage" and .level == "error")'
+
+# CPU time approaching the limit?
+# Cloudflare dashboard → Analytics → CPU time.
+
+# Recent deploy? Check the deploy timestamps.
+wrangler deployments list --env production
+```
+
+### Common causes
+
+1. **Recent deploy introduced a regression.**
+2. **D1 brownout / account-level issue** — Cloudflare's status
+   page (https://www.cloudflarestatus.com) will tell you.
+3. **CPU limit exceeded** — a route is doing more work than
+   expected (e.g., unbounded loop, large response build).
+4. **Migration applied to production but Worker not yet
+   redeployed** — schema doesn't match the running Worker's
+   queries.
+
+### Remediate
+
+(1): Roll back. `wrangler rollback --env production` to the
+previous deployment. Investigate before re-deploying.
+
+(2): Wait. Cloudflare-side incidents are out of cesauth's
+control. Communicate impact to users via your status channel.
+
+(3): Roll back the Worker that introduced the heavy code
+path. Profile locally before re-deploying.
+
+(4): Deploy the Worker. Migration → deploy is the correct
+ordering; if you got it backward, finish the deploy.
+
+---
+
+## Symptom: signing key rotation needs to happen
+
+This is **planned operational work**, not an alert. Walk-through
+in [Secrets → Rotation](./secrets.md#rotation). High-level:
+
+```
+1. Generate new key locally; vault it.
+2. INSERT new row into jwt_signing_keys (retired_at NULL).
+3. wrangler secret put JWT_SIGNING_KEY (new value).
+4. Update [vars] JWT_KID to the new kid.
+5. wrangler deploy.
+6. Wait one REFRESH_TOKEN_TTL_SECS (default 30 days).
+7. UPDATE jwt_signing_keys SET retired_at=... WHERE kid='<old>'.
+```
+
+The grace window keeps the old key in JWKS so clients can
+still verify tokens issued before the rotation.
+
+---
+
+## Symptom: admin token suspected leaked
+
+**Severity:** Critical.
+
+### Diagnose
+
+```sh
+# Recent admin actions for the suspected token's principal:
+# Audit log:
+#   subject=<admin-principal-id> AND ts > suspected_compromise_ts
+```
+
+### Remediate
+
+```sh
+# 1) Disable the token immediately (via the admin console
+#    or the API).
+curl -X POST https://auth.example.com/admin/console/admin-tokens/<id>/disable \
+  -H "Authorization: Bearer $ADMIN_API_KEY"
+
+# 2) Audit everything the token did since suspected
+#    compromise:
+# (manual investigation; the audit log is the source of truth)
+
+# 3) Mint replacement tokens for legitimate operators.
+# 4) If ADMIN_API_KEY itself was leaked, rotate it.
+wrangler secret put ADMIN_API_KEY
+# (paste new value)
+wrangler deploy
+```
+
+---
+
+## Symptom: discovery doc says wrong issuer
+
+**Severity:** Critical. Every existing client will break.
+
+### Diagnose
+
+```sh
+curl -sS https://auth.example.com/.well-known/openid-configuration \
+  | jq -r .issuer
+# Compare to the ISSUER [var] in wrangler.toml.
+```
+
+### Common causes
+
+1. `ISSUER` `[var]` was changed and deployed without a
+   coordinated client update.
+2. Custom Domain was changed without updating `ISSUER`.
+
+### Remediate
+
+If clients are already validating against the OLD `iss`:
+
+- **Roll back `ISSUER` to the old value** — fastest fix.
+  Schedule a coordinated rotation once you've worked out the
+  client-update plan.
+
+If you've validated all clients can handle the new `iss`:
+
+- Continue with the new value; communicate that old tokens
+  (issued under the old `iss`) will fail validation as they
+  expire.
+
+The cardinal rule: **never change `ISSUER` without a planned
+client coordination**. See
+[Custom domains → Common mistakes](./custom-domains.md#common-mistakes).
+
+---
+
+## Periodic operator tasks
+
+These aren't alerts; they're recurring chores.
+
+### Daily
+
+- **Check sweep ran and was clean.** Logpush query for
+  yesterday's `"anonymous sweep complete"` line.
+
+### Weekly
+
+- **Review audit-log for unusual admin activity.**
+  `kind=admin_*` events.
+- **Check `cargo audit` is still green** in CI. (The weekly
+  cron in `.github/workflows/audit.yml` runs Mondays.)
+- **Review backups completed and restorable** — restore-test
+  one backup against a staging environment.
+
+### Monthly
+
+- **Capacity review.** Cloudflare dashboard → Analytics. If
+  request rates are trending toward subscription limits,
+  plan an upgrade.
+- **Review [vars] for stale values.** Magic-link TTL too long?
+  Token TTLs need adjustment? Document any change.
+- **Dependency upgrade pass.** `cargo update`,
+  `cargo audit`, smoke-test.
+
+### Quarterly
+
+- **JWT signing key rotation.** Even if not compromised, key
+  hygiene benefits from rotation cadence.
+- **Postmortem review.** Which incidents recurred? Is there
+  a class-of-bug fix that should land?
+
+### Annually
+
+- **Disaster recovery drill** — full restore from off-site
+  backups to a fresh Cloudflare account. The first time you
+  do this, it will be educational; subsequent drills should
+  go more smoothly.
+- **Threat model review.** [Security considerations](../expert/security.md)
+  — has anything changed that invalidates an assumption?
+
+## See also
+
+- [Disaster recovery](./disaster-recovery.md) — for incidents
+  beyond the scope of this runbook.
+- [Observability](./observability.md) — the queries this
+  runbook references.
+- [Tenancy → Operator runbook](../expert/tenancy.md) — the
+  tenancy-service-specific equivalent of this page.
