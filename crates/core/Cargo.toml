@@ -16,7 +16,6 @@ path = "src/lib.rs"
 serde        = { workspace = true }
 serde_json   = { workspace = true }
 thiserror    = { workspace = true }
-jsonwebtoken = { workspace = true }
 base64       = { workspace = true }
 sha2         = { workspace = true }
 hex          = { workspace = true }
@@ -56,7 +55,13 @@ qrcode          = { workspace = true }
 # / ES256 keys - the common passkey cases) on top of these pure-Rust
 # crates, which all build for wasm32 cleanly.
 ciborium        = { version = "0.2", default-features = false }
-ed25519-dalek   = { version = "2",   default-features = false, features = ["std"] }
+ed25519-dalek   = { version = "2",   default-features = false, features = ["std", "pkcs8"] }
+# v0.44.0 — `pkcs8` direct dep with `pem` feature. ed25519-dalek's
+# `pkcs8` feature pulls the type re-exports but not the PEM-decode
+# method (`DecodePrivateKey::from_pkcs8_pem` is gated on the
+# upstream `pkcs8` crate's `pem` feature). We need PEM to load
+# operator-supplied JWT_SIGNING_KEY_PEM env content.
+pkcs8           = { version = "0.10", default-features = false, features = ["pem", "std"] }
 p256            = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
 
 [dev-dependencies]

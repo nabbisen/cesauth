@@ -161,11 +161,19 @@ impl Config {
 ///   * a mix, e.g. `-----BEGIN...\nBODY\n-----END-----\n` with the
 ///     final newline real and the interior ones literal
 ///
-/// `jsonwebtoken::EncodingKey::from_ed_pem` (via its PKCS8 parser)
-/// requires real newlines between the `-----BEGIN`/`-----END` markers
-/// and the base64 body. So before handing the bytes along, we
-/// normalize: replace every literal `\n` with a real newline. If the
-/// string already had real newlines they're untouched.
+/// `ed25519_dalek::SigningKey::from_pkcs8_pem` (via the
+/// `pkcs8` feature flag, exposed as `DecodePrivateKey`)
+/// requires real newlines between the `-----BEGIN`/`-----END`
+/// markers and the base64 body. So before handing the bytes
+/// along, we normalize: replace every literal `\n` with a
+/// real newline. If the string already had real newlines
+/// they're untouched.
+///
+/// (Pre-v0.44.0 this docstring referenced
+/// `jsonwebtoken::EncodingKey::from_ed_pem`; the v0.44.0
+/// tech-debt sweep dropped `jsonwebtoken` in favor of direct
+/// `ed25519-dalek`, but the PEM input format and the
+/// `\n`-escaping requirement are unchanged.)
 ///
 /// If you get "JwtSigner::from_pem failed" in the log after this,
 /// the cause is almost certainly NOT escaping - check for a stray

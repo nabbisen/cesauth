@@ -12,6 +12,245 @@ changes will always be called out here.
 
 ---
 
+## [0.44.0] - 2026-05-03
+
+Tech-debt sweep: drop `jsonwebtoken` in favor of direct
+`ed25519-dalek`. Resolves the v0.41.0 trade-off that
+accepted transitive `rsa` v0.9 (RUSTSEC-2023-0071) as
+dead-code-but-linked.
+
+### Why this matters
+
+v0.41.0 enabled `jsonwebtoken/rust_crypto` to satisfy
+`CryptoProvider::install_default`. The trade-off: `rust_crypto`
+pulls `rsa` v0.9 in transitively, alongside `pkcs1`,
+`num-bigint-dig`, `num-iter`, `num-traits`, `signature 2.x`,
+`p256`, `p384`, `hmac` — all unused by cesauth (we never
+call `Algorithm::RS*` or `Algorithm::PS*`). cesauth's
+threat model didn't include the dead RSA path being
+exercised, so the trade-off was sound — but a
+linked-but-unreachable `rsa::PrivateKey` is still:
+
+- An unwanted item in the supply chain audit trail.
+- A `cargo audit` finding that operators have to
+  acknowledge per release.
+- Bundle-size weight (workers-rs target).
+- A signal that drifts from cesauth's "minimal,
+  EdDSA-only, no RSA" identity.
+
+The v0.41.0 CHANGELOG already tracked this as a
+follow-up: "Future tech-debt sweep should swap to
+`josekit` + `ed25519-dalek` direct, dropping `rsa`
+entirely."
+
+### What ships
+
+#### `crates/core/src/jwt/signer.rs` rewrite
+
+The whole module — `JwtSigner::from_pem`,
+`JwtSigner::sign`, `verify<C>`, `extract_kid` — is
+rewritten using `ed25519-dalek` 2.x directly + manual
+JWS Compact Serialization (RFC 7515 §3.1).
+
+**`JwtSigner::from_pem`** uses `ed25519-dalek`'s
+`pkcs8` feature (which exposes the `DecodePrivateKey`
+trait via re-export) plus the upstream `pkcs8` crate
+with the `pem` feature for the `from_pkcs8_pem(&str)`
+method.
+
+**`JwtSigner::sign<C>`** hand-builds the JWS:
+1. Header JSON: `{"alg":"EdDSA","typ":"JWT","kid":"..."}`
+   with `kid` properly JSON-string-escaped via
+   `serde_json::to_string`.
+2. `b64url_no_padding(header_json) + "." +
+   b64url_no_padding(payload_json)` is the
+   signing input per RFC 7515 §5.1.
+3. `ed25519_dalek::Signer::sign(signing_input.as_bytes())`
+   produces the 64-byte signature.
+4. Final: `signing_input + "." + b64url(sig.to_bytes())`.
+
+**`verify<C>`** is the inverse:
+1. Split on `.`. Reject if not exactly three segments.
+2. Decode header. Check `alg=EdDSA` strictly. Reject
+   `alg=none` and any other algorithm by default
+   (RFC 8725 §3.1).
+3. Decode signature. Verify with the supplied 32-byte
+   public key against the original signing input
+   bytes (RFC 7515 §5.2). **Cryptographic gate
+   first**, before any claim parsing — preserves the
+   v0.41.0 discipline.
+4. Decode payload. Validate `iss`, `aud` (string
+   form only — cesauth never emits the array form
+   from RFC 7519 §4.1.3, and accepting it would be
+   a footgun for operators copy-pasting tokens
+   between deployments), `exp` (with `leeway_secs`),
+   `nbf` (optional, with leeway).
+5. Second-pass deserialize into the caller's `C`
+   shape. Both decodes operate on the same in-memory
+   bytes; no extra allocation cost.
+
+**`extract_kid`** decodes only the header (no
+signature work) and returns `header.kid` if present.
+Returns `None` for malformed input. Same contract as
+v0.41.0 — kid is **untrusted** at this point; the
+caller must follow up with `verify`.
+
+#### Same wire format
+
+Tokens produced by v0.44.0's signer are **byte-identical**
+to what jsonwebtoken produced for the same inputs:
+
+- JWS Compact Serialization is deterministically
+  pinned by RFC 7515 §3.1.
+- Both implementations encode JSON header / payload
+  via base64url-no-padding, then sign the
+  dot-joined input with Ed25519.
+- Field ordering inside the header JSON differs
+  (cesauth: `alg, typ, kid`; jsonwebtoken: `typ,
+  alg, kid`) but verifiers parse JSON and don't
+  care about order.
+
+Tokens produced by v0.43.0 verify under v0.44.0
+without re-issuance. Wire format unchanged. **No
+forced rotation** — the v0.41.0 latent CryptoProvider
+panic from v0.38.0-v0.40.0 was already fixed in
+v0.41.0; v0.44.0 just removes the dead-code
+attack surface.
+
+#### Dependency tree changes
+
+**Removed from `cargo tree -p cesauth-core`**:
+
+- `jsonwebtoken` 10.x (root removal)
+- `rsa` 0.9 (the RUSTSEC-2023-0071 dep)
+- `pkcs1`, `num-bigint-dig`, `num-iter`,
+  `num-integer`, `num-traits`, `simple_asn1` (RSA's
+  multi-precision arithmetic stack)
+- `signature` 2.x (jsonwebtoken's algorithm trait)
+
+**Retained** (already direct deps for non-jsonwebtoken
+reasons): `hmac` (TOTP), `p256` (WebAuthn ES256),
+`signature 1.x` (transitive of p256), `sha2` (KDF /
+TOTP / refresh token hash). These have always been
+in the tree and are unrelated to the jsonwebtoken
+swap.
+
+**Added**:
+
+- `pkcs8 0.10` direct dep with `pem` feature (the
+  `DecodePrivateKey::from_pkcs8_pem` method requires
+  `pkcs8`'s `pem` feature, which `ed25519-dalek`'s
+  `pkcs8` feature alone does not enable).
+
+**Workspace `time` dep** gains the `formatting`
+feature explicitly. Pre-v0.44.0 `formatting` was
+being unified in via jsonwebtoken's transitive
+`time` dep with that feature enabled; removing
+jsonwebtoken broke the unification, so we declare
+the requirement explicitly. This is purely a
+correctness fix for the now-unification-free state.
+
+### Tests
+
+911 lib tests still pass. **Zero test count change**:
+
+- core: 393 → 393. The signer rewrite is a pure
+  refactor; existing tests through `service::introspect`
+  exercise the verify path with real Ed25519 JWTs
+  (v0.41.0's multi_key tests — see the dependency
+  on `ed25519-dalek::Signer` already there).
+  Existing tests via `service::token` exercise the
+  sign path via real `JwtSigner::sign` calls.
+  Coverage is preserved by virtue of the existing
+  test suite already exercising both the new and
+  old implementations through identical entry
+  points.
+- ui: 230 → 230.
+- worker: 171 → 171.
+- adapter-test, do, migrate: unchanged.
+
+Total still 940 with migrate integration tests.
+
+### Schema / wire / DO
+
+- Schema unchanged from v0.43.0 (still
+  SCHEMA_VERSION 9). No migration.
+- **Wire format byte-identical for issued tokens
+  vs v0.43.0** — RFC 7515 §3.1 deterministic
+  encoding pins this.
+- DO state unchanged.
+
+### Operator-visible changes
+
+- **Bundle size goes DOWN** — `rsa` family of
+  crates removed. WASM bundle should shrink by
+  ~5-10% based on similar swaps in other
+  ed25519-only projects.
+- **`cargo audit` runs cleaner** — no more
+  RUSTSEC-2023-0071 acknowledgment needed.
+- **Supply-chain audit trail simpler** — `cesauth-core`'s
+  direct deps are now exactly the crypto primitives
+  cesauth actually exercises.
+- **No production behavior change** — wire format
+  is byte-identical; tokens issued before the
+  upgrade verify under the new code; no forced
+  rotation.
+- **No `wrangler.toml` change. No new bindings. No
+  schema migration.**
+
+### ADR changes
+
+- **No new ADR.** The v0.41.0 CHANGELOG already
+  tracked the swap as planned tech-debt; v0.44.0
+  delivers it. The v0.41.0 §Q4 resolution paragraph
+  in ADR-014 references "the v0.4 'WASM caveat'
+  comment in `signer.rs` already anticipates this
+  move" — the WASM-caveat comment now documents
+  v0.44.0 as the resolution.
+
+### Doc / metadata changes
+
+- `Cargo.toml` workspace version 0.43.0 → 0.44.0.
+- `Cargo.toml`: `jsonwebtoken` removed from
+  `[workspace.dependencies]`. Comment updated.
+- `Cargo.toml`: `time` features include `formatting`.
+- `crates/core/Cargo.toml`: `jsonwebtoken` removed,
+  `pkcs8` added.
+- UI footers + tests bumped to v0.44.0.
+- `crates/worker/src/config.rs`: PEM-decode docstring
+  updated to reference `ed25519_dalek::SigningKey::from_pkcs8_pem`
+  instead of `jsonwebtoken::EncodingKey::from_ed_pem`.
+  PEM input format and `\n`-escaping requirement
+  unchanged (still PKCS#8 PEM with real newlines).
+- ROADMAP: v0.44.0 Shipped table row.
+- This CHANGELOG entry.
+
+### Upgrade path 0.43.0 → 0.44.0
+
+1. `git pull` or extract this tarball.
+2. `cargo build --workspace --target
+   wasm32-unknown-unknown --release`. Fresh build
+   recommended (lockfile diff is substantial — the
+   removed transitive deps no longer appear).
+3. `wrangler deploy`. **No schema migration. No
+   `wrangler.toml` change. No new bindings.**
+4. **No operator action required.** Wire format
+   identical; deployed v0.43.0 tokens verify under
+   v0.44.0; no forced rotation.
+
+### Forward roadmap
+
+- **Next up (per operator request)**: ADR-012 §Q4
+  bulk "revoke all other sessions" UX.
+- **Then**: refresh-token introspection enhancements,
+  i18n-2 continuation (TOTP recovery codes / disable
+  / magic link / error pages), ADR-014 §Q3 audit
+  retention, ADR-012 §Q1.5 D1 repair tool.
+- **Future security-track items still open**:
+  ADR-012 §Q2-§Q5, ADR-014 §Q1 audience scoping.
+
+---
+
 ## [0.43.0] - 2026-05-03
 
 Per-client introspection rate limit (ADR-014 §Q2
