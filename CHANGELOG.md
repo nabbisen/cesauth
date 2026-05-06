@@ -12,6 +12,224 @@ always be called out here.
 
 ---
 
+## [0.16.0] - 2026-04-28
+
+Anonymous trial principal — design (ADR-004) plus the foundation
+work that makes the next two releases mechanical. Following the
+v0.11.0 → v0.13.0 → v0.14.0 model: this release ships the schema,
+the value type, the repository port, both adapters, and the audit
+event kinds. HTTP routes (`/api/v1/anonymous/begin` and `/promote`)
+land in v0.17.0; the daily retention sweep (Cloudflare Cron Trigger)
+in v0.6.05.
+
+The `AccountType::Anonymous` variant has existed in
+`cesauth_core::tenancy::types` since v0.5.0, and the v0.11.0 ADR
+stage marked the promotion flow as "0.14.0 or later". The slot
+slid across three releases (0.14.0/.11/.12 each took a different
+non-feature focus); v0.16.0 is the catch-up.
+
+### Decision (ADR-004)
+
+The new ADR at `docs/src/expert/adr/004-anonymous-trial-promotion.md`
+walks five design questions and picks one coherent point in the
+space:
+
+- **Q1 Provenance** — A new endpoint `POST /api/v1/anonymous/begin`
+  creates the anonymous user and returns a bearer token.
+  Unauthenticated by design, gated only by per-IP rate limit. Not
+  reusing the existing user-creation route makes the trust
+  boundary explicit.
+- **Q2 Token issuance** — Opaque bearer (not OIDC), 24h TTL, not
+  refreshable. Avoids fabricating an `email` claim cesauth has
+  not verified.
+- **Q3 Retention** — Anonymous user rows kept for 7 days unless
+  promoted. Daily Cloudflare Workers Cron Trigger sweeps rows
+  with `account_type='anonymous' AND email IS NULL AND
+  created_at < now - 7d`. Promoted rows have `email IS NOT NULL`
+  and survive.
+- **Q4 Conversion ceremony** — The visitor supplies an email; the
+  standard Magic Link flow verifies ownership; the existing
+  user row is **updated in place** (`User.id` preserved,
+  `account_type` flipped, `email`/`email_verified` filled in).
+  All foreign keys pointing at the user — memberships, role
+  assignments, audit subject ids — survive without remapping.
+- **Q5 Audit trail** — Three new `EventKind`s
+  (`AnonymousCreated`, `AnonymousExpired`, `AnonymousPromoted`).
+  Because `User.id` is preserved through promotion, audit events
+  emitted during the anonymous phase remain queryable by subject
+  id post-promotion.
+
+The ADR rejects, with reasoning: indefinite retention, JWT bearer
+(blocks revocation), in-session "claim email" without verification
+(trivially hijackable), separate `anonymous_users` table (forces
+foreign-key remap on every dependent table).
+
+### Added — schema
+
+Migration `0006_anonymous.sql` adds the `anonymous_sessions`
+table:
+
+- `token_hash` (PK) — SHA-256 of the bearer plaintext, hex.
+- `user_id` — FK to `users.id`, ON DELETE CASCADE so the daily
+  sweep that drops user rows automatically clears their tokens.
+- `tenant_id` — FK to `tenants.id`, ON DELETE CASCADE.
+  Denormalized from `users.tenant_id` to keep the IP-rate-limit
+  lookup path index-only.
+- `created_at` / `expires_at` — Unix seconds. Application
+  enforces TTL; DB only stores. The 0006 indexes
+  (`idx_anonymous_sessions_created`,
+  `idx_anonymous_sessions_user`) cover the sweep and revocation
+  hot paths.
+
+The table mirrors the design of `admin_tokens` (introduced in
+0005) — same hash-only storage, same plaintext-shown-once
+posture — but in a separate table so the auth surface stays
+narrow. An anonymous principal has no admin role and cannot
+acquire one through this token.
+
+### Added — domain types and ports
+
+New module `cesauth_core::anonymous`:
+
+- **`AnonymousSession`** value type — mirrors the table 1:1 with
+  an `is_expired(now_unix)` helper. Boundary semantics
+  (`<=` is "expired") are pinned by a dedicated test —
+  `is_expired_boundary_inclusive` — because flipping that
+  operator to `<` would silently let a token live one second
+  past its window, and the next refactor that "tidies up the
+  comparison" is the bug.
+- **`AnonymousSessionRepository`** trait with four methods:
+  - `create(token_hash, user_id, tenant_id, now, ttl)` — insert
+    a row. Hash collisions return `Conflict`; FK violations
+    return `NotFound`.
+  - `find_by_hash(token_hash)` — hot path, called on every
+    anonymous-bearer request.
+  - `revoke_for_user(user_id)` — used by the promotion path
+    to nuke any outstanding bearers at promotion time.
+    Idempotent: `Ok(0)` for "no sessions to revoke" rather
+    than an error.
+  - `delete_expired(now_unix)` — used by the daily sweep.
+    Returns the number of rows actually deleted.
+- **Constants** `ANONYMOUS_TOKEN_TTL_SECONDS` (24h) and
+  `ANONYMOUS_USER_RETENTION_SECONDS` (7d), pinned by a test
+  that checks they match ADR-004 and that retention strictly
+  outlives the token TTL.
+
+### Added — adapters
+
+- **In-memory** `InMemoryAnonymousSessionRepository` in
+  `cesauth-adapter-test`. Mutex-wrapped HashMap; 7 unit tests
+  cover round-trip / hash conflict / unknown lookup / per-user
+  revocation / idempotency / expired-row sweep / boundary
+  inclusivity.
+- **Cloudflare D1** `CloudflareAnonymousSessionRepository` in
+  `cesauth-adapter-cloudflare`. Maps SQLite UNIQUE / PRIMARY KEY
+  failures to `PortError::Conflict` and FK failures to
+  `PortError::NotFound`; `meta().changes` for delete-row
+  counts. Same shape as the existing `AdminTokenRepository`
+  D1 adapter.
+
+### Added — audit event kinds
+
+`EventKind` gains three variants:
+
+- `AnonymousCreated` — emitted by `/begin` (v0.17.0).
+- `AnonymousExpired` — emitted by the daily sweep (v0.6.05).
+- `AnonymousPromoted` — emitted by `/promote` (v0.17.0).
+
+The variants land in v0.16.0 even though no code path emits them
+yet, because the audit catalog is enum-stringly-typed and
+distributed clients (log dashboards, audit-table views) treat
+unknown values as the type-system error they are. Adding the
+variants now means v0.17.0 ships its emit calls without forcing
+a coordinated audit-schema bump.
+
+### Tests
+
+- Total: **286 passing** (+10 over v0.15.1).
+  - core: **122** (was 119) — 3 new in `anonymous::tests`:
+    TTL-constants-match-ADR (paired with the strict
+    inequality between retention and token TTL),
+    serde round-trip on `AnonymousSession`, `is_expired`
+    boundary inclusivity.
+  - adapter-test: **43** (was 36) — 7 new in
+    `anonymous::tests`: create+lookup round-trip, conflict
+    on duplicate hash, unknown-hash returns None,
+    `revoke_for_user` drops only the named user's sessions,
+    `revoke_for_user` is idempotent (`Ok(0)` for missing
+    user), `delete_expired` honours the `expires_at`
+    threshold across multiple now values, boundary
+    inclusivity (parallel to the type-level test).
+  - ui: 121 (unchanged).
+
+### Migration (0.15.1 → 0.16.0)
+
+```bash
+wrangler d1 execute cesauth --remote --file migrations/0006_anonymous.sql
+wrangler deploy
+```
+
+The migration is additive (CREATE TABLE IF NOT EXISTS, new
+indexes only); safe to re-run, no existing schema or data is
+touched. No `wrangler.toml` change yet — the Cron Trigger
+configuration ships with v0.6.05.
+
+For deployments tracking main: nothing to do operationally
+beyond running the migration and deploying. No HTTP routes
+have changed; no existing principals or tokens are affected.
+
+### Smoke test
+
+```bash
+# 1) Verify the new table is in place:
+wrangler d1 execute cesauth --remote \
+  --command="SELECT name FROM sqlite_master WHERE type='table' AND name='anonymous_sessions';"
+# -> one row, name = 'anonymous_sessions'
+
+# 2) Verify the new event kinds are recognized by the audit
+#    catalog. Insert a synthetic row and read it back:
+wrangler d1 execute cesauth --remote \
+  --command="SELECT 'kind valid' FROM (SELECT 1) WHERE 'anonymous_created' IN ('anonymous_created');"
+# (cosmetic; the EventKind enum is enforced at the writer side)
+
+# 3) HTTP surface unchanged — the /authorize, /token, /admin/*,
+#    /api/v1/* routes behave exactly as in 0.15.1.
+curl -s https://cesauth.example/.well-known/openid-configuration \
+  | jq -r '.authorization_endpoint, .token_endpoint, .revocation_endpoint'
+# -> three URLs that match ISSUER + the suffixes
+```
+
+### Deferred to 0.17.0
+
+- **`POST /api/v1/anonymous/begin`** — issues an anonymous user
+  + bearer. Per-IP rate limit via the existing `RateLimit` DO
+  with a new bucket key.
+- **`POST /api/v1/anonymous/promote`** — Magic Link verification
+  → UPDATE the existing user row (id preserved). Same-tenant
+  email collision returns a distinguishing error vs verify
+  failure.
+
+### Deferred to 0.6.05
+
+- **Daily retention sweep** — Cloudflare Workers Cron Trigger
+  configured in `wrangler.toml`, dispatching to a sweep handler
+  that runs the `users` row delete (with cascade through
+  `anonymous_sessions`) plus an audit emission per row.
+  Operator runbook section "Verifying the retention sweep ran"
+  documents the diagnostic path.
+
+### Deferred — unchanged from 0.15.1
+
+- **`check_permission` integration on `/api/v1/...`.** The
+  v0.7.0 JSON API still uses `ensure_role_allows`. Now that
+  user-bound tokens exist, `check_permission` is validated in
+  the new HTML routes, AND `check_permissions_batch` is
+  available, extending it to the API surface is more
+  straightforward than before. Unscheduled.
+- **External IdP federation.** Out of scope for v0.4.x.
+
+---
+
 ## [0.15.1] - 2026-04-28
 
 Security-fix and audit-infrastructure release. Three layers of

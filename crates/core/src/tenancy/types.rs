@@ -155,8 +155,11 @@ impl GroupParent {
 pub enum AccountType {
     /// Anonymous trial principal. Not a permanent user in the sense
     /// of `HumanUser`; lifecycle is bounded, data retention is
-    /// narrow. The promotion flow (anonymous → human_user) is a
-    /// 0.16.0-or-later item.
+    /// narrow. The promotion flow (anonymous → human_user) is
+    /// designed in ADR-004; foundation (schema, types, port,
+    /// adapters) shipped in v0.16.0. HTTP routes
+    /// (`/api/v1/anonymous/begin`, `/promote`) ship in v0.17.0;
+    /// the daily retention sweep in v0.6.05.
     Anonymous,
     /// Ordinary end-user, created by self-registration or invitation.
     HumanUser,

@@ -22,6 +22,7 @@
 #![allow(async_fn_in_trait)]
 
 pub mod admin;
+pub mod anonymous;
 pub mod audit;
 pub mod authz;
 pub mod billing;

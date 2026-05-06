@@ -134,7 +134,7 @@ fn frame_footer_carries_version_marker() {
         Role::Super, None,
         TenantAdminTab::Overview, "",
     );
-    assert!(html.contains("v0.15.1"),
+    assert!(html.contains("v0.16.0"),
         "frame footer must mark the current release; \
          operators reading the page need a version anchor");
 }

@@ -836,11 +836,63 @@ system-admin tenancy console reached at v0.10.0.
   collapse to one. Tested for equivalence to per-query
   `check_permission`.
 
+### Added in 0.16.0
+
+Anonymous trial — design (ADR-004) and foundation. Lays the
+schema, types, repository port, and adapters for the visitor-
+without-an-account flow. HTTP routes and the daily retention
+sweep ship in v0.17.0 and v0.6.05 respectively.
+
+- **ADR-004** at `docs/src/expert/adr/004-anonymous-trial-promotion.md`
+  walks five design questions and picks one coherent point.
+  The headline decisions: server-issued single-shot bearer
+  (24h TTL, opaque, not refreshable), 7-day row retention with
+  daily Cron Trigger sweep, promotion via Magic Link →
+  UPDATE-in-place (preserving `User.id` so all FK references
+  survive without remap).
+
+- **Migration `0006_anonymous.sql`** adds the
+  `anonymous_sessions` table. PK on `token_hash` (SHA-256 hex
+  of the bearer plaintext); FK CASCADEs to `users` and
+  `tenants`; indexes for the retention sweep and per-user
+  revocation paths. Mirrors the `admin_tokens` shape but lives
+  in a separate table so the auth surface stays narrow — an
+  anonymous principal has no admin role and cannot acquire one
+  through this token.
+
+- **`cesauth_core::anonymous`** — new module with:
+  - `AnonymousSession` value type. `is_expired(now_unix)`
+    helper; boundary semantics (`<=` is "expired") pinned by
+    test.
+  - `AnonymousSessionRepository` trait: `create`, `find_by_hash`
+    (hot path), `revoke_for_user` (used by the promotion path),
+    `delete_expired` (used by the daily sweep).
+  - `ANONYMOUS_TOKEN_TTL_SECONDS` (24h) and
+    `ANONYMOUS_USER_RETENTION_SECONDS` (7d) constants. A test
+    asserts the strict inequality (retention strictly outlives
+    token TTL).
+
+- **In-memory and D1 adapters** for the new port. Same shape
+  as the existing `AdminTokenRepository` adapters.
+
+- **`EventKind`** gains `AnonymousCreated`,
+  `AnonymousExpired`, `AnonymousPromoted`. The variants land
+  in 0.16.0 even though no code path emits them yet — the
+  catalog is enum-stringly-typed and downstream audit dashboards
+  treat unknown values as the type-system error they are.
+  Adding the variants now spares 0.17.0 a coordinated
+  audit-schema bump.
+
 ### Does NOT ship in v0.4.x (yet)
 
 The CHANGELOG `Deferred` sections and `ROADMAP.md` track each item.
 Headlines:
 
+- **Anonymous-trial HTTP routes.** `/api/v1/anonymous/begin`
+  and `/promote`. ADR-004 settled; foundation shipped in
+  0.16.0. **0.17.0.**
+- **Anonymous-trial daily retention sweep.** Cloudflare Cron
+  Trigger + sweep handler. **0.6.05.**
 - **`check_permission` integration on `/api/v1/...`.** The
   v0.7.0 JSON API still uses `ensure_role_allows`. Now that
   user-bound tokens exist, `check_permission` is validated in
@@ -848,10 +900,6 @@ Headlines:
   available, extending it to the API surface is more
   straightforward than before. Unscheduled — depends on
   concrete need.
-- **Anonymous-trial promotion.** The account type exists; the
-  promotion lifecycle is unspecified. **0.16.0 or later.**
-  Next planned feature slot (0.15.1 took the slot for the
-  security-fix + audit-infrastructure release).
 - **External IdP federation.** `AccountType::ExternalFederatedUser`
   is reserved; no IdP wiring exists yet.
 

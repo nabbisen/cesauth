@@ -68,6 +68,10 @@ pub enum EventKind {
     // Sessions
     SessionStarted,
     SessionRevoked,
+    // Anonymous trial (v0.16.0, ADR-004)
+    AnonymousCreated,
+    AnonymousExpired,
+    AnonymousPromoted,
 }
 
 #[derive(Debug, Clone, Serialize)]

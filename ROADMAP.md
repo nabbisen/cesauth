@@ -37,7 +37,7 @@ zero remaining issues.
 | Audit log (R2, NDJSON per event)       | ✅       | Covered by `/__dev/audit` browser + searchable via admin console (0.3.0) |
 | **Cost &amp; Data Safety Admin Console** | ✅     | `/admin/console/*` — Overview, Cost, Safety, Audit, Config, Alerts (0.3.0); HTML two-step edit UI for bucket-safety + admin-token CRUD (0.4.0) |
 | Dev-only routes (`/__dev/*`)           | ✅       | Gated on `WRANGLER_LOCAL="1"`                      |
-| **Tenancy-service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.5.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.6.0). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.7.0). Read-only HTML console at `/admin/tenancy/*` (0.8.0, originally `/admin/saas/*`). Mutation forms with preview/confirm pattern (0.9.0) for tenant / organization / group / subscription. Membership add/remove + role grant/revoke forms (0.10.0) bring the HTML console to feature parity with the v0.7.0 JSON API. ADR-001/002/003 settle the tenant-scoped admin surface design (0.11.0) and ship the schema + type foundation (`admin_tokens.user_id`, `AdminPrincipal::user_id`, `is_system_admin()`). Project-hygiene release with naming-debt cleanup (0.12.0) — `saas/` → `tenancy_console/`, `/admin/saas/*` → `/admin/tenancy/*`, plus author/license metadata and `.github/` community documents. Buffer/follow-up release with stale-narrative cleanup + dependency audit (0.12.1). Tenant-scoped admin surface read pages shipped at `/admin/t/<slug>/*` with auth gate + `check_permission` integration (0.13.0). High-risk mutation forms plus a system-admin token-mint UI shipped (0.14.0). Additive membership forms (× 3 flavors) plus affordance gating shipped (0.15.0) — the tenant-scoped surface reaches feature parity with the system-admin tenancy console. Security-fix and audit-infrastructure release (0.15.1): RUSTSEC-2023-0071 in transitive `rsa` removed via `jsonwebtoken` feature narrowing, `cargo audit` integrated via initial sweep + GitHub Actions workflow + operator docs. |
+| **Tenancy-service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.5.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.6.0). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.7.0). Read-only HTML console at `/admin/tenancy/*` (0.8.0, originally `/admin/saas/*`). Mutation forms with preview/confirm pattern (0.9.0) for tenant / organization / group / subscription. Membership add/remove + role grant/revoke forms (0.10.0) bring the HTML console to feature parity with the v0.7.0 JSON API. ADR-001/002/003 settle the tenant-scoped admin surface design (0.11.0) and ship the schema + type foundation (`admin_tokens.user_id`, `AdminPrincipal::user_id`, `is_system_admin()`). Project-hygiene release with naming-debt cleanup (0.12.0) — `saas/` → `tenancy_console/`, `/admin/saas/*` → `/admin/tenancy/*`, plus author/license metadata and `.github/` community documents. Buffer/follow-up release with stale-narrative cleanup + dependency audit (0.12.1). Tenant-scoped admin surface read pages shipped at `/admin/t/<slug>/*` with auth gate + `check_permission` integration (0.13.0). High-risk mutation forms plus a system-admin token-mint UI shipped (0.14.0). Additive membership forms (× 3 flavors) plus affordance gating shipped (0.15.0) — the tenant-scoped surface reaches feature parity with the system-admin tenancy console. Security-fix and audit-infrastructure release (0.15.1): RUSTSEC-2023-0071 in transitive `rsa` removed via `jsonwebtoken` feature narrowing, `cargo audit` integrated via initial sweep + GitHub Actions workflow + operator docs. Anonymous-trial promotion design (ADR-004) plus foundation (migration `0006_anonymous.sql`, `AnonymousSession` type + repository, in-memory + D1 adapters, 3 new audit event kinds) shipped (0.16.0); HTTP routes in 0.17.0, daily retention sweep in 0.6.05. |
 | mdBook documentation                   | ✅       | `docs/`                                            |
 
 ---
@@ -277,15 +277,147 @@ started.
   parity with what the system-admin tenancy console reached at
   v0.10.0.
 
-- **Anonymous trial → human user promotion (next planned).**
-  Spec §3.3 introduces `Anonymous` as an account type and §11
-  priority 5 asks for a promotion flow. The promotion
-  lifecycle (token issuance for anonymous principals, retention
-  window, conversion ceremony, audit trail) is unspecified and
-  deserves its own design pass — likely a small ADR before
-  implementation, on the v0.11.0 model. Target slot: 0.16.0 or
-  later (0.15.1 took the slot for the security-fix +
-  audit-infrastructure release).
+- **Anonymous trial → human user promotion — design + foundation
+  (shipped in 0.16.0).** ADR-004 settles the five design
+  questions (provenance / token issuance / retention / conversion
+  ceremony / audit trail). Foundation in this release:
+  - **Migration `0006_anonymous.sql`** — `anonymous_sessions`
+    table with `token_hash` PK, FK CASCADEs to `users` and
+    `tenants`, indexes for the retention sweep and per-user
+    revocation paths.
+  - **`cesauth_core::anonymous`** — `AnonymousSession` value
+    type with `is_expired()` (boundary inclusive — pinned by
+    test), `AnonymousSessionRepository` port (4 methods),
+    `ANONYMOUS_TOKEN_TTL_SECONDS` (24h) and
+    `ANONYMOUS_USER_RETENTION_SECONDS` (7d) constants.
+  - **In-memory adapter** in `cesauth-adapter-test`, **D1
+    adapter** in `cesauth-adapter-cloudflare` — both behind
+    the same trait; the adapter test that runs both will
+    catch divergence early in 0.17.0.
+  - **`EventKind`** gains `AnonymousCreated`,
+    `AnonymousExpired`, `AnonymousPromoted` so v0.17.0's
+    emit calls don't force an audit-schema bump on the
+    downstream side.
+
+  286 tests pass (+10 over v0.15.1); zero warnings. The
+  HTTP surface and existing audit kinds are untouched —
+  this is a pure additive release. ADR-004 is in `Draft`
+  status until v0.17.0 ships the routes that exercise it.
+
+- **Anonymous trial — HTTP routes (0.17.0, next planned).**
+  - `POST /api/v1/anonymous/begin` — unauthenticated
+    (per-IP rate limit only). Mints the `users` row +
+    `anonymous_sessions` row, returns plaintext bearer once.
+  - `POST /api/v1/anonymous/promote` — gated on the anonymous
+    bearer + Magic Link verification of the supplied email.
+    UPDATE the existing user row in place; preserve `User.id`;
+    revoke the anonymous bearer at promotion time. Same-tenant
+    email collision returns a distinguishing error vs verify
+    failure.
+  - Magic-link wiring: the existing `/magic_link` ceremony is
+    the one used for promotion. The promotion-vs-fresh-register
+    distinction is whether the user row already exists with
+    `account_type='anonymous'`.
+
+- **Anonymous trial — daily retention sweep (0.6.05).**
+  Cloudflare Workers Cron Trigger configured in
+  `wrangler.toml`. Sweep handler runs:
+  ```sql
+  DELETE FROM users
+   WHERE account_type='anonymous' AND email IS NULL
+     AND created_at < ?  -- now - 7d
+  ```
+  FK CASCADE clears `anonymous_sessions`, memberships,
+  role assignments, etc. One `AnonymousExpired` audit
+  event per deleted row. Operator runbook gains "Verifying
+  the retention sweep ran" diagnostic section.
+
+- **OAuth 2.0 Token Introspection (RFC 7662).** `POST /introspect`.
+  RFC 7009 (`/revoke`) shipped with the OIDC core; the
+  introspection counterpart is the gap. RPs that want to
+  validate opaque access tokens stateful-style (instead of
+  parsing JWTs themselves) need this. Implementation lifts
+  the existing `ActiveSessionStore::status` lookup and wraps
+  it in the RFC 7662 response shape (`active`, `client_id`,
+  `username`, `exp`, etc.) gated on client authentication.
+  The discovery doc gains an `introspection_endpoint`
+  declaration. Estimated scope: ~150 lines + tests.
+
+- **Account lockout for credential brute-force defense.** The
+  existing `RateLimit` Durable Object throttles request rates
+  per IP / client; account-level lockout is a different
+  control: after N consecutive failed authentication attempts
+  against the **same user**, the account is temporarily
+  refused regardless of source IP. Closes the credential-
+  stuffing path that distributes attempts across many IPs to
+  evade rate limits. Implementation: a new field on the user
+  row (`failed_login_attempts`, `locked_until`) plus a small
+  state machine in the magic-link / WebAuthn entry points.
+  Operator-facing unlock from the admin console. Spec §6
+  + SECURITY.md "credential stuffing" guidance imply this;
+  the actual control is the missing layer.
+
+- **Property-based tests (`proptest`) for round-trip and
+  matcher invariants.** Two surfaces benefit most:
+  1. **Crypto round-trips**: `EncodingKey::from_ed_pem` →
+     `DecodingKey::from_ed_der` → JWT sign → JWT verify →
+     equal claims; magic-link token gen → verify →
+     equal subject. Pure-deterministic, well-defined
+     invariants — proptest catches the pathological inputs
+     that example-based tests don't reach.
+  2. **`redirect_uri` matcher**: OAuth's redirect-URI
+     matching is historically the most bug-prone piece of
+     a provider (open-redirect via prefix-match, port
+     stripping, percent-encoding, IDN). proptest can
+     generate adversarial URI pairs and assert the match
+     decision matches the spec.
+
+  Modest dep cost (proptest is dev-dep only). Target slot:
+  any maintenance window.
+
+- **`cargo fuzz` for the JWT parser surface.** cesauth
+  receives potentially adversarial JWTs on every
+  `Authorization: Bearer ...` request. The `jsonwebtoken`
+  crate itself is upstream-fuzzed, but cesauth's wrappers
+  (`jwt::signer.rs` PEM/DER parsing, claim extraction
+  helpers) are independent code paths. Fuzz them for panics,
+  OOM, and DoS. Layer-1 setup (single fuzz target,
+  GitHub Actions one-shot run) is cheap; long-term continuous
+  fuzzing is parked under "Later" for now. Note: CIDR
+  parser is **not** a fuzz target — cesauth has no IP
+  allowlist code path (Cloudflare dashboard handles
+  IP-level controls). Config parser is `Config::from_env`
+  reading discrete env vars, surface too small to fuzz
+  productively.
+
+- **WebAuthn error → typed client responses.** The current
+  `CoreError::WebAuthn(&'static str)` carries diagnostic
+  strings (`"rpIdHash mismatch"`, `"signature invalid"`,
+  etc.) that surface only in server-side logs. The HTTP
+  response shape collapses them into a generic 400. Client
+  UX would benefit from a small `WebAuthnErrorKind` enum
+  exposed in the JSON body — distinguishing "wrong
+  authenticator", "user cancelled", "credential not
+  registered", "RP id mismatch (likely subdomain
+  misconfiguration)" so RPs can render specific guidance.
+  Server-side strings stay as today (the typed variant is
+  the *category*, the string is the *detail*).
+
+- **Domain-metric observability.** Cloudflare Analytics
+  already covers HTTP-level metrics (request rate, error
+  rate, p50/p95/p99 latency). The gap is **domain-specific**
+  counters: `auth_attempts_total{result, method}`,
+  `tokens_issued_total{kind}`, `webauthn_ceremony_failures_total{stage}`.
+  Architecturally, Prometheus pull is a poor fit for
+  Workers (stateless, horizontally scaled — `/metrics` would
+  return single-instance values). The native path is to
+  emit metric events through the existing `log.rs`
+  channel and aggregate downstream via Logpush →
+  ClickHouse / BigQuery / Datadog, **or** use the
+  Cloudflare `cloudflare:analytics-engine` binding which
+  is purpose-built for this. Target slot: any maintenance
+  window once the operator-facing dashboarding requirement
+  becomes concrete.
 
 - **`cargo audit` integration (shipped in 0.15.1).** Three
   layers landed at once:
@@ -374,6 +506,24 @@ needs one of these, cesauth is the wrong choice.
 
 - **Implicit flow** / **hybrid flow**. Deprecated by OAuth 2.1 for
   good reasons.
+
+- **Docker / container-based production deployment.** cesauth
+  targets the Cloudflare Workers runtime (V8 isolate, wasm32
+  + the `cf::*` API surface, Durable Objects, R2, D1). None of
+  these are available inside a generic container. Production
+  deployment is `wrangler deploy`; local development is
+  `wrangler dev`. A "build environment" container (containing
+  `cargo-1.91`, `wrangler`, `node`) for developer onboarding
+  would be a pure ergonomics win, but is not on the roadmap —
+  the supported install paths in `docs/src/beginner/prerequisites.md`
+  cover the same ground.
+
+- **Prometheus `/metrics` endpoint.** Architecturally a poor
+  fit for Workers' stateless / horizontally-scaled execution
+  model — a scrape would return single-instance values that
+  don't aggregate. See "Domain-metric observability" in
+  Planned for the alternative path (Logpush + downstream
+  aggregation, or `cloudflare:analytics-engine`).
 
 - **A generic `KeyValueStore` trait.** See [Storage responsibilities](docs/src/expert/storage.md)
   for the reasoning.

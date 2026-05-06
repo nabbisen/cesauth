@@ -34,6 +34,7 @@
 
 pub mod active_session;
 pub mod admin;
+pub mod anonymous;
 pub mod auth_challenge;
 pub mod authz;
 pub mod billing;

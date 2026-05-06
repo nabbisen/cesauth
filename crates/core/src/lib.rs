@@ -26,6 +26,7 @@
 #![allow(async_fn_in_trait)]
 
 pub mod admin;
+pub mod anonymous;
 pub mod authz;
 pub mod billing;
 pub mod error;
