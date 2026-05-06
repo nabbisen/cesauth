@@ -932,43 +932,86 @@ pub fn sessions_page(
     csrf_token: &str,
     flash_html: &str,
 ) -> String {
+    sessions_page_for(items, csrf_token, flash_html, cesauth_core::i18n::Locale::default())
+}
+
+/// Locale-aware variant of [`sessions_page`]. **v0.36.0** —
+/// every visible string flows through
+/// `cesauth_core::i18n::lookup`. The plain `sessions_page`
+/// shorthand defaults to `Locale::Ja` to preserve the
+/// pre-i18n rendering for callers (and tests) that haven't
+/// been migrated to negotiated locales.
+pub fn sessions_page_for(
+    items:      &[SessionListItem],
+    csrf_token: &str,
+    flash_html: &str,
+    locale:     cesauth_core::i18n::Locale,
+) -> String {
+    use cesauth_core::i18n::{lookup, MessageKey};
+
     let rows = if items.is_empty() {
-        r##"<p class="muted">アクティブなセッションはありません。</p>"##.to_owned()
+        format!(
+            r##"<p class="muted">{empty}</p>"##,
+            empty = escape(lookup(MessageKey::SessionsPageEmpty, locale)),
+        )
     } else {
-        items.iter().map(|s| render_session_row(s, csrf_token)).collect::<Vec<_>>().join("\n")
+        items.iter()
+            .map(|s| render_session_row_for(s, csrf_token, locale))
+            .collect::<Vec<_>>()
+            .join("\n")
     };
 
     let body = format!(
-        r##"<h1>アクティブなセッション</h1>
-<p class="muted">サインイン中の端末/ブラウザの一覧です。心当たりのないセッションは右側のボタンで取り消してください。</p>
+        r##"<h1>{title}</h1>
+<p class="muted">{intro}</p>
 
 <section class="security-section" aria-label="Active sessions">
   {rows}
 </section>
 
 <p class="muted">
-  <a href="/me/security">← セキュリティ センターへ戻る</a>
+  <a href="/me/security">{back}</a>
 </p>"##,
+        title = escape(lookup(MessageKey::SessionsPageTitle,  locale)),
+        intro = escape(lookup(MessageKey::SessionsPageIntro,  locale)),
+        back  = escape(lookup(MessageKey::SessionsBackLink,   locale)),
         rows  = rows,
     );
 
-    frame_with_flash("アクティブなセッション - cesauth", flash_html, &body)
+    let page_title = format!(
+        "{} - cesauth",
+        lookup(MessageKey::SessionsPageTitle, locale),
+    );
+    frame_with_flash(&page_title, flash_html, &body)
 }
 
 fn render_session_row(s: &SessionListItem, csrf_token: &str) -> String {
+    render_session_row_for(s, csrf_token, cesauth_core::i18n::Locale::default())
+}
+
+fn render_session_row_for(
+    s:          &SessionListItem,
+    csrf_token: &str,
+    locale:     cesauth_core::i18n::Locale,
+) -> String {
+    use cesauth_core::i18n::{lookup, MessageKey};
+
     let method_label = match s.auth_method.as_str() {
-        "passkey"    => "パスキー",
-        "magic_link" => "Magic Link",
-        "admin"      => "管理者ログイン",
-        _            => "不明",
+        "passkey"    => lookup(MessageKey::SessionsAuthMethodPasskey,   locale),
+        "magic_link" => lookup(MessageKey::SessionsAuthMethodMagicLink, locale),
+        "admin"      => lookup(MessageKey::SessionsAuthMethodAdmin,     locale),
+        _            => lookup(MessageKey::SessionsAuthMethodUnknown,   locale),
     };
     let created = format_unix_local(s.created_at);
     let last    = format_unix_local(s.last_seen_at);
 
     let badge = if s.is_current {
-        r##"<span class="badge badge--current" aria-label="この端末">この端末</span>"##
+        format!(
+            r##"<span class="badge badge--current" aria-label="{badge_text}">{badge_text}</span>"##,
+            badge_text = escape(lookup(MessageKey::SessionsCurrentBadge, locale)),
+        )
     } else {
-        ""
+        String::new()
     };
 
     // Current session's revoke button is disabled — the user
@@ -977,15 +1020,20 @@ fn render_session_row(s: &SessionListItem, csrf_token: &str) -> String {
     // redirect to /login and the action would feel
     // self-defeating; logout-via-known-button is better UX.
     let action = if s.is_current {
-        r##"<button type="button" class="muted" disabled aria-disabled="true" title="このセッションは現在使用中です。ログアウトはトップページからどうぞ。">使用中</button>"##.to_owned()
+        format!(
+            r##"<button type="button" class="muted" disabled aria-disabled="true" title="{title}">{label}</button>"##,
+            title = escape(lookup(MessageKey::SessionsCurrentDisabledTitle, locale)),
+            label = escape(lookup(MessageKey::SessionsCurrentDisabled,      locale)),
+        )
     } else {
         format!(
             r##"<form method="post" action="/me/security/sessions/{sid}/revoke" class="inline-form">
   <input type="hidden" name="csrf" value="{csrf}">
-  <button type="submit" class="warning">取り消す</button>
+  <button type="submit" class="warning">{revoke}</button>
 </form>"##,
-            sid  = escape(&s.session_id),
-            csrf = escape(csrf_token),
+            sid    = escape(&s.session_id),
+            csrf   = escape(csrf_token),
+            revoke = escape(lookup(MessageKey::SessionsRevokeButton, locale)),
         )
     };
 
@@ -995,21 +1043,25 @@ fn render_session_row(s: &SessionListItem, csrf_token: &str) -> String {
     <strong>{method}</strong> {badge}
   </header>
   <dl class="session-meta">
-    <dt>サインイン</dt><dd>{created}</dd>
-    <dt>最終アクセス</dt><dd>{last}</dd>
-    <dt>クライアント</dt><dd><code>{client}</code></dd>
-    <dt>セッション ID</dt><dd><code>{sid_short}</code></dd>
+    <dt>{l_signin}</dt><dd>{created}</dd>
+    <dt>{l_last}</dt><dd>{last}</dd>
+    <dt>{l_client}</dt><dd><code>{client}</code></dd>
+    <dt>{l_sid}</dt><dd><code>{sid_short}</code></dd>
   </dl>
   <footer>{action}</footer>
 </article>"##,
         sid       = escape(&s.session_id),
         sid_short = escape(&shorten_id(&s.session_id)),
-        method    = method_label,
+        method    = escape(method_label),
         badge     = badge,
         created   = escape(&created),
         last      = escape(&last),
         client    = escape(&s.client_id),
         action    = action,
+        l_signin  = escape(lookup(MessageKey::SessionsLabelSignIn,     locale)),
+        l_last    = escape(lookup(MessageKey::SessionsLabelLastSeen,   locale)),
+        l_client  = escape(lookup(MessageKey::SessionsLabelClient,     locale)),
+        l_sid     = escape(lookup(MessageKey::SessionsLabelSessionId,  locale)),
     )
 }
 

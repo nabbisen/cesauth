@@ -17,7 +17,7 @@
 
 use cesauth_cf::ports::store::CloudflareActiveSessionStore;
 use cesauth_core::ports::store::{ActiveSessionStore, SessionStatus};
-use cesauth_ui::templates::{sessions_page, SessionListItem};
+use cesauth_ui::templates::{sessions_page_for, SessionListItem};
 use time::OffsetDateTime;
 use worker::{Request, Response, Result, RouteContext};
 
@@ -69,12 +69,18 @@ pub async fn get_handler<D>(req: Request, ctx: RouteContext<D>) -> Result<Respon
         }
     };
 
+    // **v0.36.0** — resolve the user's preferred locale
+    // from Accept-Language. Pre-i18n behavior preserved
+    // for users without the header (parse_accept_language
+    // falls through to Locale::default(), which is Ja).
+    let locale = crate::i18n::resolve_locale(&req);
+
     // Flash banner support (e.g., post-revoke success).
     let (flash_msg, clear_header) = flash::take_from_request(&ctx.env, &cookie_header);
-    let flash_view = flash_msg.map(flash::render_view);
+    let flash_view = flash_msg.map(|f| flash::render_view_for(f, locale));
     let flash_html = cesauth_ui::templates::flash_block(flash_view);
 
-    let html = sessions_page(&items, &token, &flash_html);
+    let html = sessions_page_for(&items, &token, &flash_html, locale);
     let mut resp = Response::from_html(html)?;
     if let Some(h) = set_cookie {
         resp.headers_mut().append("set-cookie", &h).ok();

@@ -19,6 +19,7 @@ pub mod config;
 pub mod csrf;
 pub mod error;
 pub mod flash;
+pub mod i18n;
 pub mod log;
 pub mod post_auth;
 pub mod routes;

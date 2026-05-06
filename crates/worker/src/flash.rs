@@ -212,22 +212,40 @@ impl FlashKey {
         }
     }
 
-    /// Human-readable text for the rendered banner. The text is
-    /// fixed at the worker — the cookie carries only the key, so
-    /// an attacker who somehow forges a valid cookie can only
-    /// display one of these strings, never arbitrary text.
-    ///
-    /// Translations are out of scope for v0.31.0; future i18n
-    /// would replace this lookup with one keyed by Accept-Language.
-    pub fn display_text(self) -> &'static str {
+    /// Map this `FlashKey` to its catalog `MessageKey`.
+    /// **v0.36.0** — flash text now flows through
+    /// `cesauth_core::i18n::lookup`, so adding a new flash
+    /// requires a matching MessageKey + translations in
+    /// every supported locale.
+    pub fn message_key(self) -> cesauth_core::i18n::MessageKey {
+        use cesauth_core::i18n::MessageKey;
         match self {
-            Self::TotpEnabled => "TOTP を有効にしました。",
-            Self::TotpDisabled => "TOTP を無効にしました。",
-            Self::TotpRecovered =>
-                "リカバリーコードを使用しました。authenticator を失った場合は再 enroll を検討してください。",
-            Self::LoggedOut   => "ログアウトしました。",
-            Self::SessionRevoked => "セッションを取り消しました。",
+            Self::TotpEnabled    => MessageKey::FlashTotpEnabled,
+            Self::TotpDisabled   => MessageKey::FlashTotpDisabled,
+            Self::TotpRecovered  => MessageKey::FlashTotpRecovered,
+            Self::LoggedOut      => MessageKey::FlashLoggedOut,
+            Self::SessionRevoked => MessageKey::FlashSessionRevoked,
         }
+    }
+
+    /// Human-readable text for the rendered banner in the
+    /// given locale. Resolves through the
+    /// `cesauth_core::i18n` catalog. Adding a new
+    /// `FlashKey` variant requires a matching `MessageKey`
+    /// and a translation in every locale (compile-time
+    /// enforced via the catalog's match exhaustiveness).
+    pub fn display_text_for(self, locale: cesauth_core::i18n::Locale) -> &'static str {
+        cesauth_core::i18n::lookup(self.message_key(), locale)
+    }
+
+    /// Backward-compat shim: returns the default-locale (Ja)
+    /// rendering. Existing callers that haven't been
+    /// migrated to `display_text_for(locale)` continue to
+    /// work; the migration can happen at each call site
+    /// independently as locale negotiation is wired up.
+    /// New code should call `display_text_for` directly.
+    pub fn display_text(self) -> &'static str {
+        self.display_text_for(cesauth_core::i18n::Locale::default())
     }
 }
 
@@ -403,23 +421,35 @@ fn derive_mac_key(env: &Env) -> Result<Vec<u8>> {
     Ok(prk.finalize().into_bytes().to_vec())
 }
 
-/// Project a `Flash` to the rendering-layer `FlashView`. The
-/// projection is mechanical (each Flash field has a 1:1 mapping
-/// to FlashView) but tedious; centralizing it here saves every
-/// handler from rebuilding the same four-field map.
+/// Project a `Flash` to the rendering-layer `FlashView` in
+/// the given locale. The projection is mechanical (each
+/// Flash field has a 1:1 mapping to FlashView) but tedious;
+/// centralizing it here saves every handler from rebuilding
+/// the same four-field map.
 ///
-/// Added in v0.35.0 alongside `/me/security/sessions` — the
-/// pattern was already present in `routes::me::security` but
-/// inlined; that copy can be migrated later. (Doing the
-/// migration in v0.35.0 isn't worth the diff for an already-
-/// working surface.)
-pub fn render_view(flash: Flash) -> cesauth_ui::templates::FlashView {
+/// **v0.36.0** — added a `locale` parameter so the rendered
+/// `text` is locale-aware. The `render_view(flash)`
+/// shorthand below preserves the default-locale behavior
+/// for callers that haven't yet been migrated to negotiated
+/// locales.
+pub fn render_view_for(
+    flash:  Flash,
+    locale: cesauth_core::i18n::Locale,
+) -> cesauth_ui::templates::FlashView {
     cesauth_ui::templates::FlashView {
         aria_live:    flash.level.aria_live(),
         css_modifier: flash.level.css_modifier(),
         icon:         flash.level.icon(),
-        text:         flash.key.display_text(),
+        text:         flash.key.display_text_for(locale),
     }
+}
+
+/// Default-locale shorthand for `render_view_for`. Kept for
+/// backward compatibility with callers that haven't been
+/// migrated to negotiate locale yet. New code should call
+/// `render_view_for(flash, locale)`.
+pub fn render_view(flash: Flash) -> cesauth_ui::templates::FlashView {
+    render_view_for(flash, cesauth_core::i18n::Locale::default())
 }
 
 #[cfg(test)]

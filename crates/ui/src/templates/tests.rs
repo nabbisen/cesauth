@@ -1035,3 +1035,69 @@ fn sessions_page_links_back_to_security_center() {
     assert!(html.contains(r#"href="/me/security""#),
         "page must offer a way back to the Security Center");
 }
+
+// =====================================================================
+// v0.36.0 i18n: sessions_page renders English under Locale::En
+// =====================================================================
+
+use cesauth_core::i18n::Locale;
+
+#[test]
+fn sessions_page_for_en_renders_english_chrome() {
+    let html = sessions_page_for(&[], "csrf", "", Locale::En);
+    // English chrome strings are present.
+    assert!(html.contains("Active sessions"));
+    assert!(html.contains("No active sessions."));
+    assert!(html.contains("Back to Security Center"));
+    // No Japanese chrome leaking through.
+    assert!(!html.contains("アクティブなセッション"),
+        "EN rendering must not carry the JA title");
+    assert!(!html.contains("セキュリティ センター"),
+        "EN rendering must not carry the JA back-link text");
+}
+
+#[test]
+fn sessions_page_for_en_renders_english_method_labels() {
+    let items = vec![
+        sample_item("s1", false, "passkey",    100),
+        sample_item("s2", false, "magic_link", 200),
+        sample_item("s3", false, "admin",      300),
+    ];
+    let html = sessions_page_for(&items, "csrf", "", Locale::En);
+
+    assert!(html.contains("Passkey"));
+    assert!(html.contains("Magic Link")); // brand string, same in both locales
+    assert!(html.contains("Admin sign-in"));
+    // No Japanese method labels.
+    assert!(!html.contains("パスキー"));
+    assert!(!html.contains("管理者ログイン"));
+}
+
+#[test]
+fn sessions_page_for_en_uses_english_revoke_button() {
+    let items = vec![sample_item("s1", false, "passkey", 100)];
+    let html = sessions_page_for(&items, "csrf", "", Locale::En);
+    assert!(html.contains(">Revoke<"));
+    assert!(!html.contains(">取り消す<"));
+}
+
+#[test]
+fn sessions_page_for_en_uses_english_current_badge() {
+    let items = vec![sample_item("s1", true, "passkey", 100)];
+    let html = sessions_page_for(&items, "csrf", "", Locale::En);
+    assert!(html.contains("This device"));
+    assert!(html.contains(">Current<"));
+    assert!(!html.contains("この端末"));
+    assert!(!html.contains("使用中"));
+}
+
+#[test]
+fn sessions_page_default_shorthand_still_renders_japanese() {
+    // Backward compatibility: the locale-less shorthand
+    // continues to produce the pre-i18n rendering. This is
+    // important because existing handlers (and tests)
+    // haven't all been migrated to thread a Locale.
+    let html = sessions_page(&[], "csrf", "");
+    assert!(html.contains("アクティブなセッション"));
+    assert!(html.contains("アクティブなセッションはありません"));
+}

@@ -33,7 +33,7 @@ don't change observable behavior.
 | 010 | Audit log hash chain                                | Accepted |
 | 011 | Refresh token reuse hardening                       | Accepted |
 | 012 | Session hardening + user-facing session list        | Accepted |
-| 012 | Session hardening + user-facing session list        | Accepted |
+| 013 | Internationalization infrastructure                 | Accepted |
 
 ADRs 001-003 were authored together in v0.11.0 to settle the design
 questions deferred from v0.10.0. Their decisions ship as the

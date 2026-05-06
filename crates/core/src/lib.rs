@@ -31,6 +31,7 @@ pub mod audit;
 pub mod authz;
 pub mod billing;
 pub mod error;
+pub mod i18n;
 pub mod jwt;
 pub mod magic_link;
 pub mod migrate;

@@ -14,6 +14,220 @@ changes will always be called out here.
 
 ---
 
+## [0.36.0] - 2026-05-03
+
+Internationalization track infrastructure (ADR-013 Accepted).
+Pays the i18n debt from `crates/worker/src/flash.rs:215`'s
+v0.31.0 TODO. Ships `cesauth_core::i18n` (closed Locale +
+MessageKey enums, compile-time exhaustive lookup, RFC 7231
+§5.3.5 q-value-aware Accept-Language parser) plus initial
+migration of the highest-visibility surfaces (flash banners,
+`/me/security/sessions` chrome, TOTP enroll wrong-code error).
+
+This is i18n-1 + partial i18n-2 in the ROADMAP phasing. The
+remaining end-user surfaces (login, TOTP page chrome, magic
+link, security center index) migrate in subsequent releases.
+
+### Why this matters
+
+cesauth's UI through v0.35.0 was language-mixed without
+negotiation. End-user surfaces carried hardcoded JA, the
+admin console hardcoded EN, and there was no
+`Accept-Language` handling. Users with EN browsers saw JA;
+users with JA browsers saw mixed JA + EN. v0.36.0 makes the
+locale a per-request property and routes user-visible text
+through a typed catalog.
+
+### What changed
+
+#### `cesauth_core::i18n` module
+
+```rust
+pub enum Locale { Ja, En }            // closed; recompile to add
+pub enum MessageKey { /* PascalCase concepts */ }  // closed
+pub fn lookup(MessageKey, Locale) -> &'static str
+pub fn parse_accept_language(&str) -> Locale
+```
+
+22 MessageKey variants in the v0.36.0 catalog: 5 flash
+banners, 1 TOTP wrong-code error, 16 sessions-page chrome
+(title, intro, empty state, back link, current-device badge,
+disabled button + title, revoke button, four auth-method
+labels including unknown, four session-meta labels).
+
+Every variant has every locale's translation, statically
+guaranteed by the lookup function's match exhaustiveness.
+Adding a key without a translation in every locale is a
+compile error.
+
+`Locale::default() = Ja` — preserves pre-i18n rendering for
+users without `Accept-Language`.
+
+#### Accept-Language parser
+
+RFC 7231 §5.3.5 lenient subset:
+
+- Splits entries on `,`, parameters on `;`.
+- `q=<float>` recognized; missing q implicitly 1.0;
+  malformed q permissively treated as 1.0.
+- Region subtags stripped (`ja-JP` → `ja`, `en-US` → `en`).
+- `q=0` entries dropped (RFC: "not acceptable").
+- Wildcard `*` matches `Locale::default()`.
+- Ties resolve in document order so first-listed wins.
+- Unknown languages skip; all-unknown falls through to
+  default.
+
+#### Per-request locale resolution
+
+`cesauth_worker::i18n::resolve_locale(&Request) -> Locale`
+is the single per-request locale lookup. v0.36.0 just reads
+`Accept-Language`; future iterations may layer on a user-pref
+cookie + tenant default (cookie → tenant → header → default).
+The resolved locale is stable for the duration of the
+request to prevent mixed-locale rendering.
+
+#### Backward-compatible migration pattern
+
+Each migrating call site adds a `_for(..., locale)` variant
+alongside the existing function. The plain function becomes
+a default-locale shorthand:
+
+```rust
+pub fn sessions_page(items, csrf, flash) -> String {
+    sessions_page_for(items, csrf, flash, Locale::default())
+}
+```
+
+Existing callers and tests continue to work. Once every call
+site is migrated the shorthands can be removed; for now they
+aren't in the way.
+
+#### Migrated surfaces (v0.36.0)
+
+- **Flash banners** — `FlashKey::display_text` routes
+  through `lookup`. New `display_text_for(locale)` method;
+  legacy `display_text()` is the default-locale shim.
+- **`flash::render_view_for(flash, locale)`** — locale-aware
+  Flash → FlashView projection. Legacy `render_view(flash)`
+  is the shim.
+- **`cesauth_ui::templates::sessions_page_for(items, csrf,
+  flash, locale)`** — every visible string flows through
+  `lookup`. `sessions_page` shorthand returns the JA
+  rendering as before.
+- **`cesauth_ui::templates::render_session_row_for(row,
+  csrf, locale)`** — auth method labels (passkey, magic_link,
+  admin, unknown) and session-meta labels go through the
+  catalog.
+- **`/me/security/sessions` handler** —
+  `resolve_locale(&req)` at the top, threads through to
+  `sessions_page_for` and `render_view_for`.
+
+### Tests
+
+808 → **833** (+25).
+
+- core: 300 → 320 (+20). 20 new tests in
+  `cesauth_core::i18n::tests` covering Locale parsing
+  (case-insensitive, region-stripping, unknown returns
+  None), Accept-Language parsing (empty, q-value
+  priority, q=0 dropped, wildcard, malformed q treated
+  as 1.0, all-unknown falls through, tie-breaking in
+  document order, browser-typical headers), catalog
+  completeness (every key resolves in every locale to
+  nonempty, no two keys share text within a locale).
+- ui: 203 → 208 (+5). 5 new tests in
+  `cesauth_ui::templates::tests` for `sessions_page_for`
+  English rendering (chrome, method labels, revoke
+  button, current-device badge, default shorthand still
+  produces JA).
+- worker, adapter-test, do, migrate, adapter-cloudflare:
+  unchanged (162, 114, 16, 13, 0).
+
+### Schema / wire / DO
+
+- Schema unchanged from v0.35.0 (still SCHEMA_VERSION 9).
+- Wire format unchanged for OAuth/OIDC clients.
+- No new DO classes; no migration.
+- No new dependencies.
+
+### Operator-visible changes
+
+- Existing JA-default rendering preserved for users without
+  `Accept-Language`.
+- Users sending `Accept-Language: en` see the migrated
+  surfaces in English.
+- Future translation work: add a `Locale` variant + match
+  arms in `cesauth_core::i18n::lookup`. The compiler tells
+  you every place that needs a new arm.
+
+### Migration path for callers (in-tree)
+
+Existing handlers can adopt locale-awareness incrementally:
+
+1. Resolve locale at the top: `let locale =
+   crate::i18n::resolve_locale(&req);`
+2. Replace `flash::render_view(f)` with
+   `flash::render_view_for(f, locale)`.
+3. Replace `templates::xxx(...)` with
+   `templates::xxx_for(..., locale)`.
+
+Out-of-tree callers (e.g., third-party integrations) see no
+break — the shim functions retain the v0.35.0 signatures.
+
+### ADR changes
+
+- **ADR-013: Internationalization infrastructure** added,
+  status Accepted. Documents the closed-enum design choice,
+  the why-not-runtime-catalogs reasoning, the v0.36.0
+  migration scope, deferred items (user-pref cookie,
+  tenant default, date/time format, pluralization), and
+  rejected alternatives (`fluent-rs`, macro-generated
+  lookup, region/script subtag awareness).
+- ADR README index + mdBook `SUMMARY.md` updated.
+
+### Doc / metadata changes
+
+- `Cargo.toml` version 0.35.0 → 0.36.0.
+- UI footers in `tenancy_console/frame.rs` +
+  `tenant_admin/frame.rs` (and matching test asserts)
+  bumped to v0.36.0.
+- ROADMAP: i18n track i18n-1 + partial i18n-2 marked ✅.
+- This CHANGELOG entry.
+
+### Upgrade path 0.35.0 → 0.36.0
+
+1. `git pull` or extract this tarball over your working
+   tree.
+2. `cargo build --workspace --target wasm32-unknown-unknown
+   --release`. No new production dependencies.
+3. `wrangler deploy`. **No schema migration.** No
+   `wrangler.toml` change. No new bindings.
+4. (Optional) Operators with predominantly EN audiences
+   may want to flip `Locale::default()` to `En` and
+   redeploy. v0.36.0 ships JA-default to preserve the
+   pre-i18n rendering for users without
+   `Accept-Language`.
+
+### Forward roadmap
+
+- **i18n-2 continued** (post-v0.36.0): migrate login page,
+  TOTP enroll/verify/disable/recover page chrome, magic
+  link request/verify pages, security center index page,
+  remaining intro paragraphs across user-facing surfaces.
+- **i18n-3** — additional locales added on demand. Pull
+  requests welcome.
+- **i18n-4** — RFC 5646 region/script subtag awareness
+  (`zh-Hant`, `pt-BR`, etc.). Defer until i18n-2 ships
+  fully and real demand surfaces.
+- **Future security-track items**: D1-DO reconciliation
+  tool (ADR-012 §Q1), per-family rate limit on `/token`
+  refresh (ADR-011 §Q1), user notification on session
+  timeout (ADR-012 §Q2), device fingerprint columns
+  (ADR-012 §Q3).
+- **Feature track** — RFC 7662 Token Introspection.
+
+---
+
 ## [0.35.0] - 2026-05-03
 
 Session hardening + user-facing session management surface
