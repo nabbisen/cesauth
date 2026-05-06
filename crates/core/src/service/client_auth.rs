@@ -6,7 +6,7 @@
 //! up the stored hash via the `ClientRepository` port, and does a
 //! constant-time comparison.
 //!
-//! ## Hash format
+//! ## Hash format (RFC 002, v0.51.0 — resolved)
 //!
 //! cesauth stores a hex-encoded SHA-256 of the secret (no salt). This
 //! is appropriate **only** because `client_secret` is a server-minted
@@ -14,6 +14,12 @@
 //! password. For high-entropy secrets, salted password hashes
 //! (Argon2, scrypt) provide no additional protection — there's
 //! nothing to brute-force from the hash.
+//!
+//! `migrations/0001_initial.sql` previously described `client_secret_hash`
+//! as `argon2id(secret)`. That was a documentation lie — Argon2 was
+//! never implemented; the actual path has always been SHA-256, matching
+//! how `admin_tokens` and magic-link OTP hashes work. RFC 002 (v0.51.0)
+//! corrected the schema comment to `sha256_hex(secret)`.
 //!
 //! If a future ADR ever allows user-chosen client secrets (we do
 //! not, today; the only flow that mints them is admin console

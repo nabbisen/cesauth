@@ -212,6 +212,105 @@ pub fn verify<C: DeserializeOwned>(
     Ok(claims)
 }
 
+/// Verify a JWT for the `/introspect` endpoint.
+///
+/// **v0.50.3 (RFC 009)** — Introspection deliberately does NOT enforce
+/// `aud`. Access tokens are minted with `aud = client.id`, so verifying
+/// `aud == issuer` (as the pre-v0.50.3 introspection path did) would
+/// reject every valid production token. The audience gate in the worker
+/// handler (`apply_introspection_audience_gate`, ADR-014 §Q1) is the
+/// canonical per-client audience policy point.
+///
+/// **Only for `/introspect`.** All other JWT-consuming paths (future
+/// `/userinfo`, etc.) MUST use `verify(...)` with strict `aud` checking
+/// — those paths answer "is this token meant for me?" which IS an
+/// aud-equality question. Using this function outside introspection
+/// would silently accept tokens intended for a different audience.
+///
+/// `public_key_raw` is the 32-byte Ed25519 public key (JWK `x` field,
+/// base64-decoded). Verifies signature + `iss` + `exp` + `nbf`;
+/// populates `aud` from the token's claim on success.
+pub fn verify_for_introspect<C: DeserializeOwned>(
+    token:          &str,
+    public_key_raw: &[u8],
+    expected_iss:   &str,
+    leeway_secs:    u64,
+) -> CoreResult<C> {
+    // 1. Split into the three compact-serialization parts.
+    let mut parts = token.splitn(4, '.');
+    let header_b64  = parts.next().ok_or(CoreError::JwtValidation("malformed"))?;
+    let payload_b64 = parts.next().ok_or(CoreError::JwtValidation("malformed"))?;
+    let sig_b64     = parts.next().ok_or(CoreError::JwtValidation("malformed"))?;
+    if parts.next().is_some() {
+        return Err(CoreError::JwtValidation("malformed"));
+    }
+
+    // 2. Check alg=EdDSA. Reject alg=none per RFC 8725 §3.1.
+    let header_bytes = URL_SAFE_NO_PAD.decode(header_b64.as_bytes())
+        .map_err(|_| CoreError::JwtValidation("malformed"))?;
+    let header: JoseHeader = serde_json::from_slice(&header_bytes)
+        .map_err(|_| CoreError::JwtValidation("malformed"))?;
+    if header.alg != "EdDSA" {
+        return Err(CoreError::JwtValidation("alg"));
+    }
+
+    // 3. Verify signature BEFORE claims — cryptographic gate first.
+    let sig_bytes = URL_SAFE_NO_PAD.decode(sig_b64.as_bytes())
+        .map_err(|_| CoreError::JwtValidation("malformed"))?;
+    if sig_bytes.len() != 64 {
+        return Err(CoreError::JwtValidation("signature"));
+    }
+    let sig_array: [u8; 64] = sig_bytes.as_slice().try_into()
+        .map_err(|_| CoreError::JwtValidation("signature"))?;
+    let signature = ed25519_dalek::Signature::from_bytes(&sig_array);
+    if public_key_raw.len() != 32 {
+        return Err(CoreError::JwtValidation("signature"));
+    }
+    let pk_array: [u8; 32] = public_key_raw.try_into()
+        .map_err(|_| CoreError::JwtValidation("signature"))?;
+    let verifying_key = VerifyingKey::from_bytes(&pk_array)
+        .map_err(|_| CoreError::JwtValidation("signature"))?;
+    let signing_input = format!("{header_b64}.{payload_b64}");
+    verifying_key.verify(signing_input.as_bytes(), &signature)
+        .map_err(|_| CoreError::JwtValidation("signature"))?;
+
+    // 4. Validate iss + exp + nbf. aud is intentionally NOT checked —
+    //    the audience gate in the worker handler is the canonical check.
+    //    See module comment and RFC 009.
+    let payload_bytes = URL_SAFE_NO_PAD.decode(payload_b64.as_bytes())
+        .map_err(|_| CoreError::JwtValidation("malformed"))?;
+    let meta: ClaimsMetadata = serde_json::from_slice(&payload_bytes)
+        .map_err(|_| CoreError::JwtValidation("malformed"))?;
+
+    if meta.iss.as_deref() != Some(expected_iss) {
+        return Err(CoreError::JwtValidation("iss"));
+    }
+    // Reject array-form aud: cesauth never emits it, and accepting it
+    // would create a footgun for operators copy-pasting tokens between
+    // deployments.
+    if meta.aud.is_none() {
+        return Err(CoreError::JwtValidation("aud"));
+    }
+
+    let now_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| CoreError::JwtValidation("malformed"))?
+        .as_secs() as i64;
+    let exp = meta.exp.ok_or(CoreError::JwtValidation("expired"))?;
+    if now_secs - (leeway_secs as i64) >= exp {
+        return Err(CoreError::JwtValidation("expired"));
+    }
+    if let Some(nbf) = meta.nbf {
+        if now_secs + (leeway_secs as i64) < nbf {
+            return Err(CoreError::JwtValidation("expired"));
+        }
+    }
+
+    let claims: C = serde_json::from_slice(&payload_bytes)
+        .map_err(|_| CoreError::JwtValidation("malformed"))?;
+    Ok(claims)
+}
+
 /// Extract the `kid` (key id) from a JWT's header without
 /// verifying the signature. Used by `service::introspect`'s
 /// access-token path to pick the right key out of an

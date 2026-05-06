@@ -12,7 +12,295 @@ changes will always be called out here.
 
 ---
 
-## [0.50.2] - 2026-05-05
+## [0.51.0] - 2026-05-06
+
+Minor release. Implements RFC 010 (MagicLinkMailer port) and closes
+RFC 002 (client_secret_hash documentation drift). RFC 010 introduces new
+operator-visible configuration — three optional env vars for the HTTPS
+provider adapter — which earns the minor version bump per the versioning
+policy.
+
+### Why this release
+
+**RFC 010 (P0 structural)**: RFC 008 (v0.50.3) stopped the audit log leak
+of Magic Link OTP plaintext. However, without a defined delivery contract,
+operators under deadline pressure would reintroduce the hack — the audit
+log was previously the only delivery path that existed. RFC 010 builds the
+`MagicLinkMailer` trait the development directive claimed existed but which
+had zero code hits in the workspace. The dev directive's promise is now
+truth.
+
+**RFC 002 (documentation drift)**: `migrations/0001_initial.sql` described
+`client_secret_hash` as `argon2id(secret)`. No Argon2 implementation ever
+existed; the actual path has always been SHA-256, matching `admin_tokens`
+and the magic-link OTP hash. The schema comment is now corrected.
+
+### What shipped
+
+**RFC 010 — MagicLinkMailer port + provider adapters**
+
+- `cesauth_core::magic_link::mailer` (new module): `MagicLinkMailer` async
+  trait, `MagicLinkPayload`, `MagicLinkReason`, `DeliveryReceipt`,
+  `MailerError`. Pub-re-exported from `cesauth_core::magic_link`.
+- `cesauth-adapter-cloudflare::mailer` (new module): four reference adapters
+  and the `from_env` factory.
+  - `DevConsoleMailer`: logs handle (never code) to worker console. Active
+    only when `WRANGLER_LOCAL=1`. The factory enforces this guard.
+  - `UnconfiguredMailer`: returns `NotConfigured` on every send. The default
+    when no provider env var is set. Surfaces misconfig via audit on first use.
+  - `ServiceBindingMailer`: sends a JSON envelope through the
+    `MAGIC_LINK_MAILER` CF service binding to an operator mail worker.
+    Preferred path — stays within Cloudflare's network.
+  - `HttpsProviderMailer`: POSTs a SendGrid v3-compatible JSON body to
+    `MAILER_PROVIDER_URL` with `Authorization: $MAILER_PROVIDER_AUTH_HEADER`.
+    Works with SendGrid, Resend, Postmark, Mailgun, SES-via-gateway.
+  - `from_env(env)` factory: selects DevConsole → ServiceBinding → Https →
+    Unconfigured in priority order.
+- `cesauth_worker::adapter::mailer` (new module): thin re-export of
+  `from_env` so route handlers import from `crate::adapter`.
+- `routes::magic_link::request`: wires the mailer after `MagicLinkIssued`
+  audit. On `Ok(receipt)` → emits `MagicLinkDelivered` (handle +
+  `provider_msg_id`). On `Err(e)` → emits `MagicLinkDeliveryFailed` (handle
+  + `e.audit_kind()`), logs at Error, returns the same success-shaped
+  response (no enumeration leak via differential response).
+- `routes::api_v1::anonymous` (promote path): same mailer wiring pattern
+  with `reason = AnonymousPromote`.
+- New audit kinds: `MagicLinkDelivered` (`magic_link_delivered`),
+  `MagicLinkDeliveryFailed` (`magic_link_delivery_failed`).
+- `cesauth_worker::i18n`: `locale_str(Locale) -> &'static str` helper for
+  mailer payload locale field.
+- `docs/src/deployment/email-delivery.md` (new): operator chapter covering
+  adapter selection, configuration per option (service binding / HTTPS /
+  defer), local dev workflow, monitoring dashboard queries, and security
+  considerations (enumeration prevention, provider-side responsibility,
+  bounce handling).
+- `docs/src/expert/adr/015-magic-link-mailer.md` (new): ADR-015, Accepted.
+  Documents 9 design questions including trait location, async signature,
+  adapter selection priority, fail-open vs fail-closed on delivery failure,
+  timing-attack mitigation, and body template scope.
+
+**RFC 002 — `client_secret_hash` documentation drift resolved**
+
+- `migrations/0001_initial.sql`: column comment corrected from
+  `argon2id(secret)` to `sha256_hex(secret)`.
+- `service::client_auth` module doc: updated to record the resolution and
+  explain why SHA-256 is correct for server-minted 256-bit secrets (RFC 002
+  reasoning inline).
+
+### Tests
+
+820 lib tests pass (was 817 in v0.50.3). Net +3:
+
+| Crate | Before | After | Delta |
+|---|---|---|---|
+| `cesauth-core` | 456 | 459 | +3 (MagicLinkMailer/MailerError/MagicLinkReason unit tests) |
+| `cesauth-adapter-test` | 117 | 117 | — |
+| `cesauth-ui` | 244 | 244 | — |
+| `cesauth-worker` host subset | 2 | 2 | — |
+
+### Schema / wire / DO changes
+
+- **No schema migration.** SCHEMA_VERSION remains 10. The migration 0001
+  comment edit is cosmetic.
+- **Wire format unchanged.** No new HTTP endpoints. Existing Magic Link
+  endpoint behavior is identical from the user's perspective.
+- **DO state unchanged.**
+- **New env vars (optional)**:
+
+| Var | Adapter | Required? |
+|---|---|---|
+| `MAGIC_LINK_MAILER` | ServiceBinding (wrangler.toml `[[services]]`) | No |
+| `MAILER_PROVIDER_URL` | HttpsProvider | Required for HttpsProvider |
+| `MAILER_PROVIDER_AUTH_HEADER` | HttpsProvider | Required for HttpsProvider |
+| `MAILER_PROVIDER_FROM_ADDRESS` | HttpsProvider | Required for HttpsProvider |
+| `MAILER_PROVIDER_FROM_NAME` | HttpsProvider | Optional (display name) |
+
+None of these vars changes existing behavior if absent — the default is
+`UnconfiguredMailer`, which matches the pre-v0.51.0 "no mailer" state.
+
+### Operator notes
+
+1. **Choose your delivery path** before deploying v0.51.0 to production:
+   - Service binding (recommended): add `[[services]]` block to
+     `wrangler.toml`.
+   - HTTPS provider: `wrangler secret put` for the three required vars.
+   - Defer: do nothing; Magic Link issuances will audit as
+     `magic_link_delivery_failed kind=not_configured`.
+2. **Add a dashboard panel** for `magic_link_delivery_failed` broken down
+   by `kind` field. A spike of `not_configured` means your deployment has
+   no mail provider wired; `permanent` means provider rejection.
+3. **Local dev workflow**: with `WRANGLER_LOCAL=1`, the handle is logged to
+   the worker console. Retrieve the OTP hash from local D1 via `wrangler d1
+   execute`. See `docs/src/deployment/email-delivery.md` for details.
+4. **RFC 008 OTP purge**: if you haven't run the v0.50.3 purge runbook yet,
+   do so before deploying v0.51.0. The mailer wiring is now active; leaked
+   OTP rows from pre-v0.50.3 deployments are the only remaining exposure.
+
+### ADR changes
+
+- ADR-015 `015-magic-link-mailer.md`: new, Accepted in v0.51.0.
+  `docs/src/SUMMARY.md` updated.
+
+### Upgrade procedure
+
+```
+1. Choose a delivery path (service binding / HTTPS / defer).
+2. Configure the chosen adapter (wrangler.toml or secrets).
+3. Deploy v0.51.0.
+4. Issue a test Magic Link in staging; confirm audit shows
+   magic_link_delivered (or magic_link_delivery_failed kind=not_configured
+   if intentionally deferred).
+5. Deploy production.
+```
+
+## [0.50.3] - 2026-05-06
+
+Security and hardening patch. Implements RFC 008, RFC 009, and RFC 011
+from the v0.50.1 external codebase review — the three items classified
+as Tier 0 (production blockers) and Tier 1 (P1 hardening) that do not
+require new operator-visible configuration.
+
+### Why this release
+
+Three findings from the external review required immediate attention:
+
+- **RFC 008 (P0)**: Every Magic Link issuance wrote the OTP plaintext
+  into the audit log, violating cesauth's own "no token material ever"
+  invariant. Anyone with D1 read access, a Logpush forwarder, or access
+  to a migration export could log in as any user who used Magic Link
+  during the retention window.
+- **RFC 009 (P0)**: `introspect_token` was called with `expected_aud =
+  issuer` while access tokens carry `aud = client.id`. The test suite
+  masked the bug by setting `AUD = ISS` in the fixture. Every valid
+  access-token introspection in production returned `{"active": false}`.
+  The v0.50.0 audience gate (ADR-014 §Q1) consequently never fired.
+  The companion finding: on D1 storage error, the audience gate fell
+  open (fail-open), silently disabling the security boundary for
+  deployments that had opted into per-client audience scoping.
+- **RFC 011 (P1)**: `csrf::mint()` swallowed `getrandom` failure with
+  `let _ =`, producing a predictable all-zero token when the platform
+  CSPRNG failed. Negative env values for rate-limit thresholds silently
+  wrapped to huge `u32` via `as u32`, effectively disabling rate limits.
+  Three `/me/security/sessions` routes were registered twice in `lib.rs`
+  (merge-conflict residue from v0.35.0).
+
+### What shipped
+
+**RFC 008 — Eliminate plaintext OTP in audit log**
+
+- `routes::magic_link::request` and `routes::api_v1::anonymous`: the
+  `reason` field on `EventKind::MagicLinkIssued` now carries
+  `handle=<handle>` only. The OTP plaintext is gone.
+- `cesauth_core::magic_link::IssuedOtp`: renamed `code_plaintext` →
+  `delivery_payload`. The name signals intent — this value is for
+  delivery, not logging.
+- `crates/worker/src/audit.rs`: module doc gains an explicit "Invariant:
+  no token material in audit" section naming the specific fields and the
+  RFC 008 history.
+- `crates/worker/src/audit/tests.rs` (new): `no_audit_reason_format_string_contains_secret_substring` — a static-grep test that walks every `.rs` source file at test time and asserts no `audit::write_*` call site references `code=`, `code_plaintext`, `otp=`, `secret=`, `password=`, or `plaintext`. Prevents reintroduction.
+- `docs/src/deployment/runbook.md`: new section "Operation: purge
+  plaintext OTP audit leaks (one-time, v0.50.1 → v0.50.3 upgrade)" with
+  the exact SQL, the export-for-forensic-preservation variant, and the
+  chain re-baseline procedure.
+
+**RFC 009 — Introspection access-token `aud` correctness + fail-closed gate**
+
+- `cesauth_core::jwt::signer::verify_for_introspect` (new): a dedicated
+  verifier for the `/introspect` path that omits `aud` enforcement.
+  Access tokens carry `aud = client.id`; the pre-v0.50.3 verifier
+  expected `aud = issuer`, rejecting every valid production token. The
+  audience gate in the worker handler (`apply_introspection_audience_gate`,
+  ADR-014 §Q1) is now the sole aud-policy point. The strict `verify()`
+  function is unchanged and continues to be used by all other callers.
+- `cesauth_core::service::introspect::introspect_token`: `expected_aud`
+  parameter removed. Module doc updated with the RFC 009 rationale.
+- Worker handler `routes::oidc::introspect`: audience-gate client lookup
+  is now fail-closed. `Ok(None)` (admin DELETE race post-auth) → HTTP 401
+  + new `EventKind::IntrospectionRowMissing` audit event. `Err(_)` (D1
+  storage outage) → HTTP 503.
+- Test fixture: `const AUD: &str` changed from the issuer URL to
+  `"client_X"` — the production-realistic shape. Existing tests updated.
+- Three new regression tests in `service::introspect::tests::rfc009_aud_correctness`.
+- ADR-014 §Q1: amendment paragraph noting the v0.50.3 tightening.
+
+**RFC 011 — Worker-layer hardening**
+
+- `csrf::mint()`: return type changed from `String` to
+  `Result<String, getrandom::Error>`. On `Err`, all callers now emit a
+  `CsrfRngFailure` audit event and return HTTP 500 rather than silently
+  producing a predictable all-zero token. New `CsrfRngFailure` audit kind.
+- `config.rs`: new `var_u32_bounded(name, default, max)` helper that
+  rejects negative values (preventing `as u32` silent wrap) and values
+  above `max`. Applied to `REFRESH_RATE_LIMIT_THRESHOLD`,
+  `INTROSPECTION_RATE_LIMIT_THRESHOLD`, and their `_WINDOW_SECS` variants.
+  A mis-configuration now fails at startup with a clear message rather
+  than silently disabling rate limits.
+- `lib.rs`: removed the second (duplicate) registration block for
+  `GET /me/security/sessions`, `POST /me/security/sessions/revoke-others`,
+  and `POST /me/security/sessions/:session_id/revoke`. These were
+  merge-conflict residue from v0.35.0.
+- `lib.rs` tests: `no_duplicate_route_registrations` — static-grep test
+  that asserts each `(method, path)` tuple appears at most once. Prevents
+  recurrence.
+- `docs/src/expert/adr/012-session-hardening.md`: Superseded header added
+  (canonical is `012-sessions.md`). `SUMMARY.md` index updated.
+- Two new tests for `csrf::mint() -> Result` shape.
+
+### Tests
+
+817 lib tests pass (was 814 in v0.50.2). Breakdown by crate:
+
+| Crate | Before | After | Delta |
+|---|---|---|---|
+| `cesauth-core` | 453 | 456 | +3 (RFC 009 regression pins) |
+| `cesauth-adapter-test` | 117 | 117 | — |
+| `cesauth-ui` | 244 | 244 | — |
+| `cesauth-worker` (host subset) | — | 2 | +2 (RFC 011: csrf + route pins) |
+
+### Schema / wire / DO changes
+
+- **No schema migration.** SCHEMA_VERSION remains 10.
+- **Wire format**: `/introspect` now returns `active: true` (and populates
+  `aud`) for valid access tokens that previously returned `active: false`
+  due to the RFC 009 bug. This is a **behavior change at upgrade**: RPs
+  that relied on the (broken) `inactive` response will now receive the
+  correct `active` response. Release notes recommend testing introspection
+  flows against v0.50.3 in staging before production rollout.
+- **No new bindings**, no new env vars, no `wrangler.toml` changes.
+- **DO state unchanged** (FamilyState, ActiveSession, etc.).
+
+### Operator notes
+
+1. **Run the OTP purge runbook** if you ran any v0.16.0–v0.50.1 in
+   production. See `docs/src/deployment/runbook.md` → "Operation: purge
+   plaintext OTP audit leaks". Fresh deployments that never ran ≤ v0.50.1
+   can skip this.
+2. **Introspection behavior change**: access-token introspection now returns
+   correct results. Check your resource-server introspection clients — if
+   they were silently falling back on `active: false`, they now see `true`.
+3. **Rate-limit env validation**: if you have `REFRESH_RATE_LIMIT_THRESHOLD`
+   or `INTROSPECTION_RATE_LIMIT_THRESHOLD` set to a negative value (which
+   would previously have silently disabled rate limits), v0.50.3 will now
+   refuse to start. Correct the value before deploying.
+4. **No rollback to v0.50.1** after running the OTP purge — that version
+   reintroduces the audit-as-delivery path.
+
+### ADR changes
+
+- ADR-014 §Q1: amended to note the RFC 009 verifier fix and gate
+  tightening. The §Q1 design is now actually in effect.
+
+### Upgrade procedure
+
+```
+1. Deploy v0.50.3 (no schema migration needed).
+2. Verify /introspect works correctly for access tokens.
+3. Run the OTP purge runbook if applicable.
+4. Watch audit_chain_cron on next 04:00 UTC run; verify the
+   chain status page shows ✓ valid after the re-baseline.
+```
+
+
 
 Documentation-only patch release. Adds 11 new RFCs
 (008-018) to `rfcs/` triaging the v0.50.1 external

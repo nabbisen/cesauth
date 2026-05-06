@@ -493,3 +493,112 @@ These aren't alerts; they're recurring chores.
   runbook references.
 - [Tenancy → Operator runbook](../expert/tenancy.md) — the
   tenancy-service-specific equivalent of this page.
+
+---
+
+## Operation: purge plaintext OTP audit leaks (one-time, v0.50.1 → v0.50.3 upgrade)
+
+**When to run**: once, after upgrading to v0.50.3, if you ran any version
+between v0.16.0 and v0.50.1 inclusive in production. Those versions wrote
+the Magic Link OTP plaintext into `audit_events.reason` for every issuance
+(`EventKind::MagicLinkIssued`). v0.50.3 (RFC 008) stops the bleed; this
+procedure sanitises already-persisted rows.
+
+**Who is affected**: operators who used Magic Link or anonymous-promote
+in production during the affected version window. Fresh deployments that
+never ran ≤ v0.50.1 do not need this procedure.
+
+### Step 1 — Verify the leak exists
+
+```bash
+wrangler d1 execute cesauth-db --command \
+  "SELECT COUNT(*) AS leaked_rows FROM audit_events
+    WHERE kind = 'magic_link_issued'
+      AND reason LIKE '%code=%';"
+```
+
+If `leaked_rows` is 0, your deployment is clean and you can skip the rest.
+
+### Step 2 — (Optional) Export for forensic preservation
+
+Before purging, you may want to keep a private record of the leaked rows.
+Run this and store the output offline if needed:
+
+```bash
+wrangler d1 execute cesauth-db --command \
+  "SELECT id, ts, subject, reason FROM audit_events
+    WHERE kind = 'magic_link_issued'
+      AND reason LIKE '%code=%'
+   ORDER BY ts;" > leaked-otp-rows-$(date +%Y%m%d).jsonl
+```
+
+### Step 3 — Purge plaintext OTP from reason field
+
+```sql
+UPDATE audit_events
+   SET reason = NULL
+ WHERE kind = 'magic_link_issued'
+   AND reason LIKE '%code=%';
+```
+
+Via wrangler:
+
+```bash
+wrangler d1 execute cesauth-db --command \
+  "UPDATE audit_events
+      SET reason = NULL
+    WHERE kind = 'magic_link_issued'
+      AND reason LIKE '%code=%';"
+```
+
+This rewrites only the `reason` column. The `kind`, `subject`, `ts`, and
+chain fields are untouched; the row itself and its hash remain in the chain.
+The chain hash over `reason` now covers `NULL` instead of the original
+value, so the verifier will detect a mismatch.
+
+### Step 4 — Re-baseline the audit hash chain
+
+The UPDATE in step 3 breaks the SHA-256 hash chain at every modified row.
+The next `audit_chain_cron` run will fail-closed and block further
+verification until the chain is re-baselined.
+
+```bash
+# Clear the stored checkpoint so the verifier re-walks from genesis.
+wrangler d1 execute cesauth-db --command \
+  "DELETE FROM audit_chain_checkpoints;"
+```
+
+> **Note**: the checkpoint is also stored in KV under the `chain:checkpoint`
+> key in the `CACHE` namespace. Wrangler KV delete:
+>
+> ```bash
+> wrangler kv key delete --binding=CACHE "chain:checkpoint"
+> wrangler kv key delete --binding=CACHE "chain:last_result"
+> ```
+
+Then trigger a manual chain re-walk (or wait for the next 04:00 UTC cron).
+The verifier will re-walk all rows from seq=1, compute chain hashes over the
+post-purge state, and write a fresh checkpoint. After the first successful
+run the admin console `/admin/console/audit/chain` will show ✓ valid again.
+
+### Step 5 — Verify cleanup
+
+```bash
+# Should return 0.
+wrangler d1 execute cesauth-db --command \
+  "SELECT COUNT(*) FROM audit_events
+    WHERE kind = 'magic_link_issued'
+      AND reason LIKE '%code=%';"
+```
+
+### Security notes
+
+- **Do not roll back to v0.50.1 after running step 3.** v0.50.1 and earlier
+  reintroduce the audit-as-delivery path. If you must roll back for an
+  incident, do so only in a non-production environment with synthetic data.
+- **The purge is irreversible** once you run `VACUUM` (which Cloudflare D1
+  does automatically). Steps 2–3 together give you a private record before
+  the data is gone permanently.
+- **The chain re-baseline accepts the loss** of the verifiable-chain-back-
+  to-genesis property in exchange for a clean post-purge state. Future
+  verification runs from the new baseline forward.

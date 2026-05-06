@@ -117,6 +117,54 @@ started.
 
 ### Next minor releases
 
+- ✅ **v0.51.0 — RFC 010 + RFC 002 (MagicLinkMailer port + schema drift fix).**
+  Minor bump because RFC 010 introduces operator-visible configuration knobs
+  (three optional env vars for the HTTPS provider adapter).
+
+  **RFC 010**: `MagicLinkMailer` trait (`cesauth-core::magic_link::mailer`)
+  with `MagicLinkPayload`, `MagicLinkReason`, `DeliveryReceipt`, `MailerError`.
+  Four reference adapters in `cesauth-adapter-cloudflare::mailer`:
+  `DevConsoleMailer` (local dev only, never logs OTP), `UnconfiguredMailer`
+  (default fallback, audits misconfig), `ServiceBindingMailer` (CF service
+  binding to operator mail worker — preferred), `HttpsProviderMailer`
+  (SendGrid v3-compatible POST). Worker factory `crate::adapter::mailer::from_env`
+  selects the adapter from env. Both Magic Link issuance routes
+  (`routes::magic_link::request`, `routes::api_v1::anonymous` promote path)
+  now call the mailer port instead of writing to the audit log. Two new audit
+  kinds: `MagicLinkDelivered`, `MagicLinkDeliveryFailed` (keyed on `kind`
+  field: `transient` / `permanent` / `not_configured`). ADR-015 Accepted.
+  New operator chapter `docs/src/deployment/email-delivery.md`.
+  **RFC 002**: `migrations/0001_initial.sql` column comment corrected from
+  `argon2id(secret)` to `sha256_hex(secret)`. `service::client_auth` module
+  doc updated with RFC 002 resolution rationale. 820 tests pass (was 817).
+  No schema migration; new env vars are all optional; existing behavior
+  unchanged for deployments that don't configure a provider.
+
+- ✅ **v0.50.3 — RFC 008 + RFC 009 + RFC 011 (security hardening patch).**
+  Ships the Tier-0 production-blocker and Tier-1 hardening items from the
+  external codebase review that do not require new operator-visible
+  configuration knobs.
+
+  **RFC 008 (P0)**: OTP plaintext removed from audit log on every Magic
+  Link issuance. `code_plaintext` renamed to `delivery_payload`. Static-
+  grep pin test prevents reintroduction. Operator runbook for purging
+  already-persisted rows and re-baselining the hash chain added to
+  `docs/src/deployment/runbook.md`. **RFC 009 (P0)**: `introspect_token`
+  no longer takes `expected_aud` — access tokens carry `aud = client.id`
+  not `aud = issuer`; the pre-v0.50.3 verifier rejected every valid
+  production access token. New `verify_for_introspect()` in jwt/signer
+  is the introspect-only relaxed path. Audience-gate client lookup is now
+  fail-closed: `Ok(None)` → HTTP 401 + `IntrospectionRowMissing` audit
+  event; `Err(_)` → HTTP 503. Test fixture corrected to `AUD = "client_X"`.
+  Three regression tests added. **RFC 011 (P1)**: `csrf::mint()` → `Result`,
+  fail HTTP 500 on CSPRNG failure; `var_u32_bounded` helper rejects negative
+  rate-limit env values (previously silently disabled limits via `as u32`
+  wrap); duplicate session-route block removed from `lib.rs`;
+  `no_duplicate_route_registrations` test added; `012-session-hardening.md`
+  marked Superseded. 817 tests pass (was 814). No schema/wire/DO changes;
+  `/introspect` behavior change: now returns correct `active: true` for
+  valid access tokens.
+
 - **v0.50.2 production-blocker sweep — external review remediation.**
   An external Rust + Cloudflare codebase review of v0.50.1
   surfaced three production blockers, three security
@@ -127,8 +175,8 @@ started.
 
   **Production blockers (Tier 0, ship in v0.50.2)**:
 
-  - **RFC 008 — Eliminate plaintext OTP in audit log
-    [P0]**. `worker/src/routes/magic_link/request.rs:170-178`
+  - ✅ **RFC 008 — Eliminate plaintext OTP in audit log
+    [P0]** — shipped in v0.50.3. `worker/src/routes/magic_link/request.rs:170-178`
     and `worker/src/routes/api_v1/anonymous.rs:254-264`
     write the Magic Link OTP plaintext into
     `EventKind::MagicLinkIssued` audit `reason` on every
@@ -147,8 +195,8 @@ started.
     re-baseline. RFC 008 details all 6 implementation
     steps.
 
-  - **RFC 009 — Introspection access-token `aud`
-    correctness + audience-gate fail-closed [P0 + P1]**.
+  - ✅ **RFC 009 — Introspection access-token `aud`
+    correctness + audience-gate fail-closed [P0 + P1]** — shipped in v0.50.3.
     Tokens minted with `aud = client.id`
     (`core/src/service/token.rs:115,277`); verifier uses
     `expected_aud = issuer`
@@ -172,8 +220,8 @@ started.
     ADR-014 §Q1 with v0.50.2 tightening note. RFC 009
     details all 9 implementation steps.
 
-  - **RFC 010 — Magic Link real delivery (mailer port +
-    provider adapters) [P0]**. The development
+  - ✅ **RFC 010 — Magic Link real delivery (mailer port +
+    provider adapters) [P0]** — shipped in v0.51.0. The development
     directive declares a `MagicLinkMailer` trait that
     operators implement; **workspace-wide grep returns
     zero hits** — no such trait exists. The audit log
@@ -194,7 +242,7 @@ started.
     drafted alongside graduating to Accepted on ship.
     RFC 010 details all 6 implementation PRs.
 
-  - **RFC 011 — Worker-layer hardening [P1 + P2]**. Bundle
+  - ✅ **RFC 011 — Worker-layer hardening [P1 + P2]** — shipped in v0.50.3. Bundle
     of four mechanical fixes:
     (1) `csrf::mint()` swallows `getrandom` error with
     `let _ =` — RNG failure produces a constant predictable
@@ -1249,10 +1297,10 @@ started.
 
 ### Later
 
-- **`oidc_clients.client_secret_hash` documentation drift.**
-  The schema comment in `migrations/0001_initial.sql` describes
+- ✅ **`oidc_clients.client_secret_hash` documentation drift** — resolved in v0.51.0 (RFC 002).
+  ~~The schema comment in `migrations/0001_initial.sql` describes
   `client_secret_hash` as "argon2id(secret) or NULL", but no
-  Argon2 implementation exists in cesauth as of v0.26.0 — the
+  Argon2 implementation exists~~ in cesauth as of v0.26.0 — the
   hashing path for client_secret falls back to whatever the
   adapter does, which currently is plaintext comparison or
   unimplemented. (Discovered during the v0.26.0 TOTP work.)

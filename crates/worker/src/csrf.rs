@@ -49,10 +49,19 @@ pub fn set_cookie_header(token: &str) -> String {
 }
 
 /// Mint a fresh CSRF token. 24 bytes of CSPRNG base64url-encoded.
-pub fn mint() -> String {
+///
+/// Returns `Err` if the platform CSPRNG fails. Callers MUST fail-closed
+/// on `Err` — rendering a form with a zeroed token would let any
+/// submitted form bypass CSRF validation (the cookie is also zeroed,
+/// so the double-submit check passes trivially). Fail with HTTP 500.
+///
+/// In practice `getrandom` on Cloudflare Workers' WASM target reliably
+/// succeeds via `crypto.getRandomValues`; this is defense-in-depth
+/// against a future runtime regression.
+pub fn mint() -> Result<String, getrandom::Error> {
     let mut buf = [0u8; 24];
-    let _ = getrandom(&mut buf);
-    URL_SAFE_NO_PAD.encode(buf)
+    getrandom(&mut buf)?;
+    Ok(URL_SAFE_NO_PAD.encode(buf))
 }
 
 /// Extract the CSRF cookie value from a raw `Cookie:` header. Returns

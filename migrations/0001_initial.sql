@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS oidc_clients (
     name               TEXT    NOT NULL,
     client_type        TEXT    NOT NULL
                        CHECK (client_type IN ('public', 'confidential')),
-    client_secret_hash TEXT,                             -- argon2id(secret) or NULL
+    client_secret_hash TEXT,                             -- sha256_hex(secret) or NULL (RFC 002, v0.51.0: SHA-256 correct for server-minted 256-bit secrets)
     redirect_uris      TEXT    NOT NULL,                 -- JSON array
     allowed_scopes     TEXT    NOT NULL,                 -- JSON array
     token_auth_method  TEXT    NOT NULL DEFAULT 'none'

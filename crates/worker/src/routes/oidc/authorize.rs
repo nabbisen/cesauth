@@ -170,7 +170,16 @@ pub async fn authorize<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
         return oauth_error_response(&cesauth_core::CoreError::Internal);
     }
 
-    let csrf_token = csrf::mint();
+    let csrf_token = match csrf::mint() {
+        Ok(t) => t,
+        Err(_) => {
+            crate::audit::write_owned(
+                &ctx.env, crate::audit::EventKind::CsrfRngFailure,
+                None, None, Some("route=/authorize".to_owned()),
+            ).await.ok();
+            return oauth_error_response(&cesauth_core::CoreError::Internal);
+        }
+    };
     let sitekey = Some(cfg.turnstile_sitekey.as_str()).filter(|s| !s.is_empty());
     // v0.39.0: negotiate locale for the login page rendering.
     let locale = crate::i18n::resolve_locale(&req);

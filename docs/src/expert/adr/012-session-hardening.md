@@ -1,8 +1,16 @@
-# ADR-012: Session hardening + user-facing session list
+# ADR-012: Session hardening + user-facing session list (older draft)
 
-**Status**: **Accepted (v0.35.0)**.
+> **Status**: **Superseded by [ADR-012 (sessions)](012-sessions.md)** as of 2026-05
+> (v0.50.3, RFC 011).
+>
+> The §Q numbering and decisions in this draft were refined and consolidated
+> into `012-sessions.md`, which is the canonical ADR-012. The text below is
+> preserved for historical reference only and is **not the authoritative record**.
+>
+> For active decisions and open questions on sessions, refer to `012-sessions.md`.
 
-**Context**: cesauth has carried a session subsystem since
+---
+
 v0.4 — `SessionState` + `ActiveSessionStore` (`crates/core/src/
 ports/store.rs`), backed by a per-session Cloudflare Durable
 Object (`crates/adapter-cloudflare/src/active_session.rs`).

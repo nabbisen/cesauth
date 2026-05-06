@@ -7,7 +7,10 @@
 > precision in authentication and authorization.
 
 ![Status](https://img.shields.io/badge/status-unstable-red)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![crates.io](https://img.shields.io/crates/v/cesauth?label=rust)](https://crates.io/crates/cesauth)
+[![Documentation](https://docs.rs/cesauth/badge.svg?version=latest)](https://docs.rs/cesauth)
+[![Dependency Status](https://deps.rs/crate/cesauth/latest/status.svg)](https://deps.rs/crate/cesauth)
+[![License](https://img.shields.io/github/license/nabbisen/cesauth)](https://github.com/nabbisen/cesauth/blob/main/LICENSE)
 
 ---
 

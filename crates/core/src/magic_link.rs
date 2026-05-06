@@ -9,9 +9,19 @@
 //! * The current, unused OTP hash lives in the `AuthChallenge` Durable
 //!   Object (strong consistency: at-most-once consumption).
 //! * Delivery metadata (send time, attempt counter) lives in the same
-//!   DO. Audit trail of *attempts* goes to R2 through the worker layer.
+//!   DO. Audit trail of *attempts* goes to D1 through the worker layer.
 //!
 //! We never store the plaintext OTP. The DO keeps only a hash.
+//!
+//! ## v0.51.0 (RFC 010) — `MagicLinkMailer` port
+//!
+//! Real email delivery is now through the `mailer` submodule. The
+//! `IssuedOtp::delivery_payload` field carries the plaintext to the
+//! mailer port; it never reaches the audit log.
+
+pub mod mailer;
+
+pub use mailer::{DeliveryReceipt, MailerError, MagicLinkMailer, MagicLinkPayload, MagicLinkReason};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use getrandom::getrandom;
@@ -31,13 +41,16 @@ const ALPHABET: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 /// A freshly minted OTP and the hash to store for later verification.
 #[derive(Debug, Clone)]
 pub struct IssuedOtp {
-    /// Send this to the user. Never log or persist verbatim.
-    pub code_plaintext: String,
+    /// Send this to the user via the `MagicLinkMailer` port. MUST NOT
+    /// be logged or persisted verbatim — store `code_hash` instead.
+    /// Named `delivery_payload` to make the intent clear: this value
+    /// exists to be delivered, not recorded.
+    pub delivery_payload: String,
     /// Store this hash in the AuthChallenge DO.
-    pub code_hash:      String,
+    pub code_hash:        String,
     /// Absolute expiry in unix seconds. The DO enforces this, but we
     /// return it so the caller can surface "valid for N minutes" UX.
-    pub expires_at:     i64,
+    pub expires_at:       i64,
 }
 
 /// Mint an OTP.
@@ -59,7 +72,7 @@ pub fn issue(now_unix: i64, ttl_secs: i64) -> CoreResult<IssuedOtp> {
 
     let code_hash = hash(&code);
     Ok(IssuedOtp {
-        code_plaintext: code,
+        delivery_payload: code,
         code_hash,
         expires_at: now_unix.saturating_add(ttl_secs),
     })

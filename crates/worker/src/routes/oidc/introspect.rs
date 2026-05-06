@@ -88,33 +88,34 @@ pub async fn handler<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
         return unauthorized();
     }
 
-    // **v0.50.0** (ADR-014 §Q1) — fetch the authenticated
-    // client so we can apply its audience scope (if any)
-    // to the introspection result. `find` here is a second
-    // round-trip after `verify_client_credentials` (which
-    // only confirms the secret); a future optimization
-    // could merge them, but the cost is one extra D1 read
-    // per /introspect call which is negligible. Failing
-    // to fetch (storage outage) treats the client as
-    // unscoped — letting the request proceed under the
-    // pre-v0.50.0 gate-less behavior — rather than fail-
-    // closing on a transient storage hiccup. Errors here
-    // log a warning.
+    // **v0.50.3 (RFC 009, ADR-014 §Q1 amendment)** — fetch the
+    // authenticated client row to apply its audience scope.
+    // Fail-closed: a deployment that opted into audience scoping
+    // must not see it silently disabled by a transient hiccup or
+    // an admin DELETE race.
+    //   Ok(Some(c)) → continue with the client
+    //   Ok(None)    → client row missing post-auth (anomalous;
+    //                  admin DELETE race). Fail HTTP 401 + audit.
+    //   Err(_)      → D1 storage outage. Fail HTTP 503.
     use cesauth_core::ports::repo::ClientRepository;
     let requesting_client = match clients.find(&creds.client_id).await {
-        Ok(Some(c)) => Some(c),
+        Ok(Some(c)) => c,
         Ok(None) => {
-            // Auth succeeded but the row is gone? Race
-            // with admin DELETE between auth and lookup.
-            // Treat as unscoped; the underlying issue is
-            // the operator's race, not a security one.
-            None
+            log::emit(&cfg.log, Level::Error, Category::Auth,
+                "introspect: client row missing post-auth (admin DELETE race?)",
+                Some(&creds.client_id));
+            audit::write_owned(
+                &ctx.env, EventKind::IntrospectionRowMissing,
+                None, Some(creds.client_id.clone()),
+                None,
+            ).await.ok();
+            return unauthorized();
         }
         Err(_) => {
-            worker::console_warn!(
-                "introspect: client repo lookup failed (audience scope unavailable)"
-            );
-            None
+            log::emit(&cfg.log, Level::Error, Category::Storage,
+                "introspect: client repo lookup failed — fail-closed (503)",
+                Some(&creds.client_id));
+            return Response::error("service temporarily unavailable", 503);
         }
     };
 
@@ -203,27 +204,28 @@ pub async fn handler<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
         &families,
         &key_views,
         &cfg.issuer,
-        &cfg.issuer,  // audience: cesauth tokens are aud=iss for now
+        // Note: expected_aud removed in v0.50.3 (RFC 009).
+        // The audience gate below is the canonical aud check.
         30,           // leeway_secs
         &IntrospectInput { token: &token, hint, now_unix: now },
     ).await
         .map_err(|e| worker::Error::RustError(format!("introspect failed: {e:?}")))?;
 
     // **v0.50.0** (ADR-014 §Q1) — apply per-client audience
-    // scope. The pure-service `introspect_token` returned
-    // a response based purely on token validity; the gate
-    // here decides whether the requesting client is
-    // entitled to see it. On mismatch the response is
-    // replaced with bare `inactive()` (no leak) and we
-    // emit a distinct `IntrospectionAudienceMismatch`
-    // audit event. On pass-through the response is
-    // untouched.
+    // scope. The pure-service `introspect_token` returned a
+    // response based purely on token validity; the gate here
+    // decides whether the requesting client is entitled to
+    // see it. On mismatch the response is replaced with bare
+    // `inactive()` (no leak) and we emit a distinct
+    // `IntrospectionAudienceMismatch` audit event.
+    // **v0.50.3 (RFC 009)**: `requesting_client` is now a
+    // concrete value, not an Option; `audience` may still be
+    // None (unscoped client = pre-v0.50.0 legacy behavior).
     let resp = {
         use cesauth_core::service::introspect::{
             apply_introspection_audience_gate, IntrospectionGateOutcome,
         };
-        let client_aud = requesting_client.as_ref()
-            .and_then(|c| c.audience.as_deref());
+        let client_aud = requesting_client.audience.as_deref();
         match apply_introspection_audience_gate(resp, client_aud) {
             IntrospectionGateOutcome::PassedThrough(r) => r,
             IntrospectionGateOutcome::AudienceDenied {

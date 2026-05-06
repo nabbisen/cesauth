@@ -48,9 +48,10 @@
     - [ADR-010: Audit log hash chain](./expert/adr/010-audit-log-hash-chain.md)
     - [ADR-011: Refresh token reuse hardening](./expert/adr/011-refresh-token-reuse-hardening.md)
     - [ADR-012: Session hardening](./expert/adr/012-sessions.md)
+    - [ADR-012: Session hardening (older draft, Superseded)](./expert/adr/012-session-hardening.md)
     - [ADR-013: Internationalization](./expert/adr/013-i18n.md)
     - [ADR-014: Token Introspection](./expert/adr/014-token-introspection.md)
-    - [ADR-012: Session hardening](./expert/adr/012-session-hardening.md)
+    - [ADR-015: Magic Link mail delivery port](./expert/adr/015-magic-link-mailer.md)
 - [Security considerations](./expert/security.md)
 
 ---

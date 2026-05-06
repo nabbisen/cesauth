@@ -45,7 +45,16 @@ pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let (csrf_token, set_cookie) = match existing {
         Some(t) if !t.is_empty() => (t, None),
         _ => {
-            let t = csrf::mint();
+            let t = match csrf::mint() {
+            Ok(tok) => tok,
+            Err(_) => {
+                crate::audit::write_owned(
+                    &ctx.env, crate::audit::EventKind::CsrfRngFailure,
+                    None, None, Some("route=/admin/console/audit/chain".to_owned()),
+                ).await.ok();
+                return Response::error("service temporarily unavailable", 500);
+            }
+        };
             let h = csrf::set_cookie_header(&t);
             (t, Some(h))
         }

@@ -31,12 +31,23 @@
 //! is a read-only API for resource servers; making it
 //! side-effecting would let a malicious resource server revoke
 //! families on demand.
+//!
+//! ## Audience handling (v0.50.3, RFC 009)
+//!
+//! `introspect_token` does NOT accept an `expected_aud`
+//! parameter. Access tokens carry `aud = client.id`; the pre-
+//! v0.50.3 handler passed `aud = issuer`, causing every valid
+//! access-token introspection to return inactive. The fix:
+//! `verify_for_introspect` (jwt/signer.rs) omits the aud
+//! equality check; the per-client audience gate in the worker
+//! handler (`apply_introspection_audience_gate`, ADR-014 §Q1)
+//! is the canonical audience policy point.
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 
 use crate::error::{CoreError, CoreResult};
 use crate::jwt::AccessTokenClaims;
-use crate::jwt::signer::{extract_kid, verify};
+use crate::jwt::signer::{extract_kid, verify_for_introspect};
 use crate::oidc::introspect::{IntrospectInput, IntrospectionKey, IntrospectionResponse, TokenTypeHint};
 use crate::ports::store::RefreshTokenFamilyStore;
 
@@ -45,20 +56,20 @@ use crate::ports::store::RefreshTokenFamilyStore;
 /// genuine infrastructure errors (storage unreachable, etc.)
 /// surface as `Err`.
 ///
-/// `iss` and `aud` are the values to validate JWT claims
-/// against. **v0.41.0** — `keys` is the **active set** of
-/// signing keys (ADR-014 §Q4). Multiple keys can be
-/// present during a signing-key rotation grace period; the
-/// access-token path does kid-directed lookup with a
-/// try-each fallback so an access token signed by any
-/// active key verifies correctly. v0.38.0's behavior
-/// (single key, only the most-recent) is the special case
-/// of `keys.len() == 1`.
+/// **v0.50.3 (RFC 009)**: `expected_aud` parameter removed.
+/// The verifier now accepts any well-formed `aud` value and
+/// returns it in the response. The worker handler's audience
+/// gate (`apply_introspection_audience_gate`) applies per-client
+/// audience policy. See RFC 009 and ADR-014 §Q1 amendment.
+///
+/// `iss` is the expected issuer. `keys` is the active set of
+/// signing keys (ADR-014 §Q4). Multiple keys can be present
+/// during a signing-key rotation grace period; the access-token
+/// path does kid-directed lookup with a try-each fallback.
 pub async fn introspect_token<FS>(
     families:    &FS,
     keys:        &[IntrospectionKey<'_>],
     iss:         &str,
-    aud:         &str,
     leeway_secs: u64,
     input:       &IntrospectInput<'_>,
 ) -> CoreResult<IntrospectionResponse>
@@ -75,7 +86,7 @@ where
     for kind in order {
         let result = match kind {
             TokenKind::Access => {
-                introspect_access(keys, iss, aud, leeway_secs, input.token).await
+                introspect_access(keys, iss, leeway_secs, input.token).await
             }
             TokenKind::Refresh => {
                 introspect_refresh(families, input.token, input.now_unix).await
@@ -221,7 +232,6 @@ enum TokenKind { Access, Refresh }
 async fn introspect_access(
     keys:        &[IntrospectionKey<'_>],
     iss:         &str,
-    aud:         &str,
     leeway_secs: u64,
     token:       &str,
 ) -> CoreResult<Option<IntrospectionResponse>> {
@@ -237,8 +247,8 @@ async fn introspect_access(
     // Try kid-directed lookup first.
     if let Some(presented_kid) = extract_kid(token) {
         if let Some(matched) = keys.iter().find(|k| k.kid == presented_kid) {
-            if let Ok(claims) = verify::<AccessTokenClaims>(
-                token, matched.public_key_raw, iss, aud, leeway_secs,
+            if let Ok(claims) = verify_for_introspect::<AccessTokenClaims>(
+                token, matched.public_key_raw, iss, leeway_secs,
             ) {
                 return Ok(Some(IntrospectionResponse::active_access(
                     claims.scope, claims.cid, claims.sub, claims.jti, claims.iat, claims.exp,
@@ -259,8 +269,8 @@ async fn introspect_access(
     // Fall through: try each active key. Stop on first
     // successful verification.
     for k in keys {
-        if let Ok(claims) = verify::<AccessTokenClaims>(
-            token, k.public_key_raw, iss, aud, leeway_secs,
+        if let Ok(claims) = verify_for_introspect::<AccessTokenClaims>(
+            token, k.public_key_raw, iss, leeway_secs,
         ) {
             return Ok(Some(IntrospectionResponse::active_access(
                 claims.scope, claims.cid, claims.sub, claims.jti, claims.iat, claims.exp,

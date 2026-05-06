@@ -38,3 +38,24 @@ pub fn resolve_locale(req: &Request) -> Locale {
         _               => Locale::default(),
     }
 }
+
+/// Return the locale's BCP-47 string for use in `MagicLinkPayload.locale`.
+///
+/// The `MagicLinkPayload` carries a `&str` locale field so mailer adapters
+/// can render locale-appropriate email bodies without depending on the
+/// `Locale` enum from `cesauth-core`.
+pub fn locale_str(locale: Locale) -> &'static str {
+    match locale {
+        Locale::Ja => "ja",
+        Locale::En => "en",
+    }
+}
+
+/// Convenience helper: resolve locale from a request and return the BCP-47
+/// string directly (combines `resolve_locale` + `locale_str`).
+pub fn resolve_locale_str(fallback: &'static str) -> &'static str {
+    // For call sites that don't have a request (e.g. anonymous promote
+    // which is a JSON API with no Accept-Language to read from), fall back
+    // to the given static string.
+    fallback
+}

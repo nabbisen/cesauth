@@ -30,7 +30,7 @@ use cesauth_cf::ports::store::{CloudflareAuthChallengeStore, CloudflareRateLimit
 use cesauth_core::anonymous::{
     AnonymousSession, AnonymousSessionRepository, ANONYMOUS_TOKEN_TTL_SECONDS,
 };
-use cesauth_core::magic_link;
+use cesauth_core::magic_link::{self, MagicLinkPayload, MagicLinkReason};
 use cesauth_core::ports::repo::UserRepository;
 use cesauth_core::ports::store::{AuthChallengeStore, Challenge, RateLimitStore};
 use cesauth_core::tenancy::{AccountType, DEFAULT_TENANT_ID};
@@ -251,18 +251,47 @@ async fn issue_promote_otp<D>(
         return Response::error("storage error", 500);
     }
 
-    // The OTP plaintext is the email-deliverable. We log it into
-    // the audit trail with a special reason marker so the existing
-    // mail-delivery pipeline (which today reads the audit log;
-    // see `routes/magic_link.rs` module doc) picks it up
-    // automatically.
+    // Audit the issuance with handle only. The plaintext OTP MUST NOT
+    // appear in the audit log (RFC 008, v0.50.3 — "no token material
+    // ever" invariant). Real delivery is via MagicLinkMailer (RFC 010).
     audit::write_owned(
         &ctx.env, EventKind::MagicLinkIssued,
         Some(session.user_id.clone()),
         None,
-        Some(format!("via=anonymous-promote,handle={},code={}",
-            handle, issued.code_plaintext)),
+        Some(format!("via=anonymous-promote,handle={handle}")),
     ).await.ok();
+
+    // **v0.51.0 (RFC 010)** — deliver via mailer port.
+    let mailer = crate::adapter::mailer::from_env(&ctx.env);
+    let locale = crate::i18n::resolve_locale_str("ja"); // anonymous promote has no request locale
+    let ml_payload = MagicLinkPayload {
+        recipient: email,
+        handle:    &handle,
+        code:      &issued.delivery_payload,
+        locale,
+        tenant_id: Some(DEFAULT_TENANT_ID),
+        reason:    MagicLinkReason::AnonymousPromote,
+    };
+    match mailer.send(&ml_payload).await {
+        Ok(receipt) => {
+            audit::write_owned(
+                &ctx.env, EventKind::MagicLinkDelivered,
+                Some(session.user_id.clone()), None,
+                Some(format!(
+                    "via=anonymous-promote,handle={handle} provider_msg_id={}",
+                    receipt.provider_message_id.as_deref().unwrap_or("-")
+                )),
+            ).await.ok();
+        }
+        Err(e) => {
+            audit::write_owned(
+                &ctx.env, EventKind::MagicLinkDeliveryFailed,
+                Some(session.user_id.clone()), None,
+                Some(format!("via=anonymous-promote,handle={handle} kind={}", e.audit_kind())),
+            ).await.ok();
+            // No user-visible error — same differential-response reasoning.
+        }
+    }
 
     json(200, &PromoteIssueBody {
         handle,

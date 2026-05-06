@@ -148,3 +148,22 @@ fn origin_check_fails_on_empty_expected_origin() {
     assert!(!check_origin_or_referer(Some("https://anything"), None, ""));
     assert!(!check_origin_or_referer(None, Some("https://anything/x"), ""));
 }
+
+// ── RFC 011 (v0.50.3) — CSRF mint now returns Result ──────────────
+#[test]
+fn mint_returns_ok_with_32_char_url_safe_no_pad_base64() {
+    let token = mint().expect("getrandom should succeed on test platform");
+    // 24 bytes → 32 URL-safe base64 characters (no padding).
+    assert_eq!(token.len(), 32, "24 bytes base64url-no-pad = 32 chars");
+    assert!(
+        token.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_'),
+        "token must be URL-safe base64 characters only"
+    );
+}
+
+#[test]
+fn mint_result_is_ok_under_normal_conditions() {
+    // The Result wrapper must not be Err in any normal environment —
+    // Cloudflare Workers and standard Linux both provide a working CSPRNG.
+    assert!(mint().is_ok());
+}

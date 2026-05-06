@@ -20,6 +20,25 @@
 //!   The next event continues the chain from the last-good
 //!   tail; the missing event simply isn't there to verify.
 //!
+//! ## Invariant: no token material in audit
+//!
+//! No call to `write_*` may pass token material — OTP plaintext,
+//! refresh-token plaintext, access-token plaintext, magic-link
+//! verification code, TOTP secret, recovery code plaintext,
+//! session cookie value, CSRF token value, JWT payload — in any
+//! field, including `reason`.
+//!
+//! Enforced by the test
+//! `no_audit_reason_format_string_contains_secret_substring`
+//! in `crates/worker/src/audit/tests.rs` at build time.
+//!
+//! Violations historically existed in
+//! `routes::magic_link::request` and `routes::api_v1::anonymous`
+//! (v0.16 → v0.50.1) and were closed in v0.50.2 (RFC 008).
+//! Operators upgrading past v0.50.1 must run the audit-purge
+//! runbook in `docs/src/deployment/day-2-runbook.md` to sanitize
+//! already-persisted rows.
+//!
 //! ## Migration from v0.31.x R2
 //!
 //! v0.31.x and earlier wrote audit events as one-NDJSON-object-
@@ -44,6 +63,14 @@ pub enum EventKind {
     // Authentication attempts
     AuthSucceeded,
     AuthFailed,
+    /// **v0.50.3 (RFC 011)** — `csrf::mint()` was called but the
+    /// platform CSPRNG (`getrandom`) returned an error. The request
+    /// that triggered the form-render was aborted with HTTP 500 rather
+    /// than silently returning a zeroed (predictable) CSRF token.
+    /// Payload includes the route path. In practice `getrandom`
+    /// on Cloudflare Workers reliably succeeds; a non-zero rate here
+    /// indicates a runtime regression worth investigating.
+    CsrfRngFailure,
     // Admin operations
     AdminUserCreated,
     AdminSessionRevoked,
@@ -132,6 +159,15 @@ pub enum EventKind {
     /// tokens carry) or a legitimate-but-unintended
     /// cross-RS introspection probe.
     IntrospectionAudienceMismatch,
+    /// **v0.50.3 (RFC 009)** — `/introspect` was called by an
+    /// authenticated client whose client row is missing from the
+    /// repository. This is anomalous: auth just succeeded against
+    /// a row that no longer exists (admin DELETE race, or auth
+    /// path divergence from repo). Fail-closed response is HTTP
+    /// 401. Distinct from `IntrospectionAudienceMismatch` (row
+    /// present but audience doesn't match) and `TokenIntrospected`
+    /// (successful authenticated introspection).
+    IntrospectionRowMissing,
     /// **v0.38.0** — `POST /introspect` was called (RFC 7662
     /// Token Introspection). Payload includes the requesting
     /// `introspecter_client_id`, the `token_type` reported
@@ -156,6 +192,21 @@ pub enum EventKind {
     MagicLinkIssued,
     MagicLinkVerified,
     MagicLinkFailed,
+    /// **v0.51.0 (RFC 010)** — Magic Link OTP was issued and the mailer
+    /// accepted the outbound send (provider ACK). Payload:
+    /// `{handle, provider_msg_id}`. No plaintext code ever in payload
+    /// (RFC 008 invariant). Distinct from `MagicLinkIssued` (which fires
+    /// before the mailer call) to let operators compute issue-to-delivery
+    /// success rates without provider-side telemetry.
+    MagicLinkDelivered,
+    /// **v0.51.0 (RFC 010)** — Magic Link OTP was issued but the mailer
+    /// returned an error. Payload: `{handle, kind}` where `kind` is one
+    /// of `transient`, `permanent`, `not_configured`. The user-facing
+    /// response is identical to the success path (no enumeration leak).
+    /// A spike of `not_configured` events indicates the deployment has no
+    /// mail provider configured; `permanent` indicates a provider-side
+    /// rejection; `transient` is a retryable provider hiccup.
+    MagicLinkDeliveryFailed,
     // Sessions
     SessionStarted,
     /// Legacy generic revoke event. v0.35.0 splits revocations
@@ -216,6 +267,7 @@ impl EventKind {
         match self {
             Self::AuthSucceeded                => "auth_succeeded",
             Self::AuthFailed                   => "auth_failed",
+            Self::CsrfRngFailure               => "csrf_rng_failure",
             Self::AdminUserCreated             => "admin_user_created",
             Self::AdminSessionRevoked          => "admin_session_revoked",
             Self::AdminClientCreated           => "admin_client_created",
@@ -247,6 +299,7 @@ impl EventKind {
             Self::RefreshRateLimited           => "refresh_rate_limited",
             Self::IntrospectionRateLimited     => "introspection_rate_limited",
             Self::IntrospectionAudienceMismatch => "introspection_audience_mismatch",
+            Self::IntrospectionRowMissing       => "introspection_row_missing",
             Self::TokenIntrospected            => "token_introspected",
             Self::RevocationRequested          => "revocation_requested",
             Self::WebauthnRegistered           => "webauthn_registered",
@@ -255,6 +308,8 @@ impl EventKind {
             Self::MagicLinkIssued              => "magic_link_issued",
             Self::MagicLinkVerified            => "magic_link_verified",
             Self::MagicLinkFailed              => "magic_link_failed",
+            Self::MagicLinkDelivered           => "magic_link_delivered",
+            Self::MagicLinkDeliveryFailed      => "magic_link_delivery_failed",
             Self::SessionStarted               => "session_started",
             Self::SessionRevoked               => "session_revoked",
             Self::SessionRevokedByUser         => "session_revoked_by_user",
@@ -377,3 +432,6 @@ pub async fn write_owned(
     write(env, &ev).await;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

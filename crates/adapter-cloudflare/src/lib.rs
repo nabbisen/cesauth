@@ -38,6 +38,7 @@ pub mod anonymous;
 pub mod auth_challenge;
 pub mod authz;
 pub mod billing;
+pub mod mailer;
 pub mod ports;
 pub mod rate_limit;
 pub mod refresh_token_family;

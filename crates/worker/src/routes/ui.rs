@@ -23,7 +23,16 @@ use crate::routes::me::auth as me_auth;
 
 pub async fn login<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let cfg  = Config::from_env(&ctx.env)?;
-    let csrf_token = csrf::mint();
+    let csrf_token = match csrf::mint() {
+        Ok(t) => t,
+        Err(_) => {
+            crate::audit::write_owned(
+                &ctx.env, crate::audit::EventKind::CsrfRngFailure,
+                None, None, Some("route=/login".to_owned()),
+            ).await.ok();
+            return Response::error("service temporarily unavailable", 500);
+        }
+    };
     let sitekey = Some(cfg.turnstile_sitekey.as_str()).filter(|s| !s.is_empty());
     // v0.39.0: negotiate locale from Accept-Language.
     let locale = crate::i18n::resolve_locale(&req);

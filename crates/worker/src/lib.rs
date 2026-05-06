@@ -14,6 +14,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_debug_implementations, rust_2018_idioms)]
 
+pub mod adapter;
 pub mod audit;
 pub mod client_auth;
 pub mod config;
@@ -188,17 +189,6 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         })
         .post_async("/me/security/totp/disable",        |req, ctx| async move {
             routes::me::totp::disable::post_handler(req, ctx.env).await
-        })
-        // v0.35.0: per-user session list + revoke. ADR-012.
-        .get_async ("/me/security/sessions",            |req, ctx| async move {
-            routes::me::sessions::get_handler(req, ctx).await
-        })
-        .post_async("/me/security/sessions/revoke-others", |req, ctx| async move {
-            // v0.45.0 — bulk revoke (ADR-012 §Q4).
-            routes::me::sessions::post_revoke_others(req, ctx).await
-        })
-        .post_async("/me/security/sessions/:session_id/revoke", |req, ctx| async move {
-            routes::me::sessions::post_revoke(req, ctx).await
         })
         // --- Admin API ------------------------------------------------
         .post_async("/admin/users",          |req, ctx| async move { routes::admin::create_user(req, ctx).await })
@@ -501,5 +491,47 @@ mod security_headers {
             let _ = h.set(header.name, &header.value);
         }
         resp
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// **RFC 011 (v0.50.3)** — no duplicate `(method, path)` tuples in
+    /// the route registration block. The second `/me/security/sessions`
+    /// block was merge-conflict residue from v0.35.0 and was removed;
+    /// this test prevents it (or any future duplicate) from re-appearing.
+    /// `workers-rs` router's "last wins" semantics mean a duplicate is
+    /// silent in production until someone modifies one copy and not the
+    /// other — a genuine regression trap.
+    #[test]
+    fn no_duplicate_route_registrations() {
+        let src = include_str!("lib.rs");
+        // Extract (method, path) pairs from `.METHOD_async("PATH"` patterns.
+        let mut seen: std::collections::HashMap<String, Vec<usize>> = Default::default();
+        for (idx, line) in src.lines().enumerate() {
+            let line = line.trim();
+            // Match `.get_async(`, `.post_async(`, `.put_async(`, `.delete_async(`
+            for method in &["get_async", "post_async", "put_async", "delete_async"] {
+                let needle = format!(".{method}(\"");
+                if let Some(pos) = line.find(&needle) {
+                    let rest = &line[pos + needle.len()..];
+                    if let Some(end) = rest.find('"') {
+                        let path = &rest[..end];
+                        let key = format!("{method}:{path}");
+                        seen.entry(key).or_default().push(idx + 1);
+                    }
+                }
+            }
+        }
+        let dupes: Vec<String> = seen
+            .into_iter()
+            .filter(|(_, lines)| lines.len() > 1)
+            .map(|(key, lines)| format!("{key} (lines: {lines:?})"))
+            .collect();
+        assert!(
+            dupes.is_empty(),
+            "Duplicate route registrations found in lib.rs (RFC 011):\n{}",
+            dupes.join("\n")
+        );
     }
 }

@@ -1,13 +1,14 @@
 //! `POST /magic-link/request` handler.
 
 use cesauth_cf::ports::store::{CloudflareAuthChallengeStore, CloudflareRateLimitStore};
-use cesauth_core::magic_link;
+use cesauth_core::magic_link::{self, MagicLinkPayload, MagicLinkReason};
 use cesauth_core::ports::store::{AuthChallengeStore, Challenge, RateLimitStore};
 use serde::Deserialize;
 use time::OffsetDateTime;
 use uuid::Uuid;
 use worker::{Request, Response, Result, RouteContext};
 
+use crate::adapter::mailer as mailer_factory;
 use crate::audit::{self, EventKind};
 use crate::config::Config;
 use crate::csrf;
@@ -167,15 +168,52 @@ pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
         return oauth_error_response(&cesauth_core::CoreError::Internal);
     }
 
-    // Delivery stub: audit the issuance. The plaintext OTP goes into
-    // `reason` ONLY because this handler currently has no real mail
-    // provider and we need local dev to work. When production mail is
-    // wired in, this line MUST change to log only the handle.
+    // Audit the issuance with handle only. The plaintext OTP MUST NOT
+    // appear in the audit log (RFC 008, v0.50.3 — "no token material
+    // ever" invariant). Real delivery is via MagicLinkMailer (RFC 010).
     audit::write_owned(
         &ctx.env, EventKind::MagicLinkIssued,
         Some(body.email.clone()), None,
-        Some(format!("dev-delivery handle={handle} code={}", issued.code_plaintext)),
+        Some(format!("handle={handle}")),
     ).await.ok();
+
+    // **v0.51.0 (RFC 010)** — deliver the OTP via the mailer port.
+    // The factory selects the appropriate adapter from env.
+    // On failure: audit the failure kind, log at Error, but still
+    // return the normal success-shaped response — differential responses
+    // would let an attacker enumerate valid email addresses.
+    let mailer = mailer_factory::from_env(&ctx.env);
+    let payload = MagicLinkPayload {
+        recipient: &body.email,
+        handle:    &handle,
+        code:      &issued.delivery_payload,
+        locale:    crate::i18n::locale_str(locale),
+        tenant_id: None,
+        reason:    MagicLinkReason::InitialAuth,
+    };
+    match mailer.send(&payload).await {
+        Ok(receipt) => {
+            audit::write_owned(
+                &ctx.env, EventKind::MagicLinkDelivered,
+                Some(body.email.clone()), None,
+                Some(format!(
+                    "handle={handle} provider_msg_id={}",
+                    receipt.provider_message_id.as_deref().unwrap_or("-")
+                )),
+            ).await.ok();
+        }
+        Err(e) => {
+            audit::write_owned(
+                &ctx.env, EventKind::MagicLinkDeliveryFailed,
+                Some(body.email.clone()), None,
+                Some(format!("handle={handle} kind={}", e.audit_kind())),
+            ).await.ok();
+            log::emit(&cfg.log, Level::Error, Category::Magic,
+                &format!("magic_link mailer failed: {e}"),
+                Some(&body.email));
+            // Fall through — same response either way.
+        }
+    }
 
     // Respond with the "check your inbox" page. The form on that page
     // POSTs back to `/magic-link/verify` with `handle` + `code` +

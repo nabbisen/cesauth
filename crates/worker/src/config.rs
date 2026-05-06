@@ -100,6 +100,32 @@ impl Config {
                 Err(_) => Ok(default),
             }
         };
+        // **v0.50.3 (RFC 011)** — bounded u32 parser that rejects negative
+        // values (silently wrapping via `as u32` would disable rate limits)
+        // and values above `max`. `0` is preserved as "disabled".
+        let var_u32_bounded = |k: &str, default: u32, max: u32| -> Result<u32> {
+            match env.var(k) {
+                Ok(v) => {
+                    let s = v.to_string();
+                    if s.is_empty() { return Ok(default); }
+                    let raw: i64 = s.parse().map_err(|_| worker::Error::RustError(
+                        format!("var {k} must be an integer (got {s:?})")
+                    ))?;
+                    if raw < 0 {
+                        return Err(worker::Error::RustError(format!(
+                            "var {k} must be non-negative (got {raw})"
+                        )));
+                    }
+                    if raw > max as i64 {
+                        return Err(worker::Error::RustError(format!(
+                            "var {k} exceeds maximum {max} (got {raw})"
+                        )));
+                    }
+                    Ok(raw as u32)
+                }
+                Err(_) => Ok(default),
+            }
+        };
 
         Ok(Self {
             issuer:                 var("ISSUER")?,
@@ -120,18 +146,14 @@ impl Config {
             rp_name:                var("WEBAUTHN_RP_NAME")?,
             rp_origin:              var("WEBAUTHN_RP_ORIGIN")?,
             turnstile_sitekey:      var("TURNSTILE_SITEKEY").unwrap_or_default(),
-            // v0.37.0: 5 attempts per 60-sec window default
-            // (ADR-011 §Q1). Operators may tighten or set
-            // threshold to 0 to disable.
-            refresh_rate_limit_threshold:   var_parsed_default("REFRESH_RATE_LIMIT_THRESHOLD",   5)? as u32,
+            // v0.37.0: 5 attempts per 60-sec window (ADR-011 §Q1).
+            // Threshold 0 disables. v0.50.3: bounded to [0, 1_000_000]
+            // to reject negative values that would silently wrap to huge u32.
+            refresh_rate_limit_threshold:   var_u32_bounded("REFRESH_RATE_LIMIT_THRESHOLD",   5,   1_000_000)?,
             refresh_rate_limit_window_secs: var_parsed_default("REFRESH_RATE_LIMIT_WINDOW_SECS", 60)?,
-            // v0.43.0: 600/min default per authenticated
-            // client_id (ADR-014 §Q2). Set
-            // INTROSPECTION_RATE_LIMIT_THRESHOLD=0 to
-            // disable; raise for high-traffic resource
-            // servers that legitimately introspect every
-            // request.
-            introspection_rate_limit_threshold:   var_parsed_default("INTROSPECTION_RATE_LIMIT_THRESHOLD",   600)? as u32,
+            // v0.43.0: 600/min per authenticated client_id (ADR-014 §Q2).
+            // Threshold 0 disables. v0.50.3: bounded to [0, 1_000_000].
+            introspection_rate_limit_threshold:   var_u32_bounded("INTROSPECTION_RATE_LIMIT_THRESHOLD",   600, 1_000_000)?,
             introspection_rate_limit_window_secs: var_parsed_default("INTROSPECTION_RATE_LIMIT_WINDOW_SECS", 60)?,
             log:                    LogConfig::from_env(env),
         })

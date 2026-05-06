@@ -76,7 +76,7 @@ fn encode_token(family_id: &str, jti: &str, exp: i64) -> String {
 
 const FAKE_PUBKEY: [u8; 32] = [0u8; 32];
 const ISS: &str = "https://cesauth.example";
-const AUD: &str = "https://cesauth.example";
+const AUD: &str = "client_X";  // RFC 009: AUD must differ from ISS (prod: aud=client.id)
 
 /// **v0.41.0** — Single-key introspection-key slice, used
 /// by all the existing refresh-token tests. v0.41.0
@@ -121,7 +121,7 @@ async fn refresh_token_active_returns_active_response_with_claims() {
 
     let token = encode_token("fam1", "jti_current", 999_999);
     let resp = introspect_token(
-        &store, &fake_keys(), ISS, AUD, 30,
+        &store, &fake_keys(), ISS, 30,
         &IntrospectInput {
             token: &token,
             hint:  Some(TokenTypeHint::RefreshToken),
@@ -156,7 +156,7 @@ async fn refresh_token_with_retired_jti_is_inactive_with_no_other_claims() {
 
     let token = encode_token("fam1", "old_jti", 999_999);
     let resp = introspect_token(
-        &store, &fake_keys(), ISS, AUD, 30,
+        &store, &fake_keys(), ISS, 30,
         &IntrospectInput { token: &token, hint: Some(TokenTypeHint::RefreshToken), now_unix: 200  },
     ).await.unwrap();
 
@@ -178,7 +178,7 @@ async fn refresh_token_revoked_family_is_inactive() {
 
     let token = encode_token("fam_dead", "j1", 999_999);
     let resp = introspect_token(
-        &store, &fake_keys(), ISS, AUD, 30,
+        &store, &fake_keys(), ISS, 30,
         &IntrospectInput { token: &token, hint: Some(TokenTypeHint::RefreshToken), now_unix: 200  },
     ).await.unwrap();
 
@@ -193,7 +193,7 @@ async fn refresh_token_unknown_family_is_inactive() {
     let store = StubFamilyStore::default();
     let token = encode_token("never_existed", "j1", 999_999);
     let resp = introspect_token(
-        &store, &fake_keys(), ISS, AUD, 30,
+        &store, &fake_keys(), ISS, 30,
         &IntrospectInput { token: &token, hint: Some(TokenTypeHint::RefreshToken), now_unix: 200  },
     ).await.unwrap();
 
@@ -209,7 +209,7 @@ async fn malformed_token_is_inactive_not_error() {
     // was structurally valid).
     let store = StubFamilyStore::default();
     let resp = introspect_token(
-        &store, &fake_keys(), ISS, AUD, 30,
+        &store, &fake_keys(), ISS, 30,
         &IntrospectInput { token: "this is not a valid token", hint: None, now_unix: 200  },
     ).await.unwrap();
 
@@ -220,7 +220,7 @@ async fn malformed_token_is_inactive_not_error() {
 async fn empty_token_is_inactive_not_error() {
     let store = StubFamilyStore::default();
     let resp = introspect_token(
-        &store, &fake_keys(), ISS, AUD, 30,
+        &store, &fake_keys(), ISS, 30,
         &IntrospectInput { token: "", hint: None, now_unix: 200  },
     ).await.unwrap();
     assert!(!resp.active);
@@ -236,7 +236,7 @@ async fn hint_access_with_actually_refresh_token_falls_through_to_refresh_check(
 
     let token = encode_token("fam2", "jti_current", 999_999);
     let resp = introspect_token(
-        &store, &fake_keys(), ISS, AUD, 30,
+        &store, &fake_keys(), ISS, 30,
         &IntrospectInput {
             token: &token,
             hint: Some(TokenTypeHint::AccessToken),  // wrong hint
@@ -341,7 +341,7 @@ mod multi_key {
     /// a fixed 32-byte seed. Two different seeds give two
     /// different keypairs, which is what we need for the
     /// rotation-grace-period scenarios.
-    fn keypair_from_seed(seed: u8) -> (SigningKey, VerifyingKey) {
+    pub(super) fn keypair_from_seed(seed: u8) -> (SigningKey, VerifyingKey) {
         let bytes = [seed; 32];
         let sk = SigningKey::from_bytes(&bytes);
         let vk = sk.verifying_key();
@@ -362,7 +362,7 @@ mod multi_key {
     /// `ed25519_dalek::Signer` and base64-encode the
     /// signature — produces the same compact JWS that
     /// `jsonwebtoken::decode` consumes.
-    fn sign_access_token(sk: &SigningKey, kid: &str, claims: &TestAccessClaims) -> String {
+    pub(super) fn sign_access_token(sk: &SigningKey, kid: &str, claims: &TestAccessClaims) -> String {
         use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
         use ed25519_dalek::Signer;
 
@@ -392,18 +392,18 @@ mod multi_key {
     /// `verify`'s expected claims (iss, aud, exp, plus the
     /// cesauth-specific scope/cid/sub/jti).
     #[derive(Debug, Serialize)]
-    struct TestAccessClaims {
-        iss:   String,
-        aud:   String,
-        sub:   String,
-        cid:   String,
-        scope: String,
-        jti:   String,
-        iat:   i64,
-        exp:   i64,
+    pub(super) struct TestAccessClaims {
+        pub(super) iss:   String,
+        pub(super) aud:   String,
+        pub(super) sub:   String,
+        pub(super) cid:   String,
+        pub(super) scope: String,
+        pub(super) jti:   String,
+        pub(super) iat:   i64,
+        pub(super) exp:   i64,
     }
 
-    fn make_claims() -> TestAccessClaims {
+    pub(super) fn make_claims() -> TestAccessClaims {
         TestAccessClaims {
             iss:   ISS.into(),
             aud:   AUD.into(),
@@ -432,7 +432,7 @@ mod multi_key {
         // token input; overall response is inactive.
         let store = StubFamilyStore::default();
         let resp = introspect_token(
-            &store, &[], ISS, AUD, 30,
+            &store, &[], ISS, 30,
             &IntrospectInput {
                 token: "eyJhbGc.payload.sig",
                 hint:  Some(TokenTypeHint::AccessToken),
@@ -456,7 +456,7 @@ mod multi_key {
 
         let token = encode_token("fam_iso", "jti_iso", 999_999);
         let resp = introspect_token(
-            &store, &[], ISS, AUD, 30,
+            &store, &[], ISS, 30,
             &IntrospectInput {
                 token: &token,
                 hint:  Some(TokenTypeHint::RefreshToken),
@@ -480,7 +480,7 @@ mod multi_key {
 
         let store = StubFamilyStore::default();
         let resp = introspect_token(
-            &store, &keys, ISS, AUD, 30,
+            &store, &keys, ISS, 30,
             &IntrospectInput {
                 token: &token,
                 hint:  Some(TokenTypeHint::AccessToken),
@@ -518,7 +518,7 @@ mod multi_key {
 
         let store = StubFamilyStore::default();
         let resp = introspect_token(
-            &store, &keys, ISS, AUD, 30,
+            &store, &keys, ISS, 30,
             &IntrospectInput {
                 token: &token,
                 hint:  Some(TokenTypeHint::AccessToken),
@@ -551,7 +551,7 @@ mod multi_key {
 
         let store = StubFamilyStore::default();
         let resp = introspect_token(
-            &store, &keys, ISS, AUD, 30,
+            &store, &keys, ISS, 30,
             &IntrospectInput {
                 token: &token,
                 hint:  Some(TokenTypeHint::AccessToken),
@@ -581,7 +581,7 @@ mod multi_key {
 
         let store = StubFamilyStore::default();
         let resp = introspect_token(
-            &store, &keys, ISS, AUD, 30,
+            &store, &keys, ISS, 30,
             &IntrospectInput {
                 token: &token,
                 hint:  Some(TokenTypeHint::AccessToken),
@@ -611,7 +611,7 @@ mod multi_key {
 
         let store = StubFamilyStore::default();
         let resp = introspect_token(
-            &store, &keys, ISS, AUD, 30,
+            &store, &keys, ISS, 30,
             &IntrospectInput {
                 token: &token,
                 hint:  Some(TokenTypeHint::AccessToken),
@@ -910,7 +910,7 @@ mod refresh_ext {
 
         let token = encode_token("fam_ok", "jti_curr", 999_999);
         let resp = introspect_token(
-            &store, &fake_keys(), ISS, AUD, 30,
+            &store, &fake_keys(), ISS, 30,
             &IntrospectInput {
                 token: &token,
                 hint:  Some(TokenTypeHint::RefreshToken),
@@ -945,7 +945,7 @@ mod refresh_ext {
 
         let token = encode_token("fam_rev", "jti_curr", 999_999);
         let resp = introspect_token(
-            &store, &fake_keys(), ISS, AUD, 30,
+            &store, &fake_keys(), ISS, 30,
             &IntrospectInput {
                 token: &token,
                 hint:  Some(TokenTypeHint::RefreshToken),
@@ -980,7 +980,7 @@ mod refresh_ext {
 
         let token = encode_token("fam_reuse", "jti_curr", 999_999);
         let resp = introspect_token(
-            &store, &fake_keys(), ISS, AUD, 30,
+            &store, &fake_keys(), ISS, 30,
             &IntrospectInput {
                 token: &token,
                 hint:  Some(TokenTypeHint::RefreshToken),
@@ -1015,7 +1015,7 @@ mod refresh_ext {
         // Present the v1 (retired) jti.
         let token = encode_token("fam_rot", "jti_v1", 999_999);
         let resp = introspect_token(
-            &store, &fake_keys(), ISS, AUD, 30,
+            &store, &fake_keys(), ISS, 30,
             &IntrospectInput {
                 token: &token,
                 hint:  Some(TokenTypeHint::RefreshToken),
@@ -1043,7 +1043,7 @@ mod refresh_ext {
 
         let token = encode_token("fam_ghost", "jti_anything", 999_999);
         let resp = introspect_token(
-            &store, &fake_keys(), ISS, AUD, 30,
+            &store, &fake_keys(), ISS, 30,
             &IntrospectInput {
                 token: &token,
                 hint:  Some(TokenTypeHint::RefreshToken),
@@ -1073,7 +1073,7 @@ mod refresh_ext {
 
         let token = encode_token("fam_priv", "jti_forged", 999_999);
         let resp = introspect_token(
-            &store, &fake_keys(), ISS, AUD, 30,
+            &store, &fake_keys(), ISS, 30,
             &IntrospectInput {
                 token: &token,
                 hint:  Some(TokenTypeHint::RefreshToken),
@@ -1103,7 +1103,7 @@ mod refresh_ext {
         // fall through; v0.46.0 preserves that.
         let store = StubFamilyStore::default();
         let resp = introspect_token(
-            &store, &fake_keys(), ISS, AUD, 30,
+            &store, &fake_keys(), ISS, 30,
             &IntrospectInput {
                 token: "not.a.refresh.token",  // 4 parts; not refresh shape
                 hint:  None,                    // no hint = try access first
@@ -1139,7 +1139,7 @@ mod refresh_ext {
         // x_cesauth=None.
         let store = StubFamilyStore::default();
         let resp = introspect_token(
-            &store, &fake_keys(), ISS, AUD, 30,
+            &store, &fake_keys(), ISS, 30,
             &IntrospectInput {
                 token: "x.y.z",
                 hint:  Some(TokenTypeHint::AccessToken),
@@ -1432,5 +1432,86 @@ mod audience_gate {
             }
             other => panic!("expected AudienceDenied, got {other:?}"),
         }
+    }
+}
+
+// =========================================================
+// RFC 009 regression tests (v0.50.3)
+// =========================================================
+#[cfg(test)]
+mod rfc009_aud_correctness {
+    use super::multi_key::{keypair_from_seed, sign_access_token, make_claims, TestAccessClaims};
+    use super::*;
+
+    fn make_token_with_aud(aud: &str) -> String {
+        // Use seed 1 which matches fake_keys()
+        let (sk, _vk) = keypair_from_seed(1);
+        let mut claims = make_claims();
+        claims.aud = aud.to_owned();
+        sign_access_token(&sk, "k1", &claims)
+    }
+
+    /// **Regression pin (RFC 009)** — pre-v0.50.3 the introspection
+    /// verifier was called with `expected_aud = issuer` while tokens
+    /// carry `aud = client.id`. Every valid production access-token
+    /// introspection returned `{"active":false}`. This test pins the
+    /// fix: a token with `aud = "client_X"` (the realistic shape)
+    /// must introspect as active.
+    #[tokio::test]
+    async fn access_token_with_aud_equal_to_client_id_introspects_active() {
+        let (_, vk) = keypair_from_seed(1);
+        let pub_bytes = vk.to_bytes();
+        let keys = vec![crate::oidc::introspect::IntrospectionKey {
+            kid: "k1", public_key_raw: &pub_bytes,
+        }];
+        let store = StubFamilyStore::default();
+
+        // AUD = "client_X" (not ISS) — production shape.
+        let token = make_token_with_aud(AUD);
+        let resp = introspect_token(
+            &store, &keys, ISS, 30,
+            &IntrospectInput { token: &token, hint: None, now_unix: 200 },
+        ).await.unwrap();
+        assert!(resp.active,
+            "RFC 009 regression: access token with aud=client_id must be active");
+        assert_eq!(resp.aud.as_deref(), Some(AUD),
+            "aud in response must be populated from the token claim");
+    }
+
+    /// Verifier does not enforce aud equality at all; a token whose
+    /// aud happens to equal iss (atypical) must also introspect active.
+    #[tokio::test]
+    async fn access_token_with_aud_equal_to_iss_is_still_active() {
+        let (_, vk) = keypair_from_seed(1);
+        let pub_bytes = vk.to_bytes();
+        let keys = vec![crate::oidc::introspect::IntrospectionKey {
+            kid: "k1", public_key_raw: &pub_bytes,
+        }];
+        let store = StubFamilyStore::default();
+        let token = make_token_with_aud(ISS);
+        let resp = introspect_token(
+            &store, &keys, ISS, 30,
+            &IntrospectInput { token: &token, hint: None, now_unix: 200 },
+        ).await.unwrap();
+        assert!(resp.active, "token with aud==iss must still be active");
+    }
+
+    /// aud in the response must match the token's aud claim, giving
+    /// the audience gate (ADR-014 §Q1) something to compare against.
+    #[tokio::test]
+    async fn introspect_response_aud_reflects_token_aud_claim() {
+        let (_, vk) = keypair_from_seed(1);
+        let pub_bytes = vk.to_bytes();
+        let keys = vec![crate::oidc::introspect::IntrospectionKey {
+            kid: "k1", public_key_raw: &pub_bytes,
+        }];
+        let store = StubFamilyStore::default();
+        let token = make_token_with_aud("resource-server-A");
+        let resp = introspect_token(
+            &store, &keys, ISS, 30,
+            &IntrospectInput { token: &token, hint: None, now_unix: 200 },
+        ).await.unwrap();
+        assert!(resp.active);
+        assert_eq!(resp.aud.as_deref(), Some("resource-server-A"));
     }
 }

@@ -130,7 +130,16 @@ pub async fn get_handler(
             let (token, set_cookie) = match existing {
                 Some(t) if !t.is_empty() => (t, None),
                 _ => {
-                    let t = csrf::mint();
+                    let t = match csrf::mint() {
+            Ok(tok) => tok,
+            Err(_) => {
+                crate::audit::write_owned(
+                    &ctx.env, crate::audit::EventKind::CsrfRngFailure,
+                    None, None, Some("route=/me/security/totp/verify".to_owned()),
+                ).await.ok();
+                return Response::error("service temporarily unavailable", 500);
+            }
+        };
                     let h = csrf::set_cookie_header(&t);
                     (t, Some(h))
                 }
@@ -439,7 +448,7 @@ pub async fn post_handler(
             // submitted token already matched.
             let token = csrf::extract_from_cookie_header(&cookie_header)
                 .map(str::to_owned)
-                .unwrap_or_else(csrf::mint);
+                .unwrap_or_else(|| csrf::mint().unwrap_or_default());
             // v0.39.0: locale-aware error rendering.
             let locale = crate::i18n::resolve_locale(&req);
             let wrong_code = cesauth_core::i18n::lookup(

@@ -216,7 +216,16 @@ pub async fn get_handler(
             let (csrf_token, csrf_set_cookie) = match existing {
                 Some(t) if !t.is_empty() => (t, None),
                 _ => {
-                    let t = csrf::mint();
+                    let t = match csrf::mint() {
+            Ok(tok) => tok,
+            Err(_) => {
+                crate::audit::write_owned(
+                    &ctx.env, crate::audit::EventKind::CsrfRngFailure,
+                    None, None, Some("route=/me/security/totp/enroll".to_owned()),
+                ).await.ok();
+                return Response::error("service temporarily unavailable", 500);
+            }
+        };
                     let h = csrf::set_cookie_header(&t);
                     (t, Some(h))
                 }
@@ -452,7 +461,7 @@ pub async fn post_confirm_handler(
             let qr_svg = qr::otpauth_to_svg(&uri).unwrap_or_default();
             let token = csrf::extract_from_cookie_header(&cookie_header)
                 .map(str::to_owned)
-                .unwrap_or_else(csrf::mint);
+                .unwrap_or_else(|| csrf::mint().unwrap_or_default());
             // v0.31.0 P0-C: re-render with an inline error so the
             // user knows the previous code didn't match. Same
             // secret — they read the next 6-digit code from their
