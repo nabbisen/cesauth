@@ -12,6 +12,141 @@ changes will always be called out here.
 
 ---
 
+## [0.50.1] - 2026-05-05
+
+Documentation-only patch release. Adds the `rfcs/`
+directory: implementation-handover specifications for
+ROADMAP themes that are ready to be picked up by an
+engineer.
+
+### What ships
+
+#### `rfcs/` — new directory
+
+Engineering specs distinct from the ADR system. Where
+ADRs answer "why this design", RFCs answer "what does
+the implementer need to build". Where a theme has a
+linked ADR, the RFC builds on it; where a theme is
+small and self-contained, the RFC stands alone.
+
+Index at `rfcs/README.md` lists priority order. Seven
+RFCs in this initial batch:
+
+**Tier 1** (ready to implement, design settled):
+
+- **RFC 001** — OIDC `id_token` issuance. Builds on
+  ADR-008 (Draft, all eleven design questions
+  Resolved). Medium scope: ~600 LOC across 4 files +
+  one schema field on `Challenge::AuthCode` and
+  `RefreshTokenFamily` (`#[serde(default)]` for
+  in-flight compatibility), one wire change (id_token
+  populated when `openid` scope present), discovery
+  doc restored to OIDC posture from v0.25.0's honest-
+  reset OAuth-only state. ~30 new tests across pure
+  module + service integration + discovery shape
+  inversions. Recommended 5-PR progression in the
+  RFC.
+- **RFC 002** — `oidc_clients.client_secret_hash`
+  documentation drift. Decides Path B (relax schema
+  comment to SHA-256, unify with bearer-secret
+  hashing) over Path A (implement Argon2id) on the
+  honest reasoning that `client_secret` is server-
+  minted at 256-bit entropy — Argon2's password-
+  hashing value proposition doesn't apply.
+  Schema-comment edit + `verify_client_credentials`
+  audit + unified hashing helper + 4 tests.
+- **RFC 003** — Property-based tests (`proptest`)
+  for crypto round-trips and `redirect_uri` matcher.
+  Two property modules, ~10 properties, dev-dep only.
+  No production-code change.
+- **RFC 004** — WebAuthn error → typed client
+  responses. Conservative 6-variant `WebAuthnErrorKind`
+  enum mapped from existing diagnostic strings;
+  surfaces on the wire as a `kind` JSON field;
+  preserves the privacy invariant that diagnostic
+  detail strings stay in server-side logs.
+
+**Tier 2** (lighter, internal-design-only):
+
+- **RFC 005** — `cargo fuzz` for the JWT parser
+  surface. Single fuzz target, GitHub Actions one-shot
+  (60s) on PRs touching jwt or fuzz dirs. Deeper
+  continuous fuzzing parked under "Later".
+- **RFC 006** — CSP without `'unsafe-inline'` (per-
+  request nonces). Medium-scope refactor; touches
+  every HTML template render path. Plans
+  `RenderContext { locale, nonce }` introduction to
+  minimize call-site churn.
+- **RFC 007** — Cesauth-specific attack-surface review
+  cadence. Defines the per-review deliverable shape
+  + checklist + before-v1.0/by-2027-Q4 schedule for
+  the next pass.
+
+### Themes not covered
+
+The README explicitly lists themes excluded from this
+batch:
+
+- ADR-012 §Q2 / §Q3 / §Q5 — blocked on infrastructure
+  cesauth doesn't yet have (email pipeline, GeoIP) or
+  on Cloudflare DO platform limitations.
+- OIDC client_secret brute-force lockout — has an
+  explicit trigger condition that hasn't fired.
+- Domain-metric observability / Rate-limit bucket
+  tuning / Login → tenant resolution / External IdP
+  federation — design ambiguity too large for an RFC
+  without a prerequisite ADR.
+- Protocol extensions (Device Authorization Grant,
+  Dynamic Client Registration, Request Objects, PAR,
+  full FIDO attestation) — speculative; write the RFC
+  when a deployment requires one.
+
+### Tests
+
+No test count change — documentation-only release.
+1025 tests as of v0.50.0 carry forward.
+
+### Schema / wire / DO
+
+- Schema unchanged.
+- Wire format unchanged.
+- DO state unchanged.
+- No new dependencies.
+
+### Operator-visible changes
+
+None. This release adds engineering documentation; no
+behavior change. No `wrangler.toml` change. No new env
+vars. No new bindings.
+
+### ADR changes
+
+No ADR shipped or revised. RFC 001 references ADR-008
+(Draft); RFC 006 references ADR-007's §Q3 limitation
+note. All ADR statuses unchanged.
+
+### Doc / metadata changes
+
+- `Cargo.toml` workspace version 0.50.0 → 0.50.1.
+- UI footers + tests bumped to v0.50.1.
+- `rfcs/README.md` + 7 RFC files added.
+- This CHANGELOG entry.
+- ROADMAP unchanged at the row level (no
+  feature shipped); the RFCs reference ROADMAP
+  themes as their source.
+
+### Upgrade path 0.50.0 → 0.50.1
+
+1. Extract this tarball, OR pull the git tag.
+2. No build needed — no code change.
+3. No deploy needed — no behavior change.
+
+This is a patch in the strictest sense: an implementer
+clones the tree to read the RFCs; an operator running
+v0.50.0 in production has nothing to do.
+
+---
+
 ## [0.50.0] - 2026-05-04
 
 Per-client audience scoping for `/introspect`.

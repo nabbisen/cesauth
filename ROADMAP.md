@@ -109,6 +109,12 @@ maturity level beyond what each release's CHANGELOG entry says.
 Approximate priority order. Items near the top are closer to being
 started.
 
+> **Engineering specs**: as of v0.50.1, items in this section that
+> are ready to be implemented have a corresponding RFC under
+> [`rfcs/`](../rfcs/). RFCs are the implementation handover spec
+> (what to build, how to test it); this ROADMAP tracks the theme;
+> ADRs in `docs/src/expert/adr/` track the design decisions.
+
 ### Next minor releases
 
 - **Security track — phased rollout.** Eleven releases of focused
