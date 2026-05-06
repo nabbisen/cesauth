@@ -447,15 +447,32 @@ currently spans **five releases**:
   pipeline for `/me/*` routes. No HTTP routes still — the
   templates render in unit tests and the QR generator runs
   pure-function; the HTTP wire-up is v0.29.0.
-- **v0.29.0** (planned) — HTTP routes: `GET /me/security/totp/enroll`,
-  `POST /me/security/totp/enroll/confirm`,
-  `GET /me/security/totp/verify`,
-  `POST /me/security/totp/verify`,
-  `POST /me/security/totp/recover`. TOTP verify gate insertion
-  in `post_auth::complete_auth` (peek-not-take the
-  PendingAuthorize, gate on `find_active_for_user`, park
-  PendingTotp + redirect to verify page). Routing wired in
-  `worker::lib::main`. Recovery code redemption.
+- **v0.29.0** ✅ — HTTP routes: `GET /me/security/totp/enroll`
+  + `POST /me/security/totp/enroll/confirm` (encrypts fresh
+  secret with `aad_for_id(uuid)`, parks unconfirmed row, on
+  confirm flips `confirmed_at` and mints recovery codes once
+  per user); `GET /me/security/totp/verify` +
+  `POST /me/security/totp/verify` (peek/take the
+  `PendingTotp` parked by `complete_auth`, decrypt secret,
+  verify via library's replay-protected verifier, on success
+  resume `complete_auth_post_gate`; bad code re-parks with
+  bumped attempts, MAX_ATTEMPTS=5 then bounces to /login);
+  `POST /me/security/totp/recover` (canonicalize +
+  SHA-256-hash submitted recovery code, look up via
+  `find_unredeemed_by_hash`, mark redeemed, resume
+  `complete_auth_post_gate`). TOTP verify gate insertion in
+  `post_auth::complete_auth` carries AR fields **inline**
+  into PendingTotp (not a chained handle reference) to
+  eliminate the race where the original AR could expire
+  between gate-park and verify-resume. `complete_auth_post_gate`
+  factored from the original `complete_auth` body so both
+  no-gate and post-verify paths share the same
+  session-start/AuthCode-mint/redirect logic. Routing wired
+  in `worker::lib::main` (5 new routes). 12 new cookie-shape
+  tests pinning `__Host-cesauth_totp` (SameSite=Strict, vs
+  Lax for pending-authorize) and `__Host-cesauth_totp_enroll`
+  semantics including the must-not-cross-context property
+  between gate and enroll cookies.
 - **v0.30.0** (planned) — Polish + operations: disable flow
   (`POST /me/security/totp/disable`), cron sweep extension
   (drops unconfirmed rows older than 24h), `cesauth-migrate`

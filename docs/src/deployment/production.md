@@ -3,7 +3,7 @@
 Your local setup has run end-to-end. This chapter covers what
 changes when you point cesauth at real Cloudflare resources.
 
-> **Read the [TERMS_OF_USE.md](https://github.com/nabbisen/cesauth/blob/main/TERMS_OF_USE.md)
+> **Read the [TERMS_OF_USE.md](https://github.com/…/cesauth/blob/main/TERMS_OF_USE.md)
 > before proceeding.** cesauth binds you to Cloudflare's Terms of
 > Service and Acceptable Use Policy; deploying is your agreement
 > to operate within them.

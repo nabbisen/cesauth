@@ -105,6 +105,22 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .post_async("/magic-link/verify",  |req, ctx| async move {
             routes::magic_link::verify(req, ctx).await
         })
+        // --- /me/* user self-service (v0.29.0+) -----------------------
+        .get_async ("/me/security/totp/enroll",         |req, ctx| async move {
+            routes::me::totp::enroll::get_handler(req, ctx.env).await
+        })
+        .post_async("/me/security/totp/enroll/confirm", |req, ctx| async move {
+            routes::me::totp::enroll::post_confirm_handler(req, ctx.env).await
+        })
+        .get_async ("/me/security/totp/verify",         |req, ctx| async move {
+            routes::me::totp::verify::get_handler(req, ctx.env).await
+        })
+        .post_async("/me/security/totp/verify",         |req, ctx| async move {
+            routes::me::totp::verify::post_handler(req, ctx.env).await
+        })
+        .post_async("/me/security/totp/recover",        |req, ctx| async move {
+            routes::me::totp::recover::post_handler(req, ctx.env).await
+        })
         // --- Admin API ------------------------------------------------
         .post_async("/admin/users",          |req, ctx| async move { routes::admin::create_user(req, ctx).await })
         .delete_async("/admin/sessions/:id", |req, ctx| async move { routes::admin::revoke_session(req, ctx).await })

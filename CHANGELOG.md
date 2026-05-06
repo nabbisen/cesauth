@@ -12,6 +12,294 @@ always be called out here.
 
 ---
 
+## [0.29.0] - 2026-04-29
+
+Security track Phase 6 of 11: TOTP Phase 2c — HTTP routes +
+verify gate.
+
+This is the **operator-visible** release of the TOTP track. v0.26.0
+shipped the library, v0.27.0 the storage adapters, v0.28.0 the
+presentation layer (templates + QR generator + auth helper). v0.29.0
+finally wires it all together: a user can enroll TOTP, get prompted
+on next Magic Link login, verify a code, and resume their
+authentication flow. Recovery code redemption is included.
+
+After v0.29.0 deploys with `TOTP_ENCRYPTION_KEY` provisioned, the
+flow is end-to-end functional: a user navigates to
+`/me/security/totp/enroll`, scans the QR code, types a verifying
+code, sees their plaintext recovery codes once, and TOTP is
+enabled. On the next Magic Link login the gate fires and prompts
+for a 6-digit code; on success the original `complete_auth` flow
+resumes exactly as if no gate had fired.
+
+**v0.30.0 will close out the track** with the disable flow, cron
+sweep extension, redaction profile updates, operator chapter, and
+ADR-009 graduating from Draft to Accepted.
+
+### Added — five new HTTP routes
+
+All routes under `/me/security/totp/*`, cookie-authenticated via
+`__Host-cesauth_session` (the standard user session). New routing
+wires in `worker::lib::main`.
+
+- **`GET /me/security/totp/enroll`** — start a fresh enrollment.
+  Mints a CSPRNG secret via `cesauth_core::totp::Secret::generate`,
+  encrypts via AES-GCM with `aad_for_id(row_uuid)`, parks an
+  unconfirmed row in `totp_authenticators`, sets the short-lived
+  `__Host-cesauth_totp_enroll` cookie carrying the row id, builds
+  the otpauth URI via `cesauth_core::totp::otpauth_uri(issuer,
+  email, secret)` (issuer hard-coded "cesauth"), generates the
+  inline SVG QR via `cesauth_core::totp::qr::otpauth_to_svg`, and
+  renders `cesauth_ui::templates::totp_enroll_page`. Refuses with
+  503 if `TOTP_ENCRYPTION_KEY` or `TOTP_ENCRYPTION_KEY_ID` is
+  unset (clear operator-facing message).
+- **`POST /me/security/totp/enroll/confirm`** — verify the first
+  code, flip `confirmed_at`, mint recovery codes if first
+  enrollment, render `totp_recovery_codes_page` once. CSRF guard
+  via existing `csrf::verify`. Two ownership checks: row exists,
+  and row's user_id matches the session's user_id (rejects forged
+  enrollment cookie pointing at someone else's row). Idempotency:
+  already-confirmed row → clear cookie + redirect to home (back-
+  button replay). Wrong code → re-render the enroll page with
+  same secret (the user retypes a fresh code). Recovery codes
+  minted only at user's FIRST confirmed authenticator (per
+  ADR-009 §Q6 — adding a backup phone keeps the original codes).
+- **`GET /me/security/totp/verify`** — TOTP gate prompt. Reads
+  `__Host-cesauth_totp` cookie, peeks the `PendingTotp` challenge
+  (no consume — GET is render-only), mints CSRF, renders
+  `totp_verify_page`. Stale cookie / wrong challenge type / expired
+  → 302 to `/login` (clear gate cookie).
+- **`POST /me/security/totp/verify`** — verify the submitted code,
+  on success resume `complete_auth_post_gate`. Takes the
+  `PendingTotp` challenge (consume), reconstructs `PendingAr`
+  from the inline AR fields, looks up the user's active
+  authenticator, decrypts the secret, parses + verifies the code
+  via `verify_with_replay_protection(secret, code,
+  last_used_step, now)`. On success: persist advanced step via
+  `update_last_used_step`, then `complete_auth_post_gate(env,
+  cfg, user_id, auth_method, ar_fields)` to start the session,
+  mint AuthCode if AR present, redirect. On failure: bump
+  attempts, re-park under the SAME handle (preserving original
+  TTL — a buggy authenticator that submits wrong codes can't keep
+  the gate open forever), re-render with inline error message
+  ("That code didn't match. Try again."). MAX_ATTEMPTS=5 then
+  bounce to /login. Status 200 (not 401) — the user IS
+  authenticated for primary, the form is a continuation.
+- **`POST /me/security/totp/recover`** — single-use recovery code
+  redemption. Same cookie + CSRF gates as verify. Takes the
+  challenge, canonicalizes + SHA-256-hashes the submitted code
+  (`hash_recovery_code` strips whitespace + dashes,
+  uppercases — user can paste in any reasonable shape), looks up
+  via `find_unredeemed_by_hash(user_id, hash)`. On match:
+  `mark_redeemed(id, now)` then `complete_auth_post_gate`. On no
+  match: 302 to `/login` (recovery is high-friction; failed
+  recovery bounces to `/login` rather than re-rendering — pin
+  against brute-force probing). Per ADR-009 §Q6 the recovery path
+  does NOT advance the TOTP authenticator's `last_used_step` —
+  recovery bypasses TOTP, doesn't use it.
+
+### Added — TOTP gate insertion in `complete_auth`
+
+`post_auth::complete_auth` now contains the gate logic at step
+1.5 (between AR resolution and session start). For
+`AuthMethod::MagicLink` only, calls `find_active_for_user(user_id)`:
+
+- `Some(_)` confirmed authenticator → `park_totp_gate_and_redirect`
+  carries AR fields **inline** into `Challenge::PendingTotp` (not
+  a chained handle reference — eliminates the race where the
+  original AR could expire between gate-park and verify-resume),
+  sets `__Host-cesauth_totp` (SameSite=Strict, distinct from
+  pending-authorize's Lax), clears `__Host-cesauth_pending`
+  (because AR fields moved into PendingTotp), 302 to
+  `/me/security/totp/verify`.
+- `None` no confirmed authenticator → falls through to standard
+  post-gate flow.
+- `Err(_)` storage failure → fails closed with 500-style error.
+  Refusing to proceed without knowing whether TOTP was required
+  is the correct security posture; "transient outage skips MFA"
+  is a footgun.
+
+`AuthMethod::Passkey` (WebAuthn) and `AuthMethod::Admin` skip
+the gate entirely — WebAuthn is itself MFA-strong (device
+possession + on-device user verification per ADR-009 §Q7), and
+admin auth is bearer-token-only and doesn't go through
+`complete_auth`. Anonymous never has TOTP enrolled.
+
+### Added — `complete_auth_post_gate` helper
+
+Extracted as `pub(crate)` from the original `complete_auth`
+body. Both the no-gate path (in `complete_auth` line 245) AND the
+post-verify path (in `routes::me::totp::verify::post_handler`
+line 234, recovery path line 132) call this. Identical behavior:
+start the session, mint AuthCode if AR present, build the
+response with session/clear-pending/clear-totp cookies, redirect
+to either `redirect_uri?code=…&state=…` or `/`.
+
+### Added — two new short-lived cookies
+
+- **`__Host-cesauth_totp`** (gate cookie). 5-minute TTL —
+  short enough that an abandoned TOTP prompt doesn't tie up
+  state, long enough for a user fumbling with their authenticator
+  app. SameSite=Strict (no cross-site flow involved — this is a
+  purely internal-route breadcrumb between gate-park and
+  verify-resume).
+- **`__Host-cesauth_totp_enroll`** (enrollment cookie). 15-minute
+  TTL — generous because enrollment requires switching to the
+  authenticator app, scanning, and switching back; app-switch
+  context cost is substantial. SameSite=Strict.
+
+Both follow the `__Host-` prefix convention which guarantees
+Path=/, Secure, no Domain attribute. Both are HttpOnly.
+
+`set_*_cookie_header`, `clear_*_cookie_header`, `extract_*`
+helpers in `cesauth_worker::post_auth`.
+
+### Added — `Challenge::PendingTotp` AR fields inline
+
+Carries `ar_client_id`, `ar_redirect_uri`, `ar_scope`, `ar_state`,
+`ar_nonce`, `ar_code_challenge`, `ar_code_challenge_method` as
+flattened `Option<String>` fields. Plus `user_id`, `auth_method`,
+`attempts: u32`, `expires_at: i64`. The flattening is deliberate
+(distinct from earlier ADR drafts that considered a chained-handle
+approach — those drafts had a race where the original AR handle
+could expire mid-flight).
+
+### Tests
+
+Total: **563 passing** (+12 over v0.28.0):
+
+- core: 272 (unchanged).
+- adapter-test: 70 (unchanged).
+- ui: 145 (unchanged).
+- worker: **47** (was 35) — 12 new in `post_auth::tests`:
+  - `totp_cookie_header_shape` — Max-Age preserved, HttpOnly,
+    Secure, SameSite=Strict (NOT Lax).
+  - `totp_cookie_header_uses_host_prefix` — `__Host-` prefix +
+    Path=/ invariant.
+  - `clear_totp_cookie_header_zeros_max_age` — clear path
+    keeps SameSite consistency.
+  - `extract_totp_handle_present` / `..._absent_returns_none`.
+  - `extract_totp_handle_does_not_match_pending_cookie` —
+    must-not-cross-context property between gate cookie and
+    pending-authorize cookie (defense against a mistakenly
+    accepted cookie short-circuiting the wrong flow).
+  - `totp_enroll_cookie_header_shape` — same attributes as
+    gate cookie.
+  - `totp_enroll_cookie_distinct_name_from_gate_cookie` —
+    distinct cookie names; confusing them would let an
+    enrollment cookie short-circuit the gate or vice versa.
+  - `extract_totp_enroll_id_present` / `..._absent_returns_none`.
+  - `totp_gate_ttl_is_short` — 1-10 min bounds.
+  - `totp_enroll_ttl_is_generous` — 5-30 min bounds (with
+    rationale comment about cron sweep).
+- migrate: 29 (unchanged).
+
+### Documentation
+
+- `docs/src/expert/adr/009-totp.md` — Phasing v0.29.0 entry
+  marked ✅ with implementation details (inline AR-field
+  carrying, `complete_auth_post_gate` extraction, MAX_ATTEMPTS
+  policy). ADR remains in `Draft` — graduates to `Accepted`
+  in v0.30.0 after the polish phase validates the design end
+  to end.
+
+### Migration (0.28.0 → 0.29.0)
+
+Code-only release. **No schema migration.** No `wrangler.toml`
+changes.
+
+**To enable TOTP for users**: operators must provision the
+encryption key:
+
+```sh
+openssl rand -base64 32 | wrangler secret put TOTP_ENCRYPTION_KEY
+# Then in wrangler.toml under [vars]:
+TOTP_ENCRYPTION_KEY_ID = "k-2026-04"
+```
+
+Without these env vars, `GET /me/security/totp/enroll` responds
+with 503 ("TOTP is not configured by the operator") and the
+TOTP gate doesn't fire on Magic Link logins (because no users
+have confirmed authenticators).
+
+**Existing user sessions are unaffected.** A user who logs in
+via Magic Link before they've enrolled TOTP sees no behavior
+change. Once they enroll (via `/me/security/totp/enroll`), their
+NEXT Magic Link login fires the gate and prompts for a code.
+WebAuthn (Passkey) logins are never gated.
+
+### Smoke test
+
+```sh
+cargo test --workspace                      # 563 passing
+cargo test -p cesauth-worker --lib post_auth # 15 passing
+                                            # (3 prior + 12 new)
+
+# End-to-end (requires deployed worker with TOTP_ENCRYPTION_KEY):
+# 1. Login via Magic Link.
+# 2. Navigate to /me/security/totp/enroll.
+# 3. Scan the QR code in Google Authenticator (or any TOTP app).
+# 4. Type the displayed code; should land on the recovery-codes
+#    page.
+# 5. Save recovery codes.
+# 6. Logout.
+# 7. Login again via Magic Link.
+# 8. Should redirect to /me/security/totp/verify, prompt for
+#    code.
+# 9. Type current code; should land on the original landing
+#    page (or the redirected /authorize chain if you logged in
+#    from an OAuth client).
+```
+
+### Discovered
+
+No new findings this release.
+
+### Deferred (v0.30.0 — final TOTP release)
+
+- **Disable flow** (`POST /me/security/totp/disable`) —
+  user-initiated TOTP removal. Authenticated user clicks
+  "Disable TOTP" on `/me/security` (page itself v0.32.0+);
+  handler takes confirmation, calls
+  `delete_all_for_user(user_id)` on both TOTP repos.
+- **Cron sweep extension** — extend the existing 04:00 UTC
+  daily cron (ADR-004's anonymous-trial sweep) to also call
+  `list_unconfirmed_older_than(now - 86400)` and bulk-delete
+  the rows. The partial index from migration 0007 makes this
+  cheap.
+- **Redaction profile** — `cesauth-migrate` prod→staging
+  redaction drops both `totp_authenticators` and
+  `totp_recovery_codes` tables entirely. TOTP secrets must
+  not survive redaction.
+- **Operator chapter** — new `docs/src/deployment/totp.md`
+  documenting encryption key provisioning, rotation procedure
+  (mint new key with new id, deploy with new id, new writes
+  use new key, old reads still find old key by `secret_key_id`),
+  admin reset path (delete user's TOTP rows for lockout
+  recovery).
+- **Pre-production release gate** — `docs/src/expert/security.md`
+  adds `TOTP_ENCRYPTION_KEY` to the checklist of secrets that
+  must be set before going to production.
+- **ADR-009 graduates** `Draft` → `Accepted`.
+- **Explicit handler integration tests** — v0.29.0's handlers
+  are exercised end-to-end in development but lack dedicated
+  unit tests (the existing webauthn / magic-link route patterns
+  also rely primarily on integration testing). v0.30.0 will
+  add per-handler tests for the higher-risk paths
+  (CSRF mismatch, ownership check, max-attempts bouncing,
+  recovery wrong-code closing).
+
+### Deferred — unchanged
+
+- **OIDC `id_token` issuance (ADR-008)** — Drafted, queued
+  in ROADMAP "Later" behind the security track (ends at
+  v0.30.0).
+- **Audit log hash chain (ADR-010)** — v0.31.0/v0.32.0.
+- **`oidc_clients.client_secret_hash` schema-comment
+  drift** — ROADMAP "Later" item.
+
+---
+
 ## [0.28.0] - 2026-04-29
 
 Security track Phase 5 of 11: TOTP Phase 2b — presentation
@@ -4015,8 +4303,8 @@ so the release is dedicated to retiring them in one focused pass.
 Two threads land together:
 
 1. **Project framing and metadata.** Authorship, license, and
-   repository metadata now match reality. "Tenancy" /
-   "Tenancy" framing — including spec references, comments, and
+   repository metadata now match reality. "Commercial SaaS" /
+   "商用 SaaS" framing — including spec references, comments, and
    prose — has been replaced with "tenancy service" or equivalent
    functional descriptions. `.github/` gains the community-process
    documents that a public repository is reasonably expected to
@@ -4044,7 +4332,7 @@ review cost.
   - `authors = ["nabbisen"]` (was
     `["cesauth contributors"]`).
   - `repository = "https://github.com/nabbisen/cesauth"` (was
-    the stub `https://github.com/nabbisen/cesauth`).
+    the stub `https://github.com/cesauth/cesauth`).
   - Per-crate `Cargo.toml` files inherit through
     `.workspace = true` so no per-crate edits were needed.
 - **`LICENSE`** Apache-2.0 boilerplate copyright line:
@@ -4073,19 +4361,20 @@ review cost.
   console" throughout the chrome. Footer marker is now
   "v0.12.0 (full mutation surface for Operations+)".
 - **Project framing language** in comments and docs.
-  "Tenancy" / "Tenancy" replaced with "tenancy
+  "Commercial SaaS" / "商用 SaaS" replaced with "tenancy
   service" or equivalent. The earlier framing was ambiguous
   (the project is open-source under Apache-2.0; "commercial"
   doesn't describe the license, the deployment model, or
   anything else precise) and risked giving users and
   contributors the wrong impression about the project's
   intent. Spec references such as
-  `cesauth-Tenancy 化可能な構成への拡張開発指示書.md` are
+  `cesauth-商用 SaaS 化可能な構成への拡張開発指示書.md` are
   now referenced as `cesauth tenancy-service extension spec`.
 
 ### Added
 
-- **`.github/CODE_OF_CONDUCT.md`** — Contributor Covenant 2.1.
+- **`.github/CODE_OF_CONDUCT.md`** — Contributor Covenant 2.1,
+  with `nabbisen` as the enforcement contact.
 - **`.github/CONTRIBUTING.md`** — practical guide covering the
   workspace test flow, code-review priorities (make invalid
   states unrepresentable; pure decision in core, side effects
@@ -4159,7 +4448,7 @@ unusual, but each thread here has a real cost when left alone:
   make it ambiguous who owns the project and how to reach
   them — bad for downstream consumers, bad for security
   reporters.
-- **Marketing-flavored framing** ("tenancy") in a
+- **Marketing-flavored framing** ("commercial SaaS") in a
   project that is actually open-source-under-Apache-2.0
   invites the wrong assumptions. Users may wonder whether
   there's a closed-source variant; contributors may wonder
@@ -5618,5 +5907,5 @@ Each future release will have sections in this order:
 - **Security** — vulnerability fixes or security-relevant posture
   changes. See also [.github/SECURITY.md](.github/SECURITY.md).
 
-[Unreleased]: https://github.com/nabbisen/cesauth/compare/v0.2.1...HEAD
-[0.2.1]:      https://github.com/nabbisen/cesauth/releases/tag/v0.2.1
+[Unreleased]: https://github.com/cesauth/cesauth/compare/v0.2.1...HEAD
+[0.2.1]:      https://github.com/cesauth/cesauth/releases/tag/v0.2.1

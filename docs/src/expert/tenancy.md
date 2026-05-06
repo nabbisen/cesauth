@@ -61,7 +61,7 @@ this chapter implements §3-§5 and §16.1, §16.3, §16.6.
 >
 > v0.12.0 is a project-hygiene release with the naming-debt
 > cleanup folded in: project framing language tightened
-> ("tenancy" replaced with "tenancy service"),
+> ("commercial SaaS" replaced with "tenancy service"),
 > authorship and license metadata aligned with reality,
 > `.github/` community-process documents added, and the
 > module-path / URL-prefix / public-type rename
@@ -582,8 +582,8 @@ Metadata:
   `https://github.com/nabbisen/cesauth`. Per-crate `Cargo.toml`
   files inherit through `.workspace = true`.
 
-- **Project framing language** tightened. "Tenancy" /
-  "Tenancy" — including in spec references, comments, and prose
+- **Project framing language** tightened. "Commercial SaaS" /
+  "商用 SaaS" — including in spec references, comments, and prose
   — has been replaced with "tenancy service" or equivalent
   functional descriptions. The earlier framing was ambiguous and
   risked giving users and contributors the wrong impression about
@@ -591,7 +591,8 @@ Metadata:
   describe what the code does.
 
 - **`.github/`** gains community-process documents:
-  - `CODE_OF_CONDUCT.md` — Contributor Covenant 2.1.
+  - `CODE_OF_CONDUCT.md` — Contributor Covenant 2.1 with
+    `nabbisen` as the enforcement contact.
   - `CONTRIBUTING.md` — workspace test flow, code-review
     priorities, PR checklist, what lands smoothly vs. what
     needs discussion first.

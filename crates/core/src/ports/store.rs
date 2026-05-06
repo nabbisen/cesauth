@@ -81,19 +81,29 @@ pub enum Challenge {
     /// verification the original `complete_auth` flow resumes
     /// (session start, AR resolution, redirect).
     ///
-    /// `pending_ar_handle` is the handle of any parked
-    /// `PendingAuthorize` challenge that the TOTP prompt must
-    /// resolve once the user proves possession. None when the
-    /// user landed at `/login` directly without an OAuth `/authorize`
-    /// chain.
+    /// The AR fields (`ar_*`) are the resolved PendingAuthorize
+    /// data, copied here at gate-park time. Carrying them inline
+    /// — rather than referencing the original handle — avoids a
+    /// race where the original PendingAuthorize could expire
+    /// between gate-park and verify-resume (typical AR TTL is
+    /// ~10 minutes; a user fumbling their TOTP code could exceed
+    /// that). All `ar_*` fields are `None` when there was no
+    /// parked AR (the user hit `/login` directly without an
+    /// OAuth `/authorize` chain).
     ///
-    /// ADR-009 §Q7. Wire-up in v0.27.0.
+    /// ADR-009 §Q7. Wire-up is v0.29.0.
     PendingTotp {
-        user_id:           String,
-        auth_method:       AuthMethod,
-        pending_ar_handle: Option<String>,
-        attempts:          u32,
-        expires_at:        i64,
+        user_id:                 String,
+        auth_method:             AuthMethod,
+        ar_client_id:            Option<String>,
+        ar_redirect_uri:         Option<String>,
+        ar_scope:                Option<String>,
+        ar_state:                Option<String>,
+        ar_nonce:                Option<String>,
+        ar_code_challenge:       Option<String>,
+        ar_code_challenge_method:Option<String>,
+        attempts:                u32,
+        expires_at:              i64,
     },
 }
 

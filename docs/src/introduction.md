@@ -60,9 +60,9 @@ posture, or extending it. You will find:
 ## Status
 
 cesauth is **pre-1.0 software under active development**. The
-[`ROADMAP.md`](https://github.com/nabbisen/cesauth/blob/main/ROADMAP.md) at
+[`ROADMAP.md`](https://github.com/…/cesauth/blob/main/ROADMAP.md) at
 the project root tracks what is shipped, in progress, or planned.
-Breaking changes land in the [`CHANGELOG.md`](https://github.com/nabbisen/cesauth/blob/main/CHANGELOG.md)
+Breaking changes land in the [`CHANGELOG.md`](https://github.com/…/cesauth/blob/main/CHANGELOG.md)
 at the same level.
 
 ## A note on Cloudflare
@@ -71,5 +71,5 @@ cesauth is designed **exclusively for the Cloudflare Workers
 platform**. It relies on Workers-native primitives (Durable Objects,
 D1, KV, R2) that have no straightforward substitute elsewhere. The
 project is also bound by Cloudflare's Terms of Service and Acceptable
-Use Policy — please read [`TERMS_OF_USE.md`](https://github.com/nabbisen/cesauth/blob/main/TERMS_OF_USE.md)
+Use Policy — please read [`TERMS_OF_USE.md`](https://github.com/…/cesauth/blob/main/TERMS_OF_USE.md)
 before deploying.

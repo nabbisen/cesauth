@@ -39,7 +39,7 @@ touch Cloudflare at all — it exercises the pure-Rust `core`,
 `adapter-test`, and `ui` crates that make up cesauth's domain layer:
 
 ```sh
-git clone https://github.com/nabbisen/cesauth.git   # or extract the tarball
+git clone https://github.com/cesauth/cesauth.git   # or extract the tarball
 cd cesauth
 cargo test
 ```

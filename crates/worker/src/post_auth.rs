@@ -28,6 +28,7 @@ use cesauth_core::ports::store::{
     ActiveSessionStore, AuthChallengeStore, AuthMethod, Challenge, SessionState,
 };
 use cesauth_core::session::{self, SessionCookie};
+use cesauth_core::totp::storage::TotpAuthenticatorRepository;
 use cesauth_core::types::Scopes;
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -64,6 +65,102 @@ pub fn extract_pending_handle(cookie_header: &str) -> Option<&str> {
     }
     None
 }
+
+// =====================================================================
+// TOTP gate cookie (__Host-cesauth_totp). v0.29.0+.
+// =====================================================================
+
+/// Short-lived TOTP-gate cookie. Unsigned. Carries the handle of a
+/// `Challenge::PendingTotp` parked by `complete_auth` when the
+/// post-MagicLink gate fires.
+///
+/// SameSite=Strict because the TOTP prompt is the user's
+/// authenticated state; cross-site requests should never carry this
+/// cookie. (The session cookie uses Lax to support OAuth redirect
+/// flows, but the TOTP cookie is purely an internal-route
+/// breadcrumb between gate-park and verify-resume — no cross-site
+/// flow is involved.)
+pub const TOTP_COOKIE_NAME: &str = "__Host-cesauth_totp";
+
+/// Build a `Set-Cookie` for the TOTP-gate breadcrumb.
+pub fn set_totp_cookie_header(handle: &str, ttl_secs: i64) -> String {
+    let max_age = ttl_secs.max(0);
+    format!(
+        "{TOTP_COOKIE_NAME}={handle}; Max-Age={max_age}; Path=/; HttpOnly; Secure; SameSite=Strict"
+    )
+}
+
+/// Zero-out the TOTP-gate cookie.
+pub fn clear_totp_cookie_header() -> String {
+    format!("{TOTP_COOKIE_NAME}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Strict")
+}
+
+/// Extract the TOTP-gate handle from a raw `Cookie:` header.
+pub fn extract_totp_handle(cookie_header: &str) -> Option<&str> {
+    for piece in cookie_header.split(';') {
+        let piece = piece.trim();
+        if let Some(rest) = piece.strip_prefix(TOTP_COOKIE_NAME) {
+            if let Some(v) = rest.strip_prefix('=') {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
+/// TTL for a parked `PendingTotp` challenge. Long enough that a
+/// user fumbling with their authenticator app has time to read the
+/// code; short enough that an abandoned TOTP prompt doesn't tie up
+/// AR state forever. 5 minutes matches the typical TOTP step
+/// tolerance window of a few minutes plus generous user-fumble
+/// time.
+pub const TOTP_GATE_TTL_SECS: i64 = 300;
+
+// =====================================================================
+// TOTP enrollment cookie (__Host-cesauth_totp_enroll). v0.29.0+.
+// =====================================================================
+
+/// Short-lived enrollment cookie. Carries the id of the unconfirmed
+/// `totp_authenticators` row created at GET /me/security/totp/enroll
+/// so the POST /confirm handler knows which row to flip.
+///
+/// Unsigned: the id is a UUID and the row is per-user (the confirm
+/// handler additionally verifies the row belongs to the calling
+/// session's user_id, so a forged cookie pointing at someone else's
+/// row would fail the user_id ownership check).
+///
+/// SameSite=Strict for the same reason as the gate cookie — purely
+/// internal-route breadcrumb, no cross-site flow.
+pub const TOTP_ENROLL_COOKIE_NAME: &str = "__Host-cesauth_totp_enroll";
+
+pub fn set_totp_enroll_cookie_header(authenticator_id: &str, ttl_secs: i64) -> String {
+    let max_age = ttl_secs.max(0);
+    format!(
+        "{TOTP_ENROLL_COOKIE_NAME}={authenticator_id}; Max-Age={max_age}; Path=/; HttpOnly; Secure; SameSite=Strict"
+    )
+}
+
+pub fn clear_totp_enroll_cookie_header() -> String {
+    format!("{TOTP_ENROLL_COOKIE_NAME}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Strict")
+}
+
+pub fn extract_totp_enroll_id(cookie_header: &str) -> Option<&str> {
+    for piece in cookie_header.split(';') {
+        let piece = piece.trim();
+        if let Some(rest) = piece.strip_prefix(TOTP_ENROLL_COOKIE_NAME) {
+            if let Some(v) = rest.strip_prefix('=') {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
+/// TTL for the enrollment cookie. Generous (15 minutes) since
+/// enrollment is a one-time interactive flow where the user
+/// switches to their authenticator app, scans, and returns —
+/// app-switch context cost can be substantial.
+pub const TOTP_ENROLL_TTL_SECS: i64 = 900;
 
 /// Finalize authentication. Issues the session cookie and, if there is
 /// a parked `PendingAuthorize`, mints an AuthCode and redirects to the
@@ -106,6 +203,117 @@ pub async fn complete_auth(
         _ => None,
     };
 
+    // 1.5. TOTP gate (v0.29.0+, ADR-009 §Q7). Per ADR-009 §Q7,
+    // TOTP is always a 2nd factor on top of MagicLink. WebAuthn
+    // alone is itself MFA-strong (device possession + on-device
+    // user verification) so we don't double-prompt; admin auth
+    // is bearer-token only and doesn't go through `complete_auth`
+    // anyway. Anonymous never has TOTP enrolled.
+    if matches!(auth_method, AuthMethod::MagicLink) {
+        let totp_repo = cesauth_cf::ports::repo::CloudflareTotpAuthenticatorRepository::new(env);
+        match totp_repo.find_active_for_user(user_id).await {
+            Ok(Some(_)) => {
+                // The user has a confirmed TOTP authenticator.
+                // Park `PendingTotp` carrying the resolved AR
+                // fields, set the gate cookie, redirect to the
+                // prompt page. The original AR has already been
+                // taken (consumed) above; carrying its fields
+                // inline rather than referencing the original
+                // handle avoids a race where the AR could expire
+                // between gate-park and verify-resume.
+                return park_totp_gate_and_redirect(env, user_id, auth_method, pending, now).await;
+            }
+            Ok(None) => {
+                // User has no confirmed TOTP authenticator. Fall
+                // through to the standard post-gate flow.
+            }
+            Err(_) => {
+                // Storage failure on the TOTP lookup. Fail
+                // closed: refuse to proceed without knowing
+                // whether TOTP was required. The user sees a
+                // 500-style page and the next attempt either
+                // succeeds (transient) or stays broken (operator
+                // attention).
+                return Err(worker::Error::RustError(
+                    "totp authenticator lookup failed".into()
+                ));
+            }
+        }
+    }
+
+    // 2+3 — post-gate session start and AR resolution.
+    complete_auth_post_gate(env, cfg, user_id, auth_method, pending).await
+}
+
+/// Park a `Challenge::PendingTotp` containing the resolved AR
+/// fields, set the `__Host-cesauth_totp` cookie, and 302-redirect
+/// to the verify prompt page. Called by `complete_auth` when the
+/// post-MagicLink gate fires.
+///
+/// Critically, this does NOT call `complete_auth_post_gate` — no
+/// session is started yet. The session start happens in the
+/// verify route's POST handler, after the user proves possession
+/// of the TOTP secret.
+async fn park_totp_gate_and_redirect(
+    env:         &Env,
+    user_id:     &str,
+    auth_method: AuthMethod,
+    pending:     Option<PendingAr>,
+    now:         i64,
+) -> Result<Response> {
+    let totp_handle = Uuid::new_v4().to_string();
+    let challenge = Challenge::PendingTotp {
+        user_id:                  user_id.to_owned(),
+        auth_method,
+        ar_client_id:             pending.as_ref().map(|p| p.client_id.clone()),
+        ar_redirect_uri:          pending.as_ref().map(|p| p.redirect_uri.clone()),
+        ar_scope:                 pending.as_ref().and_then(|p| p.scope.clone()),
+        ar_state:                 pending.as_ref().and_then(|p| p.state.clone()),
+        ar_nonce:                 pending.as_ref().and_then(|p| p.nonce.clone()),
+        ar_code_challenge:        pending.as_ref().map(|p| p.code_challenge.clone()),
+        ar_code_challenge_method: pending.as_ref().map(|p| p.code_challenge_method.clone()),
+        attempts:                 0,
+        expires_at:               now + TOTP_GATE_TTL_SECS,
+    };
+
+    let store = CloudflareAuthChallengeStore::new(env);
+    store.put(&totp_handle, &challenge).await
+        .map_err(|_| worker::Error::RustError("totp challenge store failed".into()))?;
+
+    let totp_cookie    = set_totp_cookie_header(&totp_handle, TOTP_GATE_TTL_SECS);
+    let clear_pending  = clear_pending_cookie_header();
+
+    let mut resp = Response::empty()?.with_status(302);
+    let h = resp.headers_mut();
+    h.set("location", "/me/security/totp/verify").ok();
+    h.append("set-cookie", &totp_cookie).ok();
+    // Clear the original pending cookie because the AR fields
+    // are now carried inside the PendingTotp challenge; the
+    // pending handle no longer needs to round-trip.
+    h.append("set-cookie", &clear_pending).ok();
+    Ok(resp)
+}
+
+/// Post-gate completion. Called by `complete_auth` directly when
+/// no TOTP gate fires, OR by the TOTP verify route after the user
+/// proves possession of their secret. Identical behavior in both
+/// cases: start the session, mint AuthCode if AR present, redirect.
+///
+/// This is the original body of `complete_auth` from before v0.29.0,
+/// extracted unchanged so the verify route can call it as a
+/// continuation. The `pending` argument is the resolved
+/// PendingAuthorize fields (already taken from the challenge store
+/// in `complete_auth`'s step 1, or reconstructed from the
+/// `PendingTotp` challenge in the verify route).
+pub(crate) async fn complete_auth_post_gate(
+    env:         &Env,
+    cfg:         &Config,
+    user_id:     &str,
+    auth_method: AuthMethod,
+    pending:     Option<PendingAr>,
+) -> Result<Response> {
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+
     // 2. Start the session.
     let session_id = Uuid::new_v4().to_string();
     let session = SessionState {
@@ -134,8 +342,9 @@ pub async fn complete_auth(
     let cookie_value = cookie.sign(&cookie_key)
         .map_err(|_| worker::Error::RustError("session cookie sign failed".into()))?;
 
-    let set_session = session::set_cookie_header(&cookie_value, cfg.session_ttl_secs);
+    let set_session   = session::set_cookie_header(&cookie_value, cfg.session_ttl_secs);
     let clear_pending = clear_pending_cookie_header();
+    let clear_totp    = clear_totp_cookie_header();
 
     // 3. Either mint a code and redirect, or land on "/".
     match pending {
@@ -184,6 +393,7 @@ pub async fn complete_auth(
             h.set("location", &location).ok();
             h.append("set-cookie", &set_session).ok();
             h.append("set-cookie", &clear_pending).ok();
+            h.append("set-cookie", &clear_totp).ok();
             Ok(resp)
         }
 
@@ -196,6 +406,7 @@ pub async fn complete_auth(
             h.set("location", "/").ok();
             h.append("set-cookie", &set_session).ok();
             h.append("set-cookie", &clear_pending).ok();
+            h.append("set-cookie", &clear_totp).ok();
             Ok(resp)
         }
     }
@@ -217,14 +428,14 @@ fn url_encode_component(s: &str) -> String {
     out
 }
 
-struct PendingAr {
-    client_id:             String,
-    redirect_uri:          String,
-    scope:                 Option<String>,
-    state:                 Option<String>,
-    nonce:                 Option<String>,
-    code_challenge:        String,
-    code_challenge_method: String,
+pub(crate) struct PendingAr {
+    pub(crate) client_id:             String,
+    pub(crate) redirect_uri:          String,
+    pub(crate) scope:                 Option<String>,
+    pub(crate) state:                 Option<String>,
+    pub(crate) nonce:                 Option<String>,
+    pub(crate) code_challenge:        String,
+    pub(crate) code_challenge_method: String,
 }
 
 #[cfg(test)]
