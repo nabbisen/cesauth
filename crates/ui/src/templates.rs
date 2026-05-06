@@ -498,36 +498,77 @@ pub fn login_page_for(
 /// failing closed but invisible-to-users. v0.25.0 fixes the UX and
 /// adds an end-to-end form test (see `tests.rs`).
 pub fn magic_link_sent_page(handle: &str, csrf_token: &str) -> String {
+    magic_link_sent_page_for(handle, csrf_token, cesauth_core::i18n::Locale::default())
+}
+
+/// **v0.47.0** — Locale-aware variant of
+/// [`magic_link_sent_page`]. Pre-v0.47.0 this page was
+/// EN-only despite cesauth's "default JA" pattern; the
+/// migration to the catalog brings it in line with the
+/// rest of the user-facing surfaces. The legacy
+/// shorthand calls this with `Locale::default()` (Ja),
+/// which is **a behavior change in display** for any
+/// caller still on the shorthand — they previously got
+/// English, now they get Japanese. The worker
+/// handlers were already negotiating locale in v0.39.0
+/// and pass through `_for`, so the production path is
+/// unaffected.
+pub fn magic_link_sent_page_for(
+    handle: &str,
+    csrf_token: &str,
+    locale: cesauth_core::i18n::Locale,
+) -> String {
+    use cesauth_core::i18n::{lookup, MessageKey};
     let body = format!(
         r#"
-<h1>Check your inbox</h1>
-<p>If that address is registered, we've just sent a one-time code. It expires in 10 minutes.</p>
+<h1>{heading}</h1>
+<p>{intro}</p>
 
 <form method="POST" action="/magic-link/verify" aria-labelledby="otp-heading">
-  <h2 id="otp-heading" class="muted">Enter the code</h2>
+  <h2 id="otp-heading" class="muted">{otp_heading}</h2>
   <input type="hidden" name="handle" value="{handle}">
   <input type="hidden" name="csrf"   value="{csrf}">
-  <label for="code">One-time code</label>
+  <label for="code">{code_label}</label>
   <input id="code" name="code" type="text" required autocomplete="one-time-code"
          inputmode="text" spellcheck="false" pattern="[A-Za-z0-9]{{6,12}}">
-  <button type="submit">Continue</button>
+  <button type="submit">{submit}</button>
 </form>
 "#,
-        handle = escape(handle),
-        csrf   = escape(csrf_token),
+        heading     = escape(lookup(MessageKey::MagicLinkSentHeading,    locale)),
+        intro       = escape(lookup(MessageKey::MagicLinkSentIntro,      locale)),
+        otp_heading = escape(lookup(MessageKey::MagicLinkSentOtpHeading, locale)),
+        code_label  = escape(lookup(MessageKey::MagicLinkSentCodeLabel,  locale)),
+        submit      = escape(lookup(MessageKey::TotpVerifyContinueButton, locale)),
+        handle      = escape(handle),
+        csrf        = escape(csrf_token),
     );
-    frame("Check your inbox - cesauth", &body)
+    frame(lookup(MessageKey::MagicLinkSentPageTitle, locale), &body)
 }
 
 /// Generic error page. The worker layer maps specific errors to strings
 /// (we do not leak internal detail here).
 pub fn error_page(title: &str, detail: &str) -> String {
+    error_page_for(title, detail, cesauth_core::i18n::Locale::default())
+}
+
+/// **v0.47.0** — Locale-aware variant of [`error_page`].
+/// `title` and `detail` are caller-supplied (the worker
+/// is responsible for localizing them before passing in);
+/// only the "back to sign in" link is templated through
+/// the catalog.
+pub fn error_page_for(
+    title: &str,
+    detail: &str,
+    locale: cesauth_core::i18n::Locale,
+) -> String {
+    use cesauth_core::i18n::{lookup, MessageKey};
     let body = format!(
         r#"<h1>{title}</h1>
 <div class="error" role="alert" aria-live="assertive">{detail}</div>
-<p><a href="/">Back to sign in</a></p>"#,
+<p><a href="/">{back}</a></p>"#,
         title  = escape(title),
         detail = escape(detail),
+        back   = escape(lookup(MessageKey::ErrorPageBackLink, locale)),
     );
     frame(title, &body)
 }
@@ -651,31 +692,46 @@ pub fn totp_enroll_page_for(
 /// before saving, they have to disable TOTP and re-enroll to
 /// get fresh codes.
 pub fn totp_recovery_codes_page(codes: &[String]) -> String {
+    totp_recovery_codes_page_for(codes, cesauth_core::i18n::Locale::default())
+}
+
+/// **v0.47.0** — Locale-aware variant of
+/// [`totp_recovery_codes_page`]. The codes themselves
+/// don't pass through the catalog (they're high-entropy
+/// alphanumeric strings, locale-invariant); only the
+/// surrounding chrome and warning copy do.
+pub fn totp_recovery_codes_page_for(
+    codes: &[String],
+    locale: cesauth_core::i18n::Locale,
+) -> String {
+    use cesauth_core::i18n::{lookup, MessageKey};
     let codes_html: String = codes.iter()
         .map(|c| format!("<li><code>{}</code></li>", escape(c)))
         .collect::<Vec<_>>()
         .join("\n");
 
     let body = format!(
-        r#"<h1>Save your recovery codes</h1>
+        r#"<h1>{heading}</h1>
 <div class="warning" role="alert" aria-live="assertive">
-  <strong>This is the only time these codes will be shown.</strong>
-  Save them somewhere safe (a password manager, a printed copy in a
-  drawer). Each code can be used once if you lose access to your
-  authenticator.
+  <strong>{alert_strong}</strong>
+  {alert_body}
 </div>
 
 <ul class="totp-recovery-codes">
 {codes}
 </ul>
 
-<p>You'll need a recovery code to sign in if your authenticator is
-unavailable. Once a code is used, it can't be reused.</p>
+<p>{body_text}</p>
 
-<p><a href="/me/security">I've saved them — continue</a></p>"#,
-        codes = codes_html,
+<p><a href="/me/security">{cont}</a></p>"#,
+        heading      = escape(lookup(MessageKey::TotpRecoveryCodesHeading,      locale)),
+        alert_strong = escape(lookup(MessageKey::TotpRecoveryCodesAlertStrong, locale)),
+        alert_body   = escape(lookup(MessageKey::TotpRecoveryCodesAlertBody,   locale)),
+        body_text    = escape(lookup(MessageKey::TotpRecoveryCodesBody,        locale)),
+        cont         = escape(lookup(MessageKey::TotpRecoveryCodesContinue,    locale)),
+        codes        = codes_html,
     );
-    frame("Save your recovery codes - cesauth", &body)
+    frame(lookup(MessageKey::TotpRecoveryCodesPageTitle, locale), &body)
 }
 
 /// TOTP verify page. Shown by `GET /me/security/totp/verify`
@@ -776,29 +832,48 @@ pub fn totp_verify_page_for(
 /// `csrf_token` matches the `__Host-cesauth-csrf` cookie value
 /// for the POST guard. v0.30.0 surface.
 pub fn totp_disable_confirm_page(csrf_token: &str) -> String {
+    totp_disable_confirm_page_for(csrf_token, cesauth_core::i18n::Locale::default())
+}
+
+/// **v0.47.0** — Locale-aware variant of
+/// [`totp_disable_confirm_page`]. The cancel link reuses
+/// the existing `TotpEnrollCancelLink` MessageKey
+/// ("キャンセルして戻る" / "Cancel and go back") rather
+/// than introducing a duplicate — the i18n catalog
+/// uniqueness invariant (no two MessageKey variants
+/// resolve to the same string within a locale) catches
+/// duplicates as test failures.
+pub fn totp_disable_confirm_page_for(
+    csrf_token: &str,
+    locale: cesauth_core::i18n::Locale,
+) -> String {
+    use cesauth_core::i18n::{lookup, MessageKey};
     let body = format!(
-        r#"<h1>Disable two-factor authentication?</h1>
+        r#"<h1>{heading}</h1>
 <div class="warning" role="alert" aria-live="polite">
-  <strong>This will turn off TOTP for your account.</strong>
-  Your authenticator app's entry will stop working, and any unused
-  recovery codes will also be deleted. You can re-enable TOTP
-  later by enrolling a new authenticator.
+  <strong>{alert_strong}</strong>
+  {alert_body}
 </div>
 
-<p>If you've lost access to your authenticator, you can recover
-with a one-time code from your enrollment instead — that path is
-on the sign-in screen, not here.</p>
+<p>{recovery_hint}</p>
 
 <form method="POST" action="/me/security/totp/disable" aria-labelledby="disable-heading">
-  <h2 id="disable-heading" class="muted">Confirm</h2>
+  <h2 id="disable-heading" class="muted">{confirm_heading}</h2>
   <input type="hidden" name="csrf" value="{csrf}">
-  <button type="submit" class="danger">Yes, disable TOTP</button>
+  <button type="submit" class="danger">{submit}</button>
 </form>
 
-<p class="muted"><a href="/">Cancel and go back</a></p>"#,
-        csrf = escape(csrf_token),
+<p class="muted"><a href="/">{cancel}</a></p>"#,
+        heading         = escape(lookup(MessageKey::TotpDisableHeading,         locale)),
+        alert_strong    = escape(lookup(MessageKey::TotpDisableAlertStrong,    locale)),
+        alert_body      = escape(lookup(MessageKey::TotpDisableAlertBody,      locale)),
+        recovery_hint   = escape(lookup(MessageKey::TotpDisableRecoveryHint,   locale)),
+        confirm_heading = escape(lookup(MessageKey::TotpDisableConfirmHeading, locale)),
+        submit          = escape(lookup(MessageKey::TotpDisableSubmit,         locale)),
+        cancel          = escape(lookup(MessageKey::TotpEnrollCancelLink,      locale)),
+        csrf            = escape(csrf_token),
     );
-    frame("Disable TOTP - cesauth", &body)
+    frame(lookup(MessageKey::TotpDisablePageTitle, locale), &body)
 }
 
 // =====================================================================
@@ -823,11 +898,25 @@ pub enum PrimaryAuthMethod {
 }
 
 impl PrimaryAuthMethod {
+    /// **v0.31.0** — JA-default label. Pre-v0.47.0 this
+    /// was the only accessor; locale-aware code now uses
+    /// [`Self::label_for`]. Retained as the
+    /// default-locale shorthand for callers that haven't
+    /// been migrated to negotiated locales.
     fn label(self) -> &'static str {
+        self.label_for(cesauth_core::i18n::Locale::default())
+    }
+
+    /// **v0.47.0** — i18n-2 continuation. Locale-aware
+    /// label dispatch. The Security Center template's
+    /// `_for(.., locale)` variants thread their locale
+    /// through to this getter.
+    pub fn label_for(self, locale: cesauth_core::i18n::Locale) -> &'static str {
+        use cesauth_core::i18n::{lookup, MessageKey};
         match self {
-            Self::Passkey   => "パスキー",
-            Self::MagicLink => "メールリンク",
-            Self::Anonymous => "匿名トライアル",
+            Self::Passkey   => lookup(MessageKey::PrimaryAuthMethodPasskey,   locale),
+            Self::MagicLink => lookup(MessageKey::PrimaryAuthMethodMagicLink, locale),
+            Self::Anonymous => lookup(MessageKey::PrimaryAuthMethodAnonymous, locale),
         }
     }
 }
@@ -897,7 +986,7 @@ pub fn security_center_page_for(
   <p>{label}</p>
 </section>"#,
         heading = escape(lookup(MessageKey::SecurityPrimaryHeading, locale)),
-        label   = escape(state.primary_method.label()),
+        label   = escape(state.primary_method.label_for(locale)),
     );
 
     let totp_section = match state.primary_method {

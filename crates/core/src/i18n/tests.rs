@@ -119,7 +119,18 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         // v0.45.0 — bulk revoke
         SessionsRevokeOthersButton | SessionsRevokeOthersConfirm |
         FlashOtherSessionsRevoked | FlashOtherSessionsRevokeFailed |
-        FlashNoOtherSessions
+        FlashNoOtherSessions |
+        // v0.47.0 — i18n-2 continuation
+        PrimaryAuthMethodPasskey | PrimaryAuthMethodMagicLink | PrimaryAuthMethodAnonymous |
+        MagicLinkSentPageTitle | MagicLinkSentHeading | MagicLinkSentIntro |
+        MagicLinkSentOtpHeading | MagicLinkSentCodeLabel |
+        TotpRecoveryCodesPageTitle | TotpRecoveryCodesHeading |
+        TotpRecoveryCodesAlertStrong | TotpRecoveryCodesAlertBody |
+        TotpRecoveryCodesBody | TotpRecoveryCodesContinue |
+        TotpDisablePageTitle | TotpDisableHeading |
+        TotpDisableAlertStrong | TotpDisableAlertBody | TotpDisableRecoveryHint |
+        TotpDisableConfirmHeading | TotpDisableSubmit |
+        ErrorPageBackLink
             => {}  // exhaustiveness pin — body is irrelevant
     }
     // Now actually iterate. The list below mirrors the match
@@ -162,6 +173,17 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         SessionsRevokeOthersButton, SessionsRevokeOthersConfirm,
         FlashOtherSessionsRevoked, FlashOtherSessionsRevokeFailed,
         FlashNoOtherSessions,
+        // v0.47.0
+        PrimaryAuthMethodPasskey, PrimaryAuthMethodMagicLink, PrimaryAuthMethodAnonymous,
+        MagicLinkSentPageTitle, MagicLinkSentHeading, MagicLinkSentIntro,
+        MagicLinkSentOtpHeading, MagicLinkSentCodeLabel,
+        TotpRecoveryCodesPageTitle, TotpRecoveryCodesHeading,
+        TotpRecoveryCodesAlertStrong, TotpRecoveryCodesAlertBody,
+        TotpRecoveryCodesBody, TotpRecoveryCodesContinue,
+        TotpDisablePageTitle, TotpDisableHeading,
+        TotpDisableAlertStrong, TotpDisableAlertBody, TotpDisableRecoveryHint,
+        TotpDisableConfirmHeading, TotpDisableSubmit,
+        ErrorPageBackLink,
     ];
     for k in all { f(k); }
 }

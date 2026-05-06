@@ -36,6 +36,12 @@ struct RequestBody {
 pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let cfg = Config::from_env(&ctx.env)?;
 
+    // **v0.47.0** — negotiate locale once for any
+    // "check your inbox" page render that follows.
+    // The two render sites below (rate-limit fallback
+    // and the success path) both honor it.
+    let locale = crate::i18n::resolve_locale(&req);
+
     // --- CSRF gate ---------------------------------------------------
     //
     // Only form-encoded submissions are subject to CSRF validation.
@@ -138,7 +144,7 @@ pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
         let placeholder_handle = Uuid::new_v4().to_string();
         let placeholder_csrf   = cookie_csrf.as_deref().unwrap_or("");
         return Response::from_html(
-            cesauth_ui::templates::magic_link_sent_page(&placeholder_handle, placeholder_csrf)
+            cesauth_ui::templates::magic_link_sent_page_for(&placeholder_handle, placeholder_csrf, locale)
         );
     }
 
@@ -178,7 +184,7 @@ pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
     // /authorize earlier in the flow).
     let csrf_for_form = cookie_csrf.as_deref().unwrap_or("");
     Response::from_html(
-        cesauth_ui::templates::magic_link_sent_page(&handle, csrf_for_form)
+        cesauth_ui::templates::magic_link_sent_page_for(&handle, csrf_for_form, locale)
     )
 }
 

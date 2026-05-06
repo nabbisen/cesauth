@@ -500,7 +500,10 @@ pub async fn post_confirm_handler(
             // delivered while the user is reading the codes;
             // their next navigation (whether the continue link
             // or any other) carries it to the index.
-            let html = templates::totp_recovery_codes_page(&plaintext_codes);
+            // **v0.47.0** — negotiate locale for the
+            // recovery-codes page render.
+            let locale = crate::i18n::resolve_locale(&req);
+            let html = templates::totp_recovery_codes_page_for(&plaintext_codes, locale);
             let mut resp = Response::from_html(html)?;
             let h = resp.headers_mut();
             h.append("set-cookie", &post_auth::clear_totp_enroll_cookie_header()).ok();

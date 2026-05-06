@@ -163,7 +163,9 @@ pub async fn get_handler(
         }
     };
 
-    let html = templates::totp_disable_confirm_page(&token);
+    // **v0.47.0** — negotiate locale for the page render.
+    let locale = crate::i18n::resolve_locale(&req);
+    let html = templates::totp_disable_confirm_page_for(&token, locale);
     let mut resp = Response::from_html(html)?;
     if let Some(s) = set_cookie {
         resp.headers_mut().append("set-cookie", &s).ok();

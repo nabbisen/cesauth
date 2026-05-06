@@ -12,6 +12,215 @@ changes will always be called out here.
 
 ---
 
+## [0.47.0] - 2026-05-04
+
+i18n-2 continuation. Per-operator-request order: tech-
+debt sweep (v0.44.0), bulk-revoke (v0.45.0), refresh-
+introspection (v0.46.0), i18n-2 fourth (this release).
+
+### Why this matters
+
+v0.39.0 opened the i18n-2 thread, migrating the
+LOGIN / TOTP enroll / TOTP verify / Security Center
+templates to the catalog-based `_for(.., locale)`
+pattern. Four user-facing templates were left for
+later: the Magic Link "Check your inbox" page, the
+TOTP recovery codes display, the TOTP disable
+confirm, and the generic error page. v0.47.0 closes
+the gap.
+
+The PrimaryAuthMethod label (used by Security Center
+to render "how you sign in") was also still hard-
+coded JA pre-v0.47.0 — a v0.39.0 limitation noted in
+that release's CHANGELOG. v0.47.0 migrates it too.
+
+### What ships
+
+#### 22 new MessageKey variants
+
+Catalog total: 76 → **98**. Distributed:
+
+- **3** PrimaryAuthMethod labels (`PrimaryAuthMethodPasskey`,
+  `PrimaryAuthMethodMagicLink`,
+  `PrimaryAuthMethodAnonymous`)
+- **5** Magic Link sent page (Title, Heading, Intro,
+  OtpHeading, CodeLabel; submit reuses the existing
+  `TotpVerifyContinueButton`).
+- **6** TOTP recovery codes page (Title, Heading,
+  AlertStrong, AlertBody, Body, Continue).
+- **7** TOTP disable confirm page (Title, Heading,
+  AlertStrong, AlertBody, RecoveryHint,
+  ConfirmHeading, Submit; cancel reuses the existing
+  `TotpEnrollCancelLink`).
+- **1** Error page back link (`ErrorPageBackLink`).
+
+JA + EN translations for every new key. The catalog
+**uniqueness invariant** (no two MessageKey variants
+resolve to the same string within a locale) caught
+two well-intentioned duplicates during development:
+`MagicLinkSentSubmit` ("Continue" / "続ける") would
+have collided with `TotpVerifyContinueButton`, and
+`TotpDisableCancel` ("Cancel and go back" /
+"キャンセルして戻る") would have collided with
+`TotpEnrollCancelLink`. Both new variants were
+dropped in favor of reusing the existing keys —
+strictly better outcome (one source of truth per
+string).
+
+#### Privacy-preserving phrasing pinned
+
+`MagicLinkSentIntro` translates the v0.27.0 privacy-
+phrasing — "if that address is registered, we've just
+sent a one-time code" — into JA preserving the same
+non-confirmation:
+"このメールアドレスが登録されている場合、ワンタイムコードを送信しました。"
+
+User-enumeration prevention is part of the contract;
+the test
+`magic_link_sent_page_for_renders_japanese_default`
+pins the JA phrasing carries the "登録されている場合"
+conditional.
+
+#### `PrimaryAuthMethod::label_for(locale)`
+
+New public method on the public enum. The legacy
+`label()` getter is preserved as a default-locale
+shorthand that delegates to `label_for(Locale::default())`.
+`security_center_page_for` calls `label_for(locale)`,
+so the Security Center renders the primary-method
+label in the negotiated locale (fixing the v0.39.0
+limitation).
+
+#### Four templates gain `_for(.., locale)` variants
+
+| Template | Pre-v0.47.0 | v0.47.0 |
+|---|---|---|
+| `magic_link_sent_page` | EN-only | shorthand wraps `_for` with `Locale::default()` (Ja) |
+| `error_page` | EN-only | shorthand wraps `_for`; title + detail caller-supplied (caller does its own localization) |
+| `totp_recovery_codes_page` | EN-only | shorthand wraps `_for`; codes themselves are locale-invariant |
+| `totp_disable_confirm_page` | EN-only | shorthand wraps `_for`; cancel link reuses `TotpEnrollCancelLink` |
+
+**Behavior change for legacy shorthand callers**:
+the four shorthands previously rendered EN.
+v0.47.0 routes them through `_for` with
+`Locale::default()` which is `Ja`. The pin
+`magic_link_sent_legacy_shorthand_now_renders_ja_default`
+documents this. **Production handlers were already
+on negotiated locales since v0.39.0 and pass through
+`_for`, so the production path is unaffected.**
+External code calling the shorthand directly may
+see the change; updating to `_for(.., Locale::En)`
+restores pre-v0.47.0 behavior explicitly.
+
+#### Worker handlers thread locale
+
+Four call sites updated:
+
+- `crates/worker/src/routes/me/totp/disable.rs`:
+  `totp_disable_confirm_page` → `_for(.., locale)`
+  with `crate::i18n::resolve_locale(&req)`.
+- `crates/worker/src/routes/me/totp/enroll.rs`:
+  `totp_recovery_codes_page` → `_for(.., locale)`.
+- `crates/worker/src/routes/magic_link/request.rs`:
+  both render sites (rate-limit fallback + success
+  path) routed through `magic_link_sent_page_for`
+  with a single `let locale =
+  crate::i18n::resolve_locale(&req);` at the top of
+  the handler.
+
+`error_page` has no in-tree worker call sites — it's
+a public template helper retained for external
+consumers; the `_for` variant is available when
+needed.
+
+### Tests
+
+948 → **957** lib (+9). With migrate integration:
+977 → **986**.
+
+- core: 414 → 414 (catalog-only changes; existing
+  i18n test suite covers the new keys via
+  exhaustiveness + uniqueness invariants).
+- ui: 235 → 244 (+9). New tests:
+  `magic_link_sent_page_for_renders_japanese_default`,
+  `magic_link_sent_page_for_renders_english`,
+  `magic_link_sent_legacy_shorthand_now_renders_ja_default`,
+  `totp_recovery_codes_page_for_renders_japanese_default`,
+  `totp_recovery_codes_page_for_renders_english`,
+  `totp_disable_confirm_page_for_renders_japanese_default`,
+  `totp_disable_confirm_page_for_renders_english`,
+  `error_page_for_renders_localized_back_link`,
+  `primary_auth_method_label_for_renders_each_locale`.
+- worker: 182 → 182.
+- 3 pre-v0.47.0 UI tests
+  (`recovery_codes_page_includes_irreversibility_warning`,
+  `disable_page_warns_about_recovery_code_loss`,
+  `disable_page_offers_cancel_link`) **migrated**
+  to assert via `_for(.., Locale::En)` since they
+  pin EN-substring assertions and the default-
+  shorthand now returns JA.
+
+### Schema / wire / DO
+
+- Schema unchanged (still SCHEMA_VERSION 9).
+- Wire format unchanged.
+- DO state unchanged.
+- No new dependencies.
+
+### Operator-visible changes
+
+- **JA renders** for the four migrated pages when
+  the user's `Accept-Language` negotiates Ja
+  (or unset, since cesauth defaults to Ja). EN
+  preserved for `Accept-Language: en`.
+- **No behavior change** for production handlers —
+  they were already on negotiated locales.
+- No `wrangler.toml` change. No new bindings.
+  No schema migration.
+
+### ADR changes
+
+- **No new ADR.** v0.47.0 closes out the i18n-2
+  thread opened in v0.39.0 — the design pattern
+  (catalog + `_for` variants + default shorthand
+  routing) is already established and documented in
+  v0.36.0 / v0.39.0 release notes.
+
+### Doc / metadata changes
+
+- `Cargo.toml` workspace version 0.46.0 → 0.47.0.
+- UI footers + tests bumped to v0.47.0.
+- ROADMAP: v0.47.0 Shipped table row.
+- This CHANGELOG entry.
+
+### Upgrade path 0.46.0 → 0.47.0
+
+1. `git pull` or extract this tarball.
+2. `cargo build --workspace --target
+   wasm32-unknown-unknown --release`. **No new
+   dependencies.**
+3. `wrangler deploy`. **No schema migration.**
+4. **External callers using template shorthands
+   directly** (no in-tree callers, but listing for
+   completeness): if you depended on the EN
+   rendering of `magic_link_sent_page`,
+   `totp_recovery_codes_page`,
+   `totp_disable_confirm_page`, or `error_page`,
+   migrate to `*_for(.., Locale::En)` to preserve
+   the EN output.
+
+### Forward roadmap
+
+- **Next up (per operator request)**: ADR-014 §Q3
+  audit retention policy.
+- Then: ADR-012 §Q1.5 D1 repair tool.
+- **i18n-2 fully closed** with v0.47.0 — every
+  user-facing template now flows through the catalog
+  with locale negotiation. Admin / tenancy console
+  templates remain JA-only (separable thread).
+
+---
+
 ## [0.46.0] - 2026-05-04
 
 Refresh-token introspection enhancements. Per-operator-

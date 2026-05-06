@@ -180,8 +180,12 @@ fn recovery_codes_page_renders_each_code() {
 
 #[test]
 fn recovery_codes_page_includes_irreversibility_warning() {
+    // **v0.47.0** — the page is now JA-default.
+    // Assert against the explicit-EN _for variant so the
+    // pin tracks the catalog string we expect, regardless
+    // of which locale is the runtime default.
     let codes = vec!["AAAAA-BBBBB".to_owned()];
-    let html = totp_recovery_codes_page(&codes);
+    let html = totp_recovery_codes_page_for(&codes, Locale::En);
     assert!(html.contains("only time"),
         "page must warn the codes won't be shown again: {html}");
 }
@@ -306,15 +310,17 @@ fn disable_page_form_posts_to_disable_endpoint() {
 fn disable_page_warns_about_recovery_code_loss() {
     // The disable flow wipes recovery codes too. Pin so a future
     // UX iteration that softens the warning doesn't accidentally
-    // hide the consequence.
-    let html = totp_disable_confirm_page("t");
+    // hide the consequence. **v0.47.0** — page is now JA-default;
+    // assert via _for(.., Locale::En).
+    let html = totp_disable_confirm_page_for("t", Locale::En);
     assert!(html.contains("recovery codes"),
         "disable page must mention recovery codes are wiped: {html}");
 }
 
 #[test]
 fn disable_page_offers_cancel_link() {
-    let html = totp_disable_confirm_page("t");
+    // **v0.47.0** — JA-default; assert via _for(.., En).
+    let html = totp_disable_confirm_page_for("t", Locale::En);
     assert!(html.contains(r#"<a href="/">Cancel"#),
         "destructive flow must offer a no-op exit: {html}");
 }
@@ -1349,4 +1355,105 @@ fn security_center_page_for_en_anonymous_notice_translated() {
     // emit JA into the primary-row {label} slot regardless of
     // the page's negotiated locale. Migrating PrimaryAuthMethod
     // is a separable thread (it touches the admin console too).
+}
+
+// =====================================================================
+// v0.47.0 — i18n-2 continuation: magic link / recovery codes /
+// disable / error pages + PrimaryAuthMethod::label_for
+// =====================================================================
+
+#[test]
+fn magic_link_sent_page_for_renders_japanese_default() {
+    let html = magic_link_sent_page_for("alice@example.com", "csrf-tok", Locale::Ja);
+    assert!(html.contains("メールを確認してください"));
+    assert!(html.contains("ワンタイムコード"));
+    assert!(html.contains("続ける"));
+    // Privacy phrasing — must NOT confirm registration.
+    assert!(html.contains("登録されている場合"),
+        "JA intro must keep the privacy-preserving 'if registered' phrasing: {html}");
+}
+
+#[test]
+fn magic_link_sent_page_for_renders_english() {
+    let html = magic_link_sent_page_for("alice@example.com", "csrf", Locale::En);
+    assert!(html.contains("Check your inbox"));
+    assert!(html.contains("One-time code"));
+    assert!(html.contains(">Continue<"));
+    assert!(html.contains("If that address is registered"),
+        "EN intro must keep the privacy-preserving 'if registered' phrasing: {html}");
+}
+
+#[test]
+fn magic_link_sent_legacy_shorthand_now_renders_ja_default() {
+    // v0.47.0 behavior change: pre-v0.47.0 the shorthand
+    // rendered EN; v0.47.0 routes through _for with
+    // Locale::default() which is Ja. Production handlers
+    // were already on negotiated locales since v0.39.0,
+    // so the shorthand isn't on the production hot path.
+    let html = magic_link_sent_page("alice@example.com", "csrf");
+    assert!(html.contains("メールを確認してください"),
+        "v0.47.0 shorthand routes through Locale::default() (Ja): {html}");
+    assert!(!html.contains(">Check your inbox<"));
+}
+
+#[test]
+fn totp_recovery_codes_page_for_renders_japanese_default() {
+    let codes = vec!["AAAA-BBBB-CCCC".to_owned()];
+    let html = totp_recovery_codes_page_for(&codes, Locale::Ja);
+    assert!(html.contains("リカバリーコードを保存してください"));
+    assert!(html.contains("これらのコードが表示されるのはこの一度だけです"));
+    assert!(html.contains("AAAA-BBBB-CCCC"),
+        "codes must surface verbatim regardless of locale");
+}
+
+#[test]
+fn totp_recovery_codes_page_for_renders_english() {
+    let codes = vec!["AAAA-BBBB".to_owned()];
+    let html = totp_recovery_codes_page_for(&codes, Locale::En);
+    assert!(html.contains("Save your recovery codes"));
+    assert!(html.contains("This is the only time these codes will be shown"));
+    assert!(html.contains("I&#x27;ve saved them"));
+}
+
+#[test]
+fn totp_disable_confirm_page_for_renders_japanese_default() {
+    let html = totp_disable_confirm_page_for("csrf", Locale::Ja);
+    assert!(html.contains("二要素認証を無効にしますか?"));
+    assert!(html.contains("アカウントのTOTPがオフになります"));
+    assert!(html.contains("TOTPを無効にする"));
+    assert!(html.contains("キャンセルして戻る"),
+        "cancel link reuses TotpEnrollCancelLink");
+}
+
+#[test]
+fn totp_disable_confirm_page_for_renders_english() {
+    let html = totp_disable_confirm_page_for("csrf", Locale::En);
+    assert!(html.contains("Disable two-factor authentication?"));
+    assert!(html.contains("Yes, disable TOTP"));
+    assert!(html.contains("Cancel and go back"),
+        "EN cancel link reuses TotpEnrollCancelLink");
+}
+
+#[test]
+fn error_page_for_renders_localized_back_link() {
+    // title and detail are caller-supplied; only the
+    // back-to-sign-in link uses the catalog.
+    let html_ja = error_page_for("Title-JA", "detail", Locale::Ja);
+    let html_en = error_page_for("Title-EN", "detail", Locale::En);
+    assert!(html_ja.contains("サインインに戻る"));
+    assert!(html_en.contains(">Back to sign in<"));
+    // Titles surface verbatim.
+    assert!(html_ja.contains("Title-JA"));
+    assert!(html_en.contains("Title-EN"));
+}
+
+#[test]
+fn primary_auth_method_label_for_renders_each_locale() {
+    use PrimaryAuthMethod::*;
+    assert_eq!(Passkey  .label_for(Locale::Ja), "パスキー");
+    assert_eq!(Passkey  .label_for(Locale::En), "Passkey");
+    assert_eq!(MagicLink.label_for(Locale::Ja), "メールリンク");
+    assert_eq!(MagicLink.label_for(Locale::En), "Magic Link");
+    assert_eq!(Anonymous.label_for(Locale::Ja), "匿名トライアル");
+    assert_eq!(Anonymous.label_for(Locale::En), "Anonymous trial");
 }

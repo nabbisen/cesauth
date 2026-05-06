@@ -214,6 +214,39 @@ pub enum MessageKey {
     FlashOtherSessionsRevoked,
     FlashOtherSessionsRevokeFailed,
     FlashNoOtherSessions,
+
+    // ---- v0.47.0: i18n-2 continuation ----
+    // PrimaryAuthMethod labels (Security Center)
+    PrimaryAuthMethodPasskey,
+    PrimaryAuthMethodMagicLink,
+    PrimaryAuthMethodAnonymous,
+
+    // Magic Link "Check your inbox" page
+    MagicLinkSentPageTitle,
+    MagicLinkSentHeading,
+    MagicLinkSentIntro,
+    MagicLinkSentOtpHeading,
+    MagicLinkSentCodeLabel,
+
+    // TOTP recovery codes display page
+    TotpRecoveryCodesPageTitle,
+    TotpRecoveryCodesHeading,
+    TotpRecoveryCodesAlertStrong,
+    TotpRecoveryCodesAlertBody,
+    TotpRecoveryCodesBody,
+    TotpRecoveryCodesContinue,
+
+    // TOTP disable confirm page
+    TotpDisablePageTitle,
+    TotpDisableHeading,
+    TotpDisableAlertStrong,
+    TotpDisableAlertBody,
+    TotpDisableRecoveryHint,
+    TotpDisableConfirmHeading,
+    TotpDisableSubmit,
+
+    // Error page
+    ErrorPageBackLink,
 }
 
 /// Resolve `(key, locale) -> &'static str`. Zero allocation.
@@ -564,6 +597,136 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
             // Friendlier than "0 other sessions revoked".
             Locale::Ja => "他のサインイン中のセッションはありません。",
             Locale::En => "No other devices are signed in.",
+        },
+
+        // ============================================================
+        // v0.47.0: i18n-2 continuation
+        // ============================================================
+
+        PrimaryAuthMethodPasskey => match locale {
+            Locale::Ja => "パスキー",
+            Locale::En => "Passkey",
+        },
+        PrimaryAuthMethodMagicLink => match locale {
+            Locale::Ja => "メールリンク",
+            Locale::En => "Magic Link",
+        },
+        PrimaryAuthMethodAnonymous => match locale {
+            // Anonymous trial principal label. Used by
+            // Security Center for users who haven't yet
+            // bound a passkey or email; cesauth permits
+            // a limited "anonymous trial" mode where
+            // such users get scoped tokens but can't
+            // enroll TOTP.
+            Locale::Ja => "匿名トライアル",
+            Locale::En => "Anonymous trial",
+        },
+
+        // ----- Magic Link "Check your inbox" page -----
+        MagicLinkSentPageTitle => match locale {
+            Locale::Ja => "メールを確認 - cesauth",
+            Locale::En => "Check your inbox - cesauth",
+        },
+        MagicLinkSentHeading => match locale {
+            Locale::Ja => "メールを確認してください",
+            Locale::En => "Check your inbox",
+        },
+        MagicLinkSentIntro => match locale {
+            // Privacy-preserving phrasing: "if that
+            // address is registered" — never confirm
+            // account existence in the response (RFC
+            // does not require it; cesauth's discipline
+            // is to not leak user enumeration via the
+            // sign-in flow).
+            Locale::Ja => "このメールアドレスが登録されている場合、ワンタイムコードを送信しました。コードの有効期限は10分です。",
+            Locale::En => "If that address is registered, we've just sent a one-time code. It expires in 10 minutes.",
+        },
+        MagicLinkSentOtpHeading => match locale {
+            Locale::Ja => "コードを入力",
+            Locale::En => "Enter the code",
+        },
+        MagicLinkSentCodeLabel => match locale {
+            Locale::Ja => "ワンタイムコード",
+            Locale::En => "One-time code",
+        },
+
+        // ----- TOTP recovery codes display page -----
+        TotpRecoveryCodesPageTitle => match locale {
+            Locale::Ja => "リカバリーコードを保存 - cesauth",
+            Locale::En => "Save your recovery codes - cesauth",
+        },
+        TotpRecoveryCodesHeading => match locale {
+            Locale::Ja => "リカバリーコードを保存してください",
+            Locale::En => "Save your recovery codes",
+        },
+        TotpRecoveryCodesAlertStrong => match locale {
+            // Alert-strong: the cardinal warning. This
+            // is the only time the codes are shown in
+            // plaintext (storage is at-rest hashed); a
+            // user who navigates away without saving
+            // has to disable + re-enroll TOTP.
+            Locale::Ja => "これらのコードが表示されるのはこの一度だけです。",
+            Locale::En => "This is the only time these codes will be shown.",
+        },
+        TotpRecoveryCodesAlertBody => match locale {
+            Locale::Ja => "安全な場所(パスワードマネージャー、引き出しに保管した印刷物など)に保存してください。各コードは認証器を紛失した場合に1回だけ使用できます。",
+            Locale::En => "Save them somewhere safe (a password manager, a printed copy in a drawer). Each code can be used once if you lose access to your authenticator.",
+        },
+        TotpRecoveryCodesBody => match locale {
+            Locale::Ja => "認証器が利用できないときは、リカバリーコードでサインインできます。一度使用したコードは再利用できません。",
+            Locale::En => "You'll need a recovery code to sign in if your authenticator is unavailable. Once a code is used, it can't be reused.",
+        },
+        TotpRecoveryCodesContinue => match locale {
+            Locale::Ja => "保存しました — 続行",
+            Locale::En => "I've saved them — continue",
+        },
+
+        // ----- TOTP disable confirm page -----
+        TotpDisablePageTitle => match locale {
+            Locale::Ja => "TOTPを無効化 - cesauth",
+            Locale::En => "Disable TOTP - cesauth",
+        },
+        TotpDisableHeading => match locale {
+            Locale::Ja => "二要素認証を無効にしますか?",
+            Locale::En => "Disable two-factor authentication?",
+        },
+        TotpDisableAlertStrong => match locale {
+            Locale::Ja => "アカウントのTOTPがオフになります。",
+            Locale::En => "This will turn off TOTP for your account.",
+        },
+        TotpDisableAlertBody => match locale {
+            Locale::Ja => "認証器アプリのエントリは使用できなくなり、未使用のリカバリーコードもすべて削除されます。後で新しい認証器を登録すれば、TOTPを再度有効化できます。",
+            Locale::En => "Your authenticator app's entry will stop working, and any unused recovery codes will also be deleted. You can re-enable TOTP later by enrolling a new authenticator.",
+        },
+        TotpDisableRecoveryHint => match locale {
+            // Note: "the sign-in screen, not here" —
+            // disable-with-recovery-code is a sign-in-
+            // path action, distinct from the disable-
+            // confirm page (which assumes the user has
+            // an active session AND access to their
+            // authenticator).
+            Locale::Ja => "認証器を紛失した場合は、登録時に発行されたワンタイムコード(リカバリーコード)で復旧できます。その手続きはサインイン画面から行ってください — このページからではありません。",
+            Locale::En => "If you've lost access to your authenticator, you can recover with a one-time code from your enrollment instead — that path is on the sign-in screen, not here.",
+        },
+        TotpDisableConfirmHeading => match locale {
+            Locale::Ja => "確認",
+            Locale::En => "Confirm",
+        },
+        TotpDisableSubmit => match locale {
+            Locale::Ja => "TOTPを無効にする",
+            Locale::En => "Yes, disable TOTP",
+        },
+
+        // ----- Error page -----
+        ErrorPageBackLink => match locale {
+            // Generic "back to sign in" link on the
+            // error page. Title and detail are caller-
+            // supplied (the worker maps specific errors
+            // to localized strings before passing in;
+            // we don't surface internal error detail
+            // verbatim).
+            Locale::Ja => "サインインに戻る",
+            Locale::En => "Back to sign in",
         },
     }
 }
