@@ -28,4 +28,4 @@ don't change observable behavior.
 ADRs 001-003 were authored together in v0.11.0 to settle the design
 questions deferred from v0.10.0. Their decisions ship as the
 foundation work in v0.11.0 (schema + types) and the full
-implementation in v0.12.0+.
+implementation in v0.13.0+.

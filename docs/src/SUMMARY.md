@@ -31,7 +31,7 @@
 - [Operational logging](./expert/logging.md)
 - [Turnstile integration](./expert/turnstile.md)
 - [Admin console](./expert/admin-console.md)
-- [Tenancy](./expert/tenancy.md)
+- [Tenancy service](./expert/tenancy.md)
 - [Architecture decision records](./expert/adr/README.md)
     - [ADR-001: Tenant-scoped URL shape](./expert/adr/001-tenant-scoped-url-shape.md)
     - [ADR-002: User-as-bearer mechanism](./expert/adr/002-user-as-bearer-mechanism.md)

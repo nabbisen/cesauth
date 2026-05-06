@@ -42,7 +42,7 @@ pub fn role_allows(role: Role, action: AdminAction) -> bool {
 
         AdminAction::ManageAdminTokens  => matches!(role, Role::Super),
 
-        // v0.7.0 tenancy API. Read is open to every role;
+        // v0.7.0 tenancy-service API. Read is open to every role;
         // mutation is Operations+ matching the existing
         // EditBucketSafety / EditThreshold / CreateUser tier.
         AdminAction::ViewTenancy        => true,

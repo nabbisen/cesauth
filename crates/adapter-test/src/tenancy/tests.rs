@@ -1,4 +1,4 @@
-//! Integration tests for the v0.5.0 tenancy extension.
+//! Integration tests for the v0.5.0 tenancy-service extension.
 //!
 //! These exercise the core service layer through the in-memory
 //! adapters. They are intentionally located in `adapter-test` rather

@@ -96,7 +96,7 @@ impl PermissionCatalog {
 ///
 /// `tenant_id` is `None` for **system roles** — the built-ins cesauth
 /// ships with that are usable across all tenants (typically for the
-/// SaaS operator's own staff). `Some(id)` means a tenant-defined
+/// tenancy operator's own staff). `Some(id)` means a tenant-defined
 /// custom role, only visible inside that tenant.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Role {

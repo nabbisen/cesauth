@@ -1,15 +1,14 @@
-# Tenancy
+# Tenancy service
 
 Starting with v0.5.0 cesauth ships the data model and authorization
-engine for multi-tenant SaaS deployments. The single-tenant
-deployment that v0.3.x supports continues to work unchanged; the new
-machinery is additive.
+engine for multi-tenant deployments. The single-tenant deployment
+that v0.3.x supports continues to work unchanged; the new machinery
+is additive.
 
 This chapter is the operator-facing reference for how the new model
 fits together. The matching domain spec is
-`cesauth-Tenancy 化可能な構成への拡張開発指示書.md` in the
-repository root; this chapter implements §3-§5 and §16.1, §16.3,
-§16.6.
+`cesauth-Tenancy service + authz 拡張開発指示書.md` in the repository root;
+this chapter implements §3-§5 and §16.1, §16.3, §16.6.
 
 > **Status of v0.4.x.**
 > v0.5.0 shipped the data model
@@ -29,8 +28,8 @@ repository root; this chapter implements §3-§5 and §16.1, §16.3,
 > gated through the existing 0.3.x admin-bearer mechanism with two
 > new capabilities (`ViewTenancy` / `ManageTenancy`).
 >
-> v0.8.0 shipped a **read-only HTML SaaS console** at
-> `/admin/saas/*` for cesauth's operator staff to inspect tenancy
+> v0.8.0 shipped a **read-only HTML tenancy console** at
+> `/admin/tenancy/*` for cesauth's operator staff to inspect tenancy
 > state without curling the JSON API.
 >
 > v0.9.0 added the **mutation surface**: HTML forms wrapping the
@@ -41,7 +40,7 @@ repository root; this chapter implements §3-§5 and §16.1, §16.3,
 > `Role::can_manage_tenancy()` so ReadOnly operators don't see
 > broken-link buttons.
 >
-> v0.10.0 completed the SaaS console mutation surface with the
+> v0.10.0 completed the tenancy console mutation surface with the
 > additive forms 0.9.0 carved out — three flavors of membership
 > add/remove (tenant / organization / group) and role assignment
 > grant/revoke. With that release the HTML console reaches feature
@@ -58,14 +57,24 @@ repository root; this chapter implements §3-§5 and §16.1, §16.3,
 > tenant-admin surfaces (no in-page mode switch). The release also
 > ships the schema + type foundation reflecting these decisions —
 > migration `0005`, `AdminPrincipal::user_id`, the
-> `is_system_admin()` helper. The full implementation lands in
-> **0.12.0+**.
+> `is_system_admin()` helper.
+>
+> v0.12.0 is a project-hygiene release with the naming-debt
+> cleanup folded in: project framing language tightened
+> ("tenancy" replaced with "tenancy service"),
+> authorship and license metadata aligned with reality,
+> `.github/` community-process documents added, and the
+> module-path / URL-prefix / public-type rename
+> (`saas/` → `tenancy_console/`, `/admin/saas/*` →
+> `/admin/tenancy/*`, `SaasTab` → `TenancyConsoleTab`)
+> completed. The full tenant-scoped surface implementation
+> lands in **0.13.0**.
 
 ---
 
 ## The four boundaries
 
-cesauth's tenancy model layers four orthogonal concerns on
+cesauth's tenancy-service model layers four orthogonal concerns on
 top of `users` / `sessions`:
 
 1. **Tenancy** (`crate::tenancy`) — *who is in what?* Tenants,
@@ -163,7 +172,7 @@ Five values, none of which imply administrative capability:
 | `human_user`              | Ordinary end-user, password / passkey, self-registered.          |
 | `service_account`         | Machine principal for API integrations. Bearer / mTLS.            |
 | `system_operator`         | cesauth's own operators (separate from a tenant's admins).        |
-| `anonymous`               | Bounded trial principal. Promotion flow is a 0.12.1 follow-up.     |
+| `anonymous`               | Bounded trial principal. Promotion flow is a 0.14.0 follow-up.    |
 | `external_federated_user` | Identity in an external IdP, role assignments local to cesauth. Federation wiring is a follow-up. |
 
 Spec §5 is explicit: "user_type のみで admin 判定を行わない".
@@ -345,7 +354,7 @@ relying on log archaeology.
 
 ### Added in 0.7.0
 
-- **`/api/v1/...` HTTP API** for the tenancy data model.
+- **`/api/v1/...` HTTP API** for the tenancy-service data model.
   Tenants, organizations, groups, three flavors of membership,
   role assignments, subscriptions — full CRUD for each, JSON-only,
   gated through the existing admin-bearer mechanism. See the
@@ -367,22 +376,22 @@ relying on log archaeology.
 
 ### Added in 0.8.0
 
-- **Read-only HTML SaaS console** at `/admin/saas/*`, parallel to
+- **Read-only HTML tenancy console** at `/admin/tenancy/*`, parallel to
   (and visually distinct from) the v0.3.x cost / data-safety
   console at `/admin/console/*`. Five pages:
-  - `/admin/saas` — overview with deployment-wide counters and a
+  - `/admin/tenancy` — overview with deployment-wide counters and a
     per-plan subscriber breakdown.
-  - `/admin/saas/tenants` — list of every non-deleted tenant.
-  - `/admin/saas/tenants/:tid` — single tenant view (summary,
+  - `/admin/tenancy/tenants` — list of every non-deleted tenant.
+  - `/admin/tenancy/tenants/:tid` — single tenant view (summary,
     subscription with plan label, organization list, member list).
-  - `/admin/saas/organizations/:oid` — single organization view
+  - `/admin/tenancy/organizations/:oid` — single organization view
     (groups, members).
-  - `/admin/saas/tenants/:tid/subscription/history` — append-only
+  - `/admin/tenancy/tenants/:tid/subscription/history` — append-only
     change log, reverse-chronological.
-  - `/admin/saas/users/:uid/role_assignments` — every assignment
+  - `/admin/tenancy/users/:uid/role_assignments` — every assignment
     held by one user, across every scope, with rendered scope
     drill-links.
-- **Distinct nav frame** (`SaasTab`) with two top-level tabs
+- **Distinct nav frame** (`TenancyConsoleTab`) with two top-level tabs
   (Overview, Tenants); the User-roles tab is a drill-in
   destination only and is filtered out of the nav even when
   active. Footer carries a `read-only` marker.
@@ -404,14 +413,14 @@ relying on log archaeology.
     set-status, group delete, subscription set-plan,
     subscription set-status.
 - **16 new routes** (8 GET form + 8 POST submit) at
-  `/admin/saas/tenants/new`, `/admin/saas/tenants/:tid/status`,
-  `/admin/saas/tenants/:tid/organizations/new`,
-  `/admin/saas/organizations/:oid/status`,
-  `/admin/saas/tenants/:tid/groups/new`,
-  `/admin/saas/organizations/:oid/groups/new`,
-  `/admin/saas/groups/:gid/delete`,
-  `/admin/saas/tenants/:tid/subscription/plan`,
-  `/admin/saas/tenants/:tid/subscription/status`. All gated on
+  `/admin/tenancy/tenants/new`, `/admin/tenancy/tenants/:tid/status`,
+  `/admin/tenancy/tenants/:tid/organizations/new`,
+  `/admin/tenancy/organizations/:oid/status`,
+  `/admin/tenancy/tenants/:tid/groups/new`,
+  `/admin/tenancy/organizations/:oid/groups/new`,
+  `/admin/tenancy/groups/:gid/delete`,
+  `/admin/tenancy/tenants/:tid/subscription/plan`,
+  `/admin/tenancy/tenants/:tid/subscription/status`. All gated on
   `AdminAction::ManageTenancy` (Operations+).
 - **Affordance buttons** on the read pages, conditional on
   `Role::can_manage_tenancy()`. Tenants list grows
@@ -446,7 +455,7 @@ relying on log archaeology.
 
 ### Added in 0.10.0
 
-- **Five new HTML form templates** completing the SaaS console
+- **Five new HTML form templates** completing the tenancy console
   mutation surface. With this release the console reaches feature
   parity with the v0.7.0 JSON API for operator-driven mutations.
   - **Membership add** — three entry points (tenant /
@@ -457,7 +466,7 @@ relying on log archaeology.
   - **Membership remove** — three entry points. One-step confirm
     with a "user loses access; data is not destroyed" warning.
   - **Role assignment grant** at
-    `/admin/saas/users/:uid/role_assignments/new` with full
+    `/admin/tenancy/users/:uid/role_assignments/new` with full
     structured Scope picker (system / tenant / organization /
     group / user) plus optional `expires_at`. Re-renders with
     sticky values + helpful messages on validation failure.
@@ -466,7 +475,7 @@ relying on log archaeology.
     warning that "session is not invalidated" — operators get
     the right mental model for what revoke does.
 
-- **16 new routes** under `/admin/saas/...` (8 GET form + 8 POST
+- **16 new routes** under `/admin/tenancy/...` (8 GET form + 8 POST
   submit). All gated through `AdminAction::ManageTenancy`
   (Operations+).
 
@@ -508,7 +517,7 @@ type changes those ADRs imply.
     as-bearer mechanism. `Authorization: Bearer` continues as
     the wire format.
   - **ADR-003** picks complete URL-prefix separation between
-    system-admin (`/admin/saas/*`) and tenant-admin
+    system-admin (`/admin/tenancy/*`) and tenant-admin
     (`/admin/t/<slug>/*`) over an in-page mode switch.
 
 - **Migration `0005_admin_token_user_link.sql`**: adds a
@@ -522,7 +531,7 @@ type changes those ADRs imply.
   the new column and propagates it.
 
 - **`AdminPrincipal::is_system_admin()`** helper. Returns
-  `true` iff `user_id.is_none()`. v0.12.0 will use it to
+  `true` iff `user_id.is_none()`. v0.13.0 will use it to
   enforce ADR-003's surface separation.
 
 - **JSON-shape compatibility** preserved through
@@ -531,33 +540,95 @@ type changes those ADRs imply.
   v0.3.x principals did — no surprise for any consumer of
   the audit log or admin-token list endpoint.
 
+### Added in 0.12.0
+
+A project-hygiene release. The code change is mostly mechanical
+but touches a wide surface. The deliverable bundles two threads:
+metadata cleanup, and a naming-debt rename that retires the
+"SaaS console" framing in favor of "tenancy console."
+
+Metadata:
+
+- **Authorship, license, and repository metadata** in the workspace
+  `Cargo.toml` and the `LICENSE` Apache-2.0 boilerplate copyright
+  line are now `nabbisen` /
+  `https://github.com/nabbisen/cesauth`. Per-crate `Cargo.toml`
+  files inherit through `.workspace = true`.
+
+- **Project framing language** tightened. "Tenancy" /
+  "Tenancy" — including in spec references, comments, and prose
+  — has been replaced with "tenancy service" or equivalent
+  functional descriptions. The earlier framing was ambiguous and
+  risked giving users and contributors the wrong impression about
+  the project's intent. The replaced terms are concrete and
+  describe what the code does.
+
+- **`.github/`** gains community-process documents:
+  - `CODE_OF_CONDUCT.md` — Contributor Covenant 2.1.
+  - `CONTRIBUTING.md` — workspace test flow, code-review
+    priorities, PR checklist, what lands smoothly vs. what
+    needs discussion first.
+  - `ISSUE_TEMPLATE/{bug_report,feature_request,documentation}.yml`
+    — structured templates with version / environment / scope
+    fields.
+  - `ISSUE_TEMPLATE/config.yml` — links security reports to the
+    private advisory path and open questions to Discussions.
+
+Naming-debt cleanup:
+
+- **Module paths** renamed:
+  `crates/ui/src/saas/` → `crates/ui/src/tenancy_console/`,
+  `crates/worker/src/routes/admin/saas/` →
+  `crates/worker/src/routes/admin/tenancy_console/`. All
+  `mod`/`use` statements and re-exports updated.
+
+- **URL prefix** renamed: `/admin/saas/*` → `/admin/tenancy/*`.
+  The path *suffixes* (`tenants`, `organizations/:oid`,
+  `users/:uid/role_assignments`, etc.) are unchanged.
+  **Operator-visible breaking change** — any external script
+  targeting the old prefix needs updating. The pre-1.0 SemVer
+  caveat permits this; no compatibility-redirect routes were
+  added.
+
+- **Public types and identifiers** renamed:
+  `SaasTab` → `TenancyConsoleTab`,
+  `saas_frame()` → `tenancy_console_frame()`. Footer chrome
+  reads "tenancy console" throughout.
+
+- **Audit reason marker** renamed:
+  `via=saas-console` → `via=tenancy-console`. Audit consumers
+  that filter on this value need updating. Past audit entries
+  retain the old marker (the audit log is append-only).
+
 ### Does NOT ship in v0.4.x (yet)
 
 The CHANGELOG `Deferred` sections and `ROADMAP.md` track each item.
 Headlines:
 
 - **Tenant-scoped admin surface implementation**. v0.11.0
-  shipped the design and foundation; v0.12.0 builds the routes
+  shipped the design and foundation; v0.13.0 builds the routes
   + views + per-route auth gate that requires
-  `principal.user_id == Some(_)` matching the URL slug.
+  `principal.user_id == Some(_)` matching the URL slug. The
+  0.12.1 release slot is reserved as a buffer for any
+  follow-up work the 0.12.0 rename surfaces in real-world use.
 - **Token-mint flow with `user_id`.** Today
   `AdminTokenRepository::create` mints system-admin tokens
-  only. v0.12.0 introduces a parallel mint path (or extended
+  only. v0.13.0 introduces a parallel mint path (or extended
   signature) that produces user-bound tokens. The mint flow
   itself raises questions (who can mint? what's the
-  authorization on the mint?) that v0.12.0 will answer.
+  authorization on the mint?) that v0.13.0 will answer.
 - **`check_permission` integration on the API surface.** v0.7.0
   routes go through `ensure_role_allows` (admin-side capability)
   rather than `check_permission` because admin tokens had no
   user binding. With v0.11.0's `AdminPrincipal::user_id`, this
-  becomes possible — and v0.12.0 will wire it up for the
+  becomes possible — and v0.13.0 will wire it up for the
   tenant-scoped routes.
 - **Cookie-based auth for admin forms.** Explicitly *not* the
   user-as-bearer mechanism, per ADR-002. May appear as an
   *additional* mechanism in a later ADR if there's a concrete
   need.
 - **Anonymous-trial promotion.** The account type exists; the
-  promotion lifecycle is unspecified. **0.12.1.**
+  promotion lifecycle is unspecified. **0.14.0.**
 - **External IdP federation.** `AccountType::ExternalFederatedUser`
   is reserved; no IdP wiring exists yet.
 
@@ -657,7 +728,7 @@ running, no operator action required.
 
 ### Inspecting tenancy state in the browser (v0.8.0+)
 
-The SaaS console at `/admin/saas/*` is the read-only HTML view of
+The tenancy console at `/admin/tenancy/*` is the read-only HTML view of
 the same data the API surface exposes. Use the same admin bearer
 as the API:
 
@@ -667,19 +738,19 @@ as the API:
 # the existing session-cookie path), or curl with the bearer header.
 
 curl -sS -H "Authorization: Bearer $ADMIN_API_KEY" \
-     https://cesauth.example/admin/saas
+     https://cesauth.example/admin/tenancy
 ```
 
 Pages:
 
 | URL                                                           | Shows                                                                     |
 |---------------------------------------------------------------|---------------------------------------------------------------------------|
-| `/admin/saas`                                                 | Counters + per-plan subscriber breakdown                                  |
-| `/admin/saas/tenants`                                         | Every non-deleted tenant                                                  |
-| `/admin/saas/tenants/{id}`                                    | One tenant: summary, subscription, organizations, members                 |
-| `/admin/saas/tenants/{id}/subscription/history`               | Append-only change log for that tenant's subscription                     |
-| `/admin/saas/organizations/{id}`                              | One organization: groups, members                                         |
-| `/admin/saas/users/{id}/role_assignments`                     | Every role assignment held by one user, across every scope                |
+| `/admin/tenancy`                                                 | Counters + per-plan subscriber breakdown                                  |
+| `/admin/tenancy/tenants`                                         | Every non-deleted tenant                                                  |
+| `/admin/tenancy/tenants/{id}`                                    | One tenant: summary, subscription, organizations, members                 |
+| `/admin/tenancy/tenants/{id}/subscription/history`               | Append-only change log for that tenant's subscription                     |
+| `/admin/tenancy/organizations/{id}`                              | One organization: groups, members                                         |
+| `/admin/tenancy/users/{id}/role_assignments`                     | Every role assignment held by one user, across every scope                |
 
 Every page is gated through `AdminAction::ViewTenancy`, which is
 open to **all four roles** (ReadOnly, Security, Operations, Super).
@@ -688,7 +759,7 @@ Mutating the underlying state still requires `ManageTenancy`
 is via the v0.7.0 JSON API or a wrangler shell. The HTML mutation
 console is v0.9.0.
 
-### Mutating tenancy state via the SaaS console (v0.9.0+)
+### Mutating tenancy state via the tenancy console (v0.9.0+)
 
 For Operations / Super operators, every read page now grows the
 appropriate mutation buttons. Drill into a tenant to see
@@ -732,7 +803,7 @@ Risk-graded confirm pattern:
 Destructive operations re-render with a diff banner and a
 separate "Apply" button. The confirm step records the same
 audit event (`TenantStatusChanged`, etc.) the JSON API does,
-plus a `via=saas-console` marker in the `reason` field so
+plus a `via=tenancy-console` marker in the `reason` field so
 operators can split console-driven mutations from
 script-driven ones in the audit log.
 
@@ -795,7 +866,7 @@ table in `0003_tenancy.sql`.
 - Source: `crates/core/src/tenancy/`, `crates/core/src/authz/`,
   `crates/core/src/billing/`. Each module has a one-paragraph
   doc-comment summarizing its slice of the model.
-- Spec: `cesauth-Tenancy 化可能な構成への拡張開発指示書.md`
+- Spec: `cesauth-Tenancy service + authz 拡張開発指示書.md`
   in the repo root. The implementation maps section-by-section to
   §3-§5 and §16.1, §16.3, §16.6.
 - Tests: `crates/adapter-test/src/tenancy/tests.rs` — the

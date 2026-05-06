@@ -1,7 +1,7 @@
 -- ============================================================================
 -- 0005_admin_token_user_link.sql
 -- ----------------------------------------------------------------------------
--- v0.11.0 foundation work for the tenant-scoped admin surface (0.12.0+).
+-- v0.11.0 foundation work for the tenant-scoped admin surface (0.13.0+).
 --
 -- Adds a nullable `user_id` column to `admin_tokens` so that a token can be
 -- linked to a specific row in `users`. This is the path we picked in
@@ -9,11 +9,11 @@
 -- cookies or short-lived JWTs as a brand-new auth path, we extend the
 -- existing admin-token mechanism with an optional user identity.
 --
--- Semantics (post-0.12.0):
+-- Semantics (post-0.13.0):
 --   * `user_id IS NULL` — the token is a "system-admin token" (the kind
 --     that 0.3.x and 0.4.x have always issued). Resolves to an
 --     `AdminPrincipal { user_id: None, .. }`. Has access to
---     `/admin/console/*` and `/admin/saas/*`.
+--     `/admin/console/*` and `/admin/tenancy/*`.
 --   * `user_id IS NOT NULL` — the token is a "user-as-bearer" token.
 --     The token still resolves to an `AdminPrincipal` (so the existing
 --     `Role`-based authorization still works), but the `user_id` field
@@ -22,11 +22,11 @@
 --
 -- This migration is foundation-only: it creates the column and the
 -- supporting index. No code in v0.11.0 reads or writes the column yet.
--- v0.12.0 adds the resolution path and the route surface.
+-- v0.13.0 adds the resolution path and the route surface.
 --
 -- Why we did this in 0.11.0 even though no code uses it yet:
 --   * Schema migrations are easier to review in isolation.
---   * 0.12.0 will be code-only (no schema), keeping the diff small and
+--   * 0.13.0 will be code-only (no schema), keeping the diff small and
 --     each phase reviewable on its own.
 --
 -- See also: docs/src/expert/adr/{001,002,003}.md

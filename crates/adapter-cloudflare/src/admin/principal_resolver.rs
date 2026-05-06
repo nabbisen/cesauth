@@ -47,7 +47,7 @@ struct AdminTokenRow {
     name:        Option<String>,
     disabled_at: Option<i64>,
     /// v0.11.0: nullable, populated by migration `0005`. v0.11.0
-    /// reads it but never gates on it; v0.12.0 introduces the
+    /// reads it but never gates on it; v0.13.0 introduces the
     /// resolution path that uses it for the tenant-scoped surface.
     user_id:     Option<String>,
 }
@@ -90,7 +90,7 @@ impl AdminPrincipalResolver for CloudflareAdminPrincipalResolver<'_> {
                     name: Some("bootstrap".to_owned()),
                     role: Role::Super,
                     // The bootstrap principal is structurally a system-
-                    // admin token (no user binding). Even after v0.12.0
+                    // admin token (no user binding). Even after v0.13.0
                     // wires up user-as-bearer this stays `None` —
                     // ADMIN_API_KEY is for emergency access, not for
                     // tenant-admin work.

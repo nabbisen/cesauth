@@ -37,7 +37,7 @@ zero remaining issues.
 | Audit log (R2, NDJSON per event)       | ✅       | Covered by `/__dev/audit` browser + searchable via admin console (0.3.0) |
 | **Cost &amp; Data Safety Admin Console** | ✅     | `/admin/console/*` — Overview, Cost, Safety, Audit, Config, Alerts (0.3.0); HTML two-step edit UI for bucket-safety + admin-token CRUD (0.4.0) |
 | Dev-only routes (`/__dev/*`)           | ✅       | Gated on `WRANGLER_LOCAL="1"`                      |
-| **Tenancy data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.5.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.6.0). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.7.0). Read-only HTML SaaS console at `/admin/saas/*` (0.8.0). Mutation forms with preview/confirm pattern (0.9.0) for tenant / organization / group / subscription. Membership add/remove + role grant/revoke forms (0.10.0) bring the HTML console to feature parity with the v0.7.0 JSON API. ADR-001/002/003 settle the tenant-scoped admin surface design (0.11.0) and ship the schema + type foundation (`admin_tokens.user_id`, `AdminPrincipal::user_id`, `is_system_admin()`). Tenant-scoped surface implementation deferred to 0.12.0. |
+| **Tenancy-service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.5.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.6.0). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.7.0). Read-only HTML console at `/admin/tenancy/*` (0.8.0, originally `/admin/saas/*`). Mutation forms with preview/confirm pattern (0.9.0) for tenant / organization / group / subscription. Membership add/remove + role grant/revoke forms (0.10.0) bring the HTML console to feature parity with the v0.7.0 JSON API. ADR-001/002/003 settle the tenant-scoped admin surface design (0.11.0) and ship the schema + type foundation (`admin_tokens.user_id`, `AdminPrincipal::user_id`, `is_system_admin()`). Project-hygiene release with naming-debt cleanup (0.12.0) — `saas/` → `tenancy_console/`, `/admin/saas/*` → `/admin/tenancy/*`, plus author/license metadata and `.github/` community documents. Tenant-scoped surface implementation for 0.13.0. |
 | mdBook documentation                   | ✅       | `docs/`                                            |
 
 ---
@@ -82,7 +82,7 @@ started.
   increments). Likely acceptable for a "proxy" metric, but worth
   recording explicitly.
 
-- **Tenancy HTTP routes (shipped in 0.7.0).** The
+- **Tenancy-service HTTP routes (shipped in 0.7.0).** The
   `/api/v1/...` surface ships JSON CRUD for tenants, organizations,
   groups, memberships, role assignments, and subscriptions. Plan-
   quota enforcement (max_users / max_organizations / max_groups)
@@ -145,13 +145,38 @@ started.
   The 0.11.0 release shipped the foundation reflecting these
   decisions: migration `0005`, the `AdminPrincipal::user_id`
   field, the `is_system_admin()` helper, and Cloudflare D1
-  adapters that read the new column. No UI yet — that's 0.12.0.
+  adapters that read the new column. No UI yet — the surface
+  implementation lands in 0.13.0.
 
-- **Tenant-scoped admin surface implementation (0.12.0).**
-  Builds on the 0.11.0 foundation. Adds:
+- **Project-hygiene release with naming-debt cleanup (shipped in
+  0.12.0).** Two threads landed together:
+  - **Metadata** — author / license / repository now match
+    reality (`nabbisen`,
+    `https://github.com/nabbisen/cesauth`). Project framing
+    language tightened: "Tenancy" / "Tenancy" replaced
+    with "tenancy service" or equivalent functional
+    descriptions across docs and comments. `.github/` gains
+    `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1),
+    `CONTRIBUTING.md`, and four `ISSUE_TEMPLATE/*` files.
+  - **Naming-debt cleanup** — the `saas/` module path under
+    both `crates/ui/` and `crates/worker/src/routes/admin/`,
+    the `/admin/saas/*` URL prefix, the `SaasTab` public type,
+    and the `via=saas-console` audit reason marker have all
+    been renamed to `tenancy_console` / `/admin/tenancy/*` /
+    `TenancyConsoleTab` / `via=tenancy-console`. Operator-
+    visible — bookmarks and scripts targeting the old prefix
+    need updating. No compatibility-redirect routes were
+    added; the pre-1.0 SemVer caveat permits the hard rename.
+
+- **Tenant-scoped admin surface implementation (0.13.0).**
+  Builds on the 0.11.0 foundation. The 0.12.1 release slot is
+  reserved as a buffer for any follow-up work the 0.12.0
+  rename surfaces in real-world use; 0.13.0 builds the
+  tenant-scoped routes on a clean naming base. Scope:
   - The `/admin/t/<slug>/...` route surface (likely 6-10
-    pages mirroring the v0.8.0-0.10.0 system-admin console
-    but filtered to the caller's tenant).
+    pages mirroring the system-admin console at
+    `/admin/tenancy/...` but filtered to the caller's
+    tenant).
   - Per-route auth gate that requires
     `principal.user_id.is_some()` and `users.tenant_id` of that
     user matching the URL slug.
@@ -162,7 +187,7 @@ started.
     routes, since the principal now carries the `user_id`
     needed by spec §9.2.
 
-- **Anonymous trial → human user promotion (0.12.1).** Spec §3.3
+- **Anonymous trial → human user promotion (0.14.0).** Spec §3.3
   introduces `Anonymous` as an account type and §11 priority 5
   asks for a promotion flow. The promotion lifecycle (token issuance
   for anonymous principals, retention window, conversion ceremony,

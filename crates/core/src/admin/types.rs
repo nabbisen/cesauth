@@ -59,7 +59,7 @@ impl Role {
         }
     }
 
-    /// Whether this role may invoke the SaaS-console mutation forms
+    /// Whether this role may invoke the tenancy-console mutation forms
     /// (v0.9.0+). Mirrors `policy::role_allows(role, ManageTenancy)`
     /// — kept on `Role` itself so UI templates don't have to import
     /// the policy module just to decide whether to render an
@@ -94,13 +94,13 @@ pub struct AdminPrincipal {
     /// User id this token is bound to, if any. `None` means the token
     /// is a system-admin token (the kind v0.3.x and v0.4.x have
     /// always issued); `Some(uid)` means the token was issued under
-    /// the v0.12.0+ user-as-bearer mechanism and is scoped to a
+    /// the v0.13.0+ user-as-bearer mechanism and is scoped to a
     /// specific row in `users`.
     ///
     /// Added in v0.11.0 as foundation work for the tenant-scoped admin
     /// surface — see ADR-002. v0.11.0 itself does not populate this
     /// field; every existing call site constructs `AdminPrincipal`
-    /// with `user_id: None`. v0.12.0 introduces the resolution path
+    /// with `user_id: None`. v0.13.0 introduces the resolution path
     /// that loads the value from `admin_tokens.user_id`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_id: Option<String>,
@@ -108,11 +108,11 @@ pub struct AdminPrincipal {
 
 impl AdminPrincipal {
     /// True iff this principal is a system-admin (no user binding).
-    /// Used by the v0.12.0+ resolution layer to decide whether the
-    /// caller is allowed to hit `/admin/saas/*` (system-admin only)
+    /// Used by the v0.13.0+ resolution layer to decide whether the
+    /// caller is allowed to hit `/admin/tenancy/*` (system-admin only)
     /// vs `/admin/t/<slug>/*` (user-as-bearer only).
     ///
-    /// Added in v0.11.0 alongside `user_id`. Until v0.12.0 wires up
+    /// Added in v0.11.0 alongside `user_id`. Until v0.13.0 wires up
     /// the resolution path, every constructed `AdminPrincipal` has
     /// `user_id == None`, so this method returns `true` everywhere
     /// — preserving the v0.10.0 behavior where the system-admin

@@ -30,7 +30,7 @@ pub trait TenantRepository {
 
     /// List all non-deleted tenants. Pagination is intentionally
     /// omitted for 0.5.0 — the operator surface that consumes this
-    /// expects O(10-100) tenants. Pagination lands with the SaaS
+    /// expects O(10-100) tenants. Pagination lands with the tenancy
     /// control plane.
     async fn list_active(&self) -> PortResult<Vec<Tenant>>;
 

@@ -6,8 +6,8 @@
 
 ## Context
 
-The v0.8.0-0.10.0 SaaS console at `/admin/saas/*` serves the cesauth
-deployment's operator staff — one console, every tenant. v0.12.0+
+The v0.8.0-0.10.0 tenancy console at `/admin/tenancy/*` serves the cesauth
+deployment's operator staff — one console, every tenant. v0.13.0+
 introduces a *tenant-scoped* admin surface where tenant admins
 administer their own tenant rather than every tenant. The surface
 is reachable from a tenant-side login, gated through user-as-bearer
@@ -41,7 +41,7 @@ Path-based: `/admin/t/<slug>/...`.
   per-tenant Custom Hostnames (which has setup-and-quota friction
   per tenant).
 - **Same-origin everything.** Cookies, fetch, redirects all behave
-  the same as the existing `/admin/saas/*`. ADR-002 picks
+  the same as the existing `/admin/tenancy/*`. ADR-002 picks
   `Authorization`-bearer auth which is origin-scoped; keeping one
   origin keeps the auth model simple.
 - **Tenant identity is visible.** A path-based URL like
@@ -75,8 +75,8 @@ Path-based: `/admin/t/<slug>/...`.
   not-now decision; the path-based URL doesn't preclude it.
 - Whether `<slug>` is the tenant slug or the tenant id. We pick
   the slug because it's the operator-visible identifier and
-  matches how `/admin/saas/tenants/:tid` already works (`:tid` is
-  the id, but the user types the slug). The 0.12.0 router resolves
+  matches how `/admin/tenancy/tenants/:tid` already works (`:tid` is
+  the id, but the user types the slug). The 0.13.0 router resolves
   slug → id at request time.
 
 ## Alternatives considered

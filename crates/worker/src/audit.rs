@@ -37,7 +37,7 @@ pub enum EventKind {
     // Admin token management (v0.4.0)
     AdminTokenCreated,
     AdminTokenDisabled,
-    // Tenancy API (v0.7.0)
+    // tenancy-service API (v0.7.0)
     TenantCreated,
     TenantUpdated,
     TenantStatusChanged,

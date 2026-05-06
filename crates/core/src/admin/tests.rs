@@ -100,8 +100,8 @@ fn role_roundtrips_through_str() {
 // v0.11.0 foundation work: AdminPrincipal::user_id and is_system_admin
 //
 // These don't yet drive any authorization logic — they're the seam
-// 0.12.0 will use to introduce the tenant-scoped admin surface (see
-// ADR-002). The tests pin down the invariants 0.12.0 will rely on.
+// 0.13.0 will use to introduce the tenant-scoped admin surface (see
+// ADR-002). The tests pin down the invariants 0.13.0 will rely on.
 // -------------------------------------------------------------------------
 
 #[test]
@@ -122,7 +122,7 @@ fn principal_with_user_binding_is_not_system_admin() {
     };
     assert!(!p.is_system_admin(),
         "user_id == Some(_) must classify as user-as-bearer; \
-         /admin/saas/* should refuse such principals in 0.12.0+");
+         /admin/tenancy/* should refuse such principals in 0.13.0+");
 }
 
 #[test]

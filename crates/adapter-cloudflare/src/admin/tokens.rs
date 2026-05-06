@@ -80,7 +80,7 @@ impl AdminTokenRepository for CloudflareAdminTokenRepository<'_> {
             .map_err(|e| run_err("admin_tokens.create bind", e))?
             .run().await.map_err(|e| run_err("admin_tokens.create run", e))?;
         // v0.11.0: tokens minted via this repo are still system-admin
-        // tokens (no user binding). v0.12.0 introduces a separate
+        // tokens (no user binding). v0.13.0 introduces a separate
         // `create_user_bound` entry point to mint user-as-bearer
         // tokens. Adding it now would be premature — there's no
         // resolution path for the result yet.

@@ -8,7 +8,7 @@ wire format.
 
 ## Context
 
-The v0.12.0+ tenant-scoped admin surface needs to know not only
+The v0.13.0+ tenant-scoped admin surface needs to know not only
 "is this caller authorized" but "*which user* is this caller, so
 we can run `check_permission(user_id, ...)` against the spec §9.2
 authorization engine."
@@ -42,7 +42,7 @@ Option 1: extend `admin_tokens` with `user_id`.
 
 ### What this gives us
 
-- **One auth path, not three.** v0.3.x bearer tokens, v0.12.0
+- **One auth path, not three.** v0.3.x bearer tokens, v0.13.0
   user-as-bearer tokens, and any future automation tokens all
   flow through one `resolve_from_request` lookup. The lookup
   loads an `AdminToken` row which already carries `role`, and
@@ -99,7 +99,7 @@ Option 1: extend `admin_tokens` with `user_id`.
   there's a concrete need.
 - **How user-as-bearer tokens are minted.** The token-creation
   flow (and whether it's accessible to tenant admins or only
-  to system admins) is a 0.12.0 concern.
+  to system admins) is a 0.13.0 concern.
 
 ## Schema impact
 
@@ -128,7 +128,7 @@ pub struct AdminPrincipal {
 ```
 
 Every existing call site that constructs an `AdminPrincipal`
-defaults `user_id` to `None` — no behavior change. v0.12.0
+defaults `user_id` to `None` — no behavior change. v0.13.0
 introduces the `Some(user_id)` path through the
 `AdminTokenRepository::create_user_bound` (or similar) method
 and the resolution layer that propagates it.

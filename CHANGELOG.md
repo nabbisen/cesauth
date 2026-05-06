@@ -12,6 +12,176 @@ always be called out here.
 
 ---
 
+## [0.12.0] - 2026-04-27
+
+Project hygiene release. Pre-1.0, technically — but the changes here
+are the kind that get more expensive the longer they're deferred,
+so the release is dedicated to retiring them in one focused pass.
+
+Two threads land together:
+
+1. **Project framing and metadata.** Authorship, license, and
+   repository metadata now match reality. "Tenancy" /
+   "Tenancy" framing — including spec references, comments, and
+   prose — has been replaced with "tenancy service" or equivalent
+   functional descriptions. `.github/` gains the community-process
+   documents that a public repository is reasonably expected to
+   carry: code of conduct, contributing guide, structured issue
+   templates.
+
+2. **Naming-debt cleanup.** The `saas/` module path under both
+   `crates/ui/` and `crates/worker/src/routes/admin/`, the
+   `/admin/saas/*` URL prefix, the `SaasTab` public type, and the
+   `via=saas-console` audit reason marker have all been renamed
+   to use `tenancy_console` / `/admin/tenancy/*` /
+   `TenancyConsoleTab` / `via=tenancy-console`. The change is
+   operator-visible: any external script targeting
+   `/admin/saas/...` URLs needs updating. Pre-1.0 caveat applies
+   — see the migration guidance below.
+
+The two threads share a release because they share a motivation
+(remove framing that could mislead users or contributors about
+what cesauth is) and because doing them together amortizes the
+review cost.
+
+### Changed — metadata
+
+- **Workspace `Cargo.toml`**:
+  - `authors = ["nabbisen"]` (was
+    `["cesauth contributors"]`).
+  - `repository = "https://github.com/nabbisen/cesauth"` (was
+    the stub `https://github.com/nabbisen/cesauth`).
+  - Per-crate `Cargo.toml` files inherit through
+    `.workspace = true` so no per-crate edits were needed.
+- **`LICENSE`** Apache-2.0 boilerplate copyright line:
+  `Copyright 2026 nabbisen` (was
+  "cesauth contributors").
+
+### Changed — naming
+
+- **Module paths**:
+  - `crates/ui/src/saas/` → `crates/ui/src/tenancy_console/`
+  - `crates/worker/src/routes/admin/saas/` →
+    `crates/worker/src/routes/admin/tenancy_console/`
+  - All `mod`/`use` statements and re-exports updated.
+- **Public types**:
+  - `SaasTab` → `TenancyConsoleTab`
+  - `saas_frame()` → `tenancy_console_frame()`
+  - `saas_overview_page` → re-exported under the new module
+- **URL prefix**: `/admin/saas/*` → `/admin/tenancy/*`.
+  Sixteen mutation routes plus the read pages all migrate.
+  **Breaking change** for any operator with bookmarks,
+  scripts, or playbooks targeting the old prefix.
+- **Audit reason marker**: `via=saas-console` →
+  `via=tenancy-console`. Audit consumers that filter on this
+  value need updating.
+- **Page titles and footer**: "SaaS console" → "tenancy
+  console" throughout the chrome. Footer marker is now
+  "v0.12.0 (full mutation surface for Operations+)".
+- **Project framing language** in comments and docs.
+  "Tenancy" / "Tenancy" replaced with "tenancy
+  service" or equivalent. The earlier framing was ambiguous
+  (the project is open-source under Apache-2.0; "commercial"
+  doesn't describe the license, the deployment model, or
+  anything else precise) and risked giving users and
+  contributors the wrong impression about the project's
+  intent. Spec references such as
+  `cesauth-Tenancy 化可能な構成への拡張開発指示書.md` are
+  now referenced as `cesauth tenancy-service extension spec`.
+
+### Added
+
+- **`.github/CODE_OF_CONDUCT.md`** — Contributor Covenant 2.1.
+- **`.github/CONTRIBUTING.md`** — practical guide covering the
+  workspace test flow, code-review priorities (make invalid
+  states unrepresentable; pure decision in core, side effects
+  at the edge; test what changed), the PR checklist, and what
+  lands smoothly vs. what needs discussion.
+- **`.github/ISSUE_TEMPLATE/`**:
+  - `bug_report.yml` — structured bug template with version,
+    environment, steps to reproduce.
+  - `feature_request.yml` — proposal template with a problem-
+    first framing and a "willing to PR" dropdown.
+  - `documentation.yml` — for docs-only issues (typos,
+    missing examples, outdated content).
+  - `config.yml` — links security reports to the private
+    advisory path and open questions to Discussions.
+
+### Migration
+
+This is a hard rename — no compatibility-redirect routes were
+added. The pre-1.0 SemVer caveat at the top of this file
+permits this, but operators upgrading from 0.11.0 should:
+
+1. **Check audit-log filters.** Any consumer that splits
+   console-driven mutations from script-driven ones by
+   matching `via=saas-console` needs the matcher updated to
+   `via=tenancy-console`. Both old and new values appear in
+   audit history; the audit log is append-only, so 0.12.0 does
+   not rewrite past entries.
+2. **Update operator URLs.** Bookmarks, runbooks, and
+   tooling targeting `/admin/saas/...` need their prefix
+   changed to `/admin/tenancy/...`. The path *suffixes* are
+   unchanged — `tenants`, `organizations/:oid`,
+   `users/:uid/role_assignments`, etc. are all in their
+   original positions.
+3. **Search for `SaasTab` in any downstream code.** The public
+   type is renamed; downstream code that imported it needs to
+   use `TenancyConsoleTab` instead.
+
+A 0.11.0 deployment can run unchanged through this release —
+no schema migration, no `wrangler.toml` change. The Worker
+upgrade is the only operational step.
+
+### Tests
+
+- Total: **219 passing** (unchanged from 0.11.0).
+  - core: 105.
+  - adapter-test: 32.
+  - ui: 82.
+- The rename touched roughly every file under `saas/`; the
+  test suite passing unchanged is the key regression check.
+  The frame test that asserts the footer's version marker now
+  asserts `"v0.12.0"`.
+
+### Deferred
+
+- **Tenant-scoped admin surface implementation** — slides to
+  **0.13.0**. The 0.11.0 foundation
+  (`AdminPrincipal::user_id`, `is_system_admin()`, the
+  `admin_tokens.user_id` column) is unchanged and ready;
+  0.12.1 is reserved as a buffer for any follow-up issues
+  this rename surfaces in real-world use, and 0.13.0 builds
+  the tenant-scoped routes on a clean naming base.
+- **Anonymous-trial promotion** stays at the next available
+  slot after the surface implementation.
+
+### Why these changes belong in a release at all
+
+A release whose code change is mostly mechanical may look
+unusual, but each thread here has a real cost when left alone:
+
+- **License and author metadata that don't match reality**
+  make it ambiguous who owns the project and how to reach
+  them — bad for downstream consumers, bad for security
+  reporters.
+- **Marketing-flavored framing** ("tenancy") in a
+  project that is actually open-source-under-Apache-2.0
+  invites the wrong assumptions. Users may wonder whether
+  there's a closed-source variant; contributors may wonder
+  whether their work feeds someone else's revenue. Neither
+  is the case.
+- **Missing community-process documents** make a project look
+  abandoned even when it isn't, and put friction on first-time
+  contributors who reasonably expect them.
+- **Naming debt** ("SaaS console" / `/admin/saas/*`) carries
+  a one-time cost to retire and a per-release cost to live
+  with. Retiring it before 0.13.0's tenant-scoped surface
+  implementation lands means the new surface isn't built
+  next to a stale name.
+
+---
+
 ## [0.11.0] - 2026-04-26
 
 Foundation for the tenant-scoped admin surface. This is a deliberately
@@ -19,8 +189,11 @@ small release: 0.10.0 left three open design questions on URL shape,
 user-as-bearer mechanism, and system-admin from inside the tenant
 view. v0.11.0 settles those questions in three architecture decision
 records (ADR-001/002/003) and ships only the minimum schema + type
-changes implied by the decisions. v0.12.0 will use this foundation to
-build the full tenant-scoped console.
+changes implied by the decisions. v0.12.0 retires the SaaS-naming
+technical debt alongside other project-hygiene work
+(`saas/` → `tenancy_console/`, plus authorship/license metadata
+and `.github/` documents); v0.13.0 builds the full tenant-scoped
+console on top of the foundation.
 
 The split between "decide" (0.11.0) and "implement" (0.12.0) follows
 the pattern this codebase has used elsewhere — 0.3.0 → 0.4.0 (read
@@ -601,7 +774,7 @@ are unchanged from 0.7.0:
 
 ## [0.7.0] - 2026-04-25
 
-The HTTP API surface for the tenancy data model. v0.5.0
+The HTTP API surface for the tenancy-service data model. v0.5.0
 shipped the data model and central authz function; v0.6.0 shipped
 the Cloudflare D1 adapters and made `users` tenant-aware; v0.7.0
 ships the routes operators use to drive that machinery from the
@@ -635,7 +808,7 @@ outside.
     at archived (`active = false`) plans. Every plan / status
     change appends a `subscription_history` entry.
 
-- **27 routes wired** into `lib.rs` under a `// --- Tenancy
+- **27 routes wired** into `lib.rs` under a `// --- Tenancy-service
   API (v0.7.0)` block, contiguous with the existing
   `/admin/console/...` routes.
 
@@ -734,7 +907,7 @@ outside.
 
 ## [0.6.0] - 2026-04-25
 
-The runtime backing for v0.5.0's tenancy data model.
+The runtime backing for v0.5.0's tenancy-service data model.
 Implements the Cloudflare D1 adapters for every port the 0.5.0 core
 defined, and migrates the existing `users` table to be tenant-aware.
 Routes / multi-tenant admin console / login-tenant resolution remain
@@ -836,9 +1009,9 @@ deferred (see "Deferred" below).
 
 ## [0.5.0] - 2026-04-25
 
-The tenancy foundation. Implements the data model and core
+The tenancy-service foundation. Implements the data model and core
 authorization engine from
-`cesauth-Tenancy 化可能な構成への拡張開発指示書.md` §3-§5 and §16.1,
+`cesauth-tenancy-service-extension-spec.md` §3-§5 and §16.1,
 §16.3, §16.6. Routes / UI / multi-tenant admin console are deferred
 to 0.6.0 by design (see "Deferred" below).
 

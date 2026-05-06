@@ -24,6 +24,6 @@
 pub mod auth;
 pub mod console;
 pub mod legacy;
-pub mod saas;
+pub mod tenancy_console;
 
 pub use legacy::{create_user, revoke_session};

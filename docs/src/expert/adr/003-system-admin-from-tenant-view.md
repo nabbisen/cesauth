@@ -2,14 +2,14 @@
 
 **Status**: Accepted (v0.11.0)
 **Decision**: Complete URL-prefix separation — no in-page mode
-switch. `/admin/saas/*` is system-admin; `/admin/t/<slug>/*` is
+switch. `/admin/tenancy/*` is system-admin; `/admin/t/<slug>/*` is
 tenant-admin; the two surfaces never interleave.
 **Rejected**: In-page "switch to operator mode" affordance with
 re-authentication.
 
 ## Context
 
-The v0.12.0+ tenant-scoped admin surface needs to handle the
+The v0.13.0+ tenant-scoped admin surface needs to handle the
 case where a system-admin (the cesauth deployment's operator
 staff) is administering a tenant. Two natural ways to express
 this:
@@ -22,11 +22,11 @@ this:
    level operations on this tenant (e.g., suspend the whole
    tenant, change its plan, change its status) without leaving
    the page.
-2. **Complete URL-prefix separation.** `/admin/saas/*` is the
+2. **Complete URL-prefix separation.** `/admin/tenancy/*` is the
    system-admin surface (everything cesauth has built since
    v0.8.0). `/admin/t/<slug>/*` is the tenant-admin surface.
    No mode switch. To do system-admin work, you visit
-   `/admin/saas/...`. Done.
+   `/admin/tenancy/...`. Done.
 
 ## Decision
 
@@ -35,7 +35,7 @@ Option 2: complete URL-prefix separation.
 A system-admin who wants to administer a tenant has two clear
 choices:
 
-- Use the system-admin console at `/admin/saas/tenants/:tid` —
+- Use the system-admin console at `/admin/tenancy/tenants/:tid` —
   the existing v0.8.0-0.10.0 surface. Has access to every
   tenant via the existing role-gate.
 - Use the tenant-admin console at `/admin/t/<slug>/...` *as that
@@ -66,13 +66,15 @@ URL prefix. They are physically separate.
 
 - **Audit trails are unambiguous.** The audit log already
   includes the actor's `principal.id`. Adding a "via=tenant-
-  admin-console" marker (paralleling the existing "via=saas-
-  console" from v0.9.0) gives clean post-hoc separation: which
-  surface was used to perform the action. With a mode switch,
-  the same `principal.id` would alternate between meanings
-  depending on a transient flag we'd have to capture in audit.
+  admin-console" marker (paralleling the existing
+  "via=tenancy-console" from v0.9.0, which was named
+  "via=saas-console" before the v0.12.0 rename) gives clean
+  post-hoc separation: which surface was used to perform the
+  action. With a mode switch, the same `principal.id` would
+  alternate between meanings depending on a transient flag
+  we'd have to capture in audit.
 
-- **Routing is straightforward.** `/admin/saas/*` and
+- **Routing is straightforward.** `/admin/tenancy/*` and
   `/admin/t/:slug/*` are distinct path patterns. The router
   matches them independently. No ambiguity, no precedence
   rules.
@@ -82,7 +84,7 @@ URL prefix. They are physically separate.
 - **The system-admin who wants to suspend a tenant has to
   navigate to a different URL.** From inside `/admin/t/acme/`,
   the link to "suspend this tenant" leads them out to
-  `/admin/saas/tenants/:tid/status`. This is one extra click
+  `/admin/tenancy/tenants/:tid/status`. This is one extra click
   (or one bookmark, or one terminal tab). Not a real cost.
 
 - **No future evolution for an "embedded operator banner."**
@@ -96,22 +98,22 @@ URL prefix. They are physically separate.
 - **A user with both system and tenant roles needs two
   tokens.** A cesauth employee who is also a tenant member
   (which is unlikely but possible — e.g., dogfooding) would
-  use their system token at `/admin/saas/*` and a separate
+  use their system token at `/admin/tenancy/*` and a separate
   user-as-bearer token at `/admin/t/<their-tenant>/*`. We
   expect this to be rare; the alternative (one token, two
   surfaces) introduces the leak risk we're avoiding.
 
 ### What we explicitly didn't decide
 
-- **Whether `/admin/saas/*` will ever be reachable by a
+- **Whether `/admin/tenancy/*` will ever be reachable by a
   user-as-bearer principal.** Answer in spirit: no. A user-
   bearer-token's `role` is whatever was issued, but the
-  `/admin/saas/*` surface checks `AdminAction::ManageTenancy`
+  `/admin/tenancy/*` surface checks `AdminAction::ManageTenancy`
   *and* doesn't read `user_id` — so a tenant admin with a
   user-bearer token and `Operations` role would technically
   pass the role check. Whether the resolution layer should
-  *additionally* refuse user-bearer tokens on `/admin/saas/*`
-  is a 0.12.0 implementation detail. Conservatively, yes —
+  *additionally* refuse user-bearer tokens on `/admin/tenancy/*`
+  is a 0.13.0 implementation detail. Conservatively, yes —
   user-bearer tokens are scoped to their tenant view.
 - **How tenant admins discover system-admin contact.** A
   tenant admin who needs system intervention has to email/
@@ -145,7 +147,7 @@ We rejected it because:
 ### Single console with role-conditional rendering (rejected)
 
 Don't separate the surfaces at all — render
-`/admin/saas/tenants/:tid` for everyone, and conditionally
+`/admin/tenancy/tenants/:tid` for everyone, and conditionally
 render mutation buttons based on whether the caller is
 system-admin or tenant-admin.
 
@@ -167,12 +169,12 @@ The system-admin onboarding doc (currently
 `docs/src/expert/tenancy.md`) gets a brief note:
 
 > System-admins administering a tenant continue to use
-> `/admin/saas/*`. The tenant-scoped console at
+> `/admin/tenancy/*`. The tenant-scoped console at
 > `/admin/t/<slug>/*` is *not* an alternative entry point for
 > them — it's the surface tenant-admins use. The two consoles
 > never interleave.
 
-This deters the natural assumption that a v0.12.0 tenant-admin
+This deters the natural assumption that a v0.13.0 tenant-admin
 console would replace, or be a more powerful version of, the
 v0.8.0-0.10.0 system-admin console.
 
