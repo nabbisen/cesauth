@@ -1,6 +1,6 @@
 # RFC 006: CSP without `'unsafe-inline'` (per-request nonces)
 
-**Status**: Ready
+**Status**: Implemented (v0.52.0)
 **ROADMAP**: `## Planned (0.x) / Later` — "CSP without `'unsafe-inline'`"
 **ADR**: ADR-007 §Q3 documents the v0.23.0 limitation
 **Estimated scope**: Medium — touches every HTML template render path; ~400 LOC + significant test churn

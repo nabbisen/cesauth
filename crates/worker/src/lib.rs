@@ -430,7 +430,7 @@ mod security_headers {
     //! way to opt out, by design.
 
     use cesauth_core::security_headers::{
-        headers_for_response, is_html_content_type, SecurityHeadersConfig,
+        CspNonce, headers_for_response, is_html_content_type, SecurityHeadersConfig,
     };
     use worker::{Env, Response};
 
@@ -448,10 +448,21 @@ mod security_headers {
 
     /// Apply the security-headers middleware to one response.
     /// Reads env, inspects response, writes additional headers.
-    /// Returns the (mutated) response.
+    ///
+    /// **v0.52.0 (RFC 006)**: for HTML responses, generates a
+    /// per-request `CspNonce`, sets it on the `cesauth_ui` renderer
+    /// via `cesauth_ui::set_render_nonce`, and injects it into the
+    /// `Content-Security-Policy` header. This drops `'unsafe-inline'`
+    /// from the CSP for all HTML responses.
+    ///
+    /// Note: `apply` is called **after** the route handler already
+    /// rendered the HTML body via `set_render_nonce` in the handler.
+    /// For nonce / CSP to be consistent the nonce must be generated
+    /// before the template render and re-used here for the header.
+    /// This function reads the nonce back from `cesauth_ui::render_nonce()`
+    /// rather than generating a new one.
     pub fn apply(mut resp: Response, env: &Env) -> Response {
-        // Build the config from env. `var()` returns Result;
-        // None means the env var is unset.
+        // Build the config from env.
         let csp_override = env.var("SECURITY_HEADERS_CSP").ok().map(|v| v.to_string());
         let sts_override = env.var("SECURITY_HEADERS_STS").ok().map(|v| v.to_string());
         let disable_value = env.var("SECURITY_HEADERS_DISABLE_HTML_ONLY")
@@ -463,15 +474,20 @@ mod security_headers {
             disable_value.as_deref(),
         );
 
-        // Determine HTML-ness from the response's existing
-        // Content-Type.
         let content_type = resp.headers().get("Content-Type").ok().flatten();
         let is_html = is_html_content_type(content_type.as_deref());
 
-        // Find which security headers the route handler already
-        // set. The Headers API doesn't expose iteration over all
-        // names; we probe each candidate explicitly. The list is
-        // bounded and short.
+        // For HTML responses, read the nonce that was set by the route
+        // handler before it called the template render. If the nonce is
+        // empty (non-HTML path, or a handler that didn't set it), the
+        // CSP builder falls back to the config value unchanged.
+        let nonce_str = cesauth_ui::render_nonce();
+        let nonce = if !nonce_str.is_empty() {
+            Some(CspNonce::from_str(&nonce_str))
+        } else {
+            None
+        };
+
         let already_set: Vec<&str> = CANDIDATE_HEADER_NAMES
             .iter()
             .filter(|name| {
@@ -480,12 +496,8 @@ mod security_headers {
             .copied()
             .collect();
 
-        // Compute the headers to apply.
-        let to_apply = headers_for_response(&config, is_html, &already_set);
+        let to_apply = headers_for_response(&config, is_html, &already_set, nonce.as_ref());
 
-        // Write them. `set` overwrites any existing value of the
-        // same name, but the library has already filtered against
-        // `already_set` so we won't clobber.
         let h = resp.headers_mut();
         for header in to_apply {
             let _ = h.set(header.name, &header.value);

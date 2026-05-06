@@ -1,4 +1,4 @@
-//! Tenancy operator console (introduced v0.8.0, current as of v0.51.2).
+//! Tenancy operator console (introduced v0.8.0, current as of v0.50.2).
 //!
 //! HTML view of the v0.4.x tenancy-service state for the cesauth
 //! deployment's operator staff. Sits at `/admin/tenancy/*`, parallel

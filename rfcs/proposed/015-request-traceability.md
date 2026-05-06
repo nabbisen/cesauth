@@ -1,6 +1,6 @@
 # RFC 015: Request traceability — correlation ID + lifecycle log + audit cross-link
 
-**Status**: Ready
+**Status**: Proposed
 **ROADMAP**: External review follow-up — operator question on logging completeness and traceability
 **ADR**: This RFC produces ADR-018 documenting (a) the correlation-ID design, (b) the deliberate absence of a file-writing logger
 **Severity**: **P2 — operability gap; not security-blocking but materially impedes incident response**

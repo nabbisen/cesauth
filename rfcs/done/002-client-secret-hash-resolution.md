@@ -1,6 +1,6 @@
 # RFC 002: `oidc_clients.client_secret_hash` documentation drift resolution
 
-**Status**: Ready
+**Status**: Implemented (v0.51.0)
 **ROADMAP**: `## Planned (0.x) / Later` — "`oidc_clients.client_secret_hash` documentation drift"
 **ADR**: N/A (decision is small enough to settle inline)
 **Estimated scope**: Small — schema comment edit + ~50 LOC verification helper + 4 tests, OR ~150 LOC Argon2 implementation + 8 tests, depending on path chosen

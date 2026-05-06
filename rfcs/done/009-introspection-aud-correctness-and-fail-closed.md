@@ -1,6 +1,6 @@
 # RFC 009: Introspection access-token `aud` correctness + audience-gate fail-closed
 
-**Status**: Ready
+**Status**: Implemented (v0.50.3)
 **ROADMAP**: External codebase review v0.50.1 — High + High findings
 **ADR**: ADR-014 (Token introspection); §Q1 was marked Resolved in v0.50.0 but the underlying introspection was already broken on access tokens — this RFC closes the gap and tightens §Q1's gate
 **Severity**: **P0 + P1 — ship in same release as RFCs 008, 010**

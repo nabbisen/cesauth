@@ -1,6 +1,6 @@
 # RFC 005: `cargo fuzz` for the JWT parser surface
 
-**Status**: Ready
+**Status**: Implemented (v0.51.2)
 **ROADMAP**: `## Planned (0.x) / Next minor releases` — "`cargo fuzz` for the JWT parser surface"
 **ADR**: N/A
 **Estimated scope**: Small — one fuzz target, one GH Actions one-shot job, ~80 LOC

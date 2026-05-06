@@ -1,6 +1,6 @@
 # RFC 016: Admin scope badge — system vs tenant visible everywhere
 
-**Status**: Ready
+**Status**: Proposed
 **ROADMAP**: External UI/UX design update v0.50.1 — page 8 ("Admin Surfaces")
 **ADR**: N/A (small surface change)
 **Severity**: **P2 — defense-in-depth UX; not security-critical, but reduces operator-error class**

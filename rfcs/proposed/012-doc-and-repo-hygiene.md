@@ -1,6 +1,6 @@
 # RFC 012: Documentation and repo hygiene — README drift, `migrate.rs` split, dev directive corrections
 
-**Status**: Ready
+**Status**: Proposed
 **ROADMAP**: External codebase review v0.50.1 — Medium / Low findings on README drift, migrate.rs size, dev directive drift, comment staleness
 **ADR**: N/A
 **Severity**: **P2 — quality and reviewability; ship after v0.50.2 production-blocker sweep**

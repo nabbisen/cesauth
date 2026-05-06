@@ -272,6 +272,7 @@ fn frame(title: &str, body: &str) -> String {
 /// at the top of `<main>`. `flash_html` should typically come from
 /// [`flash_block`]; an empty string yields a flash-less page.
 fn frame_with_flash(title: &str, flash_html: &str, body: &str) -> String {
+    let nonce = crate::render_nonce();
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -279,7 +280,7 @@ fn frame_with_flash(title: &str, flash_html: &str, body: &str) -> String {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{title}</title>
-  <style>{css}</style>
+  <style nonce="{nonce}">{css}</style>
 </head>
 <body>
 <main>
@@ -292,6 +293,7 @@ fn frame_with_flash(title: &str, flash_html: &str, body: &str) -> String {
 "#,
         title = escape(title),
         css   = BASE_CSS,
+        nonce = nonce,
         flash = flash_html,
         body  = body,
     )
@@ -332,6 +334,7 @@ pub fn login_page_for(
     locale:            cesauth_core::i18n::Locale,
 ) -> String {
     use cesauth_core::i18n::{lookup, MessageKey};
+    let nonce = crate::render_nonce();
 
     let err_region = match error {
         Some(msg) => format!(
@@ -395,7 +398,7 @@ pub fn login_page_for(
   <button type="submit" class="secondary">{email_button}</button>
 </form>
 
-<script defer>
+<script defer nonce="{nonce}">
 (async () => {{
   const btn = document.getElementById("passkey-btn");
   const err = document.querySelector(".error[role='alert']");
@@ -476,6 +479,7 @@ pub fn login_page_for(
         csrf               = escape(csrf_token),
         turnstile_script   = turnstile_script,
         turnstile_widget   = turnstile_widget,
+        nonce              = nonce,
     );
 
     frame(lookup(MessageKey::LoginPageTitleHtml, locale), &body)

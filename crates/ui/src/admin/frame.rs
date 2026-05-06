@@ -79,6 +79,7 @@ pub fn admin_frame(
     active_tab:  Tab,
     body:        &str,
 ) -> String {
+    let nonce = crate::render_nonce();
     let title_esc = escape(title);
     let role_label = role.label();
     let role_badge = match role {
@@ -107,7 +108,7 @@ pub fn admin_frame(
 <meta charset="utf-8">
 <title>{title_esc} — cesauth admin</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
+<style nonce="{nonce}">
   :root {{
     --bg:       #fafafa;
     --fg:       #111;

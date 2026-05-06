@@ -1,6 +1,6 @@
 # RFC 017: OIDC client audience-scoping admin editor
 
-**Status**: Ready
+**Status**: Proposed
 **ROADMAP**: External UI/UX design update v0.50.1 — page 8 ("OIDC client editor"); closes the v0.50.0 "out-of-scope: admin UI for `oidc_clients.audience`" gap
 **ADR**: ADR-014 §Q1 (audience scoping shipped v0.50.0; admin UI was deferred)
 **Severity**: **P2 — operator-experience gap; v0.50.0 shipped the schema + gate but operators currently must run direct D1 SQL to use it**

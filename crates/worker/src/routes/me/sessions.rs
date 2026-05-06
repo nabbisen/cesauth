@@ -89,6 +89,20 @@ pub async fn get_handler<D>(req: Request, ctx: RouteContext<D>) -> Result<Respon
     let flash_view = flash_msg.map(|f| flash::render_view_for(f, locale));
     let flash_html = cesauth_ui::templates::flash_block(flash_view);
 
+
+    // **v0.52.0 (RFC 006)** — generate per-request CSP nonce and register
+    // it with the UI render layer before calling any template function.
+    let csp_nonce = match cesauth_core::security_headers::CspNonce::generate() {
+        Ok(n) => n,
+        Err(_) => {
+            crate::audit::write_owned(
+                &ctx.env, crate::audit::EventKind::CsrfRngFailure,
+                None, None, Some("csp_nonce_failure".to_owned()),
+            ).await.ok();
+            return Response::error("service temporarily unavailable", 500);
+        }
+    };
+    cesauth_ui::set_render_nonce(csp_nonce.as_str());
     let html = sessions_page_for(&items, &token, &flash_html, locale);
     let mut resp = Response::from_html(html)?;
     if let Some(h) = set_cookie {

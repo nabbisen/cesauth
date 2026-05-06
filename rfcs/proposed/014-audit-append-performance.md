@@ -1,6 +1,6 @@
 # RFC 014: Audit append performance — D1 contention under high-rate events
 
-**Status**: Ready
+**Status**: Proposed
 **ROADMAP**: External codebase review v0.50.1 — P2 audit-append D1 contention
 **ADR**: This RFC produces ADR-017 if a redesign (Path B) is chosen; Path A documents the trade-off and accepts current design with telemetry instrumentation
 **Severity**: **P2 — performance / scalability; ship after operational telemetry confirms it's a real problem**

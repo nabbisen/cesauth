@@ -57,6 +57,7 @@ pub fn tenancy_console_frame(
     active_tab: TenancyConsoleTab,
     body:       &str,
 ) -> String {
+    let nonce = crate::render_nonce();
     let title_esc  = escape(title);
     let role_label = role.label();
     let role_badge = match role {
@@ -84,7 +85,7 @@ pub fn tenancy_console_frame(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{title_esc} — cesauth tenancy console</title>
-  <style>
+  <style nonce="{nonce}">
     body {{ font-family: system-ui, -apple-system, sans-serif; margin: 0; color: #222; }}
     header {{ background: #2c3e50; color: #fff; padding: 12px 24px; display: flex; align-items: baseline; gap: 16px; }}
     header h1 {{ margin: 0; font-size: 1.2em; }}
@@ -135,7 +136,7 @@ pub fn tenancy_console_frame(
     <h2>{title_esc}</h2>
 {body}
   </main>
-  <footer>cesauth tenancy console — v0.51.2 (full mutation surface for Operations+)</footer>
+  <footer>cesauth tenancy console — v0.50.2 (full mutation surface for Operations+)</footer>
 </body>
 </html>"##,
         name_html = if name_esc.is_empty() {

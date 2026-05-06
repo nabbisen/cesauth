@@ -1,6 +1,6 @@
 # RFC 011: Worker-layer hardening — CSRF RNG, env validation, duplicate routes, duplicate ADR file
 
-**Status**: Ready
+**Status**: Implemented (v0.50.3)
 **ROADMAP**: External codebase review v0.50.1 — P1 + P2 worker hardening
 **ADR**: N/A (each item is small enough to settle inline)
 **Severity**: **P1 + P2 — ship in the next release after the v0.50.2 production-blocker sweep, or ride along if PR review bandwidth allows**

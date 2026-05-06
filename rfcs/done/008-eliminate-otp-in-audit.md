@@ -1,6 +1,6 @@
 # RFC 008: Eliminate plaintext OTP in audit log
 
-**Status**: Ready
+**Status**: Implemented (v0.50.3)
 **ROADMAP**: External codebase review v0.50.1 — Critical finding
 **ADR**: N/A (the fix is mechanical; the boundary it enforces is settled by the existing `audit::write_*` invariant)
 **Severity**: **P0 — production blocker**

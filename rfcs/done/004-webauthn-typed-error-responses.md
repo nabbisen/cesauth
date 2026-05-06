@@ -1,6 +1,6 @@
 # RFC 004: WebAuthn error → typed client responses
 
-**Status**: Ready
+**Status**: Implemented (v0.51.1)
 **ROADMAP**: `## Planned (0.x) / Next minor releases` — "WebAuthn error → typed client responses"
 **ADR**: N/A
 **Estimated scope**: Small — new enum + error mapping + 8 tests + JSON wire field, ~150 LOC

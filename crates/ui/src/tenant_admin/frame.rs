@@ -91,6 +91,7 @@ pub fn tenant_admin_frame(
     active_tab:          TenantAdminTab,
     body:                &str,
 ) -> String {
+    let nonce = crate::render_nonce();
     let title_esc        = escape(title);
     let slug_esc         = escape(tenant_slug);
     let tenant_name_esc  = escape(tenant_display_name);
@@ -124,7 +125,7 @@ pub fn tenant_admin_frame(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{title_esc} — {tenant_name_esc} — cesauth tenant admin</title>
-  <style>
+  <style nonce="{nonce}">
     body {{ font-family: system-ui, -apple-system, sans-serif; margin: 0; color: #222; }}
     header {{ background: #1e3a5f; color: #fff; padding: 12px 24px; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }}
     header h1 {{ margin: 0; font-size: 1.2em; }}
@@ -168,7 +169,7 @@ pub fn tenant_admin_frame(
     <h2>{title_esc}</h2>
 {body}
   </main>
-  <footer>cesauth tenant admin — v0.51.2 (mutations + affordance gating)</footer>
+  <footer>cesauth tenant admin — v0.50.2 (mutations + affordance gating)</footer>
 </body>
 </html>"##,
         name_html = if name_esc.is_empty() {

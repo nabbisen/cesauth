@@ -1,6 +1,6 @@
 # RFC 003: Property-based tests for crypto round-trips and `redirect_uri` matcher
 
-**Status**: Ready
+**Status**: Implemented (v0.51.1)
 **ROADMAP**: `## Planned (0.x) / Next minor releases` — "Property-based tests (`proptest`)"
 **ADR**: N/A
 **Estimated scope**: Small — 2 dev-dep additions, ~250 LOC test code, no production-code change

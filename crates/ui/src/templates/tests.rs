@@ -13,8 +13,11 @@ use super::*;
 /// `<head>`, and missing the closing tag would itself be a
 /// rendering bug worth catching elsewhere.
 fn strip_inline_style(html: &str) -> String {
-    if let (Some(start), Some(end_rel)) = (html.find("<style>"), html.find("</style>")) {
-        let end = end_rel + "</style>".len();
+    // v0.52.0: style tags may have `nonce="..."` attribute (RFC 006).
+    // Find the opening <style...> tag and closing </style>.
+    let style_start = html.find("<style").or_else(|| html.find("<style>"));
+    let style_end   = html.find("</style>").map(|i| i + "</style>".len());
+    if let (Some(start), Some(end)) = (style_start, style_end) {
         if end > start {
             let mut out = String::with_capacity(html.len());
             out.push_str(&html[..start]);
@@ -1456,4 +1459,60 @@ fn primary_auth_method_label_for_renders_each_locale() {
     assert_eq!(MagicLink.label_for(Locale::En), "Magic Link");
     assert_eq!(Anonymous.label_for(Locale::Ja), "匿名トライアル");
     assert_eq!(Anonymous.label_for(Locale::En), "Anonymous trial");
+}
+
+// =====================================================================
+// RFC 006 (v0.52.0) — nonce injection tests
+// =====================================================================
+
+#[test]
+fn login_page_for_emits_nonce_attribute_on_inline_style() {
+    crate::set_render_nonce("test_nonce_abc");
+    let html = login_page_for("csrf", None, None, cesauth_core::i18n::Locale::default());
+    assert!(html.contains(r#"nonce="test_nonce_abc""#),
+        "inline <style> must carry the per-request nonce attribute: {html}");
+}
+
+#[test]
+fn login_page_for_emits_nonce_attribute_on_inline_script() {
+    crate::set_render_nonce("test_nonce_abc");
+    let html = login_page_for("csrf", None, None, cesauth_core::i18n::Locale::default());
+    assert!(html.contains(r#"<script defer nonce="test_nonce_abc""#),
+        "inline <script> must carry the per-request nonce attribute: {html}");
+}
+
+#[test]
+fn login_page_for_does_not_emit_inline_event_handler() {
+    crate::set_render_nonce("test_nonce_xyz");
+    let html = login_page_for("csrf", None, None, cesauth_core::i18n::Locale::default());
+    assert!(!html.contains("onclick="),
+        "login page must not use inline event handlers (CSP audit): {html}");
+    assert!(!html.contains("onload="),
+        "login page must not use inline event handlers (CSP audit): {html}");
+}
+
+#[test]
+fn frame_with_flash_emits_nonce_in_style_tag() {
+    crate::set_render_nonce("nonce_frame_test");
+    // Call any function that goes through frame_with_flash
+    let html = error_page("oops", "detail");
+    assert!(html.contains(r#"nonce="nonce_frame_test""#),
+        "frame_with_flash must embed nonce in <style>: {html}");
+}
+
+#[test]
+fn different_render_calls_use_their_own_nonce() {
+    // Nonce set to A → render → nonce should be A
+    crate::set_render_nonce("nonce_AAA");
+    let html_a = error_page("a", "d");
+    assert!(html_a.contains(r#"nonce="nonce_AAA""#),
+        "first render must use nonce AAA");
+
+    // Nonce set to B → render → nonce should be B
+    crate::set_render_nonce("nonce_BBB");
+    let html_b = error_page("b", "d");
+    assert!(html_b.contains(r#"nonce="nonce_BBB""#),
+        "second render must use nonce BBB");
+    assert!(!html_b.contains("nonce_AAA"),
+        "second render must not leak first nonce");
 }

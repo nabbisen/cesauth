@@ -1,6 +1,6 @@
 # RFC 010: Magic Link real delivery — mailer port + provider adapters
 
-**Status**: Ready
+**Status**: Implemented (v0.51.0)
 **ROADMAP**: External codebase review v0.50.1 — High finding (Magic Link production-incomplete)
 **ADR**: This RFC produces ADR-015 alongside the implementation; the architectural decision (port shape, audit boundary, provider adapter pattern) is non-trivial enough to warrant ADR-level documentation
 **Severity**: **P0 — structural fix that allows RFC 008 to stay fixed**

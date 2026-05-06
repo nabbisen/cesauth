@@ -8,14 +8,62 @@
 //! The module purposely ships **zero** template engine dependencies.
 //! The pages are small; `format!` is obvious; there is no upside to
 //! pulling in askama or handlebars for something this size.
+//!
+//! ## v0.52.0 — CSP nonce (RFC 006)
+//!
+//! cesauth injects a per-request, CSPRNG-generated nonce into every
+//! inline `<style>` and `<script>` tag so the Content-Security-Policy
+//! can drop `'unsafe-inline'`. The nonce is stored in a `thread_local!`
+//! (a per-Isolate static in the Cloudflare Workers WASM runtime) so the
+//! public template API does not change:
+//!
+//! ```rust,ignore
+//! // Worker handler — before rendering any HTML:
+//! let nonce = cesauth_core::security_headers::CspNonce::generate()?;
+//! cesauth_ui::set_render_nonce(nonce.as_str());
+//! let html = cesauth_ui::templates::login_page_for(csrf, err, sk, locale);
+//! // The inline <style> in the rendered HTML carries nonce="<value>".
+//! ```
 
 #![forbid(unsafe_code)]
 #![warn(missing_debug_implementations, rust_2018_idioms)]
+
+use std::cell::RefCell;
 
 pub mod admin;
 pub mod tenancy_console;
 pub mod tenant_admin;
 pub mod templates;
+
+// ── Per-request nonce store ──────────────────────────────────────────
+//
+// Cloudflare Workers uses a single WASM isolate per request (v8 Isolate
+// — not an OS thread). `thread_local!` in `wasm32-unknown-unknown` is
+// implemented as a regular static + cell, so it behaves as a per-request
+// global within the isolate. It is safe to use here.
+
+thread_local! {
+    static RENDER_NONCE: RefCell<String> = RefCell::new(String::new());
+}
+
+/// Set the CSP nonce for the current render pass.
+///
+/// Call once per HTML response, **before** calling any template function.
+/// Uses a `thread_local!` which is per-Isolate in Cloudflare Workers
+/// (single-threaded WASM runtime) — safe to call and read within one
+/// request handler.
+pub fn set_render_nonce(nonce: &str) {
+    RENDER_NONCE.with(|n| *n.borrow_mut() = nonce.to_owned());
+}
+
+/// Read the CSP nonce set for this render pass.
+///
+/// Returns an empty string if `set_render_nonce` was not called yet
+/// (which is fine for non-HTML responses or for the `'unsafe-inline'`
+/// fallback path before v0.52.0 is fully deployed).
+pub fn render_nonce() -> String {
+    RENDER_NONCE.with(|n| n.borrow().clone())
+}
 
 /// Minimal HTML attribute-value escaper. Covers the five characters
 /// that must be escaped inside an attribute or text node.

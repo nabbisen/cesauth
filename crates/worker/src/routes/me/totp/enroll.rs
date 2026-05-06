@@ -155,6 +155,19 @@ pub async fn get_handler(
     req: Request,
     env: worker::Env,
 ) -> Result<Response> {
+    // RFC 006 (v0.52.0): per-request CSP nonce
+    let csp_nonce = match cesauth_core::security_headers::CspNonce::generate() {
+        Ok(n) => n,
+        Err(_) => {
+            crate::audit::write_owned(
+                &ctx.env, crate::audit::EventKind::CsrfRngFailure,
+                None, None, Some("csp_nonce_failure".to_owned()),
+            ).await.ok();
+            return Response::error("service temporarily unavailable", 500);
+        }
+    };
+    cesauth_ui::set_render_nonce(csp_nonce.as_str());
+
     let session = match me_auth::resolve_or_redirect(&req, &env).await? {
         Ok(s)  => s,
         Err(r) => return Ok(r),

@@ -117,6 +117,17 @@ started.
 
 ### Next minor releases
 
+- ✅ **v0.52.0 — RFC 006 + RFC 019 (CSP nonces + RFC lifecycle policy).**
+  Minor bump because RFC 006 changes the observable CSP header for all HTML
+  responses. `CspNonce` type + `build_csp_with_nonce` in cesauth-core.
+  `set_render_nonce` / `render_nonce` thread-local in cesauth-ui (no public
+  API change). Per-request nonce injected into all inline `<style>` and
+  `<script defer>` tags via 5 frame functions. Worker HTML handlers generate
+  nonce and call `set_render_nonce` before rendering. Per-route CSP strings:
+  `'unsafe-inline'` → `'nonce-{n}'`. 15 core + 5 UI nonce tests. 859 tests
+  pass. RFC 019: `rfcs/` 4-folder lifecycle structure (proposed/ / done/ /
+  archive/), written policy in done/019-rfc-lifecycle-policy.md.
+
 - ✅ **v0.51.2 — RFC 005 (`cargo fuzz` for JWT parser).**
   Patch release. `fuzz/` crate (NOT workspace member) + one fuzz target
   (`jwt_parse`) exercising `verify` and `verify_for_introspect` under

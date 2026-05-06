@@ -36,6 +36,20 @@ pub async fn login<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let sitekey = Some(cfg.turnstile_sitekey.as_str()).filter(|s| !s.is_empty());
     // v0.39.0: negotiate locale from Accept-Language.
     let locale = crate::i18n::resolve_locale(&req);
+
+    // **v0.52.0 (RFC 006)** — generate per-request CSP nonce and register
+    // it with the UI render layer before calling any template function.
+    let csp_nonce = match cesauth_core::security_headers::CspNonce::generate() {
+        Ok(n) => n,
+        Err(_) => {
+            crate::audit::write_owned(
+                &ctx.env, crate::audit::EventKind::CsrfRngFailure,
+                None, None, Some("csp_nonce_failure".to_owned()),
+            ).await.ok();
+            return Response::error("service temporarily unavailable", 500);
+        }
+    };
+    cesauth_ui::set_render_nonce(csp_nonce.as_str());
     let html = cesauth_ui::templates::login_page_for(&csrf_token, None, sitekey, locale);
 
     // Read ?next= and decide whether to set the login_next cookie.
@@ -62,25 +76,14 @@ pub async fn login<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     // - both script and iframe. When Turnstile isn't configured, we
     //   keep the narrower policy so the cross-origin allowances aren't
     //   handed out for free.
+    let csp_n = csp_nonce.as_str();
     let csp = if sitekey.is_some() {
-        "default-src 'self'; \
-         script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; \
-         frame-src https://challenges.cloudflare.com; \
-         connect-src 'self'; \
-         style-src 'self' 'unsafe-inline'; \
-         base-uri 'none'; \
-         frame-ancestors 'none'; \
-         form-action 'self'"
+        format!("default-src 'self';          script-src 'self' 'nonce-{n}' https://challenges.cloudflare.com;          frame-src https://challenges.cloudflare.com;          connect-src 'self';          style-src 'self' 'nonce-{n}';          base-uri 'none';          frame-ancestors 'none';          form-action 'self'", n = csp_n)
     } else {
-        "default-src 'self'; \
-         script-src 'self' 'unsafe-inline'; \
-         style-src 'self' 'unsafe-inline'; \
-         base-uri 'none'; \
-         frame-ancestors 'none'; \
-         form-action 'self'"
+        format!("default-src 'self';          script-src 'self' 'nonce-{n}';          style-src 'self' 'nonce-{n}';          base-uri 'none';          frame-ancestors 'none';          form-action 'self'", n = csp_n)
     };
     let h = resp.headers_mut();
-    let _ = h.set("content-security-policy", csp);
+    let _ = h.set("content-security-policy", &csp);
     // CSRF token cookie, scoped to the login form.
     let _ = h.set("set-cookie", &csrf::set_cookie_header(&csrf_token));
     if let Some(c) = next_cookie_header {

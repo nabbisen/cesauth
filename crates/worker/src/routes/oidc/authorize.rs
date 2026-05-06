@@ -183,23 +183,30 @@ pub async fn authorize<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
     let sitekey = Some(cfg.turnstile_sitekey.as_str()).filter(|s| !s.is_empty());
     // v0.39.0: negotiate locale for the login page rendering.
     let locale = crate::i18n::resolve_locale(&req);
+
+    // **v0.52.0 (RFC 006)** — generate per-request CSP nonce and register
+    // it with the UI render layer before calling any template function.
+    let csp_nonce = match cesauth_core::security_headers::CspNonce::generate() {
+        Ok(n) => n,
+        Err(_) => {
+            crate::audit::write_owned(
+                &ctx.env, crate::audit::EventKind::CsrfRngFailure,
+                None, None, Some("csp_nonce_failure".to_owned()),
+            ).await.ok();
+            return Response::error("service temporarily unavailable", 500);
+        }
+    };
+    cesauth_ui::set_render_nonce(csp_nonce.as_str());
     let html = cesauth_ui::templates::login_page_for(&csrf_token, None, sitekey, locale);
     let mut resp = Response::from_html(html)?;
     // Login page inlines a small script; set an appropriately tight CSP.
+    let csp_n = csp_nonce.as_str();
     let csp = if sitekey.is_some() {
-        "default-src 'self'; \
-         script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; \
-         frame-src https://challenges.cloudflare.com; \
-         connect-src 'self'; \
-         style-src 'self' 'unsafe-inline'; \
-         base-uri 'none'; frame-ancestors 'none'"
+        format!("default-src 'self';          script-src 'self' 'nonce-{n}' https://challenges.cloudflare.com;          frame-src https://challenges.cloudflare.com;          connect-src 'self';          style-src 'self' 'nonce-{n}';          base-uri 'none'; frame-ancestors 'none'", n = csp_n)
     } else {
-        "default-src 'self'; \
-         script-src 'self' 'unsafe-inline'; \
-         style-src 'self' 'unsafe-inline'; \
-         base-uri 'none'; frame-ancestors 'none'"
+        format!("default-src 'self';          script-src 'self' 'nonce-{n}';          style-src 'self' 'nonce-{n}';          base-uri 'none'; frame-ancestors 'none'", n = csp_n)
     };
-    let _ = resp.headers_mut().set("content-security-policy", csp);
+    let _ = resp.headers_mut().set("content-security-policy", &csp);
     // Attach the pending-authorize cookie + CSRF cookie. Multiple
     // Set-Cookie headers must each be appended (worker::Headers supports
     // this via `append`).

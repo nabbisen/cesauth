@@ -221,6 +221,19 @@ pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
     // csrf token is the existing cookie value (set by /login or
     // /authorize earlier in the flow).
     let csrf_for_form = cookie_csrf.as_deref().unwrap_or("");
+    // RFC 006 (v0.52.0): generate per-request CSP nonce
+    let csp_nonce = match cesauth_core::security_headers::CspNonce::generate() {
+        Ok(n) => n,
+        Err(_) => {
+            crate::audit::write_owned(
+                &ctx.env, crate::audit::EventKind::CsrfRngFailure,
+                None, None, Some("csp_nonce_failure".to_owned()),
+            ).await.ok();
+            return Response::error("service temporarily unavailable", 500);
+        }
+    };
+    cesauth_ui::set_render_nonce(csp_nonce.as_str());
+
     Response::from_html(
         cesauth_ui::templates::magic_link_sent_page_for(&handle, csrf_for_form, locale)
     )

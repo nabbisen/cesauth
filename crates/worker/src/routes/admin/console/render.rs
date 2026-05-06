@@ -47,18 +47,30 @@ pub fn prefers_json(req: &Request) -> bool {
 ///   * a CSP that forbids `script-src` entirely and pins `style-src`
 ///     to self + inline
 pub fn html_response(body: String) -> Result<Response> {
+    // RFC 006 (v0.52.0): per-request CSP nonce
+    let csp_nonce = match cesauth_core::security_headers::CspNonce::generate() {
+        Ok(n) => n,
+        Err(_) => {
+            crate::audit::write_owned(
+                &ctx.env, crate::audit::EventKind::CsrfRngFailure,
+                None, None, Some("csp_nonce_failure".to_owned()),
+            ).await.ok();
+            return Response::error("service temporarily unavailable", 500);
+        }
+    };
+    cesauth_ui::set_render_nonce(csp_nonce.as_str());
     let mut resp = Response::from_html(body)?;
     let h = resp.headers_mut();
     let _ = h.set("cache-control", "no-store");
     let _ = h.set(
         "content-security-policy",
-        "default-src 'self'; \
+        format!("default-src 'self'; \
          script-src 'none'; \
-         style-src 'self' 'unsafe-inline'; \
+         style-src 'self' 'nonce-{n}'; \
          img-src 'self' data:; \
          form-action 'self'; \
          frame-ancestors 'none'; \
-         base-uri 'none'",
+         base-uri 'none'", n = csp_nonce.as_str()),
     );
     let _ = h.set("x-content-type-options", "nosniff");
     let _ = h.set("x-frame-options",        "DENY");

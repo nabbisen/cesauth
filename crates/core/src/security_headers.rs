@@ -36,6 +36,53 @@
 //! the Worker middleware populates from env. Pure config in,
 //! pure header list out.
 
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use getrandom::getrandom;
+
+/// A per-request, cryptographically unguessable CSP nonce.
+///
+/// Generated once per HTML response, injected into both the
+/// `Content-Security-Policy` header and every inline `<script>`/`<style>`
+/// tag in the template body. **Never cached; never reused across requests.**
+///
+/// 128 bits of entropy (16 bytes from CSPRNG, base64url-encoded = 22 chars).
+///
+/// **v0.52.0 (RFC 006)** — replaces `'unsafe-inline'` in script-src and
+/// style-src for all HTML responses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CspNonce(String);
+
+impl CspNonce {
+    /// Generate a fresh nonce from the platform CSPRNG.
+    /// Returns `Err` if `getrandom` fails (CSPRNG unavailable).
+    /// The caller must fail-closed on error — render 500 rather than
+    /// emit a response without a nonce (which would require falling back
+    /// to `unsafe-inline` and defeat the RFC 006 invariant).
+    pub fn generate() -> Result<Self, getrandom::Error> {
+        let mut bytes = [0u8; 16];
+        getrandom(&mut bytes)?;
+        Ok(Self(URL_SAFE_NO_PAD.encode(bytes)))
+    }
+
+    /// The raw base64url string — use in `<style nonce="...">` attributes
+    /// and in the CSP `'nonce-...'` expression.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// CSP expression: `'nonce-<value>'` (note the quotes —
+    /// this is the full token for insertion into the CSP value string).
+    pub fn csp_expression(&self) -> String {
+        format!("'nonce-{}'", self.0)
+    }
+
+    /// Construct from an existing nonce string (e.g. read from
+    /// `cesauth_ui::render_nonce()` in the security-headers middleware).
+    pub fn from_str(s: &str) -> Self {
+        Self(s.to_owned())
+    }
+}
+
 /// Config for the security-headers middleware. Populated by the
 /// Worker layer from `wrangler.toml` env vars; the pure
 /// construction code here is config-driven.
@@ -183,6 +230,11 @@ pub fn headers_for_response(
     config:      &SecurityHeadersConfig,
     is_html:     bool,
     already_set: &[&str],
+    // Per-request nonce for CSP injection (RFC 006, v0.52.0). Supply
+    // `Some(nonce)` for HTML responses; `None` for non-HTML.
+    // When present, injects `'nonce-<nonce>'` into the CSP value and
+    // removes `'unsafe-inline'`.
+    nonce:       Option<&CspNonce>,
 ) -> Vec<Header> {
     let is_already_set = |name: &str| -> bool {
         already_set.iter().any(|s| s.eq_ignore_ascii_case(name))
@@ -220,9 +272,10 @@ pub fn headers_for_response(
     // via operator escape hatch.
     if is_html && !config.disable_html_only {
         if !is_already_set("Content-Security-Policy") {
+            let csp_value = build_csp_with_nonce(&config.csp, nonce);
             out.push(Header {
                 name: "Content-Security-Policy",
-                value: config.csp.clone(),
+                value: csp_value,
             });
         }
         if !is_already_set("X-Frame-Options") {
@@ -440,7 +493,7 @@ mod tests {
     #[test]
     fn html_response_gets_full_set() {
         let c = SecurityHeadersConfig::default();
-        let h = headers_for_response(&c, true, &[]);
+        let h = headers_for_response(&c, true, &[], None);
         let n = names(&h);
         assert!(n.contains(&"X-Content-Type-Options"));
         assert!(n.contains(&"Referrer-Policy"));
@@ -454,7 +507,7 @@ mod tests {
     #[test]
     fn json_response_gets_universal_set_only() {
         let c = SecurityHeadersConfig::default();
-        let h = headers_for_response(&c, false, &[]);
+        let h = headers_for_response(&c, false, &[], None);
         let n = names(&h);
         assert!(n.contains(&"X-Content-Type-Options"));
         assert!(n.contains(&"Referrer-Policy"));
@@ -473,7 +526,7 @@ mod tests {
             disable_html_only: true,
             ..Default::default()
         };
-        let h = headers_for_response(&c, true, &[]);
+        let h = headers_for_response(&c, true, &[], None);
         let n = names(&h);
         assert!(n.contains(&"X-Content-Type-Options"));
         assert!(n.contains(&"Strict-Transport-Security"));
@@ -490,7 +543,7 @@ mod tests {
             sts: "test-sts-value".into(),
             disable_html_only: false,
         };
-        let h = headers_for_response(&c, true, &[]);
+        let h = headers_for_response(&c, true, &[], None);
         let csp = h.iter().find(|x| x.name == "Content-Security-Policy").unwrap();
         let sts = h.iter().find(|x| x.name == "Strict-Transport-Security").unwrap();
         assert_eq!(csp.value, "test-csp-value");
@@ -503,7 +556,7 @@ mod tests {
         // wants ALLOW-FROM, that's a per-tenant decision (not
         // currently scoped — see ADR-007 §Q6).
         let c = SecurityHeadersConfig::default();
-        let h = headers_for_response(&c, true, &[]);
+        let h = headers_for_response(&c, true, &[], None);
         let xfo = h.iter().find(|x| x.name == "X-Frame-Options").unwrap();
         assert_eq!(xfo.value, "DENY");
     }
@@ -515,8 +568,8 @@ mod tests {
         // assertions; future maintainers shouldn't sort or
         // shuffle.
         let c = SecurityHeadersConfig::default();
-        let h1 = headers_for_response(&c, true, &[]);
-        let h2 = headers_for_response(&c, true, &[]);
+        let h1 = headers_for_response(&c, true, &[], None);
+        let h2 = headers_for_response(&c, true, &[], None);
         assert_eq!(h1, h2);
     }
 
@@ -530,7 +583,7 @@ mod tests {
         // cesauth-worker DO use unsafe-inline currently; this
         // test only covers the library defaults.)
         let c = SecurityHeadersConfig::default();
-        for h in headers_for_response(&c, true, &[]) {
+        for h in headers_for_response(&c, true, &[], None) {
             assert!(!h.value.contains("unsafe-inline"),
                 "header {} contains unsafe-inline: {}", h.name, h.value);
             assert!(!h.value.contains("unsafe-eval"),
@@ -548,7 +601,7 @@ mod tests {
         // The login page sets its own CSP. The middleware must
         // not clobber it. Pin the contract.
         let c = SecurityHeadersConfig::default();
-        let h = headers_for_response(&c, true, &["Content-Security-Policy"]);
+        let h = headers_for_response(&c, true, &["Content-Security-Policy"], None);
         let n = names(&h);
         assert!(!n.contains(&"Content-Security-Policy"),
             "library must not re-emit CSP when route already set one");
@@ -564,14 +617,14 @@ mod tests {
         // handlers may set headers in any case (and worker
         // crates sometimes lowercase before storing).
         let c = SecurityHeadersConfig::default();
-        let h = headers_for_response(&c, true, &["content-security-policy"]);
+        let h = headers_for_response(&c, true, &["content-security-policy"], None);
         assert!(!names(&h).contains(&"Content-Security-Policy"));
 
-        let h = headers_for_response(&c, true, &["CONTENT-SECURITY-POLICY"]);
+        let h = headers_for_response(&c, true, &["CONTENT-SECURITY-POLICY"], None);
         assert!(!names(&h).contains(&"Content-Security-Policy"));
 
         // "X-Frame-Options" with weird case
-        let h = headers_for_response(&c, true, &["x-FRAME-options"]);
+        let h = headers_for_response(&c, true, &["x-FRAME-options"], None);
         assert!(!names(&h).contains(&"X-Frame-Options"));
     }
 
@@ -581,7 +634,7 @@ mod tests {
         // overwrite. (This is unusual but could happen for a
         // route that wants no-referrer-at-all.)
         let c = SecurityHeadersConfig::default();
-        let h = headers_for_response(&c, false, &["Referrer-Policy"]);
+        let h = headers_for_response(&c, false, &["Referrer-Policy"], None);
         let n = names(&h);
         assert!(!n.contains(&"Referrer-Policy"));
         // Other universal headers still come through.
@@ -595,8 +648,200 @@ mod tests {
         // A route that set "Set-Cookie" or "Cache-Control"
         // shouldn't have any effect on the security-header set.
         let c = SecurityHeadersConfig::default();
-        let h_clean   = headers_for_response(&c, true, &[]);
-        let h_unrel   = headers_for_response(&c, true, &["Set-Cookie", "Cache-Control"]);
+        let h_clean   = headers_for_response(&c, true, &[], None);
+        let h_unrel   = headers_for_response(&c, true, &["Set-Cookie", "Cache-Control"], None);
         assert_eq!(h_clean, h_unrel);
+    }
+}
+
+// =====================================================================
+// Internal nonce-injection helper
+// =====================================================================
+
+/// Build the final CSP value string by injecting the nonce into script-src
+/// and style-src, and removing `'unsafe-inline'` where the nonce makes it
+/// redundant (per CSP Level 2, browsers that support nonces ignore
+/// `'unsafe-inline'` anyway, but explicit removal is cleaner and closes the
+/// CSP Level 1 fallback gap).
+///
+/// Handles:
+/// - `{nonce}` placeholder in operator overrides (RFC 006 §env knob).
+/// - Direct injection into `script-src` and `style-src` directives when
+///   no placeholder is present.
+///
+/// When `nonce` is `None`, returns `csp` unchanged.
+fn build_csp_with_nonce(csp: &str, nonce: Option<&CspNonce>) -> String {
+    let Some(n) = nonce else { return csp.to_owned() };
+    let expr = n.csp_expression(); // e.g. "'nonce-abc123'"
+
+    // If operator used the {nonce} placeholder, substitute it and return.
+    if csp.contains("{nonce}") {
+        return csp.replace("{nonce}", n.as_str());
+    }
+
+    // Inject the nonce expression at the END of script-src and style-src
+    // directives (i.e. before the closing `;` or end of string) and remove
+    // any `'unsafe-inline'` that would defeat the nonce's purpose.
+    let mut result = csp.to_owned();
+    for directive in &["script-src", "style-src"] {
+        if let Some(dir_start) = result.find(directive) {
+            // Find the end of this directive: either the next `;` or end of string.
+            let search_from = dir_start + directive.len();
+            let dir_end = result[search_from..]
+                .find(';')
+                .map(|rel| search_from + rel)
+                .unwrap_or(result.len());
+            // Append nonce before the semicolon / end.
+            result.insert_str(dir_end, &format!(" {expr}"));
+        }
+    }
+    // Remove 'unsafe-inline' — nonce supersedes it.
+    result = result.replace(" 'unsafe-inline'", "");
+    result = result.replace("'unsafe-inline' ", "");
+    result = result.replace("'unsafe-inline'", "");
+    result
+}
+
+// =====================================================================
+// RFC 006 (v0.52.0) — CspNonce tests
+// =====================================================================
+
+#[cfg(test)]
+mod nonce_tests {
+    use super::*;
+
+    // -----------------------------------------------------------------
+    // CspNonce: RFC 006 §Test plan items 1-3
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn nonce_generates_unique_per_call() {
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..200 {
+            let n = CspNonce::generate().expect("getrandom on test host");
+            let inserted = seen.insert(n.as_str().to_owned());
+            assert!(inserted, "duplicate nonce generated");
+        }
+    }
+
+    #[test]
+    fn nonce_is_url_safe_base64_no_pad() {
+        let n = CspNonce::generate().expect("getrandom");
+        let s = n.as_str();
+        // URL-safe base64 alphabet: A-Z a-z 0-9 - _
+        assert!(
+            s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
+            "nonce contains non-url-safe chars: {s}"
+        );
+        // No padding
+        assert!(!s.contains('='), "nonce must not contain padding: {s}");
+    }
+
+    #[test]
+    fn nonce_is_at_least_128_bits() {
+        let n = CspNonce::generate().expect("getrandom");
+        // 16 bytes → 22 base64url chars (no pad)
+        let decoded_len = (n.as_str().len() * 3) / 4;
+        assert!(
+            decoded_len >= 16,
+            "nonce encodes fewer than 128 bits ({} bytes estimated)",
+            decoded_len
+        );
+    }
+
+    #[test]
+    fn nonce_csp_expression_format() {
+        let n = CspNonce::from_str("testvalue123");
+        assert_eq!(n.csp_expression(), "'nonce-testvalue123'");
+    }
+
+    #[test]
+    fn nonce_from_str_roundtrips_as_str() {
+        let n = CspNonce::from_str("abc123");
+        assert_eq!(n.as_str(), "abc123");
+    }
+
+    // -----------------------------------------------------------------
+    // build_csp_with_nonce: RFC 006 §Test plan items 4-8
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn csp_header_includes_nonce_for_script_src() {
+        let nonce = CspNonce::from_str("xyz");
+        let csp = build_csp_with_nonce(
+            "default-src 'none'; script-src 'self'; style-src 'self'",
+            Some(&nonce),
+        );
+        assert!(csp.contains("script-src 'self' 'nonce-xyz'"),
+            "script-src must include nonce: {csp}");
+    }
+
+    #[test]
+    fn csp_header_includes_nonce_for_style_src() {
+        let nonce = CspNonce::from_str("xyz");
+        let csp = build_csp_with_nonce(
+            "default-src 'none'; script-src 'self'; style-src 'self'",
+            Some(&nonce),
+        );
+        assert!(csp.contains("style-src 'self' 'nonce-xyz'"),
+            "style-src must include nonce: {csp}");
+    }
+
+    #[test]
+    fn csp_header_does_not_include_unsafe_inline_after_nonce() {
+        let nonce = CspNonce::from_str("xyz");
+        let input = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'";
+        let csp = build_csp_with_nonce(input, Some(&nonce));
+        assert!(!csp.contains("'unsafe-inline'"),
+            "unsafe-inline must be removed when nonce is present: {csp}");
+        assert!(csp.contains("'nonce-xyz'"));
+    }
+
+    #[test]
+    fn csp_header_substitutes_operator_placeholder() {
+        let nonce = CspNonce::from_str("abc");
+        let input = "default-src 'self'; script-src 'self' 'nonce-{nonce}'";
+        let csp = build_csp_with_nonce(input, Some(&nonce));
+        assert!(csp.contains("'nonce-abc'"),
+            "placeholder substitution failed: {csp}");
+        assert!(!csp.contains("{nonce}"),
+            "placeholder must be replaced: {csp}");
+    }
+
+    #[test]
+    fn csp_header_without_nonce_passes_through_unchanged() {
+        let input = "default-src 'self'; script-src 'self'";
+        let csp = build_csp_with_nonce(input, None);
+        assert_eq!(csp, input, "CSP must pass through unchanged when nonce is None");
+    }
+
+    // -----------------------------------------------------------------
+    // headers_for_response + nonce: RFC 006 §Test plan item 12-13
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn html_response_csp_includes_nonce_directive() {
+        let nonce = CspNonce::from_str("testnonce");
+        let config = SecurityHeadersConfig::default();
+        let headers = headers_for_response(&config, true, &[], Some(&nonce));
+        let csp = headers.iter().find(|h| h.name == "Content-Security-Policy")
+            .map(|h| h.value.as_str())
+            .unwrap_or("");
+        assert!(csp.contains("'nonce-testnonce'"),
+            "HTML response CSP must include nonce: {csp}");
+        assert!(!csp.contains("'unsafe-inline'"),
+            "HTML response CSP must not have unsafe-inline: {csp}");
+    }
+
+    #[test]
+    fn json_response_does_not_include_csp_nonce_header() {
+        let nonce = CspNonce::from_str("testnonce");
+        let config = SecurityHeadersConfig::default();
+        let headers = headers_for_response(&config, false, &[], Some(&nonce));
+        // Non-HTML: no CSP header at all
+        assert!(
+            !headers.iter().any(|h| h.name == "Content-Security-Policy"),
+            "JSON response must not have CSP header"
+        );
     }
 }

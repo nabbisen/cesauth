@@ -1,6 +1,6 @@
 # RFC 013: Operational envelope — Cloudflare plan baseline, bundle budget, cron sizing, `nodejs_compat` review
 
-**Status**: Ready
+**Status**: Proposed
 **ROADMAP**: External codebase review v0.50.1 — P2 ops + plan-limit budgeting
 **ADR**: This RFC produces ADR-016 establishing the operational baseline; the budget choices warrant ADR-level documentation
 **Severity**: **P2 — quality and operational correctness; ship after v0.50.2 production-blocker sweep**

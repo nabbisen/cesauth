@@ -1,6 +1,6 @@
 # RFC 018: Preview-and-apply pattern for destructive admin operations
 
-**Status**: Ready
+**Status**: Proposed
 **ROADMAP**: External UI/UX design update v0.50.1 — page 9 ("Operations UX: state → impact → execution → audit")
 **ADR**: This RFC produces ADR-019 establishing the preview-and-apply convention; the pattern, once introduced, applies to several operations and warrants ADR-level documentation
 **Severity**: **P2 — operator-experience pattern; not security-critical, but materially reduces operator-error class for destructive operations**

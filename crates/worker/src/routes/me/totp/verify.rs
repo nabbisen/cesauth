@@ -100,6 +100,19 @@ pub async fn decide_verify_get<C>(
 where
     C: AuthChallengeStore + ?Sized,
 {
+    // RFC 006 (v0.52.0): per-request CSP nonce
+    let csp_nonce = match cesauth_core::security_headers::CspNonce::generate() {
+        Ok(n) => n,
+        Err(_) => {
+            crate::audit::write_owned(
+                &ctx.env, crate::audit::EventKind::CsrfRngFailure,
+                None, None, Some("csp_nonce_failure".to_owned()),
+            ).await.ok();
+            return Response::error("service temporarily unavailable", 500);
+        }
+    };
+    cesauth_ui::set_render_nonce(csp_nonce.as_str());
+
     match challenges.peek(totp_handle).await {
         Ok(Some(Challenge::PendingTotp { .. })) => VerifyGetDecision::RenderPage,
         _ => VerifyGetDecision::StaleGate,

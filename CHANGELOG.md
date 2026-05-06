@@ -14,6 +14,127 @@ changes will always be called out here.
 
 ---
 
+## [0.52.0] - 2026-05-06
+
+Minor release. Implements RFC 006 (CSP without `'unsafe-inline'`) and
+RFC 019 (RFC lifecycle policy adoption). RFC 006 earns the minor bump:
+it changes the observable `Content-Security-Policy` HTTP header for all
+HTML responses, which is an operator-visible behavior change.
+
+### Why this release
+
+**RFC 006**: ADR-007 (v0.23.0) noted `'unsafe-inline'` as a known
+limitation; CSP Level 2 nonces were the intended fix. This release closes
+that gap. Every inline `<style>` and `<script defer>` tag in cesauth's
+rendered HTML now carries a per-request CSPRNG nonce. The
+`Content-Security-Policy` header for HTML responses drops `'unsafe-inline'`
+from `script-src` and `style-src` and adds `'nonce-<value>'` instead.
+A CSP Level 2-aware browser will ignore any injected `<script>` or
+`<style>` without the matching nonce, eliminating the XSS amplification
+class that `'unsafe-inline'` would otherwise allow.
+
+**RFC 019**: The `rfcs/` directory was a flat list of 18 files with all
+statuses hardcoded to `Ready`. This release restructures it to a 4-folder
+lifecycle (`proposed/`, `done/`, `archive/`) governed by a written policy
+(RFC 019 itself, `rfcs/done/019-rfc-lifecycle-policy.md`).
+
+### What shipped
+
+**RFC 006 — CSP without `'unsafe-inline'`**
+
+- `cesauth_core::security_headers::CspNonce` (new type): generates a
+  cryptographically unguessable 16-byte base64url nonce per-request.
+  Methods: `generate() -> Result<Self, getrandom::Error>`,
+  `from_str(s: &str) -> Self`, `as_str() -> &str`,
+  `csp_expression() -> String` (returns `'nonce-<value>'`).
+- `build_csp_with_nonce(csp: &str, nonce: Option<&CspNonce>) -> String`
+  (internal helper): injects `'nonce-<value>'` into `script-src` and
+  `style-src` directives; removes `'unsafe-inline'`; supports `{nonce}`
+  placeholder in operator-supplied `SECURITY_HEADERS_CSP` override.
+- `headers_for_response` gains `nonce: Option<&CspNonce>` parameter.
+  All existing call sites pass `None`; HTML render paths pass the
+  per-request nonce.
+- `cesauth_ui::set_render_nonce(nonce: &str)` / `render_nonce() -> String`:
+  thread-local nonce store for the Cloudflare Workers per-Isolate model.
+  Worker handlers call `set_render_nonce` before rendering HTML; template
+  functions read it via `crate::render_nonce()` without parameter changes
+  to the public API.
+- `crates/ui/src/admin/frame.rs`, `tenant_admin/frame.rs`,
+  `tenancy_console/frame.rs`: `<style nonce="{nonce}">` — frame-level
+  inline CSS now carries the nonce attribute.
+- `crates/ui/src/templates.rs` (`frame_with_flash`, `login_page_for`):
+  `<style nonce="{nonce}">` and `<script defer nonce="{nonce}">`.
+- Worker route handlers (`routes/ui.rs`, `routes/oidc/authorize.rs`,
+  `routes/admin/console/render.rs`, `routes/me/*`, `routes/magic_link/*`):
+  each HTML-returning handler now calls `CspNonce::generate()` +
+  `cesauth_ui::set_render_nonce()` before rendering. On CSPRNG failure:
+  audit `CsrfRngFailure`, return HTTP 500 (fail-closed).
+- Per-route CSP strings: `'unsafe-inline'` replaced by `format!("...
+  'nonce-{n}'...", n = csp_nonce.as_str())`. The login-page Turnstile
+  variant and the non-Turnstile variant are both updated.
+- `security_headers::apply` (worker middleware): reads `render_nonce()` 
+  after the handler runs and passes `Some(CspNonce::from_str(&nonce_str))`
+  to `headers_for_response`, so the global security-headers middleware
+  also injects the nonce into its CSP output.
+- `crates/ui/src/templates/tests.rs`: `strip_inline_style` updated to
+  match `<style nonce="...">` tags. Five new nonce-injection tests added.
+- 15 new tests in `security_headers::nonce_tests` covering RFC 006
+  §Test plan items 1–5, 7–8, 12–13 (uniqueness, base64url format,
+  ≥128-bit entropy, CSP expression format, `{nonce}` placeholder,
+  `unsafe-inline` removal, HTML/non-HTML CSP presence).
+
+**RFC 019 — RFC lifecycle policy**
+
+- `rfcs/` restructured: `proposed/` (10 open RFCs), `done/` (8 shipped
+  RFCs + RFC 019 itself), `archive/` (empty).
+- All existing RFC Status fields updated to match their folder.
+- `rfcs/README.md` rewritten as a state-grouped index.
+- `rfcs/done/019-rfc-lifecycle-policy.md` (new): the lifecycle policy
+  document itself, implementing the policy it describes.
+
+### Tests
+
+859 lib tests pass (was 842 in v0.51.2).
+
+| Crate | Before | After | Delta |
+|---|---|---|---|
+| `cesauth-core` | 481 | 493 | +12 (RFC 006 nonce + CSP tests) |
+| `cesauth-adapter-test` | 117 | 117 | — |
+| `cesauth-ui` | 244 | 249 | +5 (RFC 006 nonce injection tests) |
+
+### Wire / operator changes
+
+- `Content-Security-Policy` header for HTML responses: `'unsafe-inline'`
+  removed from `script-src` and `style-src`; `'nonce-<per-request-value>'`
+  added instead. **This is a behavior change.** Browsers that support
+  CSP Level 2 (all current browsers) will block scripts and styles that
+  don't carry the matching nonce attribute. Verify that no inline event
+  handlers (`onclick=`, `onload=`, etc.) exist in operator-customised
+  templates before upgrading. cesauth's own templates carry no inline
+  event handlers (pinned by test).
+- `SECURITY_HEADERS_CSP` operator override: now supports `{nonce}`
+  placeholder. `"...'nonce-{nonce}'..."` will be substituted with the
+  actual per-request nonce value. Operators who override CSP and want
+  nonce support must add this placeholder.
+- No new env vars. No schema changes. No DO state changes.
+
+### Upgrade procedure
+
+```
+1. Deploy v0.52.0.
+2. Verify HTML pages render correctly in a staging browser.
+   Open DevTools → Console: look for CSP violations.
+3. If using SECURITY_HEADERS_CSP override and want nonce support,
+   add 'nonce-{nonce}' to your script-src and style-src directives.
+4. Deploy production.
+```
+
+### ADR changes
+
+- ADR-007 §Q3: `'unsafe-inline'` limitation closed in v0.52.0.
+  The two paths listed (extract to same-origin files / per-request
+  nonces) were resolved via the nonce path, as specified in RFC 006.
+
 ## [0.51.2] - 2026-05-06
 
 Patch release. Implements RFC 005 (`cargo fuzz` for the JWT parser
