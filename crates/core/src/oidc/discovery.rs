@@ -1,17 +1,38 @@
 //! `/.well-known/openid-configuration`.
 //!
-//! We emit a deliberately narrow discovery document: only the flows and
-//! algorithms cesauth actually supports. Listing capabilities we do not
-//! implement would mislead relying parties.
+//! cesauth currently advertises an **OAuth 2.0** discovery document
+//! at this path, NOT a full OpenID Connect Discovery 1.0 document.
+//! The reason: cesauth does not yet issue OIDC `id_token`s — the
+//! `exchange_code` / `rotate_refresh` flows return only access and
+//! refresh tokens. Advertising OIDC-specific metadata (the
+//! `id_token_signing_alg_values_supported` field, the `openid` scope
+//! in `scopes_supported`, `subject_types_supported`) would mislead
+//! relying parties that read the doc and request OIDC features that
+//! don't actually work.
+//!
+//! ID token issuance is planned for v0.26.0 (ADR-008). When that
+//! lands, this module will gain the OIDC-specific fields back and
+//! advertise the `openid` scope. The route path
+//! (`/.well-known/openid-configuration`) is kept stable across the
+//! transition so RPs don't need to re-discover.
+//!
+//! Until then: cesauth is an OAuth 2.0 Authorization Server (RFC
+//! 6749 + 8414 metadata), not an OpenID Provider. The shape we emit
+//! corresponds to RFC 8414 §2 with only the fields cesauth actually
+//! supports.
 
 use serde::Serialize;
 
-/// The subset of OpenID Connect Discovery 1.0 metadata we support.
+/// The subset of OAuth 2.0 Authorization Server Metadata (RFC 8414)
+/// that cesauth supports today. Built per-issuer at request time
+/// (cheap) and cached in KV by the worker layer.
 ///
-/// This is built *per-issuer* at request time (cheap) and then cached in
-/// KV by the worker layer (`CACHE` binding). KV is acceptable here
-/// because a stale discovery doc can never let an attacker forge a
-/// token - the worst case is a client seeing an old endpoint URL.
+/// This is intentionally narrower than what was emitted in 0.4.x
+/// through 0.24.x. Those releases advertised
+/// `id_token_signing_alg_values_supported`, `subject_types_supported`,
+/// and `openid` in `scopes_supported` — all of which were
+/// aspirational, not implemented. v0.25.0 corrected the metadata to
+/// match what the implementation actually delivers.
 #[derive(Debug, Clone, Serialize)]
 pub struct DiscoveryDocument {
     pub issuer:                                String,
@@ -20,8 +41,6 @@ pub struct DiscoveryDocument {
     pub jwks_uri:                              String,
     pub revocation_endpoint:                   String,
     pub response_types_supported:              &'static [&'static str],
-    pub subject_types_supported:               &'static [&'static str],
-    pub id_token_signing_alg_values_supported: &'static [&'static str],
     pub token_endpoint_auth_methods_supported: &'static [&'static str],
     pub code_challenge_methods_supported:      &'static [&'static str],
     pub grant_types_supported:                 &'static [&'static str],
@@ -44,10 +63,6 @@ impl DiscoveryDocument {
             jwks_uri:                              format!("{issuer}/jwks.json"),
             revocation_endpoint:                   format!("{issuer}/revoke"),
             response_types_supported:              &["code"],
-            subject_types_supported:               &["public"],
-            // EdDSA only. If we ever add another algorithm we MUST also
-            // teach the verifier side; do not silently widen this list.
-            id_token_signing_alg_values_supported: &["EdDSA"],
             token_endpoint_auth_methods_supported: &[
                 "none",
                 "client_secret_basic",
@@ -55,7 +70,105 @@ impl DiscoveryDocument {
             ],
             code_challenge_methods_supported:      &["S256"],   // plain is forbidden
             grant_types_supported:                 &["authorization_code", "refresh_token"],
-            scopes_supported:                      &["openid", "profile", "email", "offline_access"],
+            // No `openid` until v0.26.0 lands id_token issuance.
+            // `profile` and `email` are advertised because they
+            // describe what the access token's `scope` claim can
+            // carry through to userinfo-style consumers; they don't
+            // imply id_token support on their own (RFC 6749).
+            // `offline_access` is advertised because that's how a
+            // client requests a refresh token.
+            scopes_supported:                      &["profile", "email", "offline_access"],
         }
+    }
+}
+
+// =====================================================================
+// Tests
+// =====================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -----------------------------------------------------------------
+    // v0.25.0 honest-reset shape — pin the contract that the
+    // discovery doc reflects what cesauth actually delivers. When
+    // v0.26.0 lands ID token issuance, these tests update to add
+    // the `openid` scope and the OIDC-specific metadata fields back.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn discovery_does_not_advertise_openid_scope() {
+        // OIDC-only feature; cesauth doesn't yet emit id_tokens.
+        // Advertising `openid` would mislead RPs.
+        let d = DiscoveryDocument::new("https://auth.example.com");
+        assert!(!d.scopes_supported.contains(&"openid"),
+            "scopes_supported must NOT include `openid` until id_token is real");
+    }
+
+    #[test]
+    fn discovery_advertises_oauth2_scopes_only() {
+        // OAuth 2.0 scopes that don't imply OIDC. Pin the exact set.
+        let d = DiscoveryDocument::new("https://auth.example.com");
+        assert_eq!(d.scopes_supported, &["profile", "email", "offline_access"]);
+    }
+
+    #[test]
+    fn discovery_response_types_is_code_only() {
+        let d = DiscoveryDocument::new("https://auth.example.com");
+        assert_eq!(d.response_types_supported, &["code"]);
+    }
+
+    #[test]
+    fn discovery_grant_types_match_implementation() {
+        // The token endpoint accepts authorization_code +
+        // refresh_token. Advertising any other grant_type
+        // would mislead RPs.
+        let d = DiscoveryDocument::new("https://auth.example.com");
+        assert_eq!(d.grant_types_supported, &["authorization_code", "refresh_token"]);
+    }
+
+    #[test]
+    fn discovery_code_challenge_methods_is_s256_only() {
+        // `plain` PKCE is forbidden — the verifier rejects it.
+        let d = DiscoveryDocument::new("https://auth.example.com");
+        assert_eq!(d.code_challenge_methods_supported, &["S256"]);
+        assert!(!d.code_challenge_methods_supported.contains(&"plain"));
+    }
+
+    #[test]
+    fn discovery_endpoints_anchor_to_issuer() {
+        let d = DiscoveryDocument::new("https://auth.example.com");
+        assert_eq!(d.authorization_endpoint, "https://auth.example.com/authorize");
+        assert_eq!(d.token_endpoint,         "https://auth.example.com/token");
+        assert_eq!(d.jwks_uri,               "https://auth.example.com/jwks.json");
+        assert_eq!(d.revocation_endpoint,    "https://auth.example.com/revoke");
+    }
+
+    #[test]
+    fn discovery_serializes_without_oidc_fields() {
+        // Pin that the wire output omits the OIDC-specific fields.
+        // A future maintainer who adds `id_token_signing_alg_values_supported`
+        // back without also implementing id_token issuance fails this
+        // test.
+        let d = DiscoveryDocument::new("https://auth.example.com");
+        let json = serde_json::to_string(&d).unwrap();
+        assert!(!json.contains("id_token_signing_alg_values_supported"),
+            "OIDC field must not appear in v0.25.0 discovery: {json}");
+        assert!(!json.contains("subject_types_supported"),
+            "OIDC field must not appear in v0.25.0 discovery: {json}");
+        assert!(!json.contains("\"openid\""),
+            "openid scope must not appear in scopes_supported: {json}");
+    }
+
+    #[test]
+    fn discovery_token_endpoint_auth_methods_match_implementation() {
+        // The token endpoint accepts these three auth methods. If
+        // the implementation grows a new one (e.g.,
+        // `private_key_jwt`), this test must be updated alongside
+        // — and the discovery doc must reflect the truth.
+        let d = DiscoveryDocument::new("https://auth.example.com");
+        assert_eq!(d.token_endpoint_auth_methods_supported,
+            &["none", "client_secret_basic", "client_secret_post"]);
     }
 }

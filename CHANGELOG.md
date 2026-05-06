@@ -12,6 +12,215 @@ always be called out here.
 
 ---
 
+## [0.25.0] - 2026-04-28
+
+Security track Phase 2 of 8: email verification flow audit +
+OIDC discovery doc honest reset + `magic_link_sent_page()` UX
+bug fix (folded in from the v0.24.0 audit's findings).
+
+This release combines a small surgical fix on the magic-link
+verify path with a deliberate **breaking change** on the
+`/.well-known/openid-configuration` wire shape. Pre-1.0,
+breaking changes are acceptable; the audit found that cesauth
+was advertising OIDC compliance it didn't actually deliver, and
+the honest move was to align the discovery doc with the
+implementation rather than the other way around. ID token
+issuance is now an explicit `Later` ROADMAP item with a drafted
+ADR-008 ready to implement when scheduling permits.
+
+### Added — `docs/src/expert/email-verification-audit.md`
+
+New v0.25.0 audit deliverable. Documents:
+
+- What `email_verified=true` means in cesauth (proof of
+  inbox control via Magic Link OTP delivery, at some point in
+  the past — not currently re-verified).
+- Per-path table with 9 rows covering Magic Link signup,
+  returning-user verify, anonymous→human promotion, anonymous
+  user creation, WebAuthn register/authenticate, legacy admin
+  create, and tenancy console mutations.
+- Where `email_verified` should surface to consumers (planned
+  v0.26.0+ via OIDC `id_token` claims; today only via internal
+  admin-API JSON and HTML console).
+- The OIDC `id_token` gap that motivates ADR-008.
+- Operator-visible behavior changes from v0.24.0 → v0.25.0.
+- Re-audit cadence.
+
+### Added — ADR-008 (Draft)
+
+`docs/src/expert/adr/008-id-token-issuance.md`. Settles 8
+design questions for the `id_token` implementation that
+v0.25.0's discovery reset is honest about NOT having: when
+issued (`openid` scope only), claims (required + scope-driven),
+sourcing (`UserRepository` injection into `service::token`),
+`auth_time` plumbing through `Challenge::AuthCode` and
+`RefreshTokenFamily`, what's NOT in the id_token (`acr`,
+`amr`, `azp`, custom claims), discovery doc restoration plan,
+test plan, migration mechanics. Acceptance criteria for
+graduation to `Accepted` documented.
+
+### Changed (BREAKING) — discovery doc shape
+
+`/.well-known/openid-configuration` now emits an OAuth 2.0
+Authorization Server Metadata document (RFC 8414), not an
+OpenID Connect Discovery 1.0 document. Wire-shape diff:
+
+- **Removed**: `subject_types_supported`,
+  `id_token_signing_alg_values_supported`.
+- **Removed from `scopes_supported`**: `openid`. The remaining
+  set is `["profile", "email", "offline_access"]`.
+
+The route path stays at `/.well-known/openid-configuration`
+across the v0.25.0 → v0.26.0+ transition. RPs that strictly
+validate the discovery doc against OIDC Discovery 1.0 schema
+will reject this v0.25.0 doc. **This is intentional** — cesauth
+was not actually emitting `id_token`s, so advertising OIDC
+compliance was a documentation lie. The fields and `openid`
+scope return when v0.26.0+ implements id_token issuance per
+ADR-008.
+
+### Changed — `email_verified` flip on returning-user Magic Link verify
+
+`crates/worker/src/routes/magic_link/verify.rs::resolve_or_create_user`
+now flips `email_verified=true` on an existing user row when
+the column was previously false. Common case: a user created
+by an admin via `POST /admin/users` (legacy create), then
+later authenticating via Magic Link — pre-v0.25.0 the column
+stayed false despite the OTP delivery being proof of email
+control.
+
+The flip is a best-effort UPDATE; storage failure isn't
+fatal (the user gets a session anyway, and the next login
+retries). Skip-write optimization for already-verified rows
+avoids hot-path D1 round-trips.
+
+### Changed — `magic_link_sent_page()` template signature
+
+The template at `crates/ui/src/templates.rs::magic_link_sent_page`
+now takes two parameters:
+
+```rust
+pub fn magic_link_sent_page(handle: &str, csrf_token: &str) -> String
+```
+
+Pre-v0.25.0 the template took no arguments and rendered a form
+missing both `handle` and `csrf` hidden inputs — making the
+form-flow path unusable in browsers (the verify handler
+returns 400 on empty handle, and the v0.24.0 CSRF gap fill
+rejects empty csrf). The bug was failing-closed but
+invisible-to-users; UX was broken, not security.
+
+Both callers in `crates/worker/src/routes/magic_link/request.rs`
+are updated:
+- Rate-limited path: passes a placeholder UUID handle (a typed
+  OTP would yield "verification failed", same as a real
+  expired/invalid handle — preserves account-enumeration
+  indistinguishability) plus the existing CSRF cookie value.
+- Happy path: passes the real handle just minted plus the
+  existing CSRF cookie value.
+
+The CSRF cookie is set earlier in the flow (by `/login` or
+`/authorize`) so the request handler reads it from the
+incoming `Cookie:` header rather than minting a new one.
+
+### Tests
+
+Total: **451 passing** (+14 over v0.24.0):
+
+- core: **214** (was 206) — 8 new in `oidc::discovery::tests`:
+  - `discovery_does_not_advertise_openid_scope` —
+    honest-reset tripwire; this test's expectation will flip
+    when ADR-008 ships.
+  - `discovery_advertises_oauth2_scopes_only` —
+    pin the exact set `["profile", "email", "offline_access"]`.
+  - `discovery_response_types_is_code_only`.
+  - `discovery_grant_types_match_implementation`.
+  - `discovery_code_challenge_methods_is_s256_only`.
+  - `discovery_endpoints_anchor_to_issuer`.
+  - `discovery_serializes_without_oidc_fields` — wire-shape
+    tripwire; rejects accidental re-introduction without an
+    implementation behind the fields.
+  - `discovery_token_endpoint_auth_methods_match_implementation`.
+- ui: **127** (was 121) — 6 new in `templates::tests`:
+  - `sent_page_includes_handle_hidden_input`.
+  - `sent_page_includes_csrf_hidden_input`.
+  - `sent_page_escapes_handle` — defense-in-depth pin.
+  - `sent_page_escapes_csrf_token` — same.
+  - `sent_page_form_posts_to_verify_endpoint`.
+  - `sent_page_does_not_leak_email` — account-enumeration
+    pin (no `@` should appear in the rendered HTML).
+- adapter-test: 51 (unchanged).
+- worker: 30 (unchanged).
+- migrate: 29 (unchanged).
+
+### Documentation
+
+- `docs/src/expert/email-verification-audit.md` — new audit
+  chapter.
+- `docs/src/expert/adr/008-id-token-issuance.md` — new ADR
+  Draft.
+- `docs/src/expert/adr/README.md` — ADR-008 added to index.
+- `docs/src/expert/oidc-tokens.md` — v0.25.0 status note at
+  top; both flow diagrams (exchange_code, rotate_refresh)
+  updated to honestly say "no id_token today, v0.26.0+".
+- `docs/src/expert/oidc-internals.md` — top-level "OIDC
+  Core 1.0" claim softened to "OAuth 2.0 + partial OIDC
+  scaffolding"; scopes line updated to drop `openid`.
+- `docs/src/beginner/first-local-run.md` — sample discovery
+  output updated to v0.25.0 wire shape with explanation note.
+- `docs/src/SUMMARY.md` — links the new audit chapter and
+  ADR-007/008.
+
+### ROADMAP changes
+
+- Security track Phase 2 (v0.25.0) marked ✅ with detailed entry.
+- Discovered UX bug entry (`magic_link_sent_page()`) removed
+  (now shipped).
+- New "Later" entry: `OIDC id_token issuance (ADR-008)` with
+  trigger condition (TOTP track must complete first) and
+  scope estimate.
+- Mail provider entry updated to specify `wasm-smtp v0.6` +
+  `wasm-smtp-cloudflare` as the chosen implementations.
+- ADR numbering shifted: TOTP is now ADR-009 (was ADR-008),
+  Audit log hash chain is now ADR-010 (was ADR-009). The
+  v0.26.0/v0.27.0 (TOTP) and v0.28.0/v0.29.0 (audit log)
+  release entries reflect this.
+
+### Migration (0.24.0 → 0.25.0)
+
+Code-only release. No schema migration. No `wrangler.toml`
+changes.
+
+**Breaking wire change** on `/.well-known/openid-configuration`
+— see "Changed (BREAKING) — discovery doc shape" above.
+RPs that:
+- Read endpoint URLs from discovery → unaffected (URLs
+  unchanged).
+- Validate the doc as OIDC Discovery 1.0 → will reject. Switch
+  to RFC 8414 validation, or add v0.26.0+ to your supported-
+  cesauth-version range.
+- Request `scope=openid` → still parses and accepts at
+  `/authorize`, still produces no `id_token` at `/token`
+  (identical pre-v0.25.0 behavior).
+
+The `email_verified` flip is invisible to RPs today (no
+id_token surfaces it). It becomes RP-visible when ADR-008
+implementation lands.
+
+### Deferred
+
+- **OIDC `id_token` issuance (ADR-008)** — Drafted, queued
+  in ROADMAP "Later" behind TOTP track.
+- **TOTP** — v0.26.0/v0.27.0.
+- **Audit log hash chain** — v0.28.0/v0.29.0.
+
+### Deferred — unchanged
+
+- **`check_permission` integration on `/api/v1/...`.** Unscheduled.
+- **External IdP federation.** Out of scope.
+
+---
+
 ## [0.24.0] - 2026-04-28
 
 Security track Phase 1 of 8: vulnerability disclosure policy +

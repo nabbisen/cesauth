@@ -29,6 +29,7 @@
 - [Session cookies](./expert/sessions.md)
 - [CSRF model](./expert/csrf.md)
 - [CSRF audit (v0.24.0)](./expert/csrf-audit.md)
+- [Email verification audit (v0.25.0)](./expert/email-verification-audit.md)
 - [Operational logging](./expert/logging.md)
 - [Turnstile integration](./expert/turnstile.md)
 - [Admin console](./expert/admin-console.md)
@@ -39,6 +40,8 @@
     - [ADR-003: System-admin from tenant view](./expert/adr/003-system-admin-from-tenant-view.md)
     - [ADR-004: Anonymous trial promotion](./expert/adr/004-anonymous-trial-promotion.md)
     - [ADR-005: Data migration tooling](./expert/adr/005-data-migration-tooling.md)
+    - [ADR-007: HTTP security response headers](./expert/adr/007-security-response-headers.md)
+    - [ADR-008: OIDC id_token issuance (Draft)](./expert/adr/008-id-token-issuance.md)
 - [Security considerations](./expert/security.md)
 
 ---

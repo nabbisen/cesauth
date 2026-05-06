@@ -1,7 +1,22 @@
 # OIDC internals
 
-cesauth implements OpenID Connect Core 1.0 with the Authorization
-Code flow and PKCE. The three deep-dive pages below cover the flow,
+> **v0.25.0 status note**: cesauth implements the OAuth 2.0
+> Authorization Code flow with PKCE today. OpenID Connect Core
+> 1.0 conformance requires `id_token` issuance, which is **not yet
+> implemented** — see [ADR-008](./adr/008-id-token-issuance.md)
+> for the v0.26.0 plan and
+> [`email-verification-audit.md`](./email-verification-audit.md)
+> for how this gap was discovered. The current discovery document
+> is RFC 8414 (OAuth 2.0 metadata), not OIDC Discovery 1.0.
+
+cesauth implements OAuth 2.0 with the Authorization Code flow
+plus PKCE, plus partial OIDC scaffolding (`/authorize` accepts
+`openid` scope, `nonce`, and `prompt` parameters; the JWT
+infrastructure issues EdDSA-signed access tokens). The remaining
+OIDC-required pieces — `id_token` issuance with claims sourcing
+from the user record — land in v0.26.0.
+
+The three deep-dive pages below cover the flow,
 the token lifecycle, and the `prompt` / `max_age` handling.
 
 - [Authorization Code + PKCE](./oidc-authorization.md)
@@ -25,10 +40,17 @@ the token lifecycle, and the `prompt` / `max_age` handling.
   `invalid_request`.
 - **Client auth**: `none` (public PKCE-only clients),
   `client_secret_basic`, and `client_secret_post`.
-- **Scopes**: `openid`, `profile`, `email`, plus any others the
-  `oidc_clients.allowed_scopes` whitelist permits.
+- **Scopes**: `profile`, `email`, plus any others the
+  `oidc_clients.allowed_scopes` whitelist permits. Pre-v0.25.0
+  also advertised `openid`; that's been removed pending id_token
+  issuance (see ADR-008, planned v0.26.0). The route accepts
+  `openid` in incoming requests for forward-compat with future
+  v0.26.0 RPs but doesn't emit anything that depends on it yet.
 - **Response types**: `code` only. `token` and `id_token` response
-  types (the implicit flow) are not supported.
+  types (the implicit flow) are not supported. Note: this is the
+  *response_type* parameter; cesauth's id_token issuance gap
+  (no `id_token` *body field* in `/token` responses) is a
+  separate matter, designed in ADR-008 for v0.26.0.
 - **Response modes**: query. `fragment` and `form_post` are rejected.
 - **Signing**: EdDSA (Ed25519). The `kid` header rotates with the
   signing-key table; old `kid`s remain in JWKS until their grace

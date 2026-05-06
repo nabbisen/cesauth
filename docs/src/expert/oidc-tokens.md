@@ -1,5 +1,14 @@
 # Token issuance & refresh rotation
 
+> **v0.25.0 status note**: cesauth currently issues access tokens
+> and refresh tokens but **does not issue OIDC `id_token`s**. The
+> `TokenResponse.id_token` field is always `null`. ID token
+> issuance is designed in [ADR-008](./adr/008-id-token-issuance.md)
+> and will land in v0.26.0 — at which point this document and the
+> code flow below pick up id_token signing for `openid`-scoped
+> requests. See [`email-verification-audit.md`](./email-verification-audit.md)
+> for the discovery and motivation.
+
 ## `/token` endpoint
 
 Two grant types, both at `POST /token`:
@@ -27,11 +36,15 @@ POST /token
     │     ├── verify code_verifier (SHA-256, base64url) == parked code_challenge
     │     ├── init RefreshTokenFamily DO with a fresh family_id, first jti
     │     ├── write Grant row to D1 (grant history)
-    │     └── sign access_token + id_token (JWT EdDSA)
+    │     └── sign access_token (JWT EdDSA)
+    │         (v0.26.0 will additionally sign id_token here when
+    │          `openid` is in granted scope; see ADR-008)
     │
     └── return TokenResponse JSON:
             { access_token, token_type: "Bearer", expires_in,
-              refresh_token, scope, id_token }
+              refresh_token, scope, id_token: null }
+            (v0.26.0: id_token field is populated when scope
+             includes `openid`)
 ```
 
 ## Refresh rotation
@@ -50,7 +63,9 @@ POST /token grant_type=refresh_token
     │     │     │     burn the whole family, return ReusedAndRevoked
     │     │     └── if family is already revoked:
     │     │           return AlreadyRevoked
-    │     └── on Ok, sign fresh access + id tokens, return
+    │     └── on Ok, sign fresh access token, return
+    │         (v0.26.0 will additionally sign a fresh id_token
+    │          when `openid` was in the family's carried scope)
     │
     └── return new TokenResponse (or 400 invalid_grant on reuse)
 ```

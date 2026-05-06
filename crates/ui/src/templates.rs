@@ -244,20 +244,40 @@ pub fn login_page(
 
 /// Page shown after a Magic Link has been sent. Does not reveal whether
 /// the email existed (account enumeration mitigation).
-pub fn magic_link_sent_page() -> String {
-    let body = r#"
+///
+/// `handle` is the AuthChallenge handle from the prior `/magic-link/request`
+/// step. The verify endpoint needs it to look up the challenge.
+/// `csrf_token` is the CSRF token (matching the
+/// `__Host-cesauth-csrf` cookie) required by `/magic-link/verify`'s
+/// form-encoded path. Both fields land as hidden inputs so the
+/// browser carries them on submission.
+///
+/// Pre-v0.25.0 this template took no arguments and rendered a form
+/// missing both fields, which made the form-flow path unusable in
+/// browsers (the verify handler returns 400 on empty handle, and
+/// the v0.24.0 CSRF gap fill rejects empty csrf). The path was
+/// failing closed but invisible-to-users. v0.25.0 fixes the UX and
+/// adds an end-to-end form test (see `tests.rs`).
+pub fn magic_link_sent_page(handle: &str, csrf_token: &str) -> String {
+    let body = format!(
+        r#"
 <h1>Check your inbox</h1>
 <p>If that address is registered, we've just sent a one-time code. It expires in 10 minutes.</p>
 
 <form method="POST" action="/magic-link/verify" aria-labelledby="otp-heading">
   <h2 id="otp-heading" class="muted">Enter the code</h2>
+  <input type="hidden" name="handle" value="{handle}">
+  <input type="hidden" name="csrf"   value="{csrf}">
   <label for="code">One-time code</label>
   <input id="code" name="code" type="text" required autocomplete="one-time-code"
-         inputmode="text" spellcheck="false" pattern="[A-Za-z0-9]{6,12}">
+         inputmode="text" spellcheck="false" pattern="[A-Za-z0-9]{{6,12}}">
   <button type="submit">Continue</button>
 </form>
-"#;
-    frame("Check your inbox - cesauth", body)
+"#,
+        handle = escape(handle),
+        csrf   = escape(csrf_token),
+    );
+    frame("Check your inbox - cesauth", &body)
 }
 
 /// Generic error page. The worker layer maps specific errors to strings

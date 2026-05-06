@@ -128,7 +128,18 @@ pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
         // revealing that this email was the one being probed. A 200
         // with the "check your inbox" page is correct - we just don't
         // send mail.
-        return Response::from_html(cesauth_ui::templates::magic_link_sent_page());
+        //
+        // Render placeholder values for the form fields. A user who
+        // typed an OTP into this fake form would get a "verification
+        // failed" response from /magic-link/verify, which is the same
+        // outcome an expired/invalid handle produces — no information
+        // leak about whether the address was probed-as-rate-limited
+        // vs. legit-but-bad-OTP.
+        let placeholder_handle = Uuid::new_v4().to_string();
+        let placeholder_csrf   = cookie_csrf.as_deref().unwrap_or("");
+        return Response::from_html(
+            cesauth_ui::templates::magic_link_sent_page(&placeholder_handle, placeholder_csrf)
+        );
     }
 
     // Mint the OTP. Handle = UUID; user-visible only if we store it
@@ -161,8 +172,14 @@ pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
     ).await.ok();
 
     // Respond with the "check your inbox" page. The form on that page
-    // POSTs back to `/magic-link/verify` with `handle` + `code`.
-    Response::from_html(cesauth_ui::templates::magic_link_sent_page())
+    // POSTs back to `/magic-link/verify` with `handle` + `code` +
+    // `csrf`. The handle is the AuthChallenge handle just minted; the
+    // csrf token is the existing cookie value (set by /login or
+    // /authorize earlier in the flow).
+    let csrf_for_form = cookie_csrf.as_deref().unwrap_or("");
+    Response::from_html(
+        cesauth_ui::templates::magic_link_sent_page(&handle, csrf_for_form)
+    )
 }
 
 #[cfg(test)]

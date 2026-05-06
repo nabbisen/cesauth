@@ -184,11 +184,22 @@ Expected (trimmed):
   "authorization_endpoint": "https://auth.example.com/authorize",
   "token_endpoint": "https://auth.example.com/token",
   "jwks_uri": "https://auth.example.com/jwks.json",
+  "revocation_endpoint": "https://auth.example.com/revoke",
   "response_types_supported": ["code"],
-  "id_token_signing_alg_values_supported": ["EdDSA"],
-  "code_challenge_methods_supported": ["S256"]
+  "code_challenge_methods_supported": ["S256"],
+  "grant_types_supported": ["authorization_code", "refresh_token"],
+  "scopes_supported": ["profile", "email", "offline_access"]
 }
 ```
+
+> **Note (v0.25.0)**: cesauth currently advertises an OAuth 2.0
+> Authorization Server discovery document (RFC 8414), not an OIDC
+> Discovery 1.0 document. The `id_token_signing_alg_values_supported`
+> and `subject_types_supported` fields are absent and the `openid`
+> scope is not in `scopes_supported`, because cesauth does not yet
+> issue OIDC `id_token`s. ID token issuance is planned for v0.26.0
+> (ADR-008); the discovery doc will gain those fields back at the
+> same time.
 
 The `issuer` value is whatever you put in `wrangler.toml`; the
 `host` in your curl does not need to match.

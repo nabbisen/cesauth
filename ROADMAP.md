@@ -77,7 +77,8 @@ zero remaining issues.
 | **Tenancy-service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.18.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.6.0). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.7.0). Read-only HTML console at `/admin/tenancy/*` (0.8.0, originally `/admin/saas/*`). Mutation forms with preview/confirm pattern (0.9.0) for tenant / organization / group / subscription. Membership add/remove + role grant/revoke forms (0.10.0) bring the HTML console to feature parity with the v0.7.0 JSON API. ADR-001/002/003 settle the tenant-scoped admin surface design (0.11.0) and ship the schema + type foundation (`admin_tokens.user_id`, `AdminPrincipal::user_id`, `is_system_admin()`). Project-hygiene release with naming-debt cleanup (0.12.0) — `saas/` → `tenancy_console/`, `/admin/saas/*` → `/admin/tenancy/*`, plus author/license metadata and `.github/` community documents. Buffer/follow-up release with stale-narrative cleanup + dependency audit (0.12.1). Tenant-scoped admin surface read pages shipped at `/admin/t/<slug>/*` with auth gate + `check_permission` integration (0.13.0). High-risk mutation forms plus a system-admin token-mint UI shipped (0.14.0). Additive membership forms (× 3 flavors) plus affordance gating shipped (0.15.0) — the tenant-scoped surface reaches feature parity with the system-admin tenancy console. Security-fix and audit-infrastructure release (0.15.1): RUSTSEC-2023-0071 in transitive `rsa` removed via `jsonwebtoken` feature narrowing, `cargo audit` integrated via initial sweep + GitHub Actions workflow + operator docs. Anonymous-trial promotion design (ADR-004) plus foundation (migration `0006_anonymous.sql`, `AnonymousSession` type + repository, in-memory + D1 adapters, 3 new audit event kinds) shipped (0.16.0). Anonymous-trial HTTP routes (`POST /api/v1/anonymous/begin` and `/promote`) shipped (0.17.0); ADR-004 graduates to `Accepted`. Anonymous-trial daily retention sweep (Cloudflare Workers Cron Trigger, `[triggers]` block in `wrangler.toml`, sweep handler with audit-before-delete ordering, operator runbook diagnostic) shipped (0.18.0); ADR-004 feature-complete. **Note: versioning was retroactively re-aligned with the [versioning policy](#versioning-policy) at 0.18.0; the version numbers shown for 0.5.0 through 0.18.0 in this row are the re-aligned values, not the original tarball numbers — see the [Versioning history note](../CHANGELOG.md#versioning-history-note) section in CHANGELOG for the full mapping.** Deployment guide build-out shipped (0.18.1) — eight new operator-facing chapters (pre-flight, cron, custom domains, multi-environment, backup/restore, observability, day-2 runbook, disaster recovery) covering the operational surface previously held in tribal knowledge. |
 | **Data migration tooling**             | ✅       | ADR-005 + foundation shipped (0.19.0): `cesauth_core::migrate` library value types (`Manifest`, `TableSummary`, `PayloadLine`), redaction profile registry with two built-ins, `FORMAT_VERSION` + `SCHEMA_VERSION` constants, CLI skeleton with `list-profiles` implemented. Real export + verify shipped (0.20.0): typed `MigrateError` (8 kinds), `Exporter<W>` with single-use `ExportSigner` (per-export Ed25519 keypair, fingerprint handshake), streaming `verify` with per-table + whole-payload SHA-256 checks, `apply_redaction` with deterministic `HashedEmail` (preserves UNIQUE invariant). CLI's `export` subcommand wires `WranglerD1Source` → `Exporter` (refuses to clobber, prints fingerprint to stderr at start, walks `MIGRATION_TABLE_ORDER` of 18 tables in topological order, prints secrets-coordination checklist at end). CLI's `verify` subcommand has no D1 dependency. Real import shipped (0.21.0): `Violation` + `ViolationReport`, `InvariantCheckFn` + `SeenSnapshot` + four default checks (user→tenant, membership→user, membership→container, role_assignment→role+user), `ImportSink` trait with `WranglerD1Sink` impl (batched-INSERT-per-table commits, full rollback on decline). CLI's `import` subcommand walks five gates (verify → fingerprint handshake → `JWT_SIGNING_KEY` pre-flight → invariant checks → final commit confirmation) — destination D1 untouched until final yes. **ADR-005 graduated to Accepted (0.21.0)**. New deployment chapter `data-migration.md` makes the legacy `sed`-script prod→staging refresh pattern obsolete; new runbook section "Operation: cross-account data migration"; disaster-recovery Scenario 4 (account compromise) rewritten with concrete `cesauth-migrate` invocations. Polish phase shipped (0.22.0): `--tenant <id>` filter on `export` (with manifest scope record + `TenantScope::Global` vs `OwnColumn` per-table classification), `cesauth-migrate refresh-staging` single-command combinator (export + redaction + import in one invocation, opinionated for single-operator runs, `--yes` for unattended use), email-uniqueness-within-tenant invariant check (redaction-aware, case-insensitive), per-row import progress via `ProgressSink` decorator. **Feature-complete for ADR-005's scope as of 0.22.0.** Deferred items (resume support, native Cloudflare HTTP API client, custom invariant registration via CLI) are tracked as post-1.0 polish — they don't change the design and don't have known operator demand. |
 | **HTTP security response headers**     | ✅       | ADR-007 (`Accepted`, 0.23.0): unified middleware replaces ad-hoc per-response `harden_headers`. Adds three previously-missing headers (`Strict-Transport-Security`, `Permissions-Policy`, plus `X-Frame-Options` now gated to HTML responses). Pure-function library `cesauth_core::security_headers` produces header lists; worker shim reads operator env (`SECURITY_HEADERS_CSP`/`STS`/`DISABLE_HTML_ONLY`) and applies via `worker::Headers::set`. Library tracks `already_set` so per-route CSPs (login, OIDC authorize, admin console — all use `'unsafe-inline'` for current template constraints) are preserved; "don't clobber" is a library responsibility with case-insensitive header-name matching. 28 new tests cover defaults pinning, content-type detection (rejects `text/htmlx` partial-match), env override parsing (strict `"true"` matching for the disable knob), don't-clobber semantics. New operator chapter `docs/src/deployment/security-headers.md`. **Note (v0.23.0 supersedes a withdrawn release)**: a prior v0.23.0 attempt added per-account lockout based on the incorrect premise that cesauth has password authentication; withdrawn before canonical, artifact preserved as `cesauth-0.23.0-account-lockout-withdrawn.tar.gz`. CSP without `'unsafe-inline'` (nonces or template extraction) tracked as future work in the security track. |
-| **Security track Phase 1: SECURITY.md + CSRF audit + dep scan automation review** | ✅       | Shipped 0.24.0. Documentation- and audit-heavy with one small CSRF gap fill. **`.github/SECURITY.md` improvements**: severity-based response-target table (Critical 24h/72h/7d, scaled), known-limitations subsection (CSP `'unsafe-inline'`, no per-account lockout, `/admin/*` Authorization-only), see-also cross-links. **CSRF audit** (`docs/src/expert/csrf-audit.md`) per-route inventory with mechanism per route (4 mechanisms: token, Origin/Referer check, CORS preflight, `Authorization: Bearer`), cookies+SameSite audit, token-binding analysis, decision tree for new routes, test coverage summary, re-audit cadence. **CSRF gap fill on `/magic-link/verify`**: form-encoded path now validates the CSRF token (mirrors `/magic-link/request`); JSON path remains exempt (CORS preflight); `csrf_mismatch` audit event. **Dep scan automation review**: verified `.github/workflows/audit.yml` is comprehensive (push to main + every PR + weekly cron + manual dispatch; `rustsec/audit-check@v2.0.0`; opens GitHub issues automatically); documented the alert path in new "Dependency vulnerability scanning" section in `docs/src/expert/security.md`. **Discovered UX bug**: `magic_link_sent_page()` template missing `handle`/`csrf` hidden inputs — fail-closed but unusable in browsers; tracked as separate ROADMAP item. 6 new tests pin the CSRF field contract on `VerifyBody` and `RequestBody`. Total **437 passing** (worker tests now broken out — see CHANGELOG note on the historical undercount). |
+| **Security track Phase 1: SECURITY.md + CSRF audit + dep scan automation review** | ✅       | Shipped 0.24.0. Documentation- and audit-heavy with one small CSRF gap fill. **`.github/SECURITY.md` improvements**: severity-based response-target table (Critical 24h/72h/7d, scaled), known-limitations subsection (CSP `'unsafe-inline'`, no per-account lockout, `/admin/*` Authorization-only), see-also cross-links. **CSRF audit** (`docs/src/expert/csrf-audit.md`) per-route inventory with mechanism per route (4 mechanisms: token, Origin/Referer check, CORS preflight, `Authorization: Bearer`), cookies+SameSite audit, token-binding analysis, decision tree for new routes, test coverage summary, re-audit cadence. **CSRF gap fill on `/magic-link/verify`**: form-encoded path now validates the CSRF token (mirrors `/magic-link/request`); JSON path remains exempt (CORS preflight); `csrf_mismatch` audit event. **Dep scan automation review**: verified `.github/workflows/audit.yml` is comprehensive (push to main + every PR + weekly cron + manual dispatch; `rustsec/audit-check@v2.0.0`; opens GitHub issues automatically); documented the alert path in new "Dependency vulnerability scanning" section in `docs/src/expert/security.md`. **Discovered UX bug**: `magic_link_sent_page()` template missing `handle`/`csrf` hidden inputs — fixed in v0.25.0. 6 new tests pin the CSRF field contract on `VerifyBody` and `RequestBody`. Total 437 passing (worker tests now broken out — see CHANGELOG note on the historical undercount). |
+| **Security track Phase 2: email verification audit + OIDC discovery honest reset** | ✅       | Shipped 0.25.0. Audit deliverable (`docs/src/expert/email-verification-audit.md`) per-path table with 9 rows + meaning of `email_verified=true` + the discovered OIDC `id_token` issuance gap. **Concern 2 fix**: returning-user Magic Link verify flips `email_verified=true` when previously false (best-effort UPDATE, skip-write optimization for already-verified rows). **Discovery doc honest reset** (breaking wire change): `id_token_signing_alg_values_supported` and `subject_types_supported` removed from struct + JSON output; `openid` removed from `scopes_supported` (now `["profile", "email", "offline_access"]`); discovery is now RFC 8414 OAuth 2.0 metadata, not OIDC Discovery 1.0 — accurate to what the implementation delivers. **`magic_link_sent_page()` UX bug fix** (folded in from v0.24.0 audit): template takes `handle: &str, csrf_token: &str` parameters, both render as escaped hidden inputs; both callers in `/magic-link/request` updated. **ADR-008 drafted**: `id_token` issuance design queued for "Later" — TOTP track (v0.26.0/v0.27.0) goes first per security-track sequencing. 14 new tests (8 discovery shape, 6 templates). Total **451 passing**. |
 | mdBook documentation                   | ✅       | `docs/`                                            |
 
 ---
@@ -106,21 +107,40 @@ started.
     "Dependency vulnerability scanning" section). 6 new tests
     pinning the CSRF field contract on `VerifyBody` and
     `RequestBody`. Total 413 passing.
-  - **0.25.0** — Email verification flow audit + gap fill.
-    The `email_verified` column exists; verify the magic-link
-    path correctly sets it on first verification, and the
-    OIDC discovery doc accurately advertises the
-    `email_verified` claim's semantics.
-  - **0.26.0** — TOTP Phase 1: ADR-008 + schema migration +
+  - **0.25.0** ✅ — Email verification flow audit + gap fill +
+    OIDC discovery doc honest reset. Audit deliverable
+    (`docs/src/expert/email-verification-audit.md`) documents the
+    9-row per-path table, the meaning of `email_verified=true`,
+    and the discovered OIDC `id_token` issuance gap. **Concern 2
+    fix**: returning-user Magic Link verify now flips
+    `email_verified=true` when previously false (best-effort
+    UPDATE; skip-write optimization for already-verified rows).
+    **Discovery doc honest reset**: `id_token_signing_alg_values_supported`
+    and `subject_types_supported` fields removed from wire output,
+    `openid` removed from `scopes_supported` (now
+    `["profile", "email", "offline_access"]`). Discovery is now
+    RFC 8414 (OAuth 2.0 metadata), not OIDC Discovery 1.0 —
+    accurate to what the implementation actually delivers.
+    **`magic_link_sent_page()` UX bug fix** (folded in from
+    v0.24.0 audit): template now takes `handle` and `csrf_token`
+    parameters, both rendered as escaped hidden inputs; both
+    callers in `/magic-link/request` (rate-limited path with
+    placeholder UUID handle, happy path with real handle)
+    updated. **ADR-008 drafted**: `id_token` issuance design,
+    queued for implementation when scheduling permits (currently
+    deferred behind TOTP track per security-track sequencing —
+    see below). 14 new tests (8 discovery shape, 6 templates).
+    Total 451 passing.
+  - **0.26.0** — TOTP Phase 1: ADR-009 + schema migration +
     `cesauth_core::totp` library skeleton (RFC 6238 generator
     and verifier with skew tolerance, recovery code
     generator). No HTTP routes, no enrollment UI — those are
     Phase 2.
   - **0.27.0** — TOTP Phase 2: enrollment flow
     (POST /authenticators/totp/enroll, GET QR code), verify
-    integration on login, recovery code redemption. ADR-008
+    integration on login, recovery code redemption. ADR-009
     graduates to `Accepted`.
-  - **0.28.0** — Audit log hash chain Phase 1: ADR-009 +
+  - **0.28.0** — Audit log hash chain Phase 1: ADR-010 +
     chain design + values (previous_hash column, computed
     hash on insert) + transition strategy for existing
     pre-chain rows. No automated integrity sweep yet.
@@ -141,27 +161,22 @@ started.
   After this track completes, the schedule reverts to the
   feature track (RFC 7662 Token Introspection, etc.).
 
-- **Fix `magic_link_sent_page()` HTML template (UX bug,
-  discovered during the v0.24.0 CSRF audit).** The template
-  at `crates/ui/src/templates.rs::magic_link_sent_page()`
-  renders a form that POSTs to `/magic-link/verify` but is
-  missing both the `handle` and the `csrf` hidden input
-  fields. The verify handler requires both; the form path
-  is therefore unusable in browsers (only the JSON API path
-  works). Not a security issue — the handler fails closed on
-  the empty-handle check before any state change. The fix
-  needs `magic_link_sent_page()` to take the handle and CSRF
-  token as parameters, the `/magic-link/request` handler to
-  pass them in, and a new end-to-end form-flow test. Small
-  scope (~1 release if isolated; could fold into the v0.25.0
-  email verification work since both touch magic-link
-  templates).
-
 - **Real mail provider for Magic Link delivery.** The current
   `dev-delivery` audit line containing the plaintext OTP must be
   replaced with a transactional mail HTTP call keyed by
   `MAGIC_LINK_MAIL_API_KEY` before any production deployment.
   (Release gate — see [Security → Pre-production release gates](docs/src/expert/security.md).)
+
+  **Implementation choice (chosen 2026-04)**: use `wasm-smtp v0.6`
+  with the `wasm-smtp-cloudflare` adapter. Both crates released
+  in 2026-04. The integration point is
+  `cesauth-worker/src/routes/magic_link/request.rs` (the
+  `dev-delivery` line at line ~157 — the audit-write that today
+  carries the plaintext OTP must split into (a) an audit-write
+  with handle only, and (b) a `wasm-smtp` send call). Operator
+  config flows through `wrangler.toml` `[vars]` for the SMTP
+  endpoint + `[secrets]` for credentials. Scope: ~1 release,
+  most of it operator-doc work in `docs/src/deployment/`.
 
 - **Discoverable-credential (resident-key) WebAuthn flows.**
   Currently cesauth requires the user to start from an identifier;
@@ -619,6 +634,32 @@ started.
   federation surface; specific protocols TBD.
 
 ### Later
+
+- **OIDC `id_token` issuance.** Drafted as ADR-008 in v0.25.0.
+  Closes the OIDC compliance gap surfaced by the v0.25.0 email
+  verification audit: `exchange_code` and `rotate_refresh`
+  currently return `id_token: null`, and the discovery doc was
+  honestly reset to RFC 8414 OAuth 2.0 metadata until id_token
+  ships. Implementation requires:
+  - `UserRepository` injected into `cesauth_core::service::token`
+    (generic-parameter addition).
+  - `auth_time` plumbed through `Challenge::AuthCode` and
+    `RefreshTokenFamily` DO state.
+  - `build_id_token_claims` pure function with scope-driven
+    population (`email`/`email_verified` iff `email` scope;
+    `name` iff `profile` scope).
+  - Discovery doc restored to OIDC Discovery 1.0 shape with
+    `claims_supported` field added.
+  - End-to-end test: authorize → token exchange → id_token
+    decoded and claims verified.
+  - 8 v0.25.0 discovery shape tests inverted/extended to OIDC
+    posture.
+
+  **Scheduled when**: TOTP track (v0.26.0/v0.27.0) completes.
+  Likely v0.28.0 or later, deferred behind any urgent track.
+  Not blocking 1.0 unless a deployment requires OIDC compliance
+  for an identity-federation integration. The audit doc and
+  ADR-008 keep the design ready for whoever picks it up.
 
 - **`prompt=select_account`.** Requires multi-session / account-picker
   UX. Rejected today.

@@ -158,6 +158,15 @@ pub async fn verify<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
 /// Look up by email; create if not found. On conflict we do one retry
 /// (the conflict means a concurrent request created the same user) and
 /// re-query. Returns the resolved user_id.
+///
+/// **email_verified update**: if the existing user has
+/// `email_verified=false` (created by an admin via legacy `POST
+/// /admin/users`, for example), a successful magic-link verify
+/// flips it to `true`. The OTP delivery is itself proof of email
+/// control, so the column should reflect that. New users created
+/// via this path always start with `email_verified=true`. See
+/// `docs/src/expert/email-verification-audit.md` for the full
+/// per-path table.
 async fn resolve_or_create_user(
     env:   &Env,
     email: &str,
@@ -165,7 +174,19 @@ async fn resolve_or_create_user(
 ) -> core::result::Result<String, cesauth_core::CoreError> {
     let repo = CloudflareUserRepository::new(env);
 
-    if let Ok(Some(u)) = repo.find_by_email(email).await {
+    if let Ok(Some(mut u)) = repo.find_by_email(email).await {
+        // Existing user: ensure email_verified reflects this
+        // successful OTP delivery. Skip the UPDATE if already true
+        // to avoid an unnecessary D1 round-trip on the hot login
+        // path.
+        if !u.email_verified {
+            u.email_verified = true;
+            u.updated_at     = now;
+            // Best-effort. A storage failure here is not fatal —
+            // the user still gets a valid session; the next
+            // successful login will retry the flip.
+            let _ = repo.update(&u).await;
+        }
         return Ok(u.id);
     }
 
