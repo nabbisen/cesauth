@@ -96,6 +96,21 @@ pub enum EventKind {
     /// this kind does NOT imply reuse — they're separable
     /// signals.
     RefreshRateLimited,
+    /// **v0.38.0** — `POST /introspect` was called (RFC 7662
+    /// Token Introspection). Payload includes the requesting
+    /// `introspecter_client_id`, the `token_type` reported
+    /// (`access_token` / `refresh_token` / `none` for
+    /// inactive), and `active` (boolean). The introspected
+    /// token itself is NOT included in the payload — that
+    /// would defeat the privacy-on-inactive invariant from
+    /// RFC 7662 §2.2 (an audit row carrying the token would
+    /// let anyone with audit access deduce whether the token
+    /// was valid at the time, which is exactly what the
+    /// inactive response is supposed to hide). Operators
+    /// monitoring for unusual introspection patterns (e.g.,
+    /// a single resource-server hammering the endpoint) can
+    /// alert on volume + introspecter_client_id.
+    TokenIntrospected,
     RevocationRequested,
     // WebAuthn
     WebauthnRegistered,
@@ -182,6 +197,7 @@ impl EventKind {
             Self::TokenRefreshRejected         => "token_refresh_rejected",
             Self::RefreshTokenReuseDetected    => "refresh_token_reuse_detected",
             Self::RefreshRateLimited           => "refresh_rate_limited",
+            Self::TokenIntrospected            => "token_introspected",
             Self::RevocationRequested          => "revocation_requested",
             Self::WebauthnRegistered           => "webauthn_registered",
             Self::WebauthnVerified             => "webauthn_verified",

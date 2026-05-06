@@ -12,6 +12,262 @@ changes will always be called out here.
 
 ---
 
+## [0.38.0] - 2026-05-03
+
+RFC 7662 OAuth 2.0 Token Introspection (ADR-014 Accepted).
+First feature-track release after the security-track sprint
+(v0.34-v0.37) and i18n track (v0.36). Adds a server-side
+"is this token currently active?" endpoint that resource
+servers can consult, closing the long-standing gap where
+refresh tokens were entirely opaque to bearers.
+
+### Why this matters
+
+cesauth has issued access + refresh tokens since v0.4 but
+never gave resource servers a way to verify them
+authoritatively. Local JWT verification of access tokens
+catches signature failures + expiry, but misses revocations
+between issuance and access-token expiry (cesauth's default
+access-token TTL is 60 minutes). Refresh tokens are 100%
+opaque — resource servers can't independently check whether
+a presented refresh token is current vs retired vs from a
+revoked family.
+
+RFC 7662 specifies the standard introspection endpoint that
+fills this gap. v0.38.0 implements it with strong privacy
+guarantees on the inactive path (RFC §2.2) and read-only
+semantics that prevent abuse.
+
+### What ships
+
+#### `POST /introspect` endpoint
+
+Path is conventional but not spec-mandated; cesauth uses
+`/introspect` matching the discovery-document field name.
+
+#### Authentication required (RFC 7662 §2.1)
+
+cesauth accepts:
+
+| Method | Form |
+|---|---|
+| `client_secret_basic` | `Authorization: Basic base64(id:secret)` — recommended for resource servers |
+| `client_secret_post`  | form-body `client_id` + `client_secret` — fallback |
+
+`none` (PKCE-only) is **not accepted** at this endpoint.
+The discovery document's
+`introspection_endpoint_auth_methods_supported` advertises
+only the two valid methods.
+
+The extractor prefers Basic when an Authorization header is
+present, falling back to form body **only when no Authorization
+header is present at all**. A malformed Basic does NOT fall
+through to form — that would be a probing surface.
+
+#### Privacy invariant (RFC 7662 §2.2) at the type level
+
+`IntrospectionResponse::inactive()` is the only public
+constructor that produces `active = false`, and it accepts
+no claim arguments. The handler literally cannot
+accidentally leak a claim into an inactive response. The
+serde definition uses `skip_serializing_if =
+"Option::is_none"` on every claim field, so the wire output
+of an inactive response is exactly `{"active":false}`. Test
+`inactive_response_serializes_with_only_active_field` pins
+this byte-exact.
+
+#### Read-only by design
+
+Introspection NEVER triggers reuse detection. A retired jti
+is reported `active = false` without consuming the family.
+A malicious resource server with valid introspection
+credentials must NOT be able to revoke families on demand.
+
+#### Hint is advisory
+
+Per RFC 7662 §2.1. Order:
+- No hint, or `access_token` hint → try access first
+  (cheaper — no DO round-trip on the negative path), fall
+  through to refresh.
+- `refresh_token` hint → try refresh first, fall through
+  to access.
+
+Test `hint_access_with_actually_refresh_token_falls_through_to_refresh_check`
+pins fall-through.
+
+#### Client credential verification
+
+New helper `cesauth_core::service::client_auth::verify_client_credentials`
+takes `(client_id, client_secret)`, looks up the stored
+SHA-256 hash via `ClientRepository::client_secret_hash`,
+and does constant-time hex comparison. Failure modes
+(unknown client, no secret on file, mismatched hash) all
+return the same `CoreError::InvalidClient` to avoid the
+enumeration side-channel.
+
+cesauth uses SHA-256-of-secret rather than Argon2/scrypt
+because `client_secret` is a server-minted high-entropy
+random string (32+ bytes from admin console provisioning),
+not a user-chosen password. For high-entropy secrets,
+salted password hashes provide no additional protection.
+
+#### HTTP Basic auth parser
+
+New module `cesauth_worker::client_auth` with:
+
+- `extract_from_basic(headers)` — parses `Authorization:
+  Basic ...`. RFC 6749 §2.3.1-style percent-decoding of
+  the inner `id:secret` after base64 decode.
+- `extract_from_form(form)` — form-body credentials.
+- `extract(headers, form)` — Basic-or-form dispatch.
+- `percent_decode` helper handles `%XX` and `+` →
+  space, returns None on truncated/invalid escapes.
+
+#### Discovery document
+
+Two new fields:
+
+```json
+{
+  "introspection_endpoint": "https://issuer/introspect",
+  "introspection_endpoint_auth_methods_supported": [
+    "client_secret_basic",
+    "client_secret_post"
+  ]
+}
+```
+
+#### Audit event `EventKind::TokenIntrospected`
+
+Snake-case `token_introspected`. Payload:
+
+```json
+{
+  "introspecter_client_id": "rs_demo",
+  "token_type":             "access_token" | "refresh_token" | "none",
+  "active":                 true | false
+}
+```
+
+The token itself is **deliberately not in the payload** —
+including it would defeat the inactive-privacy invariant.
+Operators monitoring for unusual introspection patterns
+(e.g., a single resource server hammering the endpoint)
+can alert on volume + introspecter_client_id without the
+token.
+
+`token_type` is `"none"` when `active = false` — cesauth
+doesn't expose to the audit log whether the inactive
+result was reached via the access-path or the refresh-
+path (another privacy property).
+
+### Tests
+
+839 → **867** (+28).
+
+- core: 320 → 342 (+22).
+  - 8 in `service::client_auth::tests` — correct/wrong
+    secret, unknown client, public client (no secret on
+    file), empty secret, SHA-256 known vectors,
+    constant-time helper basic correctness.
+  - 13 in `service::introspect::tests` — active refresh,
+    retired jti privacy-invariant, revoked family,
+    unknown family, malformed token (must be inactive
+    not 400), empty token, hint fallback, hint parser,
+    type-level invariants (inactive ctor, byte-exact
+    wire form, access has Bearer, refresh omits Bearer).
+  - 1 in `oidc::discovery::tests` —
+    `discovery_introspection_endpoint_requires_authentication`.
+- worker: 165 → 171 (+6) in `client_auth::tests` —
+  percent-decode passthrough, escape, plus-to-space,
+  truncated, invalid hex, hex-digit lookup table.
+- ui, adapter-test, do, migrate, adapter-cloudflare:
+  unchanged (208, 117, 16, 13, 0).
+
+### Schema / wire / DO
+
+- Schema unchanged (still SCHEMA_VERSION 9). No migration.
+- Wire format adds **`POST /introspect`** as a new endpoint.
+- Discovery document gains two fields (additive, spec-
+  conformant parsers tolerate).
+- DO state unchanged.
+- New dependencies: none (sha2 + base64 already in tree;
+  `verify_client_credentials` adds no new transitive
+  deps).
+
+### Operator-visible changes
+
+- **Provision a confidential client for each resource
+  server** that needs introspection. The admin console's
+  client-creation UI mints a 32-byte URL-safe random
+  secret; store the SHA-256 hash via
+  `ClientRepository::create`. The plaintext secret is
+  shown to the operator once and never recoverable.
+- **Audit dashboards**: add a panel for
+  `token_introspected` to monitor for unusual
+  patterns. The `active` boolean in the payload is
+  useful — a high rate of `active=false` from one
+  introspecter may indicate they're rotating
+  inappropriately or have stale token data.
+- **Discovery clients** see the two new endpoint fields.
+  Resource servers using `oauth-discovery`-style
+  libraries automatically pick up the introspection
+  endpoint URL.
+
+### ADR changes
+
+- **ADR-014: RFC 7662 OAuth 2.0 Token Introspection**
+  added, status Accepted. Documents the audit findings,
+  the privacy-as-type-invariant design, the read-only
+  semantics, the hint-fallback algorithm, the
+  client_secret_basic-vs-post extractor priority, the
+  no-resource-server-typing limitation (Q1: future
+  work), the no-multi-key-fallback limitation (Q4:
+  future work).
+- ADR README index + mdBook `SUMMARY.md` updated.
+
+### Doc / metadata changes
+
+- `Cargo.toml` version 0.37.0 → 0.38.0.
+- UI footers + tests bumped to v0.38.0.
+- ROADMAP: feature-track entry for RFC 7662 marked ✅;
+  Shipped table row added.
+- This CHANGELOG entry.
+
+### Upgrade path 0.37.0 → 0.38.0
+
+1. `git pull` or extract this tarball over your working
+   tree.
+2. `cargo build --workspace --target wasm32-unknown-unknown
+   --release`. No new production dependencies.
+3. `wrangler deploy`. **No schema migration.** No
+   `wrangler.toml` change. No new bindings.
+4. (Optional, per resource server) Provision a
+   confidential client via the admin console; configure
+   the resource server with the issued credentials and
+   point it at `https://<issuer>/introspect`.
+5. Update audit dashboards to monitor
+   `token_introspected`.
+
+### Forward roadmap
+
+- **i18n-2 continued**: login + TOTP page chrome
+  migration (next track per the user's specified
+  ordering).
+- **Future security-track items still open**: D1-DO
+  reconciliation tool (ADR-012 §Q1), user notification
+  on session timeout (ADR-012 §Q2), device fingerprint
+  columns (ADR-012 §Q3), tenant-default locale
+  (ADR-013 §Q2), introspection resource-server
+  audience scoping (ADR-014 §Q1), introspection rate
+  limit (ADR-014 §Q2), audit retention policy (ADR-014
+  §Q3), multi-key access-token introspection (ADR-014
+  §Q4).
+- **Feature track**: token revocation via RFC 7009 at
+  `/revoke` (already implemented for the user-pressed
+  flow; future work surfaces it for confidential
+  clients with the same auth pattern as introspection).
+
 ---
 
 ## [0.37.0] - 2026-05-03
@@ -6429,14 +6685,14 @@ review cost.
 
 - **Workspace `Cargo.toml`**:
   - `authors = ["nabbisen"]` (was
-    `["cesauth contributors"]`).
+    `["nabbisen"]`).
   - `repository = "https://github.com/nabbisen/cesauth"` (was
     the stub `https://github.com/cesauth/cesauth`).
   - Per-crate `Cargo.toml` files inherit through
     `.workspace = true` so no per-crate edits were needed.
 - **`LICENSE`** Apache-2.0 boilerplate copyright line:
   `Copyright 2026 nabbisen` (was
-  "cesauth contributors").
+  "nabbisen").
 
 ### Changed — naming
 
@@ -6473,7 +6729,7 @@ review cost.
 ### Added
 
 - **`.github/CODE_OF_CONDUCT.md`** — Contributor Covenant 2.1,
-  with `nabbisen` as the enforcement contact.
+  with `nabbisen@scqr.net` as the enforcement contact.
 - **`.github/CONTRIBUTING.md`** — practical guide covering the
   workspace test flow, code-review priorities (make invalid
   states unrepresentable; pure decision in core, side effects

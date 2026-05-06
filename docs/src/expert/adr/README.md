@@ -34,6 +34,7 @@ don't change observable behavior.
 | 011 | Refresh token reuse hardening                       | Accepted |
 | 012 | Session hardening + user-facing session list        | Accepted |
 | 013 | Internationalization infrastructure                 | Accepted |
+| 014 | RFC 7662 OAuth 2.0 Token Introspection              | Accepted |
 
 ADRs 001-003 were authored together in v0.11.0 to settle the design
 questions deferred from v0.10.0. Their decisions ship as the

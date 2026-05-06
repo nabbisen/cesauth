@@ -15,6 +15,7 @@
 #![warn(missing_debug_implementations, rust_2018_idioms)]
 
 pub mod audit;
+pub mod client_auth;
 pub mod config;
 pub mod csrf;
 pub mod error;
@@ -95,6 +96,7 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async("/authorize",  |req, ctx| async move { routes::oidc::authorize(req, ctx).await })
         .post_async("/token",     |req, ctx| async move { routes::oidc::token(req, ctx).await })
         .post_async("/revoke",    |req, ctx| async move { routes::oidc::revoke(req, ctx).await })
+        .post_async("/introspect", |req, ctx| async move { routes::oidc::introspect(req, ctx).await })
         // --- WebAuthn -------------------------------------------------
         .post_async("/webauthn/register/start",      |req, ctx| async move {
             routes::webauthn::register_start(req, ctx).await

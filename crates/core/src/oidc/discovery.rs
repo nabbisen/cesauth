@@ -40,8 +40,18 @@ pub struct DiscoveryDocument {
     pub token_endpoint:                        String,
     pub jwks_uri:                              String,
     pub revocation_endpoint:                   String,
+    /// **v0.38.0** — RFC 7662 Token Introspection endpoint.
+    /// Resource servers fetch this URL with `client_secret_basic`
+    /// authentication to ask "is this token currently active,
+    /// and what claims does it carry?".
+    pub introspection_endpoint:                String,
     pub response_types_supported:              &'static [&'static str],
     pub token_endpoint_auth_methods_supported: &'static [&'static str],
+    /// **v0.38.0** — Auth methods accepted at the introspection
+    /// endpoint. Same shape as `token_endpoint_auth_methods_supported`
+    /// but the introspection endpoint requires authentication
+    /// (no `none`) per RFC 7662 §2.1.
+    pub introspection_endpoint_auth_methods_supported: &'static [&'static str],
     pub code_challenge_methods_supported:      &'static [&'static str],
     pub grant_types_supported:                 &'static [&'static str],
     pub scopes_supported:                      &'static [&'static str],
@@ -62,9 +72,14 @@ impl DiscoveryDocument {
             token_endpoint:                        format!("{issuer}/token"),
             jwks_uri:                              format!("{issuer}/jwks.json"),
             revocation_endpoint:                   format!("{issuer}/revoke"),
+            introspection_endpoint:                format!("{issuer}/introspect"),
             response_types_supported:              &["code"],
             token_endpoint_auth_methods_supported: &[
                 "none",
+                "client_secret_basic",
+                "client_secret_post",
+            ],
+            introspection_endpoint_auth_methods_supported: &[
                 "client_secret_basic",
                 "client_secret_post",
             ],
@@ -143,6 +158,20 @@ mod tests {
         assert_eq!(d.token_endpoint,         "https://auth.example.com/token");
         assert_eq!(d.jwks_uri,               "https://auth.example.com/jwks.json");
         assert_eq!(d.revocation_endpoint,    "https://auth.example.com/revoke");
+        // v0.38.0
+        assert_eq!(d.introspection_endpoint, "https://auth.example.com/introspect");
+    }
+
+    /// **v0.38.0** — RFC 7662 §2.1 requires authentication on
+    /// the introspection endpoint. The advertised methods must
+    /// not include `none`.
+    #[test]
+    fn discovery_introspection_endpoint_requires_authentication() {
+        let d = DiscoveryDocument::new("https://auth.example.com");
+        assert!(!d.introspection_endpoint_auth_methods_supported.contains(&"none"),
+            "RFC 7662 §2.1: introspection must require client authentication");
+        assert!(d.introspection_endpoint_auth_methods_supported.contains(&"client_secret_basic"),
+            "client_secret_basic must be advertised — it's the spec-recommended method for /introspect");
     }
 
     #[test]

@@ -13,5 +13,6 @@
 
 pub mod authorization;
 pub mod discovery;
+pub mod introspect;
 pub mod pkce;
 pub mod token;

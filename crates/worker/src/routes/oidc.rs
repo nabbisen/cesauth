@@ -7,12 +7,14 @@
 
 mod authorize;
 mod discovery;
+mod introspect;
 mod jwks;
 mod revoke;
 mod token;
 
 pub use authorize::authorize;
 pub use discovery::discovery;
+pub use introspect::handler as introspect;
 pub use jwks::jwks;
 pub use revoke::revoke;
 pub use token::token;

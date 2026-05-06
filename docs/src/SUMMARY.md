@@ -49,6 +49,7 @@
     - [ADR-011: Refresh token reuse hardening](./expert/adr/011-refresh-token-reuse-hardening.md)
     - [ADR-012: Session hardening](./expert/adr/012-sessions.md)
     - [ADR-013: Internationalization](./expert/adr/013-i18n.md)
+    - [ADR-014: Token Introspection](./expert/adr/014-token-introspection.md)
     - [ADR-012: Session hardening](./expert/adr/012-session-hardening.md)
 - [Security considerations](./expert/security.md)
 

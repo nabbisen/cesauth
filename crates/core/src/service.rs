@@ -15,6 +15,8 @@
 //! rather than by `dyn Trait`, so the call graph is statically
 //! resolved and there's no allocation overhead on the hot path.
 
+pub mod client_auth;
+pub mod introspect;
 pub mod token;
 
 #[allow(async_fn_in_trait)]
