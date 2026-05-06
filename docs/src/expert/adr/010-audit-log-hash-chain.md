@@ -1,10 +1,14 @@
 # ADR-010: Audit log hash chain
 
-**Status**: **Draft (v0.32.0)**. The chain mechanism, schema,
-and write path arrive in v0.32.0 (Phase 1). The verify cron and
-admin verification UI arrive in v0.33.0 (Phase 2). The ADR
-graduates to Accepted when both phases are deployed and the
-chain has been validated end-to-end against tampering scenarios.
+**Status**: **Accepted (v0.33.0)**. Phase 1 shipped in v0.32.0
+(chain mechanism + schema + write path); Phase 2 shipped in
+v0.33.0 (verify cron + admin verification UI + chain head
+checkpoint via Workers KV). Both phases now deployed and
+validated end-to-end against tampering scenarios in the
+`cesauth-adapter-test::audit_chain::tests` test suite (10 cases
+covering payload edits, chain_hash edits, intermediate row
+deletion, wholesale rewrite via checkpoint cross-check, and
+tampered genesis row).
 
 **Context**: cesauth writes audit events to record authentication
 attempts, admin actions, token lifecycle events, and tenancy
@@ -218,45 +222,120 @@ The CHANGELOG and the audit chapter both call this out.
   the genesis row means, what to do with old R2 data. **No
   automated verification yet.**
 
-- **Phase 2 (v0.33.0)** — verification. Daily cron walks the
-  chain, recomputes `chain_hash` for every row, fails the
-  sweep on the first mismatch (records the offending `seq` and
-  `event_id`). Admin verification UI shows "chain valid through
-  row N" plus any reported gaps. Periodic chain-head
-  checkpoints — a row is recorded to a separate D1 table or
-  external store (TBD) so a compromised D1 can't quietly roll
-  back the head. Failure semantics: a tamper detection raises
-  a critical alert in the admin console; cesauth does not
-  refuse to start (the chain is for forensic value, not
-  runtime gating).
+- **Phase 2 (v0.33.0)** ✅ — verification shipped:
 
-After Phase 2 ships and is exercised against deliberately
-tampered test data, this ADR graduates to Accepted.
+  - **Pure-ish verifier in core**:
+    `cesauth_core::audit::verifier::verify_chain` (incremental,
+    resumes from a checkpoint) and `verify_chain_full`
+    (operator-triggered, ignores checkpoint). Both functions
+    take trait-bounded `AuditEventRepository` +
+    `AuditChainCheckpointStore` references; pure-ish in the
+    same Approach 2 sense the TOTP handlers use — port-level
+    IO is in scope, Env touching is not.
+
+  - **New port `AuditChainCheckpointStore`** with two records:
+    `AuditChainCheckpoint` (`last_verified_seq`, `chain_hash`,
+    `verified_at`) for the resume + cross-check, and
+    `AuditVerificationResult` (`run_at`, `chain_length`,
+    `valid`, `first_mismatch_seq`, `checkpoint_consistent`,
+    `rows_walked`) for the admin UI.
+
+  - **In-memory adapter** in `cesauth-adapter-test` and a
+    **Cloudflare KV adapter** in
+    `cesauth-adapter-cloudflare`. Per-key layout under the
+    reserved `chain:` prefix in the `CACHE` namespace
+    (`chain:checkpoint`, `chain:last_result`); no TTL on
+    either (these are operational records, not cache values).
+
+  - **New repository method `fetch_after_seq(from, limit)`**
+    on `AuditEventRepository` returning rows with `seq > from`
+    in ascending order. The verifier uses this for paged walks
+    (page size = 200) so memory stays bounded regardless of
+    chain length.
+
+  - **Daily cron** at 04:00 UTC piggybacks on the existing
+    sweep schedule. The worker's `scheduled` handler now
+    invokes both `sweep::run` and `audit_chain_cron::run`
+    independently — a failure in one doesn't block the other.
+
+  - **Admin verification UI** at `/admin/console/audit/chain`
+    renders: current chain length, last-run status badge
+    (✓ valid / tamper-at-seq-N / chain-history-mismatch /
+    no-runs-yet), checkpoint metadata (seq + chain_hash +
+    when), growth-since-checkpoint hint, and a CSRF-guarded
+    POST form for operator-triggered full re-verify.
+    Cross-linked from the existing audit search page.
+
+  - **Tamper-detection coverage**: 10 end-to-end tests in
+    `cesauth_adapter_test::audit_chain::tests` exercise
+    payload edits, chain_hash edits, intermediate row
+    deletion, wholesale rewrite (the case the chain alone
+    can't catch — caught here via checkpoint cross-check),
+    and tampered genesis row.
+
+  Failure semantics: tamper detection persists the failing
+  result to KV (so the admin UI surfaces the alarm) and logs
+  at `console_error!` level. cesauth does NOT refuse to
+  start — the chain is for forensic value, not runtime
+  gating, and runtime-gating it would let an attacker who
+  forged a chain mismatch take the whole service offline.
 
 ## Open questions
 
-These are deferred to Phase 2 or beyond:
+These were deferred to Phase 2 or beyond. Phase 2 closed Q1
+and Q3.
 
-- **Q1**: Where does the chain-head checkpoint live? Candidates:
-  separate D1 table, KV with TTL, R2 (paradoxically, after we
-  removed the audit bucket — but a separate `cesauth-anchor`
-  bucket would be small and rarely written), Workers Analytics
-  Engine. Tracking in Phase 2.
-- **Q2**: How is the chain rotated if the SHA-256 input format
-  needs to change? Possible answer: a `chain_version` column
-  defaulted to 1; bump when the input layout changes; the
-  verifier consults the column. Not Phase 1.
-- **Q3**: When a chain mismatch is detected, what happens to
-  audit writing in flight? Phase 2 must answer; Phase 1 doesn't
-  detect, so the question doesn't bite yet.
-- **Q4**: Per-tenant audit retention policy. v0.33.0 might add a
-  retention sweep that physically deletes rows older than N
-  days. The chain would need a "tombstone" record to preserve
-  integrity across retained gaps. This is post-Phase-2 work.
-- **Q5**: User-facing self-service audit view (`/me/security/audit`).
-  This is the user-side counterpart to the admin verification
-  UI. Useful, but separate from the integrity track — schedule
-  with a future UI/UX iteration.
+- **Q1** ✅ resolved in v0.33.0: the chain-head checkpoint
+  lives in **Cloudflare KV** (the existing `CACHE` namespace,
+  under the reserved `chain:` prefix). Reasoning:
+
+  - It IS a separate store from D1 (different binding,
+    different access pattern, different blast radius). An
+    attacker who compromises D1 still has to compromise KV
+    synchronously to evade detection — meaningfully harder
+    than the single-store baseline.
+  - It avoids the operator overhead of provisioning a second
+    D1 database or a separate R2 bucket for two tiny JSON
+    blobs.
+  - KV's eventually-consistent read semantics are fine here:
+    cron runs daily, the verifier is the only writer, and a
+    briefly-stale checkpoint just means the next incremental
+    run walks a few extra rows.
+
+  An external service (Sigstore, public ledger, customer-
+  controlled S3) gives stronger isolation but ships
+  significant operator overhead. Future work may add an
+  optional layered checkpoint to such a store; v0.33.0
+  ships KV-only.
+
+- **Q2**: How is the chain rotated if the SHA-256 input
+  format needs to change? Possible answer: a `chain_version`
+  column defaulted to 1; bump when the input layout changes;
+  the verifier consults the column. Still open as of v0.33.0
+  — no rotation has been needed yet.
+
+- **Q3** ✅ resolved in v0.33.0: when a chain mismatch is
+  detected, audit writing CONTINUES. The chain has no
+  built-in recovery — a tamper somewhere in the past doesn't
+  invalidate writes at the head, and refusing to write would
+  let an attacker who forged a mismatch take the audit log
+  offline. The verifier's job is to surface the alarm (to KV
+  + admin UI + Workers logs) so the operator can investigate.
+  cesauth keeps writing audit events as if nothing happened;
+  the chain remains internally consistent from the next
+  write forward.
+
+- **Q4**: Per-tenant audit retention policy. v0.33.0 might
+  add a retention sweep that physically deletes rows older
+  than N days. The chain would need a "tombstone" record to
+  preserve integrity across retained gaps. This is post-
+  Phase-2 work and remains open.
+
+- **Q5**: User-facing self-service audit view
+  (`/me/security/audit`). This is the user-side counterpart
+  to the admin verification UI. Useful, but separate from
+  the integrity track — schedule with a future UI/UX
+  iteration.
 
 ## Considered alternatives (rejected)
 

@@ -29,6 +29,7 @@
 pub mod actions;
 pub mod alerts;
 pub mod audit;
+pub mod audit_chain;
 pub mod config;
 pub mod cost;
 pub mod overview;

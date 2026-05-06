@@ -118,4 +118,29 @@ pub trait AuditEventRepository {
 
     /// Search by an admin filter. See [`AuditSearch`].
     async fn search(&self, q: &AuditSearch) -> PortResult<Vec<AuditEventRow>>;
+
+    /// Fetch up to `limit` rows whose `seq > from_seq`, in
+    /// **ascending seq order**. Used by the chain verifier
+    /// (Phase 2 of ADR-010) to walk the chain forward in pages.
+    ///
+    /// The verifier walks ascending, not descending, because:
+    ///
+    /// - The chain ordering is `prev → curr`, so verification has
+    ///   to know `prev.chain_hash` before checking `curr`.
+    /// - Incremental verification stores a checkpoint at the
+    ///   last-verified seq and resumes the walk above it. With
+    ///   `search` (which is newest-first for admin views) the
+    ///   walk would have to flip to ascending in memory; pushing
+    ///   the order down to SQL keeps memory and pagination
+    ///   bounded.
+    ///
+    /// `from_seq = 0` (or any value below the genesis seq=1)
+    /// returns the chain from the genesis row inclusive on the
+    /// first page. The verifier uses that on a cold start (no
+    /// checkpoint yet).
+    ///
+    /// If fewer than `limit` rows exist past `from_seq`, returns
+    /// what's available — callers detect "end of chain" by an
+    /// empty (or sub-page) result.
+    async fn fetch_after_seq(&self, from_seq: i64, limit: u32) -> PortResult<Vec<AuditEventRow>>;
 }

@@ -276,4 +276,19 @@ impl AuditEventRepository for CloudflareAuditEventRepository<'_> {
         let rows = result.results::<DbRow>().map_err(|_| PortError::Serialization)?;
         Ok(rows.into_iter().map(DbRow::into_domain).collect())
     }
+
+    async fn fetch_after_seq(&self, from_seq: i64, limit: u32) -> PortResult<Vec<AuditEventRow>> {
+        let db = db(self.env)?;
+        let limit_val = limit.min(1000) as i64;
+        let sql = format!(
+            "SELECT {SELECT_COLUMNS} FROM audit_events \
+             WHERE seq > ?1 ORDER BY seq ASC LIMIT ?2"
+        );
+        let stmt = db.prepare(&sql)
+            .bind(&[d1_int(from_seq), d1_int(limit_val)])
+            .map_err(|e| run_err("audit_events.fetch_after_seq bind", e))?;
+        let result = stmt.all().await.map_err(|_| PortError::Unavailable)?;
+        let rows = result.results::<DbRow>().map_err(|_| PortError::Serialization)?;
+        Ok(rows.into_iter().map(DbRow::into_domain).collect())
+    }
 }

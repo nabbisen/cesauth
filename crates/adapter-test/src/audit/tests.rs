@@ -240,3 +240,65 @@ async fn search_no_match_returns_empty() {
     }).await.unwrap();
     assert!(out.is_empty());
 }
+
+// =====================================================================
+// fetch_after_seq — Phase 2 verifier helper
+// =====================================================================
+
+#[tokio::test]
+async fn fetch_after_seq_zero_returns_chain_from_genesis_in_ascending_order() {
+    let repo = InMemoryAuditEventRepository::with_genesis();
+    let h = compute_payload_hash(b"{}");
+    repo.append(&ev("a", 1, "k", "{}", &h)).await.unwrap();
+    repo.append(&ev("b", 2, "k", "{}", &h)).await.unwrap();
+    repo.append(&ev("c", 3, "k", "{}", &h)).await.unwrap();
+
+    let page = repo.fetch_after_seq(0, 10).await.unwrap();
+    assert_eq!(page.len(), 4, "genesis + 3 user rows");
+    // Ascending seq.
+    let seqs: Vec<i64> = page.iter().map(|r| r.seq).collect();
+    assert_eq!(seqs, vec![1, 2, 3, 4]);
+    assert_eq!(page[0].kind, "ChainGenesis");
+}
+
+#[tokio::test]
+async fn fetch_after_seq_resumes_above_checkpoint() {
+    let repo = InMemoryAuditEventRepository::with_genesis();
+    let h = compute_payload_hash(b"{}");
+    for n in 0..6 {
+        repo.append(&ev(&format!("e{n}"), n as i64, "k", "{}", &h)).await.unwrap();
+    }
+
+    // Resume after seq=3: should get seqs 4, 5, 6, 7.
+    let page = repo.fetch_after_seq(3, 100).await.unwrap();
+    let seqs: Vec<i64> = page.iter().map(|r| r.seq).collect();
+    assert_eq!(seqs, vec![4, 5, 6, 7]);
+}
+
+#[tokio::test]
+async fn fetch_after_seq_empty_when_no_rows_above_cursor() {
+    let repo = InMemoryAuditEventRepository::with_genesis();
+    let h = compute_payload_hash(b"{}");
+    repo.append(&ev("a", 1, "k", "{}", &h)).await.unwrap();
+    // Tail is seq=2; ask for rows after seq=10.
+    let page = repo.fetch_after_seq(10, 100).await.unwrap();
+    assert!(page.is_empty());
+}
+
+#[tokio::test]
+async fn fetch_after_seq_respects_limit() {
+    let repo = InMemoryAuditEventRepository::new();
+    let h = compute_payload_hash(b"{}");
+    for n in 1..=10 {
+        repo.append(&ev(&format!("e{n}"), n, "k", "{}", &h)).await.unwrap();
+    }
+    let page = repo.fetch_after_seq(0, 3).await.unwrap();
+    assert_eq!(page.len(), 3);
+    let seqs: Vec<i64> = page.iter().map(|r| r.seq).collect();
+    assert_eq!(seqs, vec![1, 2, 3], "first page should be the chain head");
+
+    // Next page picks up where the first ended.
+    let page2 = repo.fetch_after_seq(3, 3).await.unwrap();
+    let seqs2: Vec<i64> = page2.iter().map(|r| r.seq).collect();
+    assert_eq!(seqs2, vec![4, 5, 6]);
+}

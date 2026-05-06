@@ -14,6 +14,234 @@ changes will always be called out here.
 
 ---
 
+## [0.33.0] - 2026-05-02
+
+Audit log hash chain Phase 2 — verification surface. ADR-010
+graduates from Draft to **Accepted**. The chain mechanism
+shipped in v0.32.0 (write path + SHA-256 chain over
+`audit_events` rows) is now actively walked by a daily cron,
+cross-checked against a chain-head checkpoint stored
+separately in Workers KV, and reported in a new admin console
+panel. Tamper detection is end-to-end exercised against
+deliberate-tampering test fixtures (10 cases covering payload
+edits, chain_hash edits, intermediate row deletion, wholesale
+rewrite, and tampered genesis row).
+
+### Why this matters
+
+Phase 1 made the audit log internally tamper-evident: editing
+any past row breaks the chain at that point and every row
+after it. That covers the "edit one row" attack but NOT the
+**wholesale rewrite** attack, where an attacker with write
+access to `audit_events` rewrites the entire table from any
+seq onward and recomputes every chain hash so the chain
+verifies internally.
+
+Phase 2 closes that gap with **chain-head checkpoints**: the
+verifier records the (seq, chain_hash) of the verified tail to
+Workers KV after each successful run; subsequent runs cross-
+check the recorded checkpoint against the current row at the
+same seq. A wholesale rewrite changes `chain_hash` at every
+row including the checkpointed seq — the cross-check catches
+it. The defense is asymmetric: an attacker now has to
+compromise BOTH D1 and KV synchronously to evade detection.
+
+### What ships
+
+**Pure-ish verifier in core.**
+`cesauth_core::audit::verifier::verify_chain` (incremental,
+resumes from a checkpoint) and `verify_chain_full`
+(operator-triggered, ignores checkpoint). Both functions take
+trait-bounded `AuditEventRepository` +
+`AuditChainCheckpointStore` references; pure-ish in the same
+Approach 2 sense the v0.32.1 TOTP handlers use — port-level
+IO is in scope, Env touching is not.
+
+**New port `AuditChainCheckpointStore`** with two records:
+`AuditChainCheckpoint` (`last_verified_seq`, `chain_hash`,
+`verified_at`) for the resume + cross-check, and
+`AuditVerificationResult` (`run_at`, `chain_length`, `valid`,
+`first_mismatch_seq`, `checkpoint_consistent`, `rows_walked`)
+for the admin UI.
+
+**Two adapters.** `InMemoryAuditChainCheckpointStore` in
+`cesauth-adapter-test` (for tests, exposes pre-seed
+`with_checkpoint` helper for the wholesale-rewrite test
+scenarios). `CloudflareAuditChainCheckpointStore` in
+`cesauth-adapter-cloudflare` (production, KV-backed). Per-key
+layout under the reserved `chain:` prefix in the existing
+`CACHE` namespace: `chain:checkpoint`, `chain:last_result`.
+No TTL on either — these are operational records, not cache
+values.
+
+**New repository method `fetch_after_seq(from, limit)`** on
+`AuditEventRepository`. Returns rows with `seq > from` in
+ascending order, capped at the supplied limit (hard cap
+1000). The verifier uses it for paged walks (page size = 200)
+so memory stays bounded regardless of chain length.
+
+**Daily cron.** The existing 04:00 UTC schedule now invokes
+both `sweep::run` (anonymous-trial retention sweep, ADR-004)
+and `audit_chain_cron::run` (chain verification, ADR-010
+Phase 2) independently. A failure in one doesn't block the
+other — they're separate concerns and chaining their
+lifecycles would couple unrelated operational hazards.
+
+**Admin verification UI.** `GET /admin/console/audit/chain`
+renders status (current chain length, last-run badge,
+checkpoint metadata, growth-since-checkpoint hint).
+`POST /admin/console/audit/chain/verify` runs an
+operator-triggered full re-walk. CSRF-guarded; gated on
+`AdminAction::ViewConsole` (any admin role). Cross-linked
+from the existing audit search page. Status badges:
+
+- ✓ chain valid (green)
+- ⛔ tamper detected at seq=N (red, with the seq surfaced)
+- ⛔ chain history mismatch (red, for wholesale-rewrite —
+  no internal mismatch but checkpoint cross-check failed)
+- no runs yet (neutral, cold-start state)
+
+**Stale UI copy fixed.** The audit search page's "R2 prefix"
+input was carried over from the pre-v0.32.0 R2 backend and
+no longer matched reality. Removed; the help text now points
+operators at the new chain status link.
+
+### Failure semantics
+
+Tamper detection persists the failing result to KV (so the
+admin UI surfaces the alarm), logs at `console_error!` level
+in Workers, and **does NOT advance the checkpoint** — the
+next cron run will re-attempt from the same point. cesauth
+KEEPS WRITING audit events: the chain is for forensic value,
+not runtime gating, and refusing to write would let an
+attacker who forged a mismatch take the audit log offline
+(ADR-010 §"Open questions Q3").
+
+The verifier itself returning `PortError` (storage outage)
+DOES propagate up so the operator sees "the verifier
+couldn't run" distinctly from "the verifier ran and found
+tamper".
+
+### Tests
+
+757 → 777 (+20).
+
+- core: 300 → 300 (verifier added but tests live in
+  adapter-test due to the dev-dep cycle workaround
+  documented in the verifier module).
+- adapter-test: 86 → 100 (+14: 4 fetch_after_seq tests in
+  the in-memory audit adapter, 10 verifier integration
+  tests).
+- adapter-cloudflare: 0 → 0 (KV adapter has no unit tests;
+  exercised only via the worker layer).
+- ui: 183 → 189 (+6 audit chain status template rendering
+  tests covering empty / valid / tamper-at-seq /
+  wholesale-rewrite / growth-since-checkpoint / CSRF wiring).
+- worker: 159 → 159 (no new unit tests; the cron handler
+  and admin handlers are thin Env-touching wrappers
+  exercised end-to-end through the verifier's port-bound
+  tests in adapter-test).
+- migrate, do, tenant_admin: unchanged (13, 16, 0).
+
+### Schema
+
+Unchanged from v0.32.0. `SCHEMA_VERSION` remains 8; no
+migration in this release. The chain checkpoint records
+live in KV, not D1.
+
+### Cookies
+
+Unchanged from v0.32.0. 7 cookies total (the original 5
+from v0.30.0 plus `flash` and `login_next` from v0.31.0).
+
+### Bindings
+
+KV binding `CACHE` gains the `chain:` prefix as reserved for
+chain checkpoint state. Two keys: `chain:checkpoint`,
+`chain:last_result`. No TTL on either (operational records).
+No new binding declared in `wrangler.toml` — uses the
+existing `CACHE` namespace.
+
+### ADR changes
+
+- **ADR-010 → Accepted** (was Draft v0.32.0). Phase 2 entry
+  expanded with the shipped reality. Open Questions Q1
+  (checkpoint location) and Q3 (in-flight audit writing on
+  tamper) marked resolved. Q2 (input format rotation), Q4
+  (per-tenant retention), Q5 (user-facing audit view)
+  remain open.
+
+### Doc / metadata changes
+
+- `Cargo.toml` version 0.32.1 → 0.33.0.
+- UI footers in `tenancy_console/frame.rs` + `tenant_admin/
+  frame.rs` (and matching test asserts) bumped to v0.33.0.
+- Operator chapter `docs/src/expert/audit-log-hash-chain.md`
+  expanded with a Phase 2 section: what runs and when, what
+  verification checks, where the checkpoint lives, how to
+  read the status page, how to trigger a full re-verify,
+  what to do when a tamper alarm fires (investigation
+  recipe + KV inspection commands).
+- ROADMAP: v0.33.0 marked ✅ in the audit-log-integrity
+  track + a Shipped table row added. v0.34.0 (Refresh token
+  reuse hardening) becomes the next active slot.
+- This CHANGELOG entry.
+
+### Notable changes (operator perspective)
+
+- **Cron runtime budget.** The verifier walks the chain in
+  pages of 200 rows. For deployments with under ~10K events
+  the cron finishes well within the daily 04:00 UTC slot's
+  CPU budget. Larger deployments may want to monitor
+  `console_log!` lines for `rows_walked` — an incremental
+  run typically sees a few hundred to a few thousand rows
+  per day. Full re-verify scales linearly with chain
+  length; the operator chapter covers when to use it.
+
+- **First run is a cold start.** On a fresh v0.33.0 deploy
+  the first cron run has no prior checkpoint, walks from
+  the genesis row, and writes the first checkpoint. The
+  admin UI displays "no runs yet" until that first cron
+  fires. Operators who want immediate confirmation can
+  click "Verify chain now (full re-walk)" on the admin
+  page.
+
+- **Tamper alarms persist.** The KV record at
+  `chain:last_result` survives across cron runs until
+  overwritten by a successful run. An alarm doesn't
+  "expire" — investigators have time to look at the row
+  before the next cron tries again.
+
+### Upgrade path 0.32.1 → 0.33.0
+
+1. `git pull` or extract this tarball over your working tree.
+2. `cargo build --workspace --target wasm32-unknown-unknown
+   --release`. No new production dependencies.
+3. `wrangler deploy`. No schema migration. No `wrangler.toml`
+   change. The KV checkpoint state is created lazily on the
+   first cron run.
+4. (Optional) Visit `/admin/console/audit/chain` and click
+   "Verify chain now (full re-walk)" to seed a checkpoint
+   immediately rather than waiting for the next 04:00 UTC
+   cron.
+
+### Forward roadmap
+
+- **v0.34.0** — Refresh token reuse hardening. Detect
+  refresh-token reuse, invalidate the chain on detection,
+  emit `refresh_token_reuse_detected` audit event.
+- **v0.35.0** — Session hardening + `/me/security/sessions`
+  page (rotation on login, idle + absolute timeouts, "new
+  device" notification, user-facing list of active
+  sessions with revoke buttons).
+- **i18n track** (parallel) — newly added to ROADMAP per
+  user observation. End-user UI is currently a mix of
+  hardcoded Japanese and English with no `Accept-Language`
+  handling; phasing covers a `MessageKey` lookup
+  infrastructure + `ja` / `en` MVP.
+
+---
+
 ## [0.32.1] - 2026-05-02
 
 TOTP handler integration tests — landing the P1-B item that was

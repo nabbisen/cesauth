@@ -22,3 +22,8 @@ path = "src/lib.rs"
 # module-level comment), so this does NOT pull worker/wasm code into
 # the UI build.
 cesauth-core = { path = "../core" }
+# v0.33.0: ISO-8601 timestamp formatting in the audit chain
+# status page (`audit_chain.rs`). The dep was already transitively
+# present through cesauth-core but adding our own direct line keeps
+# the import explicit.
+time         = { workspace = true }

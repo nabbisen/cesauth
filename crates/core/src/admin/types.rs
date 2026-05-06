@@ -439,6 +439,40 @@ pub struct AuditQuery {
     pub subject_contains: Option<String>,
 }
 
+/// Read-only view of the audit chain's verification status,
+/// surfaced in the admin console (Phase 2 of ADR-010, v0.33.0).
+///
+/// The worker layer populates this from the
+/// `AuditChainCheckpointStore` (KV-backed in production) plus
+/// the current `audit_events` tail.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditChainStatus {
+    /// Current chain length — the highest seq in
+    /// `audit_events`, including the genesis row. Zero on a
+    /// freshly-deployed environment with no events yet.
+    pub current_chain_length: i64,
+
+    /// Most-recent verification result, if any. None on a
+    /// brand-new deployment where no run has completed yet.
+    pub last_run_at:                Option<i64>,
+    pub last_run_valid:             Option<bool>,
+    pub last_run_first_mismatch:    Option<i64>,
+    pub last_run_checkpoint_match:  Option<bool>,
+    pub last_run_rows_walked:       Option<u64>,
+
+    /// Chain head as of the last successful verification. None
+    /// if no successful run has happened yet.
+    pub checkpoint_seq:        Option<i64>,
+    pub checkpoint_chain_hash: Option<String>,
+    pub checkpoint_at:         Option<i64>,
+
+    /// Has new growth happened since the last checkpoint? True
+    /// if `current_chain_length > checkpoint_seq`. Surfaces in
+    /// the UI as a "verifier hasn't seen the latest rows yet"
+    /// hint — informational, not an error.
+    pub growth_since_checkpoint: bool,
+}
+
 // -------------------------------------------------------------------------
 // Change operations
 // -------------------------------------------------------------------------

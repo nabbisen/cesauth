@@ -17,6 +17,7 @@
 //! adapter to use the freshest bindings rather than stashed copies.
 
 pub mod audit;
+pub mod audit_chain;
 pub mod cache;
 pub mod repo;
 pub mod store;

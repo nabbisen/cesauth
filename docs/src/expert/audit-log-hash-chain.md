@@ -167,25 +167,173 @@ failures separately from write-availability failures, so this
 chapter will get a section on tamper-detection diagnostics
 once that ships.
 
-## Phase 2 preview
+## Verification (Phase 2, v0.33.0)
 
-v0.33.0 (Phase 2 of ADR-010) will add:
+ADR-010 Phase 2 ships the verification surface in v0.33.0. The
+chain is no longer a passive integrity hint — it's actively
+walked, cross-checked against a checkpoint stored in a
+separate KV namespace, and reported in the admin console.
 
-- A daily cron that walks the chain ascending and recomputes
-  every row's `chain_hash`, failing on the first mismatch.
-- An admin verification UI showing "chain valid through row N"
-  with the last-verified seq and timestamp prominently
-  displayed.
-- Chain-head checkpoints recorded to a separate location so
-  an attacker with D1 write access can't quietly roll back the
-  recorded chain end.
-- Documentation for the operator-facing tamper-detection
-  workflow (what to do when the cron fires, how to investigate,
-  how to recover if the chain genuinely got corrupted by
-  legitimate-but-mistaken operations).
+### What runs and when
 
-Phase 2 is the point where ADR-010 graduates from `Draft` to
-`Accepted`.
+A daily cron at 04:00 UTC piggybacks on the existing sweep
+schedule. The worker's `scheduled` event handler invokes both
+`sweep::run` (anonymous-trial retention sweep, ADR-004) and
+`audit_chain_cron::run` (chain verification, this ADR)
+independently. A failure in one doesn't block the other.
+
+The cron runs an **incremental** verification: it reads the
+last-recorded checkpoint from KV, walks rows above it via
+`AuditEventRepository::fetch_after_seq`, verifies every link,
+and writes a fresh checkpoint on success. Cold-start runs
+(no prior checkpoint) walk from the genesis row.
+
+### What "verification" checks
+
+For each row past the resume point:
+
+1. **`payload_hash` integrity.** SHA-256 of the row's
+   `payload` bytes must equal `payload_hash`. Catches
+   in-place edits to the payload column.
+2. **`chain_hash` integrity.** Recomputed
+   `compute_chain_hash(previous_hash, payload_hash, seq, ts,
+   kind, id)` must equal `chain_hash`. Catches in-place
+   edits to any chain-input field.
+3. **Chain linkage.** The row's `previous_hash` must equal
+   the actual predecessor row's `chain_hash`. Catches
+   deletion of intermediate rows and reordering.
+4. **Genesis sentinel.** Row at seq=1 must have
+   `kind='ChainGenesis'` and both `previous_hash` and
+   `chain_hash` set to the GENESIS_HASH sentinel (64 zero
+   characters).
+
+On runs WITH a prior checkpoint the verifier additionally
+**cross-checks `checkpoint.chain_hash` against the current
+row at `checkpoint.last_verified_seq`**. A mismatch indicates
+the chain has been rewritten BEFORE the checkpoint —
+wholesale-rewrite tampering, the attack the chain mechanism
+alone can't catch.
+
+### Where the checkpoint lives
+
+Workers KV in the existing `CACHE` namespace under the
+reserved `chain:` prefix:
+
+| Key                  | Contents                                  |
+|----------------------|-------------------------------------------|
+| `chain:checkpoint`   | JSON `AuditChainCheckpoint` (last verified seq + chain_hash + verified_at) |
+| `chain:last_result`  | JSON `AuditVerificationResult` (the most-recent run's outcome) |
+
+No TTL on either — these are operational records, not cache
+values. Only the verifier writes to them; KV holds them
+indefinitely.
+
+The defense the dual-store buys is asymmetric: an attacker who
+compromises D1 still has to compromise KV synchronously to
+evade detection. ADR-010 §"Open questions Q1" documents the
+choice in detail.
+
+### Reading the status
+
+The admin console at **`/admin/console/audit/chain`** renders:
+
+- Current chain length (= MAX(seq) at read time, including the
+  genesis row).
+- Status badge: ✓ chain valid / ⛔ tamper detected at seq=N /
+  ⛔ chain history mismatch / no runs yet.
+- Last verification timestamp + how many rows the verifier
+  walked in that run.
+- Checkpoint metadata: last verified seq, recorded chain_hash,
+  when. Plus a consistency badge for the checkpoint
+  cross-check.
+- "Growth since checkpoint" hint if rows have been appended
+  between the last verification and now.
+
+### Triggering a full re-verify
+
+The same page has a CSRF-guarded POST form
+(`/admin/console/audit/chain/verify`) that runs an immediate
+full re-walk from the genesis row. Use after a deploy or
+whenever you want fresh confirmation. The full re-verify
+ignores the existing checkpoint (so its `checkpoint_consistent`
+field is `null`) and replaces the checkpoint with the new
+head on success.
+
+The verify-now endpoint is gated on `AdminAction::ViewConsole`
+(any admin role) — re-verification is a non-destructive read
+operation that produces a fresher status; an attacker who
+triggers it gains nothing the chain isn't already saying.
+
+### When a tamper alarm fires
+
+- The cron writes the failing result to `chain:last_result`.
+  The admin console picks it up on the next status read.
+- Workers logs carry a `console_error!` line: `audit chain
+  TAMPER DETECTED: first_mismatch_seq=N, checkpoint_consistent=
+  ..., chain_length=...`
+- The checkpoint is **not advanced** — the next cron run will
+  re-attempt from the same point. This is intentional: the
+  operator's job is to investigate the alarm before the chain
+  advances past the suspect rows.
+- **cesauth keeps writing audit events.** The chain is for
+  forensic value, not runtime gating. Refusing to write would
+  let an attacker who forged a mismatch take the audit log
+  offline. Per ADR-010 §"Open questions Q3".
+
+Investigation steps:
+
+1. SELECT the suspect row and its predecessor:
+   ```bash
+   wrangler d1 execute cesauth-prod --remote \
+     --command "SELECT seq, ts, kind, id, payload_hash,
+                       previous_hash, chain_hash
+                FROM audit_events
+                WHERE seq IN (?, ?)
+                ORDER BY seq"
+   ```
+   (substituting the reported `first_mismatch_seq` and that
+   minus one).
+
+2. Reconstruct the expected chain_hash by hand using the
+   recipe at the bottom of this chapter (§Diagnostic queries).
+   If your manual recompute matches the row's `chain_hash`,
+   the chain mechanism's view is internally consistent and the
+   alarm came from the checkpoint cross-check —
+   wholesale-rewrite scenario; investigate KV access and any
+   D1 access logs from outside cesauth.
+
+3. If your manual recompute disagrees with the row's
+   `chain_hash`, the row itself was edited in place. Inspect
+   what changed: most likely the `payload` column. Cross-
+   reference Workers logs around the row's `created_at` to
+   identify what wrote it, and check D1 access logs for any
+   write that didn't come from cesauth.
+
+4. Once investigation is done, decide whether to:
+   - Mark the result as triaged and trigger a fresh full
+     re-verify (the verifier's checkpoint will advance past
+     the investigation point ONLY if the chain re-verifies as
+     valid — which it won't if the tamper is real).
+   - Restore from a backup. (cesauth has no built-in audit
+     restore; the operator's backup story applies.)
+
+### Inspecting the KV checkpoint directly
+
+```bash
+# Read the latest checkpoint:
+wrangler kv:key get --binding=CACHE chain:checkpoint
+
+# Read the latest verification result:
+wrangler kv:key get --binding=CACHE chain:last_result
+
+# (NEVER hand-write to these keys; doing so would either
+#  hide a real tamper alarm or fabricate a fake one.)
+```
+
+ADR-010 graduated to **Accepted** in v0.33.0 once Phase 2
+shipped and the tamper-detection scenarios were exercised
+against deliberately-tampered test data
+(`cesauth_adapter_test::audit_chain::tests`, 10 cases).
 
 ## Diagnostic queries
 
@@ -213,8 +361,10 @@ wrangler d1 execute cesauth-prod --remote \
 #    row.payload_hash || ":" || row.seq || ":" || row.ts ||
 #    ":" || row.kind || ":" || row.id)
 # 3. Compare to row.chain_hash.
-# (Phase 2's `cesauth-migrate audit verify` subcommand will
-# automate this; for now it's a manual operation.)
+# (For automated whole-chain verification, the v0.33.0 admin
+# UI at /admin/console/audit/chain runs a full re-walk on
+# demand; the daily cron handles incremental verification
+# automatically.)
 ```
 
 ## See also

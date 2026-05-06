@@ -7,7 +7,8 @@ use super::frame::{admin_frame, Tab};
 
 pub fn audit_page(principal: &AdminPrincipal, q: &AuditQuery, entries: &[AdminAuditEntry]) -> String {
     let body = format!(
-        "{form}\n{results}",
+        "{nav}\n{form}\n{results}",
+        nav     = render_nav(),
         form    = render_search_form(q),
         results = render_results(entries),
     );
@@ -20,8 +21,11 @@ pub fn audit_page(principal: &AdminPrincipal, q: &AuditQuery, entries: &[AdminAu
     )
 }
 
+fn render_nav() -> String {
+    r##"<p><a href="/admin/console/audit/chain">Chain verification status →</a></p>"##.to_owned()
+}
+
 fn render_search_form(q: &AuditQuery) -> String {
-    let prefix  = escape(q.prefix.as_deref().unwrap_or(""));
     let kind    = escape(q.kind_contains.as_deref().unwrap_or(""));
     let subject = escape(q.subject_contains.as_deref().unwrap_or(""));
     let limit   = q.limit.unwrap_or(50);
@@ -30,10 +34,6 @@ fn render_search_form(q: &AuditQuery) -> String {
   <h2>Filters</h2>
   <form method="get" action="/admin/console/audit">
     <table>
-      <tr>
-        <th scope="row"><label for="prefix">R2 prefix</label></th>
-        <td><input id="prefix" name="prefix" type="text" value="{prefix}" placeholder="audit/YYYY/MM/DD/" style="width:100%"></td>
-      </tr>
       <tr>
         <th scope="row"><label for="kind">kind contains</label></th>
         <td><input id="kind" name="kind" type="text" value="{kind}" placeholder="auth_failed" style="width:100%"></td>
@@ -52,7 +52,7 @@ fn render_search_form(q: &AuditQuery) -> String {
       </tr>
     </table>
   </form>
-  <p class="note">Prefix defaults to today's UTC day. Widen with <code>audit/2026/04/</code> for the month; narrow with <code>audit/2026/04/24/</code> for a day.</p>
+  <p class="note">Audit events live in the D1 <code>audit_events</code> table (v0.32.0+, ADR-010). The <em>Chain verification status</em> link above shows whether the SHA-256 chain over those rows is intact.</p>
 </section>"##
     )
 }

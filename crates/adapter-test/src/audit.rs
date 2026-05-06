@@ -69,6 +69,65 @@ impl InMemoryAuditEventRepository {
     pub fn rows(&self) -> Vec<AuditEventRow> {
         self.rows.lock().map(|v| v.clone()).unwrap_or_default()
     }
+
+    // ---------------------------------------------------------
+    // Tamper helpers — for testing the chain verifier ONLY.
+    //
+    // These bypass the chain semantics that `append()` enforces.
+    // A test simulates an attacker modifying the underlying
+    // table behind the chain by calling these — the verifier
+    // should then surface the mismatch.
+    //
+    // Production code MUST NOT call these. They aren't gated
+    // with `#[cfg(test)]` because cross-crate test consumers
+    // (e.g., `cesauth_core::audit::verifier::tests`) need to
+    // call them, and `#[cfg(test)]` is per-crate. Document
+    // intent via the function name + module-level rule: only
+    // tests touch `tamper_*`.
+    // ---------------------------------------------------------
+
+    /// Replace the `payload` field at `seq` (does NOT update
+    /// `payload_hash` or `chain_hash`). Simulates an attacker
+    /// editing audit content without recomputing the chain.
+    pub fn tamper_set_payload(&self, seq: i64, new_payload: &str) {
+        let mut g = self.rows.lock().unwrap();
+        if let Some(row) = g.iter_mut().find(|r| r.seq == seq) {
+            row.payload = new_payload.to_owned();
+        }
+    }
+
+    /// Replace the `chain_hash` at `seq`. Simulates an attacker
+    /// who flipped bits in the integrity column directly.
+    pub fn tamper_set_chain_hash(&self, seq: i64, new_hash: String) {
+        let mut g = self.rows.lock().unwrap();
+        if let Some(row) = g.iter_mut().find(|r| r.seq == seq) {
+            row.chain_hash = new_hash;
+        }
+    }
+
+    /// Replace the `previous_hash` at `seq`. Simulates an
+    /// attacker who edited the chain-link column (most useful
+    /// against the genesis row's sentinel).
+    pub fn tamper_set_previous_hash(&self, seq: i64, new_hash: String) {
+        let mut g = self.rows.lock().unwrap();
+        if let Some(row) = g.iter_mut().find(|r| r.seq == seq) {
+            row.previous_hash = new_hash;
+        }
+    }
+
+    /// Remove the row at `seq`. Simulates an intermediate-row
+    /// deletion attack.
+    pub fn tamper_delete_seq(&self, seq: i64) {
+        let mut g = self.rows.lock().unwrap();
+        g.retain(|r| r.seq != seq);
+    }
+
+    /// Empty the chain. Simulates wholesale rewrite — the test
+    /// then re-appends a different chain with `append()`.
+    pub fn tamper_clear_all(&self) {
+        let mut g = self.rows.lock().unwrap();
+        g.clear();
+    }
 }
 
 impl AuditEventRepository for InMemoryAuditEventRepository {
@@ -141,6 +200,18 @@ impl AuditEventRepository for InMemoryAuditEventRepository {
             matches.truncate(limit as usize);
         }
         Ok(matches)
+    }
+
+    async fn fetch_after_seq(&self, from_seq: i64, limit: u32) -> PortResult<Vec<AuditEventRow>> {
+        let guard = self.rows.lock().map_err(|_| PortError::Unavailable)?;
+        let mut out: Vec<AuditEventRow> = guard.iter()
+            .filter(|r| r.seq > from_seq)
+            .cloned()
+            .collect();
+        // Ascending seq for the chain walk.
+        out.sort_by(|a, b| a.seq.cmp(&b.seq));
+        out.truncate(limit as usize);
+        Ok(out)
     }
 }
 

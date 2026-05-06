@@ -24,6 +24,7 @@
 pub mod admin;
 pub mod anonymous;
 pub mod audit;
+pub mod audit_chain;
 pub mod authz;
 pub mod billing;
 pub mod cache;

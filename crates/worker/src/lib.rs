@@ -23,6 +23,7 @@ pub mod log;
 pub mod post_auth;
 pub mod routes;
 pub mod sweep;
+pub mod audit_chain_cron;
 pub mod turnstile;
 
 #[allow(clippy::wildcard_imports)]
@@ -51,10 +52,17 @@ pub use cesauth_cf::{ActiveSession, AuthChallenge, RateLimit, RefreshTokenFamily
 pub async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
     let cron = event.cron();
     match cron.as_str() {
-        // Daily anonymous-trial retention sweep. ADR-004 §Q3.
+        // Daily 04:00 UTC: anonymous-trial retention sweep
+        // (ADR-004 §Q3) + audit chain verification (ADR-010
+        // §Phase 2). Run both regardless of which one errors;
+        // they're independent tasks and a sweep failure must
+        // not block the verification cron, and vice versa.
         "0 4 * * *" => {
             if let Err(e) = sweep::run(&env).await {
                 console_error!("scheduled sweep failed: {e:?}");
+            }
+            if let Err(e) = audit_chain_cron::run(&env).await {
+                console_error!("audit chain verification failed: {e:?}");
             }
         }
         // Unknown schedule. Either a misconfigured `wrangler.toml`
@@ -143,6 +151,8 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async ("/admin/console/safety",                   |req, ctx| async move { routes::admin::console::safety::page(req, ctx).await })
         .post_async("/admin/console/safety/:bucket/verify",    |req, ctx| async move { routes::admin::console::safety::verify(req, ctx).await })
         .get_async ("/admin/console/audit",                    |req, ctx| async move { routes::admin::console::audit::page(req, ctx).await })
+        .get_async ("/admin/console/audit/chain",              |req, ctx| async move { routes::admin::console::audit_chain::page(req, ctx).await })
+        .post_async("/admin/console/audit/chain/verify",       |req, ctx| async move { routes::admin::console::audit_chain::verify_now(req, ctx).await })
         .get_async ("/admin/console/config",                   |req, ctx| async move { routes::admin::console::config::page(req, ctx).await })
         .post_async("/admin/console/config/:bucket/preview",   |req, ctx| async move { routes::admin::console::config::preview(req, ctx).await })
         .post_async("/admin/console/config/:bucket/apply",     |req, ctx| async move { routes::admin::console::config::apply(req, ctx).await })
