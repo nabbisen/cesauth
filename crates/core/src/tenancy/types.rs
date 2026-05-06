@@ -156,7 +156,7 @@ pub enum AccountType {
     /// Anonymous trial principal. Not a permanent user in the sense
     /// of `HumanUser`; lifecycle is bounded, data retention is
     /// narrow. The promotion flow (anonymous → human_user) is a
-    /// 0.18.0 item.
+    /// 0.14.0 item.
     Anonymous,
     /// Ordinary end-user, created by self-registration or invitation.
     HumanUser,
@@ -169,7 +169,8 @@ pub enum AccountType {
     SystemOperator,
     /// External IdP-federated user. Credentials live elsewhere; the
     /// local row exists to carry role assignments and audit history.
-    /// Federation wiring is 0.18.0.
+    /// Federation wiring is unscheduled at this time — tracked in
+    /// ROADMAP under "Explicitly out-of-scope (for now)".
     ExternalFederatedUser,
 }
 

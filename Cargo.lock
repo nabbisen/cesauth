@@ -72,7 +72,7 @@ checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
 name = "cesauth-adapter-cloudflare"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "cesauth-core",
  "serde",
@@ -86,7 +86,7 @@ dependencies = [
 
 [[package]]
 name = "cesauth-adapter-test"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "cesauth-core",
  "serde",
@@ -97,7 +97,7 @@ dependencies = [
 
 [[package]]
 name = "cesauth-core"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "base64",
  "ciborium",
@@ -119,14 +119,14 @@ dependencies = [
 
 [[package]]
 name = "cesauth-ui"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "cesauth-core",
 ]
 
 [[package]]
 name = "cesauth-worker"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "base64",
  "cesauth-adapter-cloudflare",

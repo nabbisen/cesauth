@@ -37,7 +37,7 @@ zero remaining issues.
 | Audit log (R2, NDJSON per event)       | ✅       | Covered by `/__dev/audit` browser + searchable via admin console (0.3.0) |
 | **Cost &amp; Data Safety Admin Console** | ✅     | `/admin/console/*` — Overview, Cost, Safety, Audit, Config, Alerts (0.3.0); HTML two-step edit UI for bucket-safety + admin-token CRUD (0.4.0) |
 | Dev-only routes (`/__dev/*`)           | ✅       | Gated on `WRANGLER_LOCAL="1"`                      |
-| **Tenancy-service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.5.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.6.0). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.7.0). Read-only HTML console at `/admin/tenancy/*` (0.8.0, originally `/admin/saas/*`). Mutation forms with preview/confirm pattern (0.9.0) for tenant / organization / group / subscription. Membership add/remove + role grant/revoke forms (0.10.0) bring the HTML console to feature parity with the v0.7.0 JSON API. ADR-001/002/003 settle the tenant-scoped admin surface design (0.11.0) and ship the schema + type foundation (`admin_tokens.user_id`, `AdminPrincipal::user_id`, `is_system_admin()`). Project-hygiene release with naming-debt cleanup (0.12.0) — `saas/` → `tenancy_console/`, `/admin/saas/*` → `/admin/tenancy/*`, plus author/license metadata and `.github/` community documents. Tenant-scoped surface implementation for 0.13.0. |
+| **Tenancy-service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.5.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.6.0). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.7.0). Read-only HTML console at `/admin/tenancy/*` (0.8.0, originally `/admin/saas/*`). Mutation forms with preview/confirm pattern (0.9.0) for tenant / organization / group / subscription. Membership add/remove + role grant/revoke forms (0.10.0) bring the HTML console to feature parity with the v0.7.0 JSON API. ADR-001/002/003 settle the tenant-scoped admin surface design (0.11.0) and ship the schema + type foundation (`admin_tokens.user_id`, `AdminPrincipal::user_id`, `is_system_admin()`). Project-hygiene release with naming-debt cleanup (0.12.0) — `saas/` → `tenancy_console/`, `/admin/saas/*` → `/admin/tenancy/*`, plus author/license metadata and `.github/` community documents. Buffer/follow-up release with stale-narrative cleanup + dependency audit (0.12.1). Tenant-scoped surface implementation for 0.13.0. |
 | mdBook documentation                   | ✅       | `docs/`                                            |
 
 ---
@@ -168,11 +168,30 @@ started.
     need updating. No compatibility-redirect routes were
     added; the pre-1.0 SemVer caveat permits the hard rename.
 
+- **Buffer / follow-up release (shipped in 0.12.1).** Reserved
+  as a placeholder slot for any issues the 0.12.0 rename would
+  surface in real-world use. The shippable content turned out
+  to be two small but worthwhile threads:
+  - **Stale-narrative cleanup** — three docstrings carried
+    forward-references and historical claims that the 0.12.0
+    rename and intervening release-slot reshuffles
+    invalidated. Fixed in `crates/ui/src/tenancy_console.rs`
+    (the false "URL prefix preserved" claim and the wrong
+    "since v0.18.0" marker) and
+    `crates/core/src/tenancy/types.rs` (`AccountType::Anonymous`
+    forward-ref to 0.18.0 → 0.14.0; `ExternalFederatedUser`
+    forward-ref to 0.18.0 → unscheduled).
+  - **Dependency audit** — manual review of every direct
+    workspace dependency. No bumps. `getrandom 0.2` and
+    `rand_core 0.6` are intentionally pinned at the older
+    line for wasm32-unknown-unknown + Cloudflare Workers
+    integration; bumping is gated on the workers-rs
+    ecosystem aligning on the corresponding 0.3 / 0.9 lines.
+    Every other direct dep is current.
+
 - **Tenant-scoped admin surface implementation (0.13.0).**
-  Builds on the 0.11.0 foundation. The 0.12.1 release slot is
-  reserved as a buffer for any follow-up work the 0.12.0
-  rename surfaces in real-world use; 0.13.0 builds the
-  tenant-scoped routes on a clean naming base. Scope:
+  Builds on the 0.11.0 foundation, on a clean naming base
+  (post-0.12.0) and validated dep tree (post-0.12.1). Scope:
   - The `/admin/t/<slug>/...` route surface (likely 6-10
     pages mirroring the system-admin console at
     `/admin/tenancy/...` but filtered to the caller's

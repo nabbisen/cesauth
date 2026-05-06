@@ -12,6 +12,152 @@ always be called out here.
 
 ---
 
+## [0.12.1] - 2026-04-27
+
+Buffer / follow-up release. Originally reserved as a placeholder
+slot for any issues the 0.12.0 rename would surface in real-world
+use. The shippable content turned out to be two small but
+worthwhile threads:
+
+1. **Stale-narrative cleanup** — three docstrings carried
+   forward-references and historical claims that the 0.12.0 rename
+   and intervening release-slot reshuffles invalidated. Cleaned
+   up.
+
+2. **Dependency audit** — a deliberate look at every direct
+   workspace dependency to confirm the tree isn't accumulating
+   drift before v0.13.0 (tenant-scoped surface) lands. No bumps;
+   the rationale for each "leave at current" is in the audit
+   findings below.
+
+The 0.13.0 surface implementation is unchanged in scope and
+unaffected by this release.
+
+### Changed — stale-narrative cleanup
+
+- **`crates/ui/src/tenancy_console.rs` module docstring**
+  rewritten. The previous version made two claims that became
+  false during 0.12.0:
+  - "URL prefix is preserved from earlier releases for
+    operator-facing stability" — false. v0.12.0 deliberately
+    broke `/admin/saas/*` → `/admin/tenancy/*` as an
+    operator-visible breaking change.
+  - "since v0.18.0" — wrong release marker (the rename
+    landed in v0.12.0, and v0.18.0 is not a planned release at
+    all).
+
+  The replacement docstring documents what the module is now
+  (read pages, mutation forms, memberships and role
+  assignments), the v0.11.0 ADR-foundation that 0.13.0 will
+  build on, and the naming-history note explaining the v0.12.0
+  rename.
+
+- **`crates/core/src/tenancy/types.rs::AccountType`** — two
+  variant doc-references corrected:
+  - `Anonymous`: "promotion flow is a 0.18.0 item" → "0.14.0
+    item" (matches the ROADMAP slot that was settled in 0.12.0).
+  - `ExternalFederatedUser`: "Federation wiring is 0.18.0" →
+    "Federation wiring is unscheduled at this time" (the
+    explicit out-of-scope status is honest about the lack of
+    a current target).
+
+  Neither change touches behavior. Both prevent a future
+  maintainer from chasing a 0.18.0 milestone that doesn't exist.
+
+### Verified — dependency audit
+
+Per project policy, `cargo-outdated` is the canonical tool for
+this check. The audit environment used here couldn't install it
+(network and time budget didn't permit the substantial
+transitive dep graph compile), so the audit was performed by
+manual inspection of `Cargo.toml` against `Cargo.lock` and
+known-current version information. Results:
+
+**Healthy as-pinned**, every direct dependency at a current
+maintained line:
+
+- `worker = "0.8"` resolves to 0.8.1 — current Cloudflare
+  Workers SDK.
+- `serde 1`, `serde_json 1`, `thiserror 2`, `anyhow 1`,
+  `uuid 1`, `time 0.3`, `url 2`, `hex 0.4`, `tokio 1` —
+  all on current major lines.
+- `jsonwebtoken 10` — current.
+- `base64 0.22`, `sha2 0.10`, `hmac 0.12`,
+  `ed25519-dalek 2`, `p256 0.13`, `ciborium 0.2` —
+  RustCrypto family aligned, all current within their
+  release line.
+
+**Intentionally pinned at older line — leave alone**:
+
+- `getrandom = "0.2"` (resolves 0.2.17) — pinned at 0.2 with
+  the `js` feature for the wasm32-unknown-unknown +
+  Cloudflare Workers integration. The 0.3.x line replaced
+  the `js` feature with `wasm_js` and a different backend
+  selection mechanism. Multiple July-August 2025 reports
+  (including the Leptos 0.8.6 → uuid 1.18 → getrandom 0.3.3
+  break) confirm the upgrade requires either `worker-build`
+  to grow corresponding support or the whole transitive tree
+  to align on 0.3 simultaneously. **Don't bump until the
+  Cloudflare workers-rs ecosystem moves first.**
+
+- `rand_core = "0.6"` (resolves 0.6.4) — couples with
+  `getrandom 0.2` and with the RustCrypto family
+  (ed25519-dalek 2, p256 0.13). Bumping to 0.9 is gated on
+  the same wasm32 alignment that gates getrandom.
+
+**Coexistence noted, fine to ignore**:
+
+- `Cargo.lock` shows a transitive `getrandom 0.7.0` riding
+  alongside the directly-pinned 0.2.17. cargo handles
+  multiple major versions of the same crate side-by-side;
+  the 0.2 instance is the one consumed by the wasm32 build
+  path, the 0.4 instance is from a `wasm32-wasi`-targeted
+  branch of some transitive dep. No action needed.
+
+The audit is recorded as a one-off snapshot rather than a
+recurring CI check. A future release that introduces a
+dedicated CI job (`cargo audit` / `cargo-outdated`) would be
+worth doing on its own.
+
+### Tests
+
+- Total: **219 passing** (unchanged from 0.12.0).
+  - core: 105.
+  - adapter-test: 32.
+  - ui: 82.
+
+The frame test that asserts the footer's version marker now
+asserts `"v0.12.1"`. Otherwise the test diff is empty — the
+release's code change is doc-only.
+
+### Why this isn't a no-op
+
+A buffer release without bug fixes can look like ceremony.
+What the slot bought:
+
+- **A clean look at every direct dep before adding more code.**
+  v0.13.0 will add new auth resolution paths and a token-mint
+  flow; landing those on top of unaudited deps is harder to
+  review.
+- **Three docstrings now agree with reality.** A future
+  maintainer reading them won't go looking for a v0.18.0
+  milestone or assume that `/admin/saas/*` still resolves.
+- **Validation that v0.12.0's hard rename didn't leave any
+  broken narrative.** None did, but the only way to confirm
+  was to grep the codebase for `0.18.0` and "preserved from
+  earlier" — the audit was the work.
+
+### Deferred — unchanged from 0.12.0
+
+- **Tenant-scoped admin surface implementation (0.13.0).**
+- **Token-mint flow with `user_id` (0.13.0).**
+- **`check_permission` integration on the API surface (0.13.0).**
+- **Anonymous-trial promotion (0.14.0).**
+- **External IdP federation** — explicitly out of scope; no
+  scheduled target.
+
+---
+
 ## [0.12.0] - 2026-04-27
 
 Project hygiene release. Pre-1.0, technically — but the changes here
