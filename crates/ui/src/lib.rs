@@ -14,6 +14,7 @@
 
 pub mod admin;
 pub mod tenancy_console;
+pub mod tenant_admin;
 pub mod templates;
 
 /// Minimal HTML attribute-value escaper. Covers the five characters

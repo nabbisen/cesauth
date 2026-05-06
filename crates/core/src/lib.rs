@@ -36,6 +36,7 @@ pub mod ports;
 pub mod service;
 pub mod session;
 pub mod tenancy;
+pub mod tenant_admin;
 pub mod turnstile;
 pub mod types;
 pub mod webauthn;

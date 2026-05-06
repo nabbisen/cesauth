@@ -158,6 +158,30 @@ pub trait AdminTokenRepository {
 
     /// Soft-disable: row stays, `disabled_at` is stamped.
     async fn disable(&self, id: &str, now_unix: i64) -> PortResult<()>;
+
+    /// Create a user-bound admin token. Same as `create` but stamps
+    /// the row with a `user_id` linking to a row in `users`.
+    /// Resulting `AdminPrincipal` has `user_id == Some(user_id)`,
+    /// which `is_system_admin()` reads as "tenant-admin, not
+    /// system-admin" per ADR-002.
+    ///
+    /// Added in v0.13.0 alongside the tenant-scoped admin surface.
+    /// The token-mint *flow* (who can mint, what audit trail it
+    /// emits, what UI exposes the operation) is not part of this
+    /// method — adapters just persist what they're told. The
+    /// caller (a route handler in the worker, or a test) is
+    /// responsible for authorization on the mint operation.
+    ///
+    /// `token_hash` is SHA-256 of the plaintext the caller minted;
+    /// the plaintext itself is never stored.
+    async fn create_user_bound(
+        &self,
+        token_hash: &str,
+        role:       Role,
+        name:       Option<&str>,
+        user_id:    &str,
+        now_unix:   i64,
+    ) -> PortResult<AdminPrincipal>;
 }
 
 // -------------------------------------------------------------------------

@@ -79,11 +79,8 @@ impl AdminTokenRepository for CloudflareAdminTokenRepository<'_> {
             ])
             .map_err(|e| run_err("admin_tokens.create bind", e))?
             .run().await.map_err(|e| run_err("admin_tokens.create run", e))?;
-        // v0.11.0: tokens minted via this repo are still system-admin
-        // tokens (no user binding). v0.13.0 introduces a separate
-        // `create_user_bound` entry point to mint user-as-bearer
-        // tokens. Adding it now would be premature — there's no
-        // resolution path for the result yet.
+        // System-admin tokens (no user binding); user-bound tokens
+        // are minted via `create_user_bound` (added in v0.13.0).
         Ok(AdminPrincipal { id, name: name_owned, role, user_id: None })
     }
 
@@ -97,5 +94,47 @@ impl AdminTokenRepository for CloudflareAdminTokenRepository<'_> {
             .map_err(|e| run_err("admin_tokens.disable bind", e))?
             .run().await.map_err(|e| run_err("admin_tokens.disable run", e))?;
         Ok(())
+    }
+
+    async fn create_user_bound(
+        &self,
+        token_hash: &str,
+        role:       Role,
+        name:       Option<&str>,
+        user_id:    &str,
+        now_unix:   i64,
+    ) -> PortResult<AdminPrincipal> {
+        let db = db(self.env)?;
+        let id = Uuid::new_v4().to_string();
+        let name_owned  = name.map(str::to_owned);
+        let user_id_owned = user_id.to_owned();
+        // Note: application-layer FK enforcement, consistent with the
+        // rest of the schema. The caller is responsible for verifying
+        // the user_id exists before minting; an orphan user_id here
+        // would still resolve to None on principal lookup (see
+        // principal_resolver.rs) but would clutter audit history.
+        db.prepare(
+            "INSERT INTO admin_tokens (id, token_hash, role, name, user_id, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
+        )
+            .bind(&[
+                id.clone().into(),
+                token_hash.into(),
+                role.as_str().into(),
+                match &name_owned {
+                    Some(s) => s.clone().into(),
+                    None    => worker::wasm_bindgen::JsValue::NULL,
+                },
+                user_id_owned.clone().into(),
+                d1_int(now_unix),
+            ])
+            .map_err(|e| run_err("admin_tokens.create_user_bound bind", e))?
+            .run().await.map_err(|e| run_err("admin_tokens.create_user_bound run", e))?;
+        Ok(AdminPrincipal {
+            id,
+            name: name_owned,
+            role,
+            user_id: Some(user_id_owned),
+        })
     }
 }

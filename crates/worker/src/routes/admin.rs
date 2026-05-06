@@ -25,5 +25,6 @@ pub mod auth;
 pub mod console;
 pub mod legacy;
 pub mod tenancy_console;
+pub mod tenant_admin;
 
 pub use legacy::{create_user, revoke_session};

@@ -16,7 +16,7 @@ members = [
 # `[workspace.package].rust-version`) and the wasm32 target installed.
 
 [workspace.package]
-version      = "0.12.1"
+version      = "0.13.0"
 edition      = "2024"
 rust-version = "1.85"
 license      = "Apache-2.0"

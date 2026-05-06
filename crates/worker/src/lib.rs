@@ -147,6 +147,23 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .post_async("/admin/tenancy/users/:uid/role_assignments/new",                    |req, ctx| async move { routes::admin::tenancy_console::forms::role_assignment_create::submit(req, ctx).await })
         .get_async ("/admin/tenancy/role_assignments/:id/delete",                        |req, ctx| async move { routes::admin::tenancy_console::forms::role_assignment_delete::confirm(req, ctx).await })
         .post_async("/admin/tenancy/role_assignments/:id/delete",                        |req, ctx| async move { routes::admin::tenancy_console::forms::role_assignment_delete::submit(req, ctx).await })
+        // --- tenant-scoped admin surface (v0.13.0) ---------------------
+        // Reachable from a tenant-side login, gated through the
+        // user-as-bearer admin token (per ADR-002). Per-route auth
+        // gate enforces:
+        //   1. principal.user_id.is_some() — system-admin tokens are
+        //      refused at this surface (ADR-003 separation)
+        //   2. URL :slug resolves to a real tenant
+        //   3. principal's user belongs to that tenant — the
+        //      structural defense against tenant-boundary leakage
+        // See `routes/admin/tenant_admin/gate.rs`. v0.13.0 ships read
+        // pages only; mutation forms land in 0.14.0.
+        .get_async("/admin/t/:slug",                                                     |req, ctx| async move { routes::admin::tenant_admin::overview::page(req, ctx).await })
+        .get_async("/admin/t/:slug/organizations",                                       |req, ctx| async move { routes::admin::tenant_admin::organizations::page(req, ctx).await })
+        .get_async("/admin/t/:slug/organizations/:oid",                                  |req, ctx| async move { routes::admin::tenant_admin::organization_detail::page(req, ctx).await })
+        .get_async("/admin/t/:slug/users",                                               |req, ctx| async move { routes::admin::tenant_admin::users::page(req, ctx).await })
+        .get_async("/admin/t/:slug/users/:uid/role_assignments",                         |req, ctx| async move { routes::admin::tenant_admin::role_assignments::page(req, ctx).await })
+        .get_async("/admin/t/:slug/subscription",                                        |req, ctx| async move { routes::admin::tenant_admin::subscription::page(req, ctx).await })
         // --- tenancy-service API (v0.7.0) ----------------------------
         // JSON-only surface for operator-driven tenant / org / group /
         // role-assignment / subscription provisioning. Gated through

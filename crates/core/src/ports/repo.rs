@@ -25,6 +25,14 @@ pub trait UserRepository {
     /// Replace mutable fields (display_name, status, email_verified,
     /// updated_at). Returns `NotFound` if the id does not exist.
     async fn update(&self, user: &User) -> PortResult<()>;
+
+    /// Users belonging to a tenant. Active (non-deleted) only.
+    /// Used by the v0.13.0 tenant-scoped admin surface.
+    /// Pagination is intentionally omitted at this stage — the
+    /// surface that consumes this expects O(10-1000) users per
+    /// tenant. Pagination lands when a tenant's user count exceeds
+    /// what fits on one page.
+    async fn list_by_tenant(&self, tenant_id: &str) -> PortResult<Vec<User>>;
 }
 
 /// `oidc_clients` table.

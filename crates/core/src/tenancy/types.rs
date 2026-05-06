@@ -156,7 +156,7 @@ pub enum AccountType {
     /// Anonymous trial principal. Not a permanent user in the sense
     /// of `HumanUser`; lifecycle is bounded, data retention is
     /// narrow. The promotion flow (anonymous → human_user) is a
-    /// 0.14.0 item.
+    /// 0.15.0-or-later item.
     Anonymous,
     /// Ordinary end-user, created by self-registration or invitation.
     HumanUser,

@@ -67,8 +67,16 @@ this chapter implements §3-§5 and §16.1, §16.3, §16.6.
 > module-path / URL-prefix / public-type rename
 > (`saas/` → `tenancy_console/`, `/admin/saas/*` →
 > `/admin/tenancy/*`, `SaasTab` → `TenancyConsoleTab`)
-> completed. The full tenant-scoped surface implementation
-> lands in **0.13.0**.
+> completed.
+>
+> v0.13.0 ships the tenant-scoped admin surface — read pages
+> only — at `/admin/t/<slug>/...`. The per-route auth gate
+> enforces ADR-003's three invariants (principal is
+> user-bound, slug resolves to a tenant, the principal's
+> user belongs to that tenant) and `check_permission`
+> integration replaces `ensure_role_allows` for action-level
+> authorization on these routes. Mutation forms and the
+> token-mint UI land in **0.14.0**.
 
 ---
 
@@ -600,35 +608,126 @@ Naming-debt cleanup:
   that filter on this value need updating. Past audit entries
   retain the old marker (the audit log is append-only).
 
+### Added in 0.12.1
+
+A small buffer/follow-up release after the v0.12.0 rename. Two
+threads:
+
+- **Stale-narrative cleanup** — three docstrings carried
+  forward-references and historical claims invalidated by the
+  v0.12.0 rename and intervening release-slot reshuffles. Fixed
+  in `crates/ui/src/tenancy_console.rs` (false "URL prefix
+  preserved" claim and wrong "since v0.18.0" marker) and
+  `crates/core/src/tenancy/types.rs` (`AccountType::Anonymous`
+  forward-ref and `ExternalFederatedUser` forward-ref).
+- **Dependency audit** — manual review of every direct
+  workspace dependency. No bumps. `getrandom 0.2` and
+  `rand_core 0.6` are intentionally pinned at the older line
+  for wasm32-unknown-unknown + Cloudflare Workers integration;
+  bumping is gated on the workers-rs ecosystem aligning on the
+  corresponding 0.3 / 0.9 lines. Every other direct dep is
+  current.
+
+### Added in 0.13.0
+
+The tenant-scoped admin surface — read pages only. The 0.11.0
+ADR foundation lands as a working surface that tenant admins
+can actually visit. Mutation forms come in 0.14.0, mirroring
+the v0.8.0 → v0.9.0 split for the system-admin surface.
+
+- **Domain layer** — new module `crates/core/src/tenant_admin/`
+  owning the auth-gate decision logic. Pure (no network calls
+  of its own), generic over the repository ports it consumes,
+  host-testable. Exports:
+  - **`TenantAdminContext`** — successful gate pass carries
+    the resolved principal, tenant, and user.
+  - **`TenantAdminFailure`** — typed failure modes
+    (`NotUserBound`, `UnknownTenant`, `UnknownUser`,
+    `WrongTenant`, `Unavailable`) with their HTTP status code
+    semantics: `NotUserBound`/`WrongTenant` → 403,
+    `UnknownTenant` → 404, `UnknownUser` → 401,
+    `Unavailable` → 503.
+  - **`resolve_tenant_admin(principal, slug, tenants, users)`**
+    — the gate. Enforces, in order: principal is user-bound,
+    slug resolves to a tenant, principal's user belongs to
+    that tenant. The third invariant is the structural
+    defense ADR-003 promises.
+
+- **Port additions** — two new repository methods:
+  - **`AdminTokenRepository::create_user_bound`** — mints a
+    token with `admin_tokens.user_id` populated. Resulting
+    `AdminPrincipal` has `user_id == Some(...)`, which
+    `is_system_admin()` reads as "tenant-admin, not
+    system-admin" per ADR-002. Implementations land in both
+    adapters.
+  - **`UserRepository::list_by_tenant`** — active
+    (non-deleted) users belonging to a given tenant. Powers
+    the tenant-scoped users page. Pagination intentionally
+    omitted at this stage.
+
+- **UI module** — new `crates/ui/src/tenant_admin/` mirroring
+  the shape of `tenancy_console` but tenant-scoped. Per ADR-003,
+  no chrome is shared between the two surfaces — the
+  structural separation is the visual signal that an operator
+  has switched contexts. Six pages: overview, organizations
+  list + detail, users list, role-assignments drill-in,
+  subscription history. All read-only.
+
+- **Worker route layer** — `crates/worker/src/routes/admin/tenant_admin/`.
+  Each handler runs the same opening sequence: bearer →
+  principal, tenant-admin gate, action-level
+  `check_permission` against the resolved tenant scope.
+  Defense-in-depth checks for child-resource ids (`:oid`,
+  `:uid`) verify they belong to the user's tenant — a tenant
+  admin who types in another tenant's organization id gets a
+  403, not the wrong tenant's data.
+
+- **Six new GET routes** registered in
+  `crates/worker/src/lib.rs`:
+  - `/admin/t/:slug` (overview)
+  - `/admin/t/:slug/organizations`
+  - `/admin/t/:slug/organizations/:oid`
+  - `/admin/t/:slug/users`
+  - `/admin/t/:slug/users/:uid/role_assignments`
+  - `/admin/t/:slug/subscription`
+
+- **Authorization model** — system-admin surface continues to
+  use `auth::ensure_role_allows(principal, AdminAction::*)`;
+  tenant-scoped surface uses `check_permission(user_id,
+  permission, scope)`. Both mechanisms coexist; ADR-003's
+  URL-prefix separation means neither leaks across.
+
+- **Audit emission** for cross-tenant access attempts and
+  stale-principal refusals. The gate audits `WrongTenant` and
+  `UnknownUser` failures as `AdminLoginFailed` events with
+  reason text identifying the principal id and the attempted
+  slug. `check_permission` denials are also audited.
+
 ### Does NOT ship in v0.4.x (yet)
 
 The CHANGELOG `Deferred` sections and `ROADMAP.md` track each item.
 Headlines:
 
-- **Tenant-scoped admin surface implementation**. v0.11.0
-  shipped the design and foundation; v0.13.0 builds the routes
-  + views + per-route auth gate that requires
-  `principal.user_id == Some(_)` matching the URL slug. The
-  0.12.1 release slot is reserved as a buffer for any
-  follow-up work the 0.12.0 rename surfaces in real-world use.
-- **Token-mint flow with `user_id`.** Today
-  `AdminTokenRepository::create` mints system-admin tokens
-  only. v0.13.0 introduces a parallel mint path (or extended
-  signature) that produces user-bound tokens. The mint flow
-  itself raises questions (who can mint? what's the
-  authorization on the mint?) that v0.13.0 will answer.
-- **`check_permission` integration on the API surface.** v0.7.0
-  routes go through `ensure_role_allows` (admin-side capability)
-  rather than `check_permission` because admin tokens had no
-  user binding. With v0.11.0's `AdminPrincipal::user_id`, this
-  becomes possible — and v0.13.0 will wire it up for the
-  tenant-scoped routes.
-- **Cookie-based auth for admin forms.** Explicitly *not* the
-  user-as-bearer mechanism, per ADR-002. May appear as an
-  *additional* mechanism in a later ADR if there's a concrete
-  need.
+- **Mutation forms for the tenant-scoped surface.** All the
+  v0.9.0 / v0.10.0 system-admin forms have natural
+  tenant-scoped equivalents (organization status changes,
+  group create / delete, membership add / remove inside this
+  tenant, role grant / revoke). **0.14.0.**
+- **Token-mint HTML form.** The
+  `AdminTokenRepository::create_user_bound` adapter method
+  exists; what's missing is a
+  `/admin/tenancy/users/:uid/tokens/new` form that exposes it
+  to system-admins, so a tenant admin's first user-bound
+  token can be minted without scripting. **0.14.0.**
+- **`check_permission` integration on `/api/v1/...`.** The
+  v0.7.0 JSON API still uses `ensure_role_allows`. Now that
+  user-bound tokens exist and `check_permission` is
+  validated in the new HTML routes, extending it to the API
+  surface is mechanical. Unscheduled — depends on whether
+  there's a concrete need (most callers of `/api/v1` will be
+  system-admin scripts, not tenant admins).
 - **Anonymous-trial promotion.** The account type exists; the
-  promotion lifecycle is unspecified. **0.14.0.**
+  promotion lifecycle is unspecified. **0.15.0 or later.**
 - **External IdP federation.** `AccountType::ExternalFederatedUser`
   is reserved; no IdP wiring exists yet.
 

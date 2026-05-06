@@ -64,4 +64,31 @@ impl AdminTokenRepository for InMemoryAdminTokenRepository {
         r.disabled_at = Some(now_unix);
         Ok(())
     }
+
+    async fn create_user_bound(
+        &self,
+        token_hash: &str,
+        role:       Role,
+        name:       Option<&str>,
+        user_id:    &str,
+        _now_unix:  i64,
+    ) -> PortResult<AdminPrincipal> {
+        let mut m = self.inner.lock().map_err(|_| PortError::Unavailable)?;
+        if m.values().any(|r| r.token_hash == token_hash) {
+            return Err(PortError::Conflict);
+        }
+        let id = format!("inmem-{}", m.len() + 1);
+        let p  = AdminPrincipal {
+            id: id.clone(),
+            name: name.map(str::to_owned),
+            role,
+            user_id: Some(user_id.to_owned()),
+        };
+        m.insert(id, Row {
+            principal:    p.clone(),
+            token_hash:   token_hash.to_owned(),
+            disabled_at:  None,
+        });
+        Ok(p)
+    }
 }

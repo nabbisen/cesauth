@@ -170,4 +170,19 @@ impl UserRepository for CloudflareUserRepository<'_> {
         let _ = result;
         Ok(())
     }
+
+    async fn list_by_tenant(&self, tenant_id: &str) -> PortResult<Vec<User>> {
+        let db = db(self.env)?;
+        let rows = db.prepare(
+            "SELECT id, tenant_id, email, email_verified, display_name, \
+                    account_type, status, created_at, updated_at \
+             FROM users \
+             WHERE tenant_id = ?1 AND status != 'deleted' \
+             ORDER BY id"
+        )
+            .bind(&[tenant_id.into()]).map_err(|_| PortError::Unavailable)?
+            .all().await.map_err(|_| PortError::Unavailable)?;
+        let rows: Vec<UserRow> = rows.results().map_err(|_| PortError::Serialization)?;
+        rows.into_iter().map(|r| r.into_domain()).collect()
+    }
 }

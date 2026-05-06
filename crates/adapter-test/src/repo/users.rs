@@ -52,4 +52,15 @@ impl UserRepository for InMemoryUserRepository {
         m.insert(user.id.clone(), user.clone());
         Ok(())
     }
+
+    async fn list_by_tenant(&self, tenant_id: &str) -> PortResult<Vec<User>> {
+        let m = self.by_id.lock().map_err(|_| PortError::Unavailable)?;
+        let mut out: Vec<User> = m.values()
+            .filter(|u| u.tenant_id == tenant_id
+                     && !matches!(u.status, cesauth_core::types::UserStatus::Deleted))
+            .cloned()
+            .collect();
+        out.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(out)
+    }
 }

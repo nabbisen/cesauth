@@ -383,3 +383,82 @@ async fn token_disable_on_unknown_id_is_not_found() {
     let err = repo.disable("nope", 0).await.unwrap_err();
     assert!(matches!(err, PortError::NotFound));
 }
+
+#[tokio::test]
+async fn create_user_bound_stamps_principal_with_user_id() {
+    use cesauth_core::admin::ports::AdminTokenRepository;
+    use crate::admin::tokens::InMemoryAdminTokenRepository;
+
+    let repo = InMemoryAdminTokenRepository::default();
+    let p = repo.create_user_bound(
+        "hash-ub", Role::Operations, Some("alice@acme"), "u-alice", 100,
+    ).await.unwrap();
+
+    assert_eq!(p.role, Role::Operations);
+    assert_eq!(p.user_id, Some("u-alice".to_string()),
+        "create_user_bound MUST stamp the principal with the user binding; \
+         this is what /admin/t/<slug>/* gates on per ADR-002");
+    assert!(!p.is_system_admin(),
+        "user-bound principal must not classify as system-admin");
+}
+
+#[tokio::test]
+async fn create_user_bound_appears_in_list_alongside_plain_tokens() {
+    use cesauth_core::admin::ports::AdminTokenRepository;
+    use crate::admin::tokens::InMemoryAdminTokenRepository;
+
+    let repo = InMemoryAdminTokenRepository::default();
+    repo.create("h-sys",  Role::Super, Some("ops"),         0).await.unwrap();
+    repo.create_user_bound(
+        "h-user", Role::Operations, Some("alice"), "u-alice", 1,
+    ).await.unwrap();
+
+    let listed = repo.list().await.unwrap();
+    assert_eq!(listed.len(), 2);
+
+    // Both should be present; the system-admin one has user_id None,
+    // the user-bound one has user_id Some.
+    let sys_count = listed.iter().filter(|p| p.user_id.is_none()).count();
+    let user_count = listed.iter().filter(|p| p.user_id.is_some()).count();
+    assert_eq!(sys_count, 1);
+    assert_eq!(user_count, 1);
+}
+
+#[tokio::test]
+async fn create_user_bound_token_hash_uniqueness_is_enforced() {
+    use cesauth_core::admin::ports::AdminTokenRepository;
+    use cesauth_core::ports::PortError;
+    use crate::admin::tokens::InMemoryAdminTokenRepository;
+
+    let repo = InMemoryAdminTokenRepository::default();
+    repo.create_user_bound(
+        "h-shared", Role::ReadOnly, None, "u-1", 0,
+    ).await.unwrap();
+
+    // Same hash, even with a different user_id, is a Conflict.
+    let err = repo.create_user_bound(
+        "h-shared", Role::ReadOnly, None, "u-2", 1,
+    ).await.unwrap_err();
+    assert!(matches!(err, PortError::Conflict));
+
+    // Same hash collision against a plain token is also Conflict.
+    let err = repo.create("h-shared", Role::ReadOnly, None, 2)
+        .await.unwrap_err();
+    assert!(matches!(err, PortError::Conflict));
+}
+
+#[tokio::test]
+async fn user_bound_token_can_be_disabled_like_a_plain_token() {
+    use cesauth_core::admin::ports::AdminTokenRepository;
+    use crate::admin::tokens::InMemoryAdminTokenRepository;
+
+    let repo = InMemoryAdminTokenRepository::default();
+    let p = repo.create_user_bound(
+        "h-1", Role::Operations, None, "u-1", 0,
+    ).await.unwrap();
+
+    repo.disable(&p.id, 100).await.unwrap();
+    let listed = repo.list().await.unwrap();
+    assert!(listed.iter().all(|q| q.id != p.id),
+        "disabled user-bound token must drop out of the active list");
+}

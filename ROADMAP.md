@@ -37,7 +37,7 @@ zero remaining issues.
 | Audit log (R2, NDJSON per event)       | ✅       | Covered by `/__dev/audit` browser + searchable via admin console (0.3.0) |
 | **Cost &amp; Data Safety Admin Console** | ✅     | `/admin/console/*` — Overview, Cost, Safety, Audit, Config, Alerts (0.3.0); HTML two-step edit UI for bucket-safety + admin-token CRUD (0.4.0) |
 | Dev-only routes (`/__dev/*`)           | ✅       | Gated on `WRANGLER_LOCAL="1"`                      |
-| **Tenancy-service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.5.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.6.0). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.7.0). Read-only HTML console at `/admin/tenancy/*` (0.8.0, originally `/admin/saas/*`). Mutation forms with preview/confirm pattern (0.9.0) for tenant / organization / group / subscription. Membership add/remove + role grant/revoke forms (0.10.0) bring the HTML console to feature parity with the v0.7.0 JSON API. ADR-001/002/003 settle the tenant-scoped admin surface design (0.11.0) and ship the schema + type foundation (`admin_tokens.user_id`, `AdminPrincipal::user_id`, `is_system_admin()`). Project-hygiene release with naming-debt cleanup (0.12.0) — `saas/` → `tenancy_console/`, `/admin/saas/*` → `/admin/tenancy/*`, plus author/license metadata and `.github/` community documents. Buffer/follow-up release with stale-narrative cleanup + dependency audit (0.12.1). Tenant-scoped surface implementation for 0.13.0. |
+| **Tenancy-service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.5.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.6.0). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.7.0). Read-only HTML console at `/admin/tenancy/*` (0.8.0, originally `/admin/saas/*`). Mutation forms with preview/confirm pattern (0.9.0) for tenant / organization / group / subscription. Membership add/remove + role grant/revoke forms (0.10.0) bring the HTML console to feature parity with the v0.7.0 JSON API. ADR-001/002/003 settle the tenant-scoped admin surface design (0.11.0) and ship the schema + type foundation (`admin_tokens.user_id`, `AdminPrincipal::user_id`, `is_system_admin()`). Project-hygiene release with naming-debt cleanup (0.12.0) — `saas/` → `tenancy_console/`, `/admin/saas/*` → `/admin/tenancy/*`, plus author/license metadata and `.github/` community documents. Buffer/follow-up release with stale-narrative cleanup + dependency audit (0.12.1). Tenant-scoped admin surface read pages shipped at `/admin/t/<slug>/*` with auth gate + `check_permission` integration (0.13.0); mutation forms + token-mint UI for 0.14.0. |
 | mdBook documentation                   | ✅       | `docs/`                                            |
 
 ---
@@ -189,28 +189,57 @@ started.
     ecosystem aligning on the corresponding 0.3 / 0.9 lines.
     Every other direct dep is current.
 
-- **Tenant-scoped admin surface implementation (0.13.0).**
-  Builds on the 0.11.0 foundation, on a clean naming base
-  (post-0.12.0) and validated dep tree (post-0.12.1). Scope:
-  - The `/admin/t/<slug>/...` route surface (likely 6-10
-    pages mirroring the system-admin console at
-    `/admin/tenancy/...` but filtered to the caller's
-    tenant).
-  - Per-route auth gate that requires
-    `principal.user_id.is_some()` and `users.tenant_id` of that
-    user matching the URL slug.
-  - A token-mint flow that produces user-bound tokens
-    (extending `AdminTokenRepository::create` or adding a
-    sibling method).
-  - `check_permission` integration on the tenant-scoped
-    routes, since the principal now carries the `user_id`
-    needed by spec §9.2.
+- **Tenant-scoped admin surface — read pages shipped (0.13.0).**
+  The 0.11.0 foundation lands as a working surface. Six read
+  pages under `/admin/t/<slug>/...` (overview, organizations,
+  organization detail, users, role assignments, subscription),
+  a per-route auth gate that enforces ADR-003's three
+  invariants (principal is user-bound, slug resolves, user
+  belongs to the slug's tenant), and `check_permission`
+  integration via a new `gate::check_read` helper that wraps
+  the spec §9.2 scope-walk for the worker layer. New port
+  methods: `AdminTokenRepository::create_user_bound` (mints
+  tokens with `admin_tokens.user_id` populated) and
+  `UserRepository::list_by_tenant` (powering the tenant-scoped
+  users page). 245 tests passing (+26): 9 in
+  `core::tenant_admin::tests` for the gate, 4 in
+  `adapter-test` for `create_user_bound`, 13 in
+  `ui::tenant_admin::tests` for chrome and per-page rendering.
+  Read pages only — mutation forms in 0.14.0 mirror the
+  v0.8.0 → v0.9.0 split for the system-admin surface.
 
-- **Anonymous trial → human user promotion (0.14.0).** Spec §3.3
-  introduces `Anonymous` as an account type and §11 priority 5
-  asks for a promotion flow. The promotion lifecycle (token issuance
-  for anonymous principals, retention window, conversion ceremony,
-  audit trail) is unspecified and deserves its own design pass.
+- **Tenant-scoped mutations + token-mint UI (0.14.0).**
+  Adds the form-driven counterparts to the 0.13.0 read pages,
+  plus a `/admin/tenancy/users/:uid/tokens/new` form that
+  exposes `AdminTokenRepository::create_user_bound` to
+  system-admins (so a tenant admin's first user-bound token
+  can be minted without scripting). Likely scope:
+  - **Tenant-scoped mutation forms** at
+    `/admin/t/<slug>/...`: organization status changes,
+    group create/delete, membership add/remove inside the
+    tenant, role-assignment grant/revoke. All run through
+    the same `gate::resolve_or_respond` + `gate::check_*`
+    composition as the 0.13.0 read routes; the
+    `check_permission` slug shifts from `*_READ` to the
+    relevant write permission.
+  - **Token-mint form** for system-admins at the existing
+    `/admin/tenancy/...` surface. Audit trail covers the
+    mint actor (system-admin), the recipient (`user_id`),
+    and the role granted to the resulting principal.
+  - **Affordance gating**: tenant-admin pages render
+    mutation buttons only when `check_permission` would
+    actually allow the relevant write. This means a Probe
+    request on each affordance — acceptable for HTML pages
+    where one-shot RTT to D1 is already the norm, but
+    something to revisit if the page latency budget tightens.
+
+- **Anonymous trial → human user promotion (0.15.0 or later).**
+  Spec §3.3 introduces `Anonymous` as an account type and §11
+  priority 5 asks for a promotion flow. Slot moves from 0.14.0
+  to make room for the tenant-scoped mutations work; the
+  promotion lifecycle (token issuance for anonymous principals,
+  retention window, conversion ceremony, audit trail) is
+  unspecified and deserves its own design pass.
 
 - **Login → tenant resolution.** Today `users.email` is globally
   unique. Multi-tenant login flows need either
