@@ -53,6 +53,7 @@
 //! Quota enforcement is wired into the user-create / org-create /
 //! group-create paths — see `enforce_quota` below.
 
+pub mod anonymous;
 pub mod auth;
 pub mod groups;
 pub mod memberships;

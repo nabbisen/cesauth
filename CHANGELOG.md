@@ -12,6 +12,252 @@ always be called out here.
 
 ---
 
+## [0.17.0] - 2026-04-28
+
+Anonymous trial — HTTP routes. ADR-004 Phase 2: the two endpoints
+that exercise the v0.16.0 foundation. With this release ADR-004
+graduates from `Draft` to `Accepted` — the design has a working
+implementation on both ends.
+
+The shape is intentionally minimal. `POST /api/v1/anonymous/begin`
+mints a fresh user + bearer; `POST /api/v1/anonymous/promote` does
+both the OTP-issue step and the OTP-verify+UPDATE step under one
+URL, distinguished by whether the request body carries a `code`
+field. Magic Link infrastructure is reused unchanged — the
+existing `/magic-link/request` and `/magic-link/verify` paths are
+untouched, but the `magic_link::issue` / `verify` core helpers and
+the `AuthChallengeStore` DO are shared. The only fork is the
+*subject* of the ceremony: fresh self-registration creates a new
+user row; promotion updates an existing anonymous one.
+
+### Added — `POST /api/v1/anonymous/begin`
+
+Unauthenticated. Per-IP rate-limited via the existing
+`RateLimitStore` with bucket key `anonymous_begin_per_ip:<ip>`,
+window 5 minutes, limit 20, escalation at 10. The numbers are
+strict on purpose — anonymous principals are essentially free to
+mint, so an unbounded flow would let an attacker pollute the
+`users` table; the 7-day daily sweep (v0.6.05) is the second
+line of defense, this is the first. `cf-connecting-ip` populates
+the bucket key; absence falls back to the literal `unknown`
+bucket.
+
+The handler:
+- Mints a 32-byte URL-safe-base64 plaintext bearer via
+  `getrandom`.
+- Computes SHA-256-hex of the plaintext as the storage key.
+- INSERTs a `users` row with `tenant_id=DEFAULT_TENANT_ID`,
+  `email=NULL`, `email_verified=false`,
+  `display_name='Anon-XXXXX'` (cosmetic; 5 chars from a small
+  URL-safe alphabet), `account_type=Anonymous`,
+  `status=Active`.
+- INSERTs an `anonymous_sessions` row with
+  `expires_at = now + ANONYMOUS_TOKEN_TTL_SECONDS` (24h).
+- Audits `EventKind::AnonymousCreated` with reason
+  `via=anonymous-begin,ip=<masked>`. IPv4 is masked to
+  `a.b.c.0`; IPv6 to the `/64` prefix — enough to spot bursts
+  from a single address, not enough to log raw client IPs.
+- Returns HTTP 201 with body
+  `{ user_id, token, expires_at }`. The plaintext token is
+  shown ONCE; cesauth stores only the hash. After this
+  response, the only way to obtain a working token is to
+  call `/begin` again.
+
+### Added — `POST /api/v1/anonymous/promote`
+
+Authenticated by the anonymous bearer in
+`Authorization: Bearer ...`. Two-step, distinguished by body
+shape:
+
+- **Step A (issue OTP)**: body `{ "email": "..." }` (no
+  `code`, no `handle`). Validates the email syntax, issues a
+  fresh Magic Link OTP via `magic_link::issue` with the
+  config-driven TTL, stores it in the `AuthChallengeStore`
+  DO under a new handle, audits `MagicLinkIssued` with
+  reason `via=anonymous-promote,handle=<>,code=<plaintext>`.
+  The reason marker piggybacks on the existing mail-delivery
+  pipeline (which today reads the audit log; see
+  `routes/magic_link.rs` module doc) so no new mail
+  integration is needed. Returns
+  `{ handle, expires_at }`.
+
+- **Step B (verify OTP + apply)**: body
+  `{ "email": "...", "handle": "...", "code": "..." }`.
+  Bumps the challenge attempt counter (mirrors
+  `/magic-link/verify`), peeks the challenge, **verifies the
+  challenge email matches the body email** (defense in depth
+  — without this an attacker observing a handle for someone
+  else's promotion attempt could splice it into their own),
+  runs `magic_link::verify`, consumes the challenge,
+  performs the in-tenant email-collision check (`find_by_email`
+  on a different user_id ⇒ refuses with the distinguishable
+  error `email_already_registered` so the client can render
+  "log in to existing account" guidance vs "OTP failed"
+  guidance), re-checks `account_type == Anonymous` on the
+  user row (defense against racy double-submit landing after
+  the first promotion already flipped the type — refused
+  with `not_anonymous`), UPDATEs the row in place
+  (`email`, `email_verified=true`, `account_type=HumanUser`,
+  `updated_at`), revokes any anonymous sessions for the user
+  via `revoke_for_user`, audits `AnonymousPromoted`.
+
+The User.id is preserved across promotion. All foreign keys
+pointing at the user — memberships, role assignments, audit
+subject ids, and any session rows in adjacent tables —
+survive without remap. ADR-004 §Q4 walks the rejected
+alternative (separate `anonymous_users` table → "copy fields,
+delete row" promotion) and why it loses to UPDATE-in-place.
+
+### Defense-in-depth invariants pinned
+
+The route layer hits Cloudflare-specific bindings, so the
+handlers themselves test in `wrangler dev`. The service-layer
+invariants behind the routes are pinned in
+`adapter-test/src/anonymous.rs::tests`:
+
+- **Revoke-before-update ordering** —
+  `promotion_pattern_revokes_then_user_update`. The
+  promotion handler's invariant is "invalidate the bearer
+  *before* the user-row UPDATE lands, never after". Reverse
+  order opens a small window where the bearer authenticates
+  a row that's already a `human_user`. Test exercises the
+  fail-safe ordering explicitly.
+- **Per-user revoke isolation** —
+  `many_anonymous_users_revoke_independently`. One user's
+  promotion cannot affect another user's anonymous session.
+- **Idempotent double-promote** —
+  `double_promote_protected_by_idempotent_revoke`. A racy
+  second submit's `revoke_for_user` returns `Ok(0)`, not an
+  error; the route's `account_type == Anonymous` check then
+  refuses with the distinguishable `not_anonymous` error.
+
+The `account_type != Anonymous` defense, the
+`challenge_email != body_email` defense, and the
+email-collision-distinguishable-error contract are all in the
+handler itself. Verifying them programmatically requires a
+Workers shim that doesn't exist; for now they're enforced by
+review and the smoke-test path below.
+
+### Audit reason markers
+
+- `via=anonymous-begin,ip=<masked>` — `AnonymousCreated`.
+- `via=anonymous-promote,handle=<>,code=<plaintext>` —
+  `MagicLinkIssued` (Step A). The plaintext is intentional;
+  the existing mail pipeline reads it.
+- `via=anonymous-promote,reason=email_already_registered` —
+  `MagicLinkFailed`, used to spot promotion-probe email
+  harvesting.
+- `via=anonymous-promote,from=anonymous,to=human_user` —
+  `AnonymousPromoted` (Step B success).
+
+### Tests
+
+- Total: **289 passing** (+3 over v0.16.0).
+  - core: 122 (unchanged).
+  - adapter-test: **46** (was 43) — 3 new in
+    `anonymous::tests`: revoke-before-update fail-safe
+    ordering, per-user revoke isolation, idempotent
+    double-promote.
+  - ui: 121 (unchanged).
+
+The route handlers themselves don't have direct unit tests
+(they hit `worker::Env`, `RouteContext`, `worker::Request` —
+all Cloudflare-specific). Their semantics ride on:
+- The 0.16.0 type-level tests (`AnonymousSession`,
+  boundary inclusivity, TTL constants).
+- The 0.16.0 in-memory-adapter tests (create / find /
+  revoke / sweep behaviour).
+- The new 0.17.0 promotion-flow tests above.
+- Smoke testing via `wrangler dev` (see below).
+
+### Status changes
+
+- **ADR-004** — `Draft` → `Accepted`. The design has a
+  working implementation. Both `docs/src/expert/adr/004-...md`
+  and the ADR README index updated.
+
+### Migration (0.16.0 → 0.17.0)
+
+Code-only release. Migration `0006_anonymous.sql` was already
+applied in v0.16.0 and is unchanged. No `wrangler.toml`
+change yet (Cron Trigger ships with v0.6.05).
+
+For deployments tracking main: `wrangler deploy`. The new
+routes are unauthenticated (`/begin`) or anonymous-bearer
+authenticated (`/promote`); they don't interact with the
+existing OIDC, admin-tokens, or tenancy-API surfaces.
+
+### Smoke test
+
+```bash
+# 1) Begin: mint an anonymous user + bearer.
+RESP=$(curl -sS -X POST https://cesauth.example/api/v1/anonymous/begin)
+echo "$RESP" | jq .
+# -> { "user_id": "...", "token": "<plaintext>", "expires_at": ... }
+
+USER_ID=$(echo "$RESP" | jq -r .user_id)
+TOKEN=$(echo "$RESP"   | jq -r .token)
+
+# 2) Promote step A: issue OTP for an email.
+curl -sS -X POST https://cesauth.example/api/v1/anonymous/promote \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"alice@example.com"}'
+# -> { "handle": "...", "expires_at": ... }
+
+# 3) Read the OTP from the audit log (or your mail provider).
+#    The audit reason carries `code=<plaintext>` for the
+#    anonymous-promote path.
+HANDLE=...   # from step 2 response
+CODE=...     # from audit log / email
+
+# 4) Promote step B: verify OTP + apply UPDATE-in-place.
+curl -sS -X POST https://cesauth.example/api/v1/anonymous/promote \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"alice@example.com\",\"handle\":\"$HANDLE\",\"code\":\"$CODE\"}"
+# -> { "user_id": "...", "promoted": true }
+# user_id is the SAME as step 1 — UPDATE-in-place.
+
+# 5) The original anonymous bearer is now revoked. Re-using
+#    it returns 401:
+curl -sS -X POST -o /dev/null -w '%{http_code}\n' \
+  https://cesauth.example/api/v1/anonymous/promote \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"alice@example.com"}'
+# -> 401
+
+# 6) Cross-tenant or different-email same-tenant collision:
+TOKEN2=$(curl -sS -X POST https://cesauth.example/api/v1/anonymous/begin \
+  | jq -r .token)
+curl -sS -X POST https://cesauth.example/api/v1/anonymous/promote \
+  -H "Authorization: Bearer $TOKEN2" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"alice@example.com","handle":"<step-A-handle>","code":"<code>"}' \
+  | jq -r .error
+# -> "email_already_registered"  (distinguishable from
+#    "verification_failed")
+```
+
+### Deferred to 0.6.05
+
+- **Daily retention sweep** — Cloudflare Workers Cron Trigger
+  configured in `wrangler.toml`, sweep handler that runs the
+  `users` row delete (cascade through `anonymous_sessions`)
+  plus `AnonymousExpired` audit emission per row. Operator
+  runbook gains "Verifying the retention sweep ran" diagnostic
+  section. After v0.6.05 the anonymous-trial flow is feature-
+  complete.
+
+### Deferred — unchanged from 0.16.0
+
+- **`check_permission` integration on `/api/v1/...`.**
+  Unscheduled.
+- **External IdP federation.** Out of scope for v0.4.x.
+
+---
+
 ## [0.16.0] - 2026-04-28
 
 Anonymous trial principal — design (ADR-004) plus the foundation

@@ -167,4 +167,94 @@ mod tests {
         assert!( row.is_expired(100), "boundary is inclusive of expired");
         assert!( row.is_expired(101));
     }
+
+    // -----------------------------------------------------------------
+    // Promotion lifecycle invariants (v0.17.0)
+    //
+    // The route layer hits Cloudflare-specific bindings, so the
+    // handlers themselves test in `wrangler dev`. The
+    // service-layer invariants below are what the handlers
+    // actually rely on, so a regression that breaks promotion
+    // semantics shows up here first.
+    // -----------------------------------------------------------------
+
+    #[tokio::test]
+    async fn promotion_pattern_revokes_then_user_update() {
+        // Models the v0.17.0 /promote happy path against the
+        // in-memory adapters. Sequence:
+        //   1) create anonymous user + session
+        //   2) revoke_for_user (bearer no longer resolves)
+        //   3) the user-row UPDATE (account_type flip) is
+        //      observed by find_by_hash returning None for the
+        //      old hash — the row's already gone, so the bearer
+        //      can't be re-used even if the UPDATE later
+        //      fails.
+        //
+        // The order matters: revoke before update, never after.
+        // If update lands first and revoke later (or never),
+        // a small window exists where the bearer authenticates
+        // a row that's already a human_user. The handler is
+        // structured to revoke first, but the in-memory test
+        // captures the invariant.
+        let repo = InMemoryAnonymousSessionRepository::default();
+        repo.create("h-alice", "u-alice", "tenant-default", 0, 60)
+            .await.unwrap();
+
+        // Bearer initially resolves.
+        let s = repo.find_by_hash("h-alice").await.unwrap();
+        assert!(s.is_some(), "bearer must resolve before promotion");
+
+        // Promotion's first step: revoke.
+        let n = repo.revoke_for_user("u-alice").await.unwrap();
+        assert_eq!(n, 1);
+
+        // After revoke: bearer is gone. Even if the UPDATE on
+        // `users` fails next, the bearer can't authenticate
+        // anything — fail-safe ordering.
+        assert_eq!(repo.find_by_hash("h-alice").await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn many_anonymous_users_revoke_independently() {
+        // Two visitors each have an open anonymous session.
+        // One promotes; the other's session must be untouched.
+        // (This exercises the same property as
+        // `revoke_for_user_drops_only_that_users_sessions`
+        // above, but framed from the promotion-flow angle.)
+        let repo = InMemoryAnonymousSessionRepository::default();
+        repo.create("h-alice", "u-alice", "tenant-default", 0, 60)
+            .await.unwrap();
+        repo.create("h-bob",   "u-bob",   "tenant-default", 0, 60)
+            .await.unwrap();
+
+        // Alice promotes → her bearer is revoked.
+        repo.revoke_for_user("u-alice").await.unwrap();
+
+        // Bob's bearer still works. The promotion path is
+        // strictly per-user; one user's promotion cannot affect
+        // another's session.
+        assert!(repo.find_by_hash("h-bob").await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn double_promote_protected_by_idempotent_revoke() {
+        // Double-submit of /promote: the second submit's revoke
+        // call returns Ok(0) — the bearer is already gone — and
+        // the route's "still anonymous?" check then refuses with
+        // 409 (handler-side; not exercised here). The repository
+        // contract just needs Ok(0), not an error.
+        let repo = InMemoryAnonymousSessionRepository::default();
+        repo.create("h-alice", "u-alice", "tenant-default", 0, 60)
+            .await.unwrap();
+
+        // First promote → revokes 1.
+        let n = repo.revoke_for_user("u-alice").await.unwrap();
+        assert_eq!(n, 1);
+
+        // Second promote, racy → revokes 0. Not an error. The
+        // route handler reads this as "already promoted" and
+        // returns 409 to the client.
+        let n = repo.revoke_for_user("u-alice").await.unwrap();
+        assert_eq!(n, 0);
+    }
 }

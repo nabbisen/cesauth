@@ -1,6 +1,6 @@
 # ADR-004: Anonymous trial → human user promotion
 
-**Status**: Draft (v0.16.0)
+**Status**: Accepted (v0.17.0)
 **Decision**: Anonymous trials are server-issued, single-session,
 non-recoverable principals with a 7-day retention window. Promotion
 to `human_user` preserves the `User.id` and reuses the standard

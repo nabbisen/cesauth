@@ -883,16 +883,138 @@ sweep ship in v0.17.0 and v0.6.05 respectively.
   Adding the variants now spares 0.17.0 a coordinated
   audit-schema bump.
 
+### Added in 0.17.0
+
+Anonymous trial — HTTP routes. ADR-004 graduates from `Draft`
+to `Accepted` because the design now has a working
+implementation on both ends.
+
+Two routes land:
+
+- **`POST /api/v1/anonymous/begin`** — unauthenticated. Per-IP
+  rate-limited (`anonymous_begin_per_ip:<ip>`, 20 over 5
+  minutes, escalation at 10). Mints a 32-byte URL-safe-base64
+  bearer + the SHA-256 hash for storage; INSERTs the `users`
+  row (`account_type=Anonymous`, `email=NULL`,
+  `display_name='Anon-XXXXX'`) and the `anonymous_sessions`
+  row; audits `AnonymousCreated` with `via=anonymous-begin,ip=<masked>`.
+  `cf-connecting-ip` populates the bucket key; IP is masked
+  in audit (IPv4 last octet → 0; IPv6 → `/64` prefix).
+
+- **`POST /api/v1/anonymous/promote`** — anonymous-bearer
+  authenticated. **Two-step body shape distinguishes phases**:
+  - **Step A (no `code`)** — issues a Magic Link OTP for
+    the supplied email, returns `{ handle, expires_at }`.
+    Reuses `magic_link::issue` + `AuthChallengeStore`; the
+    OTP plaintext is logged into the audit reason
+    `via=anonymous-promote,handle=<>,code=<plaintext>` so
+    the existing mail-delivery pipeline picks it up
+    automatically.
+  - **Step B (with `code`)** — verifies OTP via
+    `magic_link::verify`, runs the in-tenant email-collision
+    check, UPDATEs the user row in place (id preserved,
+    `email`/`email_verified` filled, `account_type` flipped
+    to `HumanUser`), revokes the anonymous bearer via
+    `revoke_for_user`, audits `AnonymousPromoted`.
+
+#### Promotion ceremony walkthrough
+
+```
+                                    cesauth
+                                       |
+visitor       browser                  |
+  |             |                      |
+  |             | POST /anonymous/begin
+  |             |--------------------->|  (no auth)
+  |             |                      |
+  |             |   201 { user_id, token, expires_at }
+  |             |<---------------------|
+  |             |                      |
+  | "I want to claim my work"         |
+  |------------>|                      |
+  |             | POST /anonymous/promote
+  |             | Bearer: <token>      |
+  |             | { email }            |
+  |             |--------------------->|
+  |             |                      |
+  |             |   200 { handle }     |
+  |             |<---------------------|
+  |             |                      |
+  |       (email arrives, OTP visible)
+  |<------------|                      |
+  |             |                      |
+  |             | POST /anonymous/promote
+  |             | Bearer: <token>      |
+  |             | { email, handle, code }
+  |             |--------------------->|
+  |             |                      |
+  |             |   verify OTP ----.   |
+  |             |                  |   |
+  |             |   collision check
+  |             |                  |   |
+  |             |   UPDATE users (id preserved)
+  |             |                  |   |
+  |             |   revoke_for_user|   |
+  |             |                  |   |
+  |             |   audit AnonymousPromoted
+  |             |                  |   |
+  |             |   200 { user_id, promoted: true }
+  |             |<-----------------'   |
+  |             |                      |
+  |    (visitor logs in with email
+  |    via the regular OIDC flow next time)
+```
+
+#### Defense-in-depth checks
+
+The `/promote` Step B handler enforces, in order:
+- The challenge handle exists and isn't expired.
+- The challenge's bound email **matches** the body email.
+  Without this, an attacker who observed a handle for
+  someone else's promotion attempt could splice it into
+  their own request.
+- The OTP verifies against the stored hash within its TTL.
+- No other user owns the email in this tenant. If one does,
+  the response is `email_already_registered` —
+  distinguishable from `verification_failed`, so the client
+  can render "log in to existing account" guidance vs
+  "please re-enter the code".
+- The user row's `account_type` is **still** `Anonymous`.
+  A racy double-submit lands here as `not_anonymous`.
+
+The `/promote` handler revokes the anonymous bearer
+**before** the user-row UPDATE lands. The reverse order
+opens a small window where the bearer authenticates a row
+that's already a `human_user`. The fail-safe ordering is
+pinned by an adapter-level test
+(`promotion_pattern_revokes_then_user_update`) and called
+out explicitly in the route handler.
+
+#### Anonymous-bearer resolution
+
+The handler-side helper `resolve_anonymous_bearer` extracts
+`Authorization: Bearer ...`, hashes the plaintext with
+SHA-256, looks up `anonymous_sessions` by hash, then runs
+three checks. Any failure returns 401 with
+`WWW-Authenticate: Bearer realm="cesauth"` and a JSON
+`{ error: "<reason>" }` body distinguishing the cause:
+
+- `missing_bearer` — header absent or malformed.
+- `unknown_token` — hash not in `anonymous_sessions`.
+- `token_expired` — `now >= session.expires_at`.
+- `user_not_found` — the linked user row was already swept.
+- `not_anonymous` — the user row was promoted (defense in
+  depth; in practice unreachable because the promotion
+  path revokes the bearer before flipping the type).
+
 ### Does NOT ship in v0.4.x (yet)
 
 The CHANGELOG `Deferred` sections and `ROADMAP.md` track each item.
 Headlines:
 
-- **Anonymous-trial HTTP routes.** `/api/v1/anonymous/begin`
-  and `/promote`. ADR-004 settled; foundation shipped in
-  0.16.0. **0.17.0.**
 - **Anonymous-trial daily retention sweep.** Cloudflare Cron
-  Trigger + sweep handler. **0.6.05.**
+  Trigger + sweep handler. **0.6.05.** After this the
+  anonymous-trial flow is feature-complete.
 - **`check_permission` integration on `/api/v1/...`.** The
   v0.7.0 JSON API still uses `ensure_role_allows`. Now that
   user-bound tokens exist, `check_permission` is validated in

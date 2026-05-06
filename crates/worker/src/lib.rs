@@ -217,6 +217,16 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         // design rationale (admin-bearer vs user-as-bearer).
         .post_async  ("/api/v1/tenants",                                     |req, ctx| async move { routes::api_v1::tenants::create(req, ctx).await })
         .get_async   ("/api/v1/tenants",                                     |req, ctx| async move { routes::api_v1::tenants::list(req, ctx).await })
+        // --- anonymous trial (v0.17.0, ADR-004) ---------------------
+        // /begin is unauthenticated; per-IP rate limit only. Mints
+        // a short-lived bearer + an `account_type='anonymous'` user
+        // row. /promote is gated on the anonymous bearer; two-step
+        // (issue OTP / verify OTP) using the same Magic Link
+        // infrastructure as fresh self-registration. The promotion
+        // UPDATEs the existing user row in place, preserving the
+        // user_id (ADR-004 §Q4).
+        .post_async  ("/api/v1/anonymous/begin",                             |req, ctx| async move { routes::api_v1::anonymous::begin(req, ctx).await })
+        .post_async  ("/api/v1/anonymous/promote",                           |req, ctx| async move { routes::api_v1::anonymous::promote(req, ctx).await })
         .get_async   ("/api/v1/tenants/:tid",                                |req, ctx| async move { routes::api_v1::tenants::get(req, ctx).await })
         .patch_async ("/api/v1/tenants/:tid",                                |req, ctx| async move { routes::api_v1::tenants::update(req, ctx).await })
         .post_async  ("/api/v1/tenants/:tid/status",                         |req, ctx| async move { routes::api_v1::tenants::set_status(req, ctx).await })
