@@ -37,7 +37,7 @@ zero remaining issues.
 | Audit log (R2, NDJSON per event)       | ✅       | Covered by `/__dev/audit` browser + searchable via admin console (0.3.0) |
 | **Cost &amp; Data Safety Admin Console** | ✅     | `/admin/console/*` — Overview, Cost, Safety, Audit, Config, Alerts (0.3.0); HTML two-step edit UI for bucket-safety + admin-token CRUD (0.4.0) |
 | Dev-only routes (`/__dev/*`)           | ✅       | Gated on `WRANGLER_LOCAL="1"`                      |
-| **Tenancy-service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.5.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.6.0). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.7.0). Read-only HTML console at `/admin/tenancy/*` (0.8.0, originally `/admin/saas/*`). Mutation forms with preview/confirm pattern (0.9.0) for tenant / organization / group / subscription. Membership add/remove + role grant/revoke forms (0.10.0) bring the HTML console to feature parity with the v0.7.0 JSON API. ADR-001/002/003 settle the tenant-scoped admin surface design (0.11.0) and ship the schema + type foundation (`admin_tokens.user_id`, `AdminPrincipal::user_id`, `is_system_admin()`). Project-hygiene release with naming-debt cleanup (0.12.0) — `saas/` → `tenancy_console/`, `/admin/saas/*` → `/admin/tenancy/*`, plus author/license metadata and `.github/` community documents. Buffer/follow-up release with stale-narrative cleanup + dependency audit (0.12.1). Tenant-scoped admin surface read pages shipped at `/admin/t/<slug>/*` with auth gate + `check_permission` integration (0.13.0). High-risk mutation forms plus a system-admin token-mint UI shipped (0.14.0). Additive membership forms (× 3 flavors) plus affordance gating (templates render mutation buttons only when `check_permission` allows) shipped (0.15.0) — the tenant-scoped surface now reaches feature parity with the system-admin tenancy console. |
+| **Tenancy-service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.5.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.6.0). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.7.0). Read-only HTML console at `/admin/tenancy/*` (0.8.0, originally `/admin/saas/*`). Mutation forms with preview/confirm pattern (0.9.0) for tenant / organization / group / subscription. Membership add/remove + role grant/revoke forms (0.10.0) bring the HTML console to feature parity with the v0.7.0 JSON API. ADR-001/002/003 settle the tenant-scoped admin surface design (0.11.0) and ship the schema + type foundation (`admin_tokens.user_id`, `AdminPrincipal::user_id`, `is_system_admin()`). Project-hygiene release with naming-debt cleanup (0.12.0) — `saas/` → `tenancy_console/`, `/admin/saas/*` → `/admin/tenancy/*`, plus author/license metadata and `.github/` community documents. Buffer/follow-up release with stale-narrative cleanup + dependency audit (0.12.1). Tenant-scoped admin surface read pages shipped at `/admin/t/<slug>/*` with auth gate + `check_permission` integration (0.13.0). High-risk mutation forms plus a system-admin token-mint UI shipped (0.14.0). Additive membership forms (× 3 flavors) plus affordance gating shipped (0.15.0) — the tenant-scoped surface reaches feature parity with the system-admin tenancy console. Security-fix and audit-infrastructure release (0.15.1): RUSTSEC-2023-0071 in transitive `rsa` removed via `jsonwebtoken` feature narrowing, `cargo audit` integrated via initial sweep + GitHub Actions workflow + operator docs. |
 | mdBook documentation                   | ✅       | `docs/`                                            |
 
 ---
@@ -283,8 +283,35 @@ started.
   lifecycle (token issuance for anonymous principals, retention
   window, conversion ceremony, audit trail) is unspecified and
   deserves its own design pass — likely a small ADR before
-  implementation, on the v0.11.0 model. Target slot: 0.15.1 or
-  later.
+  implementation, on the v0.11.0 model. Target slot: 0.16.0 or
+  later (0.15.1 took the slot for the security-fix +
+  audit-infrastructure release).
+
+- **`cargo audit` integration (shipped in 0.15.1).** Three
+  layers landed at once:
+  1. **Initial sweep**: ran against the rustsec/advisory-db
+     `main` checkout on 2026-04-28. One finding —
+     RUSTSEC-2023-0071 in `rsa 0.9.10` (Marvin Attack timing
+     side-channel), pulled in transitively by `jsonwebtoken`'s
+     `rust_crypto` feature. cesauth never exercised the RSA
+     path (EdDSA-only), but the dep would have shipped in the
+     workspace lock anyway. Fixed by narrowing `jsonwebtoken`
+     features from blanket `rust_crypto` to explicit
+     `ed25519-dalek` + `rand`. Post-fix sweep clean; dep count
+     186 → 176.
+  2. **`.github/workflows/audit.yml`** using
+     `rustsec/audit-check@v2.0.0`. Triggers: push, PR,
+     weekly cron (Mondays 06:00 UTC), manual dispatch.
+     New advisories fail the workflow.
+  3. **Operator documentation**: `docs/src/deployment/production.md`
+     gains a "Step 7 — Verify dependencies" pre-deploy
+     check; the operator runbook in
+     `docs/src/expert/tenancy.md` documents the same command
+     under "Verifying dependencies before an upgrade".
+
+  Layer 4 (Makefile / xtask wrapper) is **not planned** —
+  the cost-vs-value isn't there for a workspace with no
+  Makefile today.
 
 - **Login → tenant resolution.** Today `users.email` is globally
   unique. Multi-tenant login flows need either

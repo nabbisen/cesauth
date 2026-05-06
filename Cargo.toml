@@ -16,7 +16,7 @@ members = [
 # `[workspace.package].rust-version`) and the wasm32 target installed.
 
 [workspace.package]
-version      = "0.15.0"
+version      = "0.15.1"
 edition      = "2024"
 rust-version = "1.85"
 license      = "Apache-2.0"
@@ -40,7 +40,14 @@ anyhow    = "1"
 # --- Crypto / Auth ---
 # jsonwebtoken 10.x supports EdDSA (Ed25519). `use_pem` lets us load
 # the signing key from a PKCS#8 PEM via `EncodingKey::from_ed_pem`.
-jsonwebtoken = { version = "10", default-features = false, features = ["use_pem", "rust_crypto"] }
+# We do NOT enable `rust_crypto` (its blanket bundle drags in
+# `rsa`, `p256`, `p384`, `hmac` which we don't use). Only the
+# `ed25519-dalek` and `rand` features we actually need are enabled.
+# This avoids a known CVE in transitive `rsa` (RUSTSEC-2023-0071,
+# Marvin Attack) that we'd otherwise carry without exercising —
+# cesauth signs and verifies exclusively with `Algorithm::EdDSA`,
+# never RSA, but the dep would still ship in the workspace lock.
+jsonwebtoken = { version = "10", default-features = false, features = ["use_pem", "ed25519-dalek", "rand"] }
 
 # webauthn-rs: deliberately NOT included in the initial build. The
 # `webauthn::registration::finish` and `webauthn::authentication::finish`

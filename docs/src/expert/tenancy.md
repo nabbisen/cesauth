@@ -849,14 +849,39 @@ Headlines:
   straightforward than before. Unscheduled — depends on
   concrete need.
 - **Anonymous-trial promotion.** The account type exists; the
-  promotion lifecycle is unspecified. **0.15.1 or later.**
-  Now the next planned slot.
+  promotion lifecycle is unspecified. **0.16.0 or later.**
+  Next planned feature slot (0.15.1 took the slot for the
+  security-fix + audit-infrastructure release).
 - **External IdP federation.** `AccountType::ExternalFederatedUser`
   is reserved; no IdP wiring exists yet.
 
 ---
 
 ## Operator runbook (v0.4.x)
+
+### Verifying dependencies before an upgrade
+
+cesauth's threat model assumes the deployed binary's dependency
+tree is free of known CVEs. The `audit.yml` GitHub Actions
+workflow runs `cargo audit` on every push, every PR, and weekly
+on Mondays — a green main branch means "no known CVEs as of the
+last advisory-db update". For a manual upgrade, re-run the audit
+locally against the latest database before deploying:
+
+```bash
+cargo install cargo-audit   # one-time per machine
+cd /path/to/cesauth
+cargo audit
+```
+
+If the run is clean, proceed. If it reports findings, see the
+triage steps in `docs/src/deployment/production.md` (Step 7).
+
+The dep-narrowing pattern shipped in 0.15.1 — replacing the
+`jsonwebtoken` blanket `rust_crypto` feature with explicit
+`ed25519-dalek` + `rand` to drop the unused `rsa` transitive —
+is the model fix when a CVE lands on a dep we don't actually
+call.
 
 ### Running the migrations
 

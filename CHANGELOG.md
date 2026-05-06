@@ -12,6 +12,142 @@ always be called out here.
 
 ---
 
+## [0.15.1] - 2026-04-28
+
+Security-fix and audit-infrastructure release. Three layers of
+`cargo audit` integration land at once: an initial sweep of the
+dependency tree (one finding, fixed), a GitHub Actions workflow
+that runs the audit on every push / PR / weekly, and operator
+documentation pointing at the same command for manual upgrades.
+
+The CVE-relevant change is small but worth a version bump on its
+own: cesauth's `jsonwebtoken` features are narrowed from the
+blanket `rust_crypto` to explicit `ed25519-dalek` + `rand`,
+which removes the transitive `rsa` dep that carried
+RUSTSEC-2023-0071 (Marvin Attack). cesauth never exercised the
+RSA path — the OIDC discovery doc declares `EdDSA` as the only
+supported `id_token_signing_alg`, and `jwt::signer` only
+constructs `Algorithm::EdDSA` — but the unused dep would have
+shipped in every workspace lock until narrowed.
+
+### Security fix — RUSTSEC-2023-0071 not exercised, dep removed
+
+- **Finding**: `rsa 0.9.10`, pulled in transitively by
+  `jsonwebtoken v10.3.0` via the `rust_crypto` feature.
+- **Advisory**: RUSTSEC-2023-0071 / CVE-2023-49092 / GHSA-c38w-74pg-36hr.
+  Marvin Attack — non-constant-time RSA decryption leaks key
+  bits through network-observable timing. No upstream patch
+  exists yet at the `rsa` crate level.
+- **cesauth's exposure**: zero. cesauth uses
+  `Algorithm::EdDSA` (Ed25519) for every JWT it signs and
+  verifies. The OIDC discovery declares
+  `id_token_signing_alg_values_supported: &["EdDSA"]`.
+  RSA is not on any code path. But the dep would still have
+  shipped in the workspace lock, contaminating any audit and
+  any reuse of the workspace as a library.
+- **Fix**: narrow the `jsonwebtoken` features. Was:
+
+  ```toml
+  jsonwebtoken = { version = "10", default-features = false, features = ["use_pem", "rust_crypto"] }
+  ```
+
+  Is:
+
+  ```toml
+  jsonwebtoken = { version = "10", default-features = false, features = ["use_pem", "ed25519-dalek", "rand"] }
+  ```
+
+  The `rust_crypto` feature is a blanket bundle that pulls
+  `rsa`, `p256`, `p384`, `hmac`, plus the bits we actually use
+  (`ed25519-dalek`, `rand`, `sha2`). Replacing it with the
+  individual feature flags drops the unused transitives.
+- **Verification**: `Cargo.lock` no longer contains
+  `name = "rsa"`. Dep count drops from 186 to 176. All 276
+  tests still pass; zero warnings.
+
+### Added — `cargo audit` integration
+
+Three layers, in increasing distance from "hot" code:
+
+- **Layer 1 — initial sweep + record state.** Done as part
+  of this release. The audit ran against the
+  rustsec/advisory-db `main` checkout on 2026-04-28 and
+  surfaces no findings post-fix.
+- **Layer 2 — `.github/workflows/audit.yml`** using the
+  `rustsec/audit-check@v2.0.0` action. Triggers: `push` to
+  main, `pull_request` to main, `schedule` cron at
+  `0 6 * * 1` (Mondays 06:00 UTC), and `workflow_dispatch`
+  for manual runs. Permissions: `contents: read`,
+  `issues: write`, `checks: write`. New advisories
+  matching a dep in `Cargo.lock` fail the workflow.
+- **Layer 3 — operator documentation.** A new step in
+  `docs/src/deployment/production.md` ("Step 7 — Verify
+  dependencies") points at `cargo install cargo-audit &&
+  cargo audit` and describes the triage path for findings.
+  The same is reflected in the operator runbook in
+  `docs/src/expert/tenancy.md` ("Verifying dependencies
+  before an upgrade") so the upgrade procedure documents
+  it explicitly.
+
+A Makefile / `xtask` wrapper layer is **not planned** —
+cesauth has no Makefile and adding one to host a single
+command would invert the cost/value ratio. Local maintainers
+run `cargo audit` directly; CI catches regressions; ops
+follows the documented step.
+
+### Tests
+
+- Total: **276 passing** (unchanged from v0.15.0).
+- The dep narrowing changes no behavior; the existing tests
+  are sufficient to confirm the EdDSA-only path still works
+  end-to-end.
+- The audit workflow itself is GitHub Actions configuration,
+  not Rust code; verification is "the YAML parses and the
+  pinned action exists at the named version".
+
+### Migration (0.15.0 → 0.15.1)
+
+Code-only release. No schema migration. No `wrangler.toml`
+change. The new HTML routes are unchanged from v0.15.0.
+
+For deployments tracking main:
+
+1. **Pull and rebuild.** The `Cargo.toml` change forces a
+   new lock file resolution; `cargo build --release` will
+   produce a slightly smaller binary (no `rsa`, `p256`,
+   `p384`, `hmac` transitives).
+2. **Re-run `cargo audit`** locally (or watch the workflow)
+   to confirm the clean state.
+3. **Deploy.** No runtime behavior changed.
+
+### Smoke test
+
+```bash
+# 1) Verify the rsa dep is gone:
+grep -c '^name = "rsa"$' Cargo.lock
+# -> 0
+
+# 2) Run the audit:
+cargo install cargo-audit
+cargo audit
+# -> Success No vulnerable packages found
+
+# 3) Confirm EdDSA still works end-to-end:
+curl -s https://cesauth.example/.well-known/openid-configuration \
+  | jq -r '.id_token_signing_alg_values_supported'
+# -> ["EdDSA"]
+```
+
+### Deferred — unchanged from 0.15.0
+
+- **Anonymous-trial promotion.** Spec §3.3 + §11 priority 5.
+  Now the next planned slot.
+- **`check_permission` integration on `/api/v1/...`.**
+  Unscheduled; depends on concrete need.
+- **External IdP federation.** Out of scope for v0.4.x.
+
+---
+
 ## [0.15.0] - 2026-04-28
 
 Tenant-scoped admin surface — additive mutation forms (membership

@@ -105,7 +105,33 @@ This is a **release gate**. Before the first production deploy:
 3. Stop writing the OTP plaintext anywhere except into the email
    body.
 
-## Step 7 — Deploy
+## Step 7 — Verify dependencies
+
+Before deploying, confirm the dependency tree has no known CVEs.
+The `audit.yml` GitHub Actions workflow does this on every push
+and PR (and weekly via cron), but a local run before a manual
+deploy gives a final check against the latest advisory database:
+
+```sh
+cargo install cargo-audit   # one-time, on each maintainer's machine
+cd /path/to/cesauth
+cargo audit
+```
+
+Expected output is `Success No vulnerable packages found`. If
+the run reports findings, **stop and triage** before deploying:
+
+- Check whether the affected crate is actually exercised by
+  cesauth code paths (a transitive dep we don't call may be
+  fine to ship while the upstream cuts a fix).
+- Narrow `Cargo.toml` features if the dep is pulled in by a
+  feature we don't need (this is how `rsa` was dropped from
+  the tree — see CHANGELOG `[0.15.1]`).
+- If neither applies, file the upgrade and re-run.
+- Last resort: add the advisory id to `.cargo/audit.toml`
+  with a one-line justification. Do not silently ignore.
+
+## Step 8 — Deploy
 
 ```sh
 wrangler deploy
@@ -124,7 +150,7 @@ The discovery doc `issuer` should match `ISSUER` in `wrangler.toml`
 exactly. If not, every token cesauth issues will fail validation
 at the client.
 
-## Step 8 — Monitor
+## Step 9 — Monitor
 
 - `wrangler tail --format=pretty` streams structured logs for the
   currently-deployed Worker. Use categories to filter.
