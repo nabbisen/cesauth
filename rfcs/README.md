@@ -64,12 +64,20 @@ and any linked ADR already establish context.
 
 ## Index
 
+### Tier 0 — Production blockers (P0/P1, ship in v0.50.2)
+
+These are issues surfaced by the v0.50.1 external Rust+Cloudflare codebase review. Each represents a security violation, correctness regression, or production-readiness gap that blocks safe production deployment. **All four ship in the same release** (planned v0.50.2) because they're mutually entangled — RFC 008 (audit secret leak) cannot stay fixed without RFC 010 (real mailer); RFC 009 (introspection correctness) and RFC 010 share the audit-boundary discipline; RFC 011 (worker hardening) bundles the P1+P2 worker-layer items the same review surfaced.
+
+| File | Theme | Severity | Source |
+|---|---|---|---|
+| [008-eliminate-otp-in-audit.md](008-eliminate-otp-in-audit.md) | Eliminate plaintext OTP in audit log | **P0** | External review (Critical) |
+| [009-introspection-aud-correctness-and-fail-closed.md](009-introspection-aud-correctness-and-fail-closed.md) | Introspection access-token `aud` correctness + audience-gate fail-closed | **P0 + P1** | External review (High + High) |
+| [010-magic-link-real-delivery.md](010-magic-link-real-delivery.md) | Magic Link real delivery — mailer port + provider adapters | **P0** | External review (High) + dev-directive audit |
+| [011-worker-layer-hardening.md](011-worker-layer-hardening.md) | CSRF RNG, env validation, duplicate routes, duplicate ADR file | **P1 + P2** | External review |
+
 ### Tier 1 — Ready to implement, design settled
 
-These are the priority themes. Each one has a clear design
-(either a settled ADR, or design ambiguity small enough to
-resolve inline). An engineer can pick one up next without
-upstream blocking.
+These are priority themes from the original v0.50.1 RFC batch. Each has a clear design (settled ADR or small enough to resolve inline). An engineer can pick one up after the Tier 0 sweep clears.
 
 | File | Theme | ROADMAP source | Estimated scope |
 |---|---|---|---|
@@ -80,14 +88,43 @@ upstream blocking.
 
 ### Tier 2 — Internal design only, ready to implement
 
-Lighter RFCs (internal-design-only or no external surface).
-Defer until Tier 1 clears or until operator demand surfaces.
+Lighter RFCs (internal-design-only or no external surface). Defer until Tier 0 and Tier 1 clear, or until operator demand surfaces.
 
 | File | Theme | ROADMAP source | Estimated scope |
 |---|---|---|---|
 | [005-cargo-fuzz-jwt-parser.md](005-cargo-fuzz-jwt-parser.md) | `cargo fuzz` for the JWT parser surface | Next minor releases | Small |
 | [006-csp-without-unsafe-inline.md](006-csp-without-unsafe-inline.md) | CSP without `'unsafe-inline'` (per-request nonces) | "Later" | Medium |
 | [007-attack-surface-review-cadence.md](007-attack-surface-review-cadence.md) | Cesauth-specific attack-surface review cadence | "Later" | Small (one review pass) |
+
+### Tier 3 — Quality / scaling work, defer behind P0 sweep
+
+Quality-and-operations themes from the v0.50.1 external code review. None block production but each materially improves maintainability and operational reliability. Order is approximate.
+
+| File | Theme | Source | Estimated scope |
+|---|---|---|---|
+| [012-doc-and-repo-hygiene.md](012-doc-and-repo-hygiene.md) | README drift, `migrate.rs` 2568→split, dev-directive corrections, drift-scan CI | External review (Medium / Low) | Small/medium (mechanical) |
+| [013-operational-envelope.md](013-operational-envelope.md) | Cloudflare Paid plan baseline, bundle budget CI gate, configurable cron sizes, `nodejs_compat` review | External review (P2 ops) | Medium (docs-heavy) |
+| [014-audit-append-performance.md](014-audit-append-performance.md) | Audit append D1 contention — Path A measure-then-decide | External review (P2 perf) | Small (Path A); medium-large if Path B triggers |
+| [015-request-traceability.md](015-request-traceability.md) | Request-correlation ID (`cf-ray`) + lifecycle log + audit cross-link; ADR-018 documents file-logger non-feature | Operator follow-up question on logging | Small/medium (additive) |
+
+### Tier 4 — Admin UX hardening, derived from external UI/UX update
+
+Themes from the v0.50.1 external UI/UX design update (deck + one-page overview). Each closes a real operator-facing gap that the existing implementation doesn't address. Defer behind Tiers 0-3 but ship before next major feature work.
+
+| File | Theme | Source | Estimated scope |
+|---|---|---|---|
+| [016-admin-scope-badge.md](016-admin-scope-badge.md) | Standardize system-vs-tenant scope badge across all three admin frames | UI/UX deck p.8 | Small (chrome change) |
+| [017-oidc-audience-admin-editor.md](017-oidc-audience-admin-editor.md) | Admin UI for `oidc_clients.audience` (closes v0.50.0's "out of scope: admin UI for this" deferral) | UI/UX deck p.8 + ADR-014 §Q1 | Small/medium |
+| [018-preview-and-apply-pattern.md](018-preview-and-apply-pattern.md) | Preview-and-apply pattern for destructive admin operations; ADR-019 establishes the convention | UI/UX deck p.9 | Medium (pattern + first 3 adopters) |
+
+### Recommended implementation order
+
+1. **v0.50.2 — production-blocker sweep**: RFCs 008, 009, 010 ship together. RFC 011 may ride along or land in v0.50.3.
+2. **v0.51.0 — first feature release post-blocker**: RFC 001 (`id_token` issuance) — the largest queued feature work, ADR-008 design already Resolved.
+3. **v0.51.x or 0.52.0 — quality**: RFCs 002, 011 (if not in v0.50.x), 012.
+4. **v0.52.x — operations + traceability**: RFCs 013, 014 (Path A only; Path B deferred until telemetry triggers), 015 (alongside 013 since both touch the operational envelope and observability surface).
+5. **v0.52.x or 0.53.0 — admin UX hardening**: RFCs 016 (scope badge — small, can ship anywhere), 018 (preview-and-apply pattern — ADR-019 lands first), 017 (audience editor — ideally rides on RFC 018's pattern, otherwise stand-alone with later refactor).
+6. **Later, infrequent**: RFCs 003, 004, 005, 006, 007.
 
 ### Not covered here
 

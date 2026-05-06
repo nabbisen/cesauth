@@ -135,7 +135,7 @@ pub fn tenancy_console_frame(
     <h2>{title_esc}</h2>
 {body}
   </main>
-  <footer>cesauth tenancy console — v0.50.1 (full mutation surface for Operations+)</footer>
+  <footer>cesauth tenancy console — v0.50.2 (full mutation surface for Operations+)</footer>
 </body>
 </html>"##,
         name_html = if name_esc.is_empty() {

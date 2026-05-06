@@ -12,6 +12,294 @@ changes will always be called out here.
 
 ---
 
+## [0.50.2] - 2026-05-05
+
+Documentation-only patch release. Adds 11 new RFCs
+(008-018) to `rfcs/` triaging the v0.50.1 external
+codebase review findings, plus a ROADMAP entry tracking
+the v0.50.2 production-blocker sweep.
+
+This release ships the **specifications** for the
+production-blocker sweep; the **implementation** lands
+in subsequent minor releases starting with the next
+v0.50.x or v0.51.0.
+
+### Background
+
+An external Rust + Cloudflare codebase review of
+v0.50.1 surfaced three production blockers, three
+security hardening items, and four quality-and-
+operations items. Each finding was independently
+verified against the v0.50.1 source tree before
+acceptance. The triage produced 7 RFCs (008-014).
+
+A follow-up operator question — "is server logging
+sufficient, can client requests be traced
+end-to-end, and is a file-writing logger needed?" —
+produced an 8th RFC (015) covering request
+correlation, audit cross-link, and explicit
+documentation of the deliberate file-logger absence.
+RFC 015 ships in the same v0.50.2 patch release.
+
+A third source — an external UI/UX design update
+reviewing v0.50.1 — surfaced three admin-surface
+gaps not covered by the code review or the
+logging follow-up: scope-badge inconsistency
+across admin frames; the v0.50.0-deferred admin UI
+for `oidc_clients.audience` (operators currently
+run direct D1 SQL); the absence of an explicit
+"impact preview before apply" pattern for
+destructive admin operations. These produced RFCs
+016, 017, 018 — the **Tier 4 admin UX hardening**
+section, deferred behind Tiers 0-3 but tracked in
+the same v0.50.2 release.
+
+### What ships
+
+#### Tier 0 — Production blockers (P0/P1, ship in next release)
+
+- **RFC 008** — Eliminate plaintext OTP in audit log.
+  P0. The audit module's self-declared "No token
+  material ever" invariant is violated at two sites
+  (`worker/src/routes/magic_link/request.rs:170-178`,
+  `worker/src/routes/api_v1/anonymous.rs:254-264`)
+  where the Magic Link OTP plaintext is logged into
+  the audit `reason` field. Fix removes the plaintext,
+  adds a static-grep pin test against reintroduction,
+  renames `code_plaintext` → `delivery_payload` for
+  intent clarity, and provides an operator runbook
+  for purging already-leaked rows + chain
+  re-baseline.
+- **RFC 009** — Introspection access-token `aud`
+  correctness + audience-gate fail-closed. P0 + P1.
+  Token mints with `aud=client.id` but `/introspect`
+  verifies with `expected_aud=issuer`; the test
+  fixture sets `ISS == AUD` so the production bug is
+  invisible to tests. Result: every production access-
+  token introspection returns `{"active":false}`,
+  silently breaking RP integration. ADR-014 §Q1's
+  audience gate consequently never fires. Fix removes
+  `expected_aud` enforcement from the verifier (gate
+  becomes canonical aud check), updates fixture to
+  `AUD = "client_X"`, and tightens the gate to
+  fail-closed on storage error (HTTP 503) and on
+  client row missing post-auth (HTTP 401, new audit
+  kind `IntrospectionRowMissing`).
+- **RFC 010** — Magic Link real delivery. P0.
+  Workspace-wide grep confirms no `MagicLinkMailer`
+  trait exists despite the development directive
+  declaring one. The audit log IS the OTP delivery
+  mechanism today, which is why RFC 008's plaintext
+  leak exists. Fix builds the trait the directive
+  promised: `MagicLinkMailer` in `cesauth-core` with
+  audit-disjoint crate boundary, four reference
+  adapters (Cloudflare service binding, HTTPS
+  provider, dev console gated on `WRANGLER_LOCAL=1`,
+  `UnconfiguredMailer` fallback), new audit kinds
+  `MagicLinkDelivered` / `MagicLinkDeliveryFailed`,
+  ADR-015 alongside, new operator chapter
+  `docs/src/deployment/email-delivery.md`.
+- **RFC 011** — Worker-layer hardening. P1 + P2.
+  Bundle of four mechanical fixes: CSRF
+  `mint()` returns `Result<String>` (current code
+  swallows `getrandom` error and produces a
+  predictable constant token); `var_parsed_u32_bounded`
+  config helper rejects negative values (current
+  `as u32` cast wraps to huge u32, silently disabling
+  rate limits); duplicate route registration
+  deletion (`worker/src/lib.rs:193-200` is residue
+  from v0.35.0); `docs/src/expert/adr/012-session-hardening.md`
+  marked Superseded by `012-sessions.md`.
+
+#### Tier 3 — Quality and operations (defer behind P0 sweep)
+
+- **RFC 012** — Doc and repo hygiene. README rewrites
+  to drop "No management GUI" and "land in R2" claims;
+  mechanical split of `crates/core/src/migrate.rs`
+  (2568 lines) into 9 submodules under 500 lines
+  each; development directive corrections (rate-limit
+  is DO not KV; `crates/do` is skeleton); drift-scan
+  CI workflow with stale-phrase pattern list.
+- **RFC 013** — Operational envelope. ADR-016 declares
+  Cloudflare Paid plan as floor; bundle-size CI gate
+  at 7 MB gzipped; configurable cron batch sizes;
+  `nodejs_compat` removal or in-tree justification;
+  new `docs/src/deployment/operational-envelope.md`
+  chapter with per-request budget tables; bundle-history
+  trend doc.
+- **RFC 014** — Audit append performance. Path A
+  (acceptance + telemetry) for v0.50.x: instrument
+  `append` with latency / retry warnings, document
+  ~100/s sustained ceiling, ship operator runbook.
+  Path B (DO-serialized append, ADR-017) deferred
+  until Path A telemetry triggers.
+- **RFC 015** — Request traceability. Operator
+  follow-up question on logging completeness. Existing
+  `log` module is well-designed (categorized,
+  level-gated, sensitivity-gated) but request-scope
+  correlation is missing: log lines from the same
+  request are not grouped, audit events can't be
+  cross-linked to log lines, and HTTP request
+  lifecycle isn't logged consistently. Fix adds a
+  `cf-ray`-derived `request_id` (free, already in CF /
+  Logpush, observable client-side via response
+  header) threaded through `LogConfig` and
+  `NewAuditEvent`; one middleware-emitted HTTP
+  lifecycle log per request (replacing ad-hoc
+  per-handler `Category::Http` lines, net log volume
+  same or fewer); new nullable
+  `audit_events.request_id` column for cross-link
+  (SCHEMA_VERSION 10 → 11, ALTER-only migration,
+  non-chained additive — chain integrity unaffected).
+  **Deliberately documents the absence of a
+  file-writing logger** as ADR-018: Cloudflare
+  Workers has no filesystem; per-line writes to
+  KV/R2/D1 would contradict the security posture
+  ("セキュリティ重視のため不要なログは出力したりファイルに残し
+  たりすることは不要") by adding a persistence surface
+  outside operator's existing audit/log governance.
+  The four reasons (no FS / security posture /
+  redundancy with Cloudflare Logs + audit / no-
+  unnecessary-logs discipline) are recorded in
+  ADR-018 so future "why don't we write logs to a
+  file" questions get redirected to the ADR.
+
+#### Tier 4 — Admin UX hardening (defer behind P0 sweep + Tier 3)
+
+- **RFC 016** — Admin scope badge standardization.
+  The three admin frames (`/admin/console/*`
+  system, `/admin/tenancy/*` tenancy,
+  `/admin/t/<slug>/*` tenant) currently have
+  visually distinct chrome but no semantic
+  "you are operating in scope X" badge consistent
+  across all three. Adds `ScopeBadge` enum
+  (System / Tenancy / Tenant(slug)) + 3 colour
+  tokens (purple / blue / green, deliberately
+  distinct from the existing semantic
+  success / warning / danger / info tokens) + 3
+  MessageKey variants. Single-place chrome change;
+  no schema or wire impact.
+
+- **RFC 017** — OIDC client audience-scoping admin
+  editor. v0.50.0 shipped the audience-scoping
+  schema + `/introspect` gate but explicitly
+  deferred the admin UI ("Admin console UI for
+  this is out of v0.50.0 scope"). Operators
+  currently run `wrangler d1 execute "UPDATE
+  oidc_clients SET audience = ? WHERE id = ?"`
+  against production. RFC 017 closes the gap:
+  tenant admin editor surface with explicit
+  3-state form (radio + text: Unscoped / Scoped+
+  empty / Scoped+value) distinguishing NULL vs
+  `""` vs `"value"` semantics; per-tenant
+  uniqueness check with `?force=1` override for
+  intentional sharing; new audit kind
+  `OidcClientAudienceChanged` with before / after
+  payload; audit-trail section showing recent
+  changes for the client. ADR-014 §Q1
+  Resolved-paragraph gets a v0.50.x amendment
+  noting this RFC closes the deferred admin UI.
+
+- **RFC 018** — Preview-and-apply pattern for
+  destructive admin operations. The deck's
+  "状態 → 影響 → 実行 → 監査" framing surfaces a
+  real gap: today's `config_edit`, token rotation,
+  and similar admin operations apply directly on
+  submit, with no explicit "impact preview" step.
+  RFC 018 establishes reusable infrastructure:
+  `ImpactStatement{title, bullets, rollback,
+  severity}`; HMAC-signed `PreviewToken` (5-min
+  TTL, session HMAC key, binds operation_id +
+  before + after + csrf to prevent replay); paired
+  `OperationPreviewed` / `OperationApplied` audit
+  events for forensic correlation. First adopters:
+  LOG_LEVEL change (medium severity), token
+  rotation (high severity), audience editor (RFC
+  017 ideally rides on this pattern). ADR-019
+  establishes the convention so future destructive
+  admin operations adopt it by default. Read-only
+  admins can reach preview but not apply
+  (privilege boundary at apply, not at preview).
+
+#### `rfcs/README.md` — Tier 0 + Tier 3 + Tier 4 sections added
+
+The README index now has Tier 0 (production blockers)
+above Tier 1 / Tier 2 / Tier 3. Recommended
+implementation order spelled out: v0.50.2 ships
+RFCs 008-010 (and possibly 011); v0.51.0 ships
+RFC 001 (id_token); v0.51.x / 0.52.0 picks up
+quality (RFCs 002, 011 if not earlier, 012); v0.52.x
+operations (RFCs 013, 014 Path A); RFCs 003-007
+later as opportunity allows.
+
+#### ROADMAP entry
+
+`## Planned (0.x) / Next minor releases` gains a
+top-priority entry "v0.50.2 production-blocker sweep
+— external review remediation" describing each of
+RFCs 008-018 inline with the verified evidence
+behind each.
+
+### Tests
+
+No test count change — documentation-only release.
+v0.50.1's 1025 tests carry forward.
+
+### Schema / wire / DO
+
+- Schema unchanged (SCHEMA_VERSION = 10).
+- Wire format unchanged.
+- DO state unchanged.
+- No new dependencies.
+
+### Operator-visible changes
+
+None. This release adds engineering documentation;
+no behavior change. No `wrangler.toml` change. No
+new env vars. No new bindings.
+
+### ADR changes
+
+No ADR shipped or revised. RFC 010 will produce
+ADR-015 on implementation; RFC 013 will produce
+ADR-016; RFC 014 may produce ADR-017 if Path B
+triggers. RFC 009 will amend ADR-014 §Q1's
+Resolved-paragraph with v0.50.2 tightening note.
+
+### Doc / metadata changes
+
+- `Cargo.toml` workspace version 0.50.1 → 0.50.2.
+- UI footers + tests bumped to v0.50.2.
+- `rfcs/008-018-*.md` — 11 new RFC files (RFC 015 added in response to operator question on logging completeness — see entry below).
+- `rfcs/README.md` — Tier 0 (P0/P1 blockers) and
+  Tier 3 (quality/scaling) sections added; existing
+  Tier 1 / Tier 2 unchanged; Recommended
+  implementation order section added.
+- `ROADMAP.md` — v0.50.2 production-blocker sweep
+  entry under "Planned (0.x) / Next minor releases".
+- This CHANGELOG entry.
+
+### Upgrade path 0.50.1 → 0.50.2
+
+1. Extract this tarball, OR pull the git tag.
+2. No build needed — no code change.
+3. No deploy needed — no behavior change.
+
+This is a patch in the strictest sense: an
+implementer reads the new RFCs to start the
+production-blocker work; an operator running v0.50.1
+in production has nothing to do.
+
+**Operators planning the v0.50.2 → v0.50.3 upgrade**
+(when the production-blocker fixes ship) should
+read RFC 008 §"Step 4 — Operator data hygiene
+runbook" and RFC 010 §"Migration / upgrade path"
+ahead of time — both involve operator-side actions
+that take time to plan (mailer choice, audit
+purge, chain re-baseline).
+
+---
+
 ## [0.50.1] - 2026-05-05
 
 Documentation-only patch release. Adds the `rfcs/`
