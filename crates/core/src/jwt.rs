@@ -13,3 +13,6 @@ pub mod signer;
 
 pub use claims::{AccessTokenClaims, IdTokenClaims, Jwk, JwksDocument};
 pub use signer::{JwtSigner, verify_for_introspect};
+
+#[cfg(test)]
+mod proptests;

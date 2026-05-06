@@ -183,3 +183,6 @@ pub fn session_satisfies_max_age(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod redirect_uri_proptests;

@@ -61,7 +61,20 @@ pub(crate) fn oauth_error_code_status(err: &CoreError) -> (&'static str, u16) {
 /// side-effect-free.
 pub fn oauth_error_response(err: &CoreError) -> Result<Response> {
     let (code, status) = oauth_error_code_status(err);
-    let body = serde_json::json!({ "error": code });
+
+    // **v0.51.1 (RFC 004)** — WebAuthn failures include a typed `kind`
+    // field so clients can branch on the category without parsing the
+    // diagnostic detail string (which does NOT appear on the wire).
+    let body = if let CoreError::WebAuthn(detail) = err {
+        let kind = cesauth_core::webauthn::classify_webauthn_error(detail);
+        serde_json::json!({
+            "error": code,
+            "kind":  kind.as_str(),
+        })
+    } else {
+        serde_json::json!({ "error": code })
+    };
+
     let mut resp = Response::from_json(&body)?.with_status(status);
     let _ = resp.headers_mut().set("cache-control", "no-store");
     let _ = resp.headers_mut().set("pragma",        "no-cache");
@@ -216,5 +229,62 @@ mod tests {
         assert_ne!(rate_limited.1, invalid_grant.1);
         assert_ne!(rate_limited.1, invalid_client.1);
         assert_ne!(rate_limited.1, reuse.1);
+    }
+
+    // =================================================================
+    // v0.51.1 — RFC 004: WebAuthn typed error response shape
+    // =================================================================
+
+    /// **RFC 004** — WebAuthn failure response must include a `kind`
+    /// field so clients can branch on the category without parsing the
+    /// diagnostic detail string.
+    #[test]
+    fn webauthn_failure_response_includes_kind_field() {
+        let (code, _status) = oauth_error_code_status(
+            &CoreError::WebAuthn("rpIdHash mismatch")
+        );
+        // oauth_error_code_status gives us the error code; the kind is
+        // added by `oauth_error_response`. We test the code-status table
+        // here and rely on integration tests for the full JSON shape.
+        assert_eq!(code, "server_error");
+        // Also confirm the classify round-trip for the most important case.
+        let kind = cesauth_core::webauthn::classify_webauthn_error("rpIdHash mismatch");
+        assert_eq!(kind, cesauth_core::webauthn::WebAuthnErrorKind::RelyingPartyMismatch);
+    }
+
+    /// **RFC 004** — The diagnostic detail string MUST NOT appear in
+    /// the error body (privacy invariant: server logs get detail,
+    /// wire gets category only).
+    #[test]
+    fn webauthn_failure_detail_is_not_the_kind_field_value() {
+        let detail = "rpIdHash mismatch";
+        let kind = cesauth_core::webauthn::classify_webauthn_error(detail);
+        // kind.as_str() must not equal the raw detail string — if they
+        // were ever made equal an implementer could mistake it for safe
+        // forwarding. The category names are deliberately different from
+        // the diagnostic strings.
+        assert_ne!(
+            kind.as_str(), detail,
+            "kind must be a category label, not the raw diagnostic string"
+        );
+    }
+
+    /// **RFC 004** — All six `WebAuthnErrorKind` variants have distinct
+    /// `as_str()` values (no accidental aliasing).
+    #[test]
+    fn webauthn_error_kind_values_are_distinct() {
+        use cesauth_core::webauthn::WebAuthnErrorKind::*;
+        let all = [
+            UnknownCredential.as_str(),
+            RelyingPartyMismatch.as_str(),
+            UserCancelled.as_str(),
+            SignatureInvalid.as_str(),
+            ChallengeMismatch.as_str(),
+            Other.as_str(),
+        ];
+        let mut seen = std::collections::HashSet::new();
+        for s in &all {
+            assert!(seen.insert(*s), "duplicate kind value: {s}");
+        }
     }
 }

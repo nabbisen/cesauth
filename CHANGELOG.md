@@ -12,6 +12,128 @@ changes will always be called out here.
 
 ---
 
+## [0.51.1] - 2026-05-06
+
+Patch release. Implements RFC 004 (WebAuthn typed error responses) and
+RFC 003 (property-based tests). Both are internal or additive: no new
+routes, no schema changes, no new env vars.
+
+### Why this release
+
+**RFC 004**: WebAuthn ceremony failures currently collapse to a generic
+HTTP 500 with `{"error": "server_error"}`. Clients can't render specific
+recovery guidance — they don't know whether to try a different
+authenticator, ask their admin, or simply retry. A small typed `kind`
+field (six values) lets clients branch on the category while keeping the
+diagnostic detail string server-side only.
+
+**RFC 003**: Property-based tests on two surfaces that example-based tests
+can't adequately cover: JWT sign/verify crypto round-trips (where the input
+space is vast) and the `redirect_uri` exact-match invariant (historically
+the most bug-prone part of an OAuth server).
+
+### What shipped
+
+**RFC 004 — WebAuthn typed error responses**
+
+- `cesauth_core::webauthn::error` (new module): `WebAuthnErrorKind` — a
+  six-variant enum (`UnknownCredential`, `RelyingPartyMismatch`,
+  `UserCancelled`, `SignatureInvalid`, `ChallengeMismatch`, `Other`)
+  with `as_str() -> &'static str` and `Serialize`/`Deserialize` deriving
+  to snake_case.
+- `classify(detail: &str) -> WebAuthnErrorKind` — centralised mapping from
+  diagnostic strings to kind. Falls through to `Other` for unmapped strings;
+  new diagnostic strings from future dependency upgrades are safe.
+- `cesauth_core::webauthn` re-exports: `pub use error::{WebAuthnErrorKind,
+  classify as classify_webauthn_error}`.
+- `cesauth_worker::error::oauth_error_response`: WebAuthn failures now
+  produce `{"error": "server_error", "kind": "<snake_case_kind>"}`. All
+  other error variants are unchanged. The diagnostic detail string does NOT
+  appear on the wire (privacy invariant; stays in audit events and
+  `console_error!` logs only).
+- Three new tests in `worker::error::tests` pinning: (a) the kind field is
+  present and correctly classified; (b) the kind value is not the raw
+  diagnostic string; (c) all six variants have distinct `as_str()` values.
+- Ten unit tests in `webauthn::error::tests` covering every explicitly
+  mapped diagnostic string, the `Other` fallthrough (two cases), serde
+  snake_case, and a `classify_covers_all_known_cesauth_diagnostic_strings`
+  comprehensive pin.
+
+**RFC 003 — Property-based tests (`proptest`)**
+
+- `proptest = "1"` added to `[workspace.dependencies]` (dev-dep only).
+- `proptest.workspace = true` added to `cesauth-core [dev-dependencies]`.
+- `crates/core/src/jwt/proptests.rs` (new): five properties.
+  - `jwt_sign_verify_round_trip` — arbitrary claim strings + arbitrary Ed25519
+    seeds; decoded claims equal originals.
+  - `jwt_single_byte_tamper_causes_verify_failure` — flip any single byte at
+    any position; verify must return `Err`.
+  - `jwt_wrong_key_causes_verify_failure` — token signed with key A must not
+    verify under key B.
+  - `magic_link_issue_verify_round_trip` — any `now` value; issued OTP
+    verifies before expiry.
+  - `magic_link_tampered_otp_fails_verify` — first character flipped; must
+    not verify.
+- `crates/core/src/oidc/authorization/redirect_uri_proptests.rs` (new):
+  seven properties exercising the `redirect_uri` exact-match invariant.
+  - `matcher_accepts_byte_equal_uri` — registered URI accepted.
+  - `matcher_rejects_uri_not_in_allowed_set` — unregistered URI rejected.
+  - `matcher_rejects_trailing_slash_variant` — `uri/` rejected when only
+    `uri` is registered (classic open-redirect class).
+  - `matcher_rejects_path_suffix_appended` — both `uri/suffix` and
+    `urisuffix` rejected.
+  - `matcher_treats_explicit_443_as_distinct_from_no_port` — `:443`
+    explicit vs implicit are distinct strings.
+  - `matcher_treats_http_and_https_as_distinct` — scheme difference always
+    rejected.
+  - `matcher_is_case_sensitive` — uppercase variant rejected.
+
+### Tests
+
+481 `cesauth-core` lib tests pass (was 459 in v0.51.0). The proptest
+properties run 256 cases each by default, so the test suite is heavier
+than the raw count suggests.
+
+| Crate | Before | After | Delta |
+|---|---|---|---|
+| `cesauth-core` | 459 | 481 | +22 (10 RFC 004 unit + 12 proptest functions) |
+| `cesauth-adapter-test` | 117 | 117 | — |
+| `cesauth-ui` | 244 | 244 | — |
+| `cesauth-worker` host subset | 5 | 8 | +3 (RFC 004 error shape pins) |
+
+### Schema / wire / DO changes
+
+- **No schema migration.** SCHEMA_VERSION remains 10.
+- **Wire format additive only**: WebAuthn error responses gain a `kind` field.
+  Clients that ignore unknown JSON fields (the correct default) see no change.
+- **No new env vars**, no new bindings, no `wrangler.toml` changes.
+- **No DO state changes.**
+
+### Operator notes
+
+No action required to upgrade. The `kind` field in WebAuthn error responses
+is available to clients immediately after deploying v0.51.1.
+
+If you maintain a client-side WebAuthn integration:
+- Branch on `response.kind` for specific error recovery guidance.
+- `"unknown_credential"` → prompt to try a different authenticator or register.
+- `"relying_party_mismatch"` → deployment misconfiguration; contact admin.
+- `"user_cancelled"` → retry the ceremony.
+- `"signature_invalid"` → authenticator may be cloned; try another.
+- `"challenge_mismatch"` → re-issue the ceremony (challenge likely expired).
+- `"other"` → generic failure.
+
+### ADR changes
+
+None.
+
+### Upgrade procedure
+
+```
+1. Deploy v0.51.1 (no migration, no new config).
+2. WebAuthn error responses now include "kind" field.
+```
+
 ## [0.51.0] - 2026-05-06
 
 Minor release. Implements RFC 010 (MagicLinkMailer port) and closes

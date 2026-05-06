@@ -19,7 +19,10 @@
 
 pub mod authentication;
 pub mod cose;
+pub mod error;
 pub mod registration;
+
+pub use error::{WebAuthnErrorKind, classify as classify_webauthn_error};
 
 use serde::{Deserialize, Serialize};
 

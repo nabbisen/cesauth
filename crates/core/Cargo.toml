@@ -67,4 +67,7 @@ p256            = { version = "0.13", default-features = false, features = ["ecd
 [dev-dependencies]
 # Same dev-dep shape as adapter-test. Async test fns are nicer for
 # port-shaped code than hand-rolling `futures::executor::block_on`.
-tokio = { version = "1", features = ["macros", "rt"] }
+tokio    = { version = "1", features = ["macros", "rt"] }
+# RFC 003 (v0.51.1): property-based testing for JWT round-trips and
+# redirect_uri matcher invariants.
+proptest = { workspace = true }

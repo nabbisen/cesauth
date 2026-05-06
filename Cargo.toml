@@ -17,7 +17,7 @@ members = [
 # `[workspace.package].rust-version`) and the wasm32 target installed.
 
 [workspace.package]
-version      = "0.51.0"
+version      = "0.51.1"
 edition      = "2024"
 rust-version = "1.85"
 license      = "Apache-2.0"
@@ -99,6 +99,11 @@ time = { version = "0.3", features = ["serde", "wasm-bindgen", "formatting"] }
 # do not pull these in.
 clap  = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "process"] }
+
+# --- Test utilities (dev-dep only) ---
+# RFC 003 (v0.51.1): property-based testing for crypto round-trips and
+# redirect_uri matcher. Never referenced by production code.
+proptest = { version = "1", default-features = false, features = ["std"] }
 
 # --- Internal crates ---
 cesauth-core                = { path = "crates/core" }

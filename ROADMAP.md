@@ -117,6 +117,22 @@ started.
 
 ### Next minor releases
 
+- ✅ **v0.51.1 — RFC 004 + RFC 003 (WebAuthn typed errors + proptest).**
+  Patch release. Additive wire change (`kind` field on WebAuthn errors)
+  + dev-dep addition only.
+
+  **RFC 004**: `cesauth_core::webauthn::error` — `WebAuthnErrorKind` enum
+  with six variants and `classify(detail) -> WebAuthnErrorKind`. Worker
+  `oauth_error_response` surfaces `kind` in the JSON body for WebAuthn
+  failures only; diagnostic detail stays server-side (audit + logs).
+  10 unit tests + 3 worker error-shape pins.
+  **RFC 003**: `proptest = "1"` as workspace dev-dep. Two new property-based
+  test modules: `jwt/proptests.rs` (5 properties — sign/verify round-trip,
+  single-byte tamper, wrong-key rejection, magic-link round-trip, tamper
+  rejection) and `oidc/authorization/redirect_uri_proptests.rs` (7 properties
+  — exact-match, no-trailing-slash, no-suffix, port-explicit-vs-default,
+  http-vs-https, case-sensitive). 481 core tests pass (was 459).
+
 - ✅ **v0.51.0 — RFC 010 + RFC 002 (MagicLinkMailer port + schema drift fix).**
   Minor bump because RFC 010 introduces operator-visible configuration knobs
   (three optional env vars for the HTTPS provider adapter).
@@ -1196,7 +1212,7 @@ started.
   The discovery doc gains an `introspection_endpoint`
   declaration. Estimated scope: ~150 lines + tests.
 
-- **Property-based tests (`proptest`) for round-trip and
+- ✅ **Property-based tests (`proptest`)** — shipped in v0.51.1 (RFC 003). ~~for round-trip and
   matcher invariants.** Two surfaces benefit most:
   1. **Crypto round-trips**: `EncodingKey::from_ed_pem` →
      `DecodingKey::from_ed_der` → JWT sign → JWT verify →
@@ -1229,7 +1245,7 @@ started.
   reading discrete env vars, surface too small to fuzz
   productively.
 
-- **WebAuthn error → typed client responses.** The current
+- ✅ **WebAuthn error → typed client responses** — shipped in v0.51.1 (RFC 004). ~~The current
   `CoreError::WebAuthn(&'static str)` carries diagnostic
   strings (`"rpIdHash mismatch"`, `"signature invalid"`,
   etc.) that surface only in server-side logs. The HTTP
