@@ -151,8 +151,9 @@ still apply.
 
 - [ADR-007](../expert/adr/007-security-response-headers.md)
   — design rationale and decision summary.
-- [SECURITY.md](../../../SECURITY.md) (planned in a future
-  release) — vulnerability disclosure policy and security
-  contact.
+- [SECURITY.md](../../../.github/SECURITY.md) — vulnerability
+  disclosure policy and security contact.
+- [CSRF audit (v0.24.0)](../expert/csrf-audit.md) — the
+  parallel-track audit done alongside this header rollout.
 - Mozilla Observatory: <https://observatory.mozilla.org/> —
   external automated check of your deployment's headers.

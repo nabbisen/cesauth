@@ -18,14 +18,43 @@ use time::OffsetDateTime;
 use worker::{Request, Response, Result, RouteContext};
 
 use crate::audit::{self, EventKind};
-use crate::config::load_session_cookie_key;
+use crate::config::{Config, load_session_cookie_key};
+use crate::csrf;
 use crate::post_auth;
 
 /// `POST /logout`. Always returns 302 `/` with clearing Set-Cookie
 /// headers, even if the user had no session. Logging out when you're
 /// already logged out is not an error.
+///
+/// CSRF defense — added in v0.24.0 as part of the CSRF audit:
+/// the request must have an `Origin` (or, fallback, `Referer`)
+/// header that matches our own origin. This blocks cross-origin
+/// form submissions that would otherwise log a victim out as a
+/// nuisance attack.
+///
+/// `SameSite=Lax` on the session cookie is the primary defense
+/// (cross-origin POST does not carry the cookie, so logout is a
+/// no-op anyway). The Origin check is defense-in-depth.
+///
+/// Programmatic clients (CLI, integration tests) MUST send an
+/// `Origin` header pointing at the cesauth deployment to log out
+/// successfully. They can do this trivially —
+/// `--header 'Origin: https://cesauth.example.com'` for curl.
 pub async fn logout<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let cfg = Config::from_env(&ctx.env)?;
     let now = OffsetDateTime::now_utc().unix_timestamp();
+
+    // CSRF defense via Origin/Referer check. The expected origin
+    // is the WebAuthn relying-party origin (which is also the
+    // deployment's public origin).
+    let origin  = req.headers().get("origin").ok().flatten();
+    let referer = req.headers().get("referer").ok().flatten();
+    if !csrf::check_origin_or_referer(origin.as_deref(), referer.as_deref(), &cfg.rp_origin) {
+        // 403 with a body explaining what went wrong. Don't leak
+        // the expected origin — caller already knows their own
+        // origin if they're legitimate.
+        return Response::error("forbidden: cross-origin logout blocked", 403);
+    }
 
     // Best-effort: pull the cookie, verify MAC, revoke at the DO.
     // Every failure mode (no cookie, bad MAC, expired, DO unavailable)

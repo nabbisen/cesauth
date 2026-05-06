@@ -1,23 +1,36 @@
 # CSRF model
 
-cesauth follows the standard OWASP double-submit cookie pattern, but
-only for form POSTs. JSON POSTs bypass validation because the browser
-cannot forge a cross-origin `application/json` POST without a CORS
-preflight.
+cesauth applies CSRF defense by route, choosing one of four
+mechanisms based on the route's authentication and content type.
+The detailed per-route audit lives in [`csrf-audit.md`](./csrf-audit.md);
+this chapter is the design overview.
+
+## Defense mechanisms
+
+| Mechanism | When it applies | What stops the attacker |
+|---|---|---|
+| **CSRF token** | Browser-cookie-authenticated form POSTs | Attacker page can't read the `__Host-cesauth-csrf` cookie (HttpOnly + `__Host-` prefix prevents cross-origin Set-Cookie). Without the cookie's value, the attacker can't echo it in the form field. |
+| **Origin/Referer check** | State-clearing routes with no UI form (e.g. `/logout`) | Attacker page's request carries the attacker's `Origin` (or `Referer`), not cesauth's. |
+| **CORS preflight** | JSON-only POSTs | Cross-origin `application/json` triggers a preflight that cesauth doesn't grant. |
+| **`Authorization: Bearer`** | Bearer-token-authenticated routes | Browsers can't auto-send `Authorization` from a cross-origin form; only same-origin JS can set it, and same-origin JS isn't a CSRF vector. |
 
 ## Protected endpoints
 
-| Endpoint                   | Protection                                   |
-|----------------------------|----------------------------------------------|
-| `GET  /authorize`          | Not relevant (read-only; sets the CSRF cookie) |
-| `POST /magic-link/request` | CSRF required for form POSTs; bypass for JSON |
-| `POST /magic-link/verify`  | Same                                         |
-| `POST /webauthn/register/finish` | JSON-only; bypass                       |
-| `POST /webauthn/authenticate/finish` | JSON-only; bypass                   |
-| `POST /admin/*`            | Bearer token auth, not CSRF                  |
-| `POST /token`              | Not browser-originated; bypass               |
-| `POST /revoke`             | Not browser-originated; bypass               |
-| `POST /logout`             | CSRF required for form POST                  |
+| Endpoint                                  | Mechanism                              |
+|-------------------------------------------|----------------------------------------|
+| `GET  /authorize`                         | Read-only; sets the CSRF cookie        |
+| `POST /magic-link/request`                | CSRF token (form) / CORS preflight (JSON) |
+| `POST /magic-link/verify`                 | CSRF token (form, added v0.24.0) / CORS preflight (JSON) |
+| `POST /webauthn/register/finish`          | JSON-only — CORS preflight             |
+| `POST /webauthn/authenticate/finish`      | JSON-only — CORS preflight             |
+| `POST /api/v1/anonymous/promote`          | JSON-only — CORS preflight             |
+| `POST /admin/console/*`                   | `Authorization: Bearer` (admin token)  |
+| `POST /admin/tenancy/*`                   | `Authorization: Bearer` (admin token)  |
+| `POST /admin/t/<slug>/*`                  | `Authorization: Bearer` (user-as-bearer per ADR-002) |
+| `POST /api/v1/...`                        | `Authorization: Bearer` (admin token)  |
+| `POST /oauth/token`                       | OAuth client_secret + grant secret     |
+| `POST /oauth/revoke`                      | OAuth client_secret                    |
+| `POST /logout`                            | Origin/Referer check                   |
 
 ## The pattern
 

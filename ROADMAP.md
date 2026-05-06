@@ -77,6 +77,7 @@ zero remaining issues.
 | **Tenancy-service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.18.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.6.0). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.7.0). Read-only HTML console at `/admin/tenancy/*` (0.8.0, originally `/admin/saas/*`). Mutation forms with preview/confirm pattern (0.9.0) for tenant / organization / group / subscription. Membership add/remove + role grant/revoke forms (0.10.0) bring the HTML console to feature parity with the v0.7.0 JSON API. ADR-001/002/003 settle the tenant-scoped admin surface design (0.11.0) and ship the schema + type foundation (`admin_tokens.user_id`, `AdminPrincipal::user_id`, `is_system_admin()`). Project-hygiene release with naming-debt cleanup (0.12.0) — `saas/` → `tenancy_console/`, `/admin/saas/*` → `/admin/tenancy/*`, plus author/license metadata and `.github/` community documents. Buffer/follow-up release with stale-narrative cleanup + dependency audit (0.12.1). Tenant-scoped admin surface read pages shipped at `/admin/t/<slug>/*` with auth gate + `check_permission` integration (0.13.0). High-risk mutation forms plus a system-admin token-mint UI shipped (0.14.0). Additive membership forms (× 3 flavors) plus affordance gating shipped (0.15.0) — the tenant-scoped surface reaches feature parity with the system-admin tenancy console. Security-fix and audit-infrastructure release (0.15.1): RUSTSEC-2023-0071 in transitive `rsa` removed via `jsonwebtoken` feature narrowing, `cargo audit` integrated via initial sweep + GitHub Actions workflow + operator docs. Anonymous-trial promotion design (ADR-004) plus foundation (migration `0006_anonymous.sql`, `AnonymousSession` type + repository, in-memory + D1 adapters, 3 new audit event kinds) shipped (0.16.0). Anonymous-trial HTTP routes (`POST /api/v1/anonymous/begin` and `/promote`) shipped (0.17.0); ADR-004 graduates to `Accepted`. Anonymous-trial daily retention sweep (Cloudflare Workers Cron Trigger, `[triggers]` block in `wrangler.toml`, sweep handler with audit-before-delete ordering, operator runbook diagnostic) shipped (0.18.0); ADR-004 feature-complete. **Note: versioning was retroactively re-aligned with the [versioning policy](#versioning-policy) at 0.18.0; the version numbers shown for 0.5.0 through 0.18.0 in this row are the re-aligned values, not the original tarball numbers — see the [Versioning history note](../CHANGELOG.md#versioning-history-note) section in CHANGELOG for the full mapping.** Deployment guide build-out shipped (0.18.1) — eight new operator-facing chapters (pre-flight, cron, custom domains, multi-environment, backup/restore, observability, day-2 runbook, disaster recovery) covering the operational surface previously held in tribal knowledge. |
 | **Data migration tooling**             | ✅       | ADR-005 + foundation shipped (0.19.0): `cesauth_core::migrate` library value types (`Manifest`, `TableSummary`, `PayloadLine`), redaction profile registry with two built-ins, `FORMAT_VERSION` + `SCHEMA_VERSION` constants, CLI skeleton with `list-profiles` implemented. Real export + verify shipped (0.20.0): typed `MigrateError` (8 kinds), `Exporter<W>` with single-use `ExportSigner` (per-export Ed25519 keypair, fingerprint handshake), streaming `verify` with per-table + whole-payload SHA-256 checks, `apply_redaction` with deterministic `HashedEmail` (preserves UNIQUE invariant). CLI's `export` subcommand wires `WranglerD1Source` → `Exporter` (refuses to clobber, prints fingerprint to stderr at start, walks `MIGRATION_TABLE_ORDER` of 18 tables in topological order, prints secrets-coordination checklist at end). CLI's `verify` subcommand has no D1 dependency. Real import shipped (0.21.0): `Violation` + `ViolationReport`, `InvariantCheckFn` + `SeenSnapshot` + four default checks (user→tenant, membership→user, membership→container, role_assignment→role+user), `ImportSink` trait with `WranglerD1Sink` impl (batched-INSERT-per-table commits, full rollback on decline). CLI's `import` subcommand walks five gates (verify → fingerprint handshake → `JWT_SIGNING_KEY` pre-flight → invariant checks → final commit confirmation) — destination D1 untouched until final yes. **ADR-005 graduated to Accepted (0.21.0)**. New deployment chapter `data-migration.md` makes the legacy `sed`-script prod→staging refresh pattern obsolete; new runbook section "Operation: cross-account data migration"; disaster-recovery Scenario 4 (account compromise) rewritten with concrete `cesauth-migrate` invocations. Polish phase shipped (0.22.0): `--tenant <id>` filter on `export` (with manifest scope record + `TenantScope::Global` vs `OwnColumn` per-table classification), `cesauth-migrate refresh-staging` single-command combinator (export + redaction + import in one invocation, opinionated for single-operator runs, `--yes` for unattended use), email-uniqueness-within-tenant invariant check (redaction-aware, case-insensitive), per-row import progress via `ProgressSink` decorator. **Feature-complete for ADR-005's scope as of 0.22.0.** Deferred items (resume support, native Cloudflare HTTP API client, custom invariant registration via CLI) are tracked as post-1.0 polish — they don't change the design and don't have known operator demand. |
 | **HTTP security response headers**     | ✅       | ADR-007 (`Accepted`, 0.23.0): unified middleware replaces ad-hoc per-response `harden_headers`. Adds three previously-missing headers (`Strict-Transport-Security`, `Permissions-Policy`, plus `X-Frame-Options` now gated to HTML responses). Pure-function library `cesauth_core::security_headers` produces header lists; worker shim reads operator env (`SECURITY_HEADERS_CSP`/`STS`/`DISABLE_HTML_ONLY`) and applies via `worker::Headers::set`. Library tracks `already_set` so per-route CSPs (login, OIDC authorize, admin console — all use `'unsafe-inline'` for current template constraints) are preserved; "don't clobber" is a library responsibility with case-insensitive header-name matching. 28 new tests cover defaults pinning, content-type detection (rejects `text/htmlx` partial-match), env override parsing (strict `"true"` matching for the disable knob), don't-clobber semantics. New operator chapter `docs/src/deployment/security-headers.md`. **Note (v0.23.0 supersedes a withdrawn release)**: a prior v0.23.0 attempt added per-account lockout based on the incorrect premise that cesauth has password authentication; withdrawn before canonical, artifact preserved as `cesauth-0.23.0-account-lockout-withdrawn.tar.gz`. CSP without `'unsafe-inline'` (nonces or template extraction) tracked as future work in the security track. |
+| **Security track Phase 1: SECURITY.md + CSRF audit + dep scan automation review** | ✅       | Shipped 0.24.0. Documentation- and audit-heavy with one small CSRF gap fill. **`.github/SECURITY.md` improvements**: severity-based response-target table (Critical 24h/72h/7d, scaled), known-limitations subsection (CSP `'unsafe-inline'`, no per-account lockout, `/admin/*` Authorization-only), see-also cross-links. **CSRF audit** (`docs/src/expert/csrf-audit.md`) per-route inventory with mechanism per route (4 mechanisms: token, Origin/Referer check, CORS preflight, `Authorization: Bearer`), cookies+SameSite audit, token-binding analysis, decision tree for new routes, test coverage summary, re-audit cadence. **CSRF gap fill on `/magic-link/verify`**: form-encoded path now validates the CSRF token (mirrors `/magic-link/request`); JSON path remains exempt (CORS preflight); `csrf_mismatch` audit event. **Dep scan automation review**: verified `.github/workflows/audit.yml` is comprehensive (push to main + every PR + weekly cron + manual dispatch; `rustsec/audit-check@v2.0.0`; opens GitHub issues automatically); documented the alert path in new "Dependency vulnerability scanning" section in `docs/src/expert/security.md`. **Discovered UX bug**: `magic_link_sent_page()` template missing `handle`/`csrf` hidden inputs — fail-closed but unusable in browsers; tracked as separate ROADMAP item. 6 new tests pin the CSRF field contract on `VerifyBody` and `RequestBody`. Total **437 passing** (worker tests now broken out — see CHANGELOG note on the historical undercount). |
 | mdBook documentation                   | ✅       | `docs/`                                            |
 
 ---
@@ -88,17 +89,23 @@ started.
 
 ### Next minor releases
 
-- **Security track — phased rollout.** Five releases of focused
+- **Security track — phased rollout.** Eight releases of focused
   security work, ordered by impact-vs-effort. Each is small
   enough to ship cleanly without overlap.
 
-  - **0.24.0** — `SECURITY.md` (vulnerability disclosure
-    policy with reporting path, expected SLA, scope inclusions/
-    exclusions, PGP key) + CSRF audit (verify every HTML
-    mutation route has CSRF protection, identify gaps, fill)
-    + dependency-scan automation review (confirm
-    `cargo audit` runs in CI, document the alert path).
-    Mostly documentation and audit; minimal code change.
+  - **0.24.0** ✅ — `SECURITY.md` improvements (severity table,
+    known-limitations subsection, see-also cross-links;
+    pre-existing policy was already comprehensive) + CSRF
+    audit deliverable (`docs/src/expert/csrf-audit.md`,
+    per-route inventory with mechanism per route, test
+    coverage, re-audit cadence) + CSRF gap fill on
+    `/magic-link/verify` (token check, JSON-path exempt) +
+    dependency-scan automation review (verified the existing
+    `.github/workflows/audit.yml` is comprehensive, documented
+    the alert path in `docs/src/expert/security.md`'s new
+    "Dependency vulnerability scanning" section). 6 new tests
+    pinning the CSRF field contract on `VerifyBody` and
+    `RequestBody`. Total 413 passing.
   - **0.25.0** — Email verification flow audit + gap fill.
     The `email_verified` column exists; verify the magic-link
     path correctly sets it on first verification, and the
@@ -133,6 +140,22 @@ started.
 
   After this track completes, the schedule reverts to the
   feature track (RFC 7662 Token Introspection, etc.).
+
+- **Fix `magic_link_sent_page()` HTML template (UX bug,
+  discovered during the v0.24.0 CSRF audit).** The template
+  at `crates/ui/src/templates.rs::magic_link_sent_page()`
+  renders a form that POSTs to `/magic-link/verify` but is
+  missing both the `handle` and the `csrf` hidden input
+  fields. The verify handler requires both; the form path
+  is therefore unusable in browsers (only the JSON API path
+  works). Not a security issue — the handler fails closed on
+  the empty-handle check before any state change. The fix
+  needs `magic_link_sent_page()` to take the handle and CSRF
+  token as parameters, the `/magic-link/request` handler to
+  pass them in, and a new end-to-end form-flow test. Small
+  scope (~1 release if isolated; could fold into the v0.25.0
+  email verification work since both touch magic-link
+  templates).
 
 - **Real mail provider for Magic Link delivery.** The current
   `dev-delivery` audit line containing the plaintext OTP must be

@@ -13,6 +13,7 @@ use worker::{Env, Request, Response, Result, RouteContext};
 
 use crate::audit::{self, EventKind};
 use crate::config::Config;
+use crate::csrf;
 use crate::error::oauth_error_response;
 use crate::post_auth;
 
@@ -26,6 +27,8 @@ use super::{
 struct VerifyBody {
     handle: String,
     code:   String,
+    #[serde(default)]
+    csrf:   String,
     #[serde(default, rename = "cf-turnstile-response")]
     turnstile: Option<String>,
 }
@@ -35,21 +38,45 @@ pub async fn verify<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     let pending = req.headers().get("cookie").ok().flatten()
         .and_then(|h| post_auth::extract_pending_handle(&h).map(str::to_owned));
 
-    let body: VerifyBody = match req.headers().get("content-type").ok().flatten().as_deref() {
-        Some(ct) if ct.contains("application/json") => {
-            req.json().await.unwrap_or_default()
-        }
-        _ => {
-            let raw = req.text().await.unwrap_or_default();
-            let form: std::collections::HashMap<String, String> =
-                url::form_urlencoded::parse(raw.as_bytes()).into_owned().collect();
-            VerifyBody {
-                handle:    form.get("handle").cloned().unwrap_or_default(),
-                code:      form.get("code").cloned().unwrap_or_default(),
-                turnstile: form.get(TURNSTILE_FIELD).cloned(),
-            }
+    // Snapshot the CSRF cookie + content-type before body consumption.
+    // The form path will compare submitted token against this; the JSON
+    // path is exempt (CORS preflight is the defense, same pattern as
+    // the OWASP "Use of Custom Request Headers" mitigation).
+    let csrf_from_cookie = req.headers().get("cookie").ok().flatten()
+        .and_then(|h| csrf::extract_from_cookie_header(&h).map(str::to_owned));
+    let is_json = matches!(
+        req.headers().get("content-type").ok().flatten().as_deref(),
+        Some(ct) if ct.contains("application/json")
+    );
+
+    let body: VerifyBody = if is_json {
+        req.json().await.unwrap_or_default()
+    } else {
+        let raw = req.text().await.unwrap_or_default();
+        let form: std::collections::HashMap<String, String> =
+            url::form_urlencoded::parse(raw.as_bytes()).into_owned().collect();
+        VerifyBody {
+            handle:    form.get("handle").cloned().unwrap_or_default(),
+            code:      form.get("code").cloned().unwrap_or_default(),
+            csrf:      form.get("csrf").cloned().unwrap_or_default(),
+            turnstile: form.get(TURNSTILE_FIELD).cloned(),
         }
     };
+
+    // CSRF check on the form-encoded path. JSON-content-type requests
+    // are exempt — they require a CORS preflight that an attacker
+    // page cannot satisfy. The login flow's CSRF cookie was set by
+    // /authorize when the login page was rendered.
+    if !is_json {
+        let cookie = csrf_from_cookie.as_deref().unwrap_or("");
+        if !csrf::verify(&body.csrf, cookie) {
+            audit::write_owned(
+                &ctx.env, EventKind::MagicLinkFailed,
+                None, None, Some("csrf_mismatch".into()),
+            ).await.ok();
+            return oauth_error_response(&cesauth_core::CoreError::InvalidRequest("csrf"));
+        }
+    }
 
     if body.handle.is_empty() || body.code.is_empty() {
         return oauth_error_response(&cesauth_core::CoreError::InvalidRequest("handle or code"));
@@ -167,5 +194,87 @@ async fn resolve_or_create_user(
                 _           => Err(cesauth_core::CoreError::Internal),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -----------------------------------------------------------------
+    // VerifyBody deserialization — added in v0.24.0 alongside the
+    // CSRF gap fill. Pins that:
+    //   - The `csrf` field defaults to "" when missing (JSON callers).
+    //   - The `csrf` field is correctly read from form-encoded input.
+    //   - JSON callers can omit `csrf` without serde error.
+    //
+    // The CSRF gate logic itself lives in `crate::csrf::verify` and
+    // is tested in `crate::csrf::tests`. These tests pin the
+    // *contract* between the form/JSON parser and the gate: an
+    // empty submitted token must reach the gate (which then rejects
+    // it via `csrf::verify`'s "empty input fails" branch).
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn verifybody_deserializes_with_csrf_present() {
+        let json = r#"{"handle":"h-1","code":"123456","csrf":"tok"}"#;
+        let body: VerifyBody = serde_json::from_str(json).unwrap();
+        assert_eq!(body.handle, "h-1");
+        assert_eq!(body.code, "123456");
+        assert_eq!(body.csrf, "tok");
+    }
+
+    #[test]
+    fn verifybody_deserializes_with_csrf_missing() {
+        // JSON callers (curl-style API consumers) don't send csrf.
+        // Default-empty is correct and the worker-side gate skips
+        // CSRF validation for is_json=true. So an empty csrf reaching
+        // the JSON path is harmless; an empty csrf reaching the form
+        // path is rejected by `csrf::verify`.
+        let json = r#"{"handle":"h-1","code":"123456"}"#;
+        let body: VerifyBody = serde_json::from_str(json).unwrap();
+        assert_eq!(body.handle, "h-1");
+        assert_eq!(body.csrf, "",
+            "missing csrf field must default to empty string");
+    }
+
+    #[test]
+    fn verifybody_form_path_constructs_with_explicit_csrf() {
+        // Mirror the form-decode branch in `verify()` — it builds a
+        // VerifyBody from a form HashMap. Pin that `csrf:""` is the
+        // representation when the form has no csrf field.
+        let mut form = std::collections::HashMap::new();
+        form.insert("handle".to_owned(), "h-1".to_owned());
+        form.insert("code".to_owned(), "123456".to_owned());
+        // No csrf in the form (broken form template). The handler
+        // builds with `form.get("csrf").cloned().unwrap_or_default()`.
+        let body = VerifyBody {
+            handle:    form.get("handle").cloned().unwrap_or_default(),
+            code:      form.get("code").cloned().unwrap_or_default(),
+            csrf:      form.get("csrf").cloned().unwrap_or_default(),
+            turnstile: None,
+        };
+        assert_eq!(body.csrf, "");
+        // And the gate's `csrf::verify("", _)` returns false. Pin
+        // that here so a regression in csrf::verify (e.g. accepting
+        // empty as a "no token submitted" no-op) is caught.
+        assert!(!crate::csrf::verify(&body.csrf, "any-cookie-value"));
+    }
+
+    #[test]
+    fn verifybody_csrf_value_carries_through_form_decode() {
+        // Form-decode path: simulate `form.get("csrf")` returning
+        // a non-empty value.
+        let mut form = std::collections::HashMap::new();
+        form.insert("csrf".to_owned(), "abc".to_owned());
+        let body = VerifyBody {
+            handle:    "h-1".to_owned(),
+            code:      "123456".to_owned(),
+            csrf:      form.get("csrf").cloned().unwrap_or_default(),
+            turnstile: None,
+        };
+        assert_eq!(body.csrf, "abc");
+        // And csrf::verify accepts when both sides match.
+        assert!(crate::csrf::verify(&body.csrf, "abc"));
     }
 }

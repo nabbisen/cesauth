@@ -164,3 +164,34 @@ pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
     // POSTs back to `/magic-link/verify` with `handle` + `code`.
     Response::from_html(cesauth_ui::templates::magic_link_sent_page())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -----------------------------------------------------------------
+    // RequestBody serde — pin contract for the CSRF gate that has
+    // protected this route since pre-v0.24.0. v0.24.0's CSRF audit
+    // verified the protection is correct; these tests pin the
+    // VerifyBody/RequestBody parity so a future refactor of the body
+    // shape doesn't silently drop the CSRF field.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn requestbody_deserializes_with_csrf_present() {
+        let json = r#"{"email":"a@b.test","csrf":"tok"}"#;
+        let body: RequestBody = serde_json::from_str(json).unwrap();
+        assert_eq!(body.email, "a@b.test");
+        assert_eq!(body.csrf.as_deref(), Some("tok"));
+    }
+
+    #[test]
+    fn requestbody_deserializes_without_csrf() {
+        // JSON path doesn't require csrf — the gate skips it for
+        // is_form=false. Default Option<String> = None is correct.
+        let json = r#"{"email":"a@b.test"}"#;
+        let body: RequestBody = serde_json::from_str(json).unwrap();
+        assert_eq!(body.email, "a@b.test");
+        assert!(body.csrf.is_none());
+    }
+}

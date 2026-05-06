@@ -130,3 +130,67 @@ Before the first `wrangler deploy`:
    bytes of entropy.
 5. Set `TURNSTILE_SECRET` if the deployment needs anti-abuse
    protection beyond pure rate limits.
+
+## Dependency vulnerability scanning
+
+cesauth's dependency tree is scanned against the RustSec Advisory
+Database on every push to `main`, every pull request, and on a
+weekly cron. The workflow lives at
+`.github/workflows/audit.yml` and uses the
+`rustsec/audit-check@v2.0.0` action.
+
+### Triggers
+
+- **`push` to `main`** — catches direct merges that bypassed PR
+  review.
+- **`pull_request`** — blocks PRs that introduce a new
+  vulnerable dependency before they merge. The cheapest place to
+  catch one.
+- **Weekly cron, Mondays 06:00 UTC** — catches advisories that
+  appeared *after* a dependency was already in the tree. The
+  dependency didn't change; the world's understanding of it did.
+  Result lands at the start of the work week so it's visible
+  before merges.
+- **Manual dispatch** — maintainer can kick off an on-demand
+  audit.
+
+### Failure path
+
+The workflow fails on any new advisory matching a Cargo.lock
+dependency. On `push` events, the action additionally opens a
+GitHub issue describing the advisory (the workflow has
+`issues: write` permission for this purpose). On `pull_request`,
+the failure blocks the PR's status check.
+
+A passing `main` branch means **no known CVEs in our dep tree**
+at the time of the last audit run.
+
+### Handling a finding
+
+When `cargo audit` fails:
+
+1. **Read the advisory**: <https://rustsec.org/advisories/> +
+   the action's logs identify the affected crate and version.
+2. **Determine applicability**: not every advisory in a
+   dependency affects cesauth. Check whether the vulnerable
+   code path is actually exercised. If not, document the
+   reasoning before ignoring.
+3. **Update**: prefer `cargo update -p <crate>` to pick up a
+   patched version. If the patched version is across a major
+   bump, plan a small migration.
+4. **Ignore (if applicable)**: add the advisory ID to
+   `.cargo/audit.toml` under `[advisories] ignore = [...]`
+   with a one-line justification. The file does not yet exist
+   (we don't have any ignored advisories); create it only
+   when the first ignore is actually needed.
+5. **Audit history**: when an advisory is fixed by an upgrade,
+   reference the advisory ID in the CHANGELOG entry for the
+   release that contains the upgrade. Search-friendly.
+
+### Re-audit cadence for the workflow itself
+
+The workflow uses pinned action versions
+(`rustsec/audit-check@v2.0.0`, `actions/checkout@v4`). Renovate
+or Dependabot should be configured to bump these when new majors
+appear. As of v0.24.0 this is **not yet wired** — manual
+review at major release cadence is the current process.

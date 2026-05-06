@@ -12,6 +12,194 @@ always be called out here.
 
 ---
 
+## [0.24.0] - 2026-04-28
+
+Security track Phase 1 of 8: vulnerability disclosure policy +
+CSRF audit + dependency-scan automation review.
+
+This release is **documentation- and audit-heavy**, with one
+small code change to close a CSRF gap discovered during the
+audit. The pre-existing security infrastructure (cargo-audit
+in CI, CSRF library, Origin/Referer check, security headers
+middleware) was already comprehensive; this release pins the
+contract, fills one gap, and creates the discoverability paths
+operators and researchers need.
+
+### Added — `.github/SECURITY.md` improvements
+
+The pre-existing vulnerability-disclosure policy already
+covered: reporting channels (GitHub Security Advisory + email),
+in-scope/out-of-scope categories (10+ specific items), 90-day
+coordinated disclosure, safe-harbor language. v0.24.0 adds:
+
+- **Severity-based response targets table**: per-severity
+  acknowledgment / initial assessment / fix targets
+  (Critical 24h/72h/7d, High 48h/7d/30d, Medium/Low scaled
+  proportionally).
+- **Specific known-limitations subsection**: documents
+  CSP `'unsafe-inline'`, password-less auth model
+  (no per-account lockout), and `/admin/*` Authorization-
+  header requirement as explicitly NOT vulnerabilities for
+  reporting purposes. Reports going beyond a documented
+  limitation (e.g., bypass of `frame-ancestors 'none'` despite
+  the `'unsafe-inline'`) remain very much in scope.
+- **Cross-links** to `csrf.md`, `csrf-audit.md`,
+  `security.md`, ADR-007, and the security-headers
+  deployment chapter.
+
+### Added — CSRF audit (`docs/src/expert/csrf-audit.md`)
+
+New v0.24.0 deliverable. Comprehensive per-route audit
+covering every state-changing endpoint. Documents:
+
+- The 4 defense mechanisms (CSRF token, Origin/Referer check,
+  CORS preflight, `Authorization: Bearer`) and when each
+  applies.
+- Per-route inventory with the mechanism that defends each.
+- Cookies + SameSite audit (all 3 cookies are correct).
+- Token-binding analysis (per-cookie binding is correct for
+  the threat model; session-binding would offer no additional
+  protection).
+- The discovered pre-existing UX bug (broken
+  `magic_link_sent_page()` form template missing
+  `handle`/`csrf` fields — security-fail-closed but
+  user-facing-broken; tracked as a separate ROADMAP item).
+- Decision tree for adding new routes.
+- Test coverage summary.
+- Re-audit cadence.
+
+### Updated — `docs/src/expert/csrf.md`
+
+The protection table at the top now lists the **specific
+mechanism** per route (CSRF token / Origin check / CORS
+preflight / `Authorization: Bearer`) instead of the generic
+"protection" column. Operators and reviewers can now answer
+"what defends this route?" by reading one line.
+
+### Code change — CSRF token check on `/magic-link/verify`
+
+Added a CSRF token check on the form-encoded path of
+`POST /magic-link/verify`. The route was already practically
+unforgeable (both `handle` and `code` are server-issued
+secrets, and the per-handle rate limit caps brute-force at
+~5 attempts per window of a 6-digit code). However, the
+documented model in `csrf.md` claimed the route was protected
+and the implementation didn't match.
+
+The fix mirrors the existing pattern at
+`/magic-link/request`: extract the CSRF cookie before
+consuming the body, accept the form's `csrf` field,
+constant-time-compare, reject on mismatch with an audit log
+event (`csrf_mismatch`).
+
+The JSON path remains exempt — CORS preflight is the
+defense for cross-origin `application/json`.
+
+**No template change** in this release. The
+`magic_link_sent_page()` template is broken in a separate
+way (missing `handle` field as well as `csrf`), which makes
+the form path unusable in browsers. That's a UX bug, not a
+security one — the handler fails closed on the empty-handle
+check. Fixing the template is tracked as a separate ROADMAP
+item.
+
+### Confirmed — dependency-scan automation
+
+`.github/workflows/audit.yml` already runs `cargo audit` (via
+`rustsec/audit-check@v2.0.0`) on push to main, every pull
+request, weekly on Mondays at 06:00 UTC, and on manual
+dispatch. The workflow has `issues: write` permission and
+opens GitHub issues for new advisories on push events. A
+passing main branch means no known CVEs in the dep tree.
+
+v0.24.0 documents this in `docs/src/expert/security.md`
+(new "Dependency vulnerability scanning" section) so
+operators can find the alert path beyond the workflow YAML.
+The handling-a-finding playbook covers the
+`update → ignore-with-justification` decision tree and the
+CHANGELOG-citation convention for advisory fixes.
+
+No new automation was added — the existing automation was
+verified comprehensive.
+
+### Tests
+
+Total: **437 passing** (+6 over v0.23.0):
+
+- core: 206 (unchanged).
+- adapter-test: 51 (unchanged).
+- ui: 121 (unchanged).
+- worker: **30** (was 24) — 6 new in
+  `routes::magic_link::*::tests`:
+  - 4 `VerifyBody` deserialization tests (csrf-present,
+    csrf-missing, form-decode-with-empty-csrf, form-decode-
+    with-non-empty-csrf). Pin the contract that an empty
+    CSRF token reaches the gate (which then rejects via
+    `csrf::verify`'s "empty input fails" branch).
+  - 2 `RequestBody` parity tests (csrf-present,
+    csrf-missing) for the route that already had CSRF
+    protection. Pins the contract for parity.
+- migrate: 29 (unchanged).
+
+**Note on prior totals**: earlier MANIFEST entries published
+totals that omitted the 24 cesauth-worker unit tests (mostly
+the csrf submodule, which pre-dates the MANIFEST tracking).
+v0.24.0 surfaces the worker column for the first time.
+Previously-published totals (379 for v0.22.0, 407 for
+v0.23.0) are correct as historical artifacts but
+under-counted by 24. Restated totals: v0.22.0 = 403,
+v0.23.0 = 431, v0.24.0 = 437.
+
+### Documentation
+
+- `docs/src/expert/csrf-audit.md` — new chapter, the v0.24.0
+  audit deliverable.
+- `docs/src/expert/csrf.md` — table tightened to per-mechanism
+  precision.
+- `docs/src/expert/security.md` — new "Dependency
+  vulnerability scanning" section documents the cargo-audit
+  workflow's triggers, failure path, finding-handling
+  playbook, and re-audit cadence.
+- `docs/src/deployment/security-headers.md` — SECURITY.md
+  cross-link updated from "planned in a future release" to
+  pointing at the actual file.
+- `.github/SECURITY.md` — severity table, known-limitations
+  subsection, see-also cross-links.
+- `docs/src/SUMMARY.md` — links the new csrf-audit chapter.
+
+### Migration (0.23.0 → 0.24.0)
+
+Code-only release. No schema migration. No `wrangler.toml`
+changes. The `/magic-link/verify` CSRF check is purely
+additive — JSON callers unaffected; HTML form callers were
+already broken (missing `handle`) so the new CSRF check
+doesn't change observable behavior for the typical user
+flow.
+
+Operators can verify the new audit doc renders correctly in
+their mdBook deployment:
+
+```sh
+cd docs && mdbook build
+ls book/expert/csrf-audit.html  # exists
+```
+
+### Deferred
+
+- **Fix `magic_link_sent_page()` template** — add `handle`
+  and `csrf` hidden inputs, plumb them through from
+  `/magic-link/request`, add end-to-end form-flow tests.
+  Not a security fix; a UX gap. ROADMAP follow-up.
+- **Email verification flow audit** — v0.25.0.
+- **TOTP** — v0.26.0/v0.27.0.
+
+### Deferred — unchanged
+
+- **`check_permission` integration on `/api/v1/...`.** Unscheduled.
+- **External IdP federation.** Out of scope.
+
+---
+
 ## [0.23.0] - 2026-04-28
 
 HTTP security response headers — ADR-007. The pre-existing

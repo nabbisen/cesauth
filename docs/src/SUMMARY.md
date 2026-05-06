@@ -28,6 +28,7 @@
 - [WebAuthn implementation](./expert/webauthn.md)
 - [Session cookies](./expert/sessions.md)
 - [CSRF model](./expert/csrf.md)
+- [CSRF audit (v0.24.0)](./expert/csrf-audit.md)
 - [Operational logging](./expert/logging.md)
 - [Turnstile integration](./expert/turnstile.md)
 - [Admin console](./expert/admin-console.md)

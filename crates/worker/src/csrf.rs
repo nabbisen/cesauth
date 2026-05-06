@@ -97,5 +97,79 @@ pub fn verify(submitted: &str, from_cookie: &str) -> bool {
     constant_time_eq(submitted, from_cookie)
 }
 
+/// Verify a request's `Origin` (or fallback `Referer`) header matches
+/// `expected_origin`. Returns `true` iff one of the two headers is
+/// present and points at our own origin. Returns `false` if neither
+/// header is present (browsers send at least one on cross-origin
+/// requests, so a complete absence is itself suspicious).
+///
+/// This is a complementary CSRF defense to the token check, drawn
+/// from OWASP's "Verifying Origin Header" pattern. Useful for routes
+/// where adding a CSRF token to existing request shapes would break
+/// programmatic clients (e.g. `/logout`, which has no UI form yet
+/// and is invoked via direct POSTs by integration tooling).
+///
+/// Why both `Origin` and `Referer`: `Origin` is sent by all modern
+/// browsers on POST. `Referer` is sent by older / quirkier browsers
+/// or when the user has Origin stripped by a privacy extension.
+/// Either one matching the expected origin is sufficient — the
+/// attacker cannot forge either from a cross-origin page.
+///
+/// Comparison is exact-string (scheme + host + optional port). The
+/// `expected_origin` string should NOT have a trailing slash; e.g.
+/// `https://cesauth.example.com`. For `Referer`, we compare against
+/// `expected_origin` as a prefix (since `Referer` is a full URL,
+/// not just the origin).
+pub fn check_origin_or_referer(
+    origin_header:  Option<&str>,
+    referer_header: Option<&str>,
+    expected_origin: &str,
+) -> bool {
+    if expected_origin.is_empty() {
+        // Mis-configured deployment: refuse rather than silently
+        // accept any origin. The Worker layer logs this state.
+        return false;
+    }
+
+    if let Some(origin) = origin_header {
+        // `Origin: null` is what browsers send on opaque-origin
+        // contexts (data: URLs, sandboxed iframes). Treat as
+        // failed match — we don't accept it.
+        if origin == "null" {
+            return false;
+        }
+        // Exact match: scheme://host[:port]
+        if origin == expected_origin {
+            return true;
+        }
+        // If Origin is present and doesn't match, the request is
+        // cross-origin. Don't fall through to Referer — that
+        // would let an attacker who suppresses Origin slip past.
+        return false;
+    }
+
+    if let Some(referer) = referer_header {
+        // Match `Referer` as `<expected_origin>/*`. Be careful
+        // about prefix attacks: `https://attacker.com/?fake=https://cesauth.example.com`
+        // starts with the expected_origin only if `expected_origin`
+        // is a substring of the URL. We require an exact prefix
+        // match starting at byte 0, AND the next character (if
+        // present) must be `/`, `?`, or `#` — anything else
+        // means we matched a longer hostname like
+        // `cesauth.example.com.attacker.com`.
+        if let Some(rest) = referer.strip_prefix(expected_origin) {
+            return rest.is_empty()
+                || rest.starts_with('/')
+                || rest.starts_with('?')
+                || rest.starts_with('#');
+        }
+        return false;
+    }
+
+    // Neither header present — fail closed. A real browser will
+    // include at least one on a POST.
+    false
+}
+
 #[cfg(test)]
 mod tests;
