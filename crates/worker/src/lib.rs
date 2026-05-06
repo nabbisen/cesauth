@@ -135,6 +135,10 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async ("/me/security/sessions",            |req, ctx| async move {
             routes::me::sessions::get_handler(req, ctx).await
         })
+        .post_async("/me/security/sessions/revoke-others", |req, ctx| async move {
+            // v0.45.0 — bulk revoke (ADR-012 §Q4).
+            routes::me::sessions::post_revoke_others(req, ctx).await
+        })
         .post_async("/me/security/sessions/:session_id/revoke", |req, ctx| async move {
             routes::me::sessions::post_revoke(req, ctx).await
         })
@@ -162,6 +166,10 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         // v0.35.0: per-user session list + revoke. ADR-012.
         .get_async ("/me/security/sessions",            |req, ctx| async move {
             routes::me::sessions::get_handler(req, ctx).await
+        })
+        .post_async("/me/security/sessions/revoke-others", |req, ctx| async move {
+            // v0.45.0 — bulk revoke (ADR-012 §Q4).
+            routes::me::sessions::post_revoke_others(req, ctx).await
         })
         .post_async("/me/security/sessions/:session_id/revoke", |req, ctx| async move {
             routes::me::sessions::post_revoke(req, ctx).await

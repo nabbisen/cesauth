@@ -207,6 +207,13 @@ pub enum MessageKey {
     SecuritySessionsLink,
     SecurityBackLink,
     SecurityPageTitleHtml,
+
+    // ---- v0.45.0: bulk "revoke all other sessions" ----
+    SessionsRevokeOthersButton,
+    SessionsRevokeOthersConfirm,
+    FlashOtherSessionsRevoked,
+    FlashOtherSessionsRevokeFailed,
+    FlashNoOtherSessions,
 }
 
 /// Resolve `(key, locale) -> &'static str`. Zero allocation.
@@ -510,6 +517,53 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
         SecurityPageTitleHtml => match locale {
             Locale::Ja => "セキュリティ - cesauth",
             Locale::En => "Security - cesauth",
+        },
+
+        // ----- v0.45.0: bulk "revoke all other sessions" -----
+        SessionsRevokeOthersButton => match locale {
+            // Action label on the button. Verb form so it
+            // reads as a command, matching the existing
+            // per-row `SessionsRevokeButton` style.
+            Locale::Ja => "他のすべてのセッションを取り消す",
+            Locale::En => "Sign out all other devices",
+        },
+        SessionsRevokeOthersConfirm => match locale {
+            // Inline confirmation copy on the button form.
+            // Renders as a `<p>` directly above the button.
+            Locale::Ja => "現在のセッション以外のすべての端末でサインアウトします。元に戻すには各端末で再度サインインが必要です。",
+            Locale::En => "All other devices will be signed out. To use them again you'll need to sign in on each one.",
+        },
+        FlashOtherSessionsRevoked => match locale {
+            // Flash banner shown after a successful bulk
+            // revoke. The count is interpolated via
+            // `flash::format`'s {n} substitution (a small
+            // count-template helper added alongside this
+            // PR — see flash.rs for the formatter).
+            // Pluralization is deferred to ADR-013 §Q4
+            // along with the recovery-code count messages
+            // already deferred from v0.39.0; the JA form
+            // works for any count, the EN form uses the
+            // bare number as a defensive fallback ("Signed
+            // out 1 other device" reads slightly off but
+            // is unambiguous).
+            Locale::Ja => "他の {n} 件のセッションをサインアウトしました。",
+            Locale::En => "Signed out {n} other device(s).",
+        },
+        FlashOtherSessionsRevokeFailed => match locale {
+            // Flash shown when at least one per-row revoke
+            // failed. Best-effort semantics — we DO NOT
+            // tell the user "0 succeeded" because some may
+            // have; we say "couldn't sign out N, try
+            // again". {n} is the error count.
+            Locale::Ja => "{n} 件のセッションをサインアウトできませんでした。もう一度お試しください。",
+            Locale::En => "Couldn't sign out {n} device(s). Please try again.",
+        },
+        FlashNoOtherSessions => match locale {
+            // Flash shown when the user pressed the bulk
+            // button but had no other active sessions.
+            // Friendlier than "0 other sessions revoked".
+            Locale::Ja => "他のサインイン中のセッションはありません。",
+            Locale::En => "No other devices are signed in.",
         },
     }
 }

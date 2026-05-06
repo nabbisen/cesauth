@@ -115,7 +115,11 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         SecurityTotpDisabledBadge | SecurityTotpDisabledIntro |
         SecurityTotpEnableLink |
         SecuritySessionsHeading | SecuritySessionsIntro |
-        SecuritySessionsLink | SecurityBackLink | SecurityPageTitleHtml
+        SecuritySessionsLink | SecurityBackLink | SecurityPageTitleHtml |
+        // v0.45.0 — bulk revoke
+        SessionsRevokeOthersButton | SessionsRevokeOthersConfirm |
+        FlashOtherSessionsRevoked | FlashOtherSessionsRevokeFailed |
+        FlashNoOtherSessions
             => {}  // exhaustiveness pin — body is irrelevant
     }
     // Now actually iterate. The list below mirrors the match
@@ -155,6 +159,9 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         SecurityTotpEnableLink,
         SecuritySessionsHeading, SecuritySessionsIntro,
         SecuritySessionsLink, SecurityBackLink, SecurityPageTitleHtml,
+        SessionsRevokeOthersButton, SessionsRevokeOthersConfirm,
+        FlashOtherSessionsRevoked, FlashOtherSessionsRevokeFailed,
+        FlashNoOtherSessions,
     ];
     for k in all { f(k); }
 }

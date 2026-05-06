@@ -386,3 +386,175 @@ fn key_from_str_rejects_unknown() {
     assert_eq!(FlashKey::from_str("totp_enabled_v2"), None);
     assert_eq!(FlashKey::from_str("TOTP_ENABLED"), None); // case-sensitive
 }
+
+// =====================================================================
+// v0.45.0 — count parameter codec
+// =====================================================================
+
+#[test]
+fn flash_with_count_round_trips() {
+    let mac = b"test_mac_key_for_v045_codec_______";
+    let f = Flash::with_count(
+        FlashLevel::Success,
+        FlashKey::OtherSessionsRevoked,
+        7,
+    );
+    let cookie = encode(&f, mac);
+    let decoded = decode(&cookie, mac).expect("must decode");
+    assert_eq!(decoded.level, FlashLevel::Success);
+    assert_eq!(decoded.key,   FlashKey::OtherSessionsRevoked);
+    assert_eq!(decoded.count, Some(7));
+}
+
+#[test]
+fn flash_without_count_still_round_trips() {
+    // Pre-v0.45.0 flashes (no count) must continue to
+    // round-trip identically. Backward compatibility for
+    // any cookies in flight at the moment of upgrade.
+    let mac = b"test_mac_key_for_v045_codec_______";
+    let f = Flash::new(FlashLevel::Success, FlashKey::SessionRevoked);
+    let cookie = encode(&f, mac);
+    let decoded = decode(&cookie, mac).expect("must decode");
+    assert_eq!(decoded.count, None,
+        "Flash::new produces count=None; decode must surface that");
+    assert_eq!(decoded.key,   FlashKey::SessionRevoked);
+}
+
+#[test]
+fn flash_count_zero_round_trips_distinct_from_none() {
+    // count=Some(0) is meaningful (e.g.,
+    // "Couldn't sign out 0 device(s)" wouldn't ship in
+    // practice, but the codec must not collapse 0 to
+    // None — distinct values must stay distinct).
+    let mac = b"test_mac_key_for_v045_codec_______";
+    let f = Flash::with_count(FlashLevel::Info, FlashKey::NoOtherSessions, 0);
+    let cookie = encode(&f, mac);
+    let decoded = decode(&cookie, mac).expect("must decode");
+    assert_eq!(decoded.count, Some(0));
+}
+
+#[test]
+fn flash_count_max_u32_round_trips() {
+    // Defensive boundary: u32::MAX. Not a realistic
+    // session count, but the codec must not corrupt
+    // large values.
+    let mac = b"test_mac_key_for_v045_codec_______";
+    let f = Flash::with_count(
+        FlashLevel::Success,
+        FlashKey::OtherSessionsRevoked,
+        u32::MAX,
+    );
+    let cookie = encode(&f, mac);
+    let decoded = decode(&cookie, mac).expect("must decode");
+    assert_eq!(decoded.count, Some(u32::MAX));
+}
+
+#[test]
+fn flash_count_overflow_is_rejected() {
+    // Tampered cookie with a count > u32::MAX must
+    // fail decode rather than silently truncate.
+    let mac = b"test_mac_key_for_v045_codec_______";
+    // Build a payload manually and sign it.
+    let payload = "s.other_sessions_revoked:99999999999999999999";
+    let mut h = HmacSha256::new_from_slice(mac).unwrap();
+    h.update(payload.as_bytes());
+    let tag = h.finalize().into_bytes();
+    let cookie = format!(
+        "v1:{}.{}",
+        URL_SAFE_NO_PAD.encode(payload.as_bytes()),
+        URL_SAFE_NO_PAD.encode(tag),
+    );
+    assert_eq!(decode(&cookie, mac), None,
+        "u32 overflow in count must reject, not truncate");
+}
+
+#[test]
+fn flash_multi_colon_in_count_is_rejected() {
+    // A `key:N:M` pattern is malformed; reject it
+    // rather than silently dropping the M.
+    let mac = b"test_mac_key_for_v045_codec_______";
+    let payload = "s.other_sessions_revoked:3:7";
+    let mut h = HmacSha256::new_from_slice(mac).unwrap();
+    h.update(payload.as_bytes());
+    let tag = h.finalize().into_bytes();
+    let cookie = format!(
+        "v1:{}.{}",
+        URL_SAFE_NO_PAD.encode(payload.as_bytes()),
+        URL_SAFE_NO_PAD.encode(tag),
+    );
+    assert_eq!(decode(&cookie, mac), None);
+}
+
+#[test]
+fn flash_non_numeric_count_is_rejected() {
+    let mac = b"test_mac_key_for_v045_codec_______";
+    let payload = "s.other_sessions_revoked:abc";
+    let mut h = HmacSha256::new_from_slice(mac).unwrap();
+    h.update(payload.as_bytes());
+    let tag = h.finalize().into_bytes();
+    let cookie = format!(
+        "v1:{}.{}",
+        URL_SAFE_NO_PAD.encode(payload.as_bytes()),
+        URL_SAFE_NO_PAD.encode(tag),
+    );
+    assert_eq!(decode(&cookie, mac), None);
+}
+
+#[test]
+fn no_flashkey_str_contains_colon() {
+    // The `:` separator in the v0.45.0 codec assumes
+    // no FlashKey's `as_str()` value contains `:`. If
+    // a future variant violates this, the codec
+    // becomes ambiguous. Guard with a test.
+    use FlashKey::*;
+    for key in [TotpEnabled, TotpDisabled, TotpRecovered, LoggedOut,
+                SessionRevoked, OtherSessionsRevoked,
+                OtherSessionsRevokeFailed, NoOtherSessions] {
+        assert!(!key.as_str().contains(':'),
+            "FlashKey::{key:?} as_str() = {:?} must not contain ':'", key.as_str());
+    }
+}
+
+// =====================================================================
+// v0.45.0 — render_view_for substitution
+// =====================================================================
+
+#[test]
+fn render_view_substitutes_count_when_template_has_n() {
+    use cesauth_core::i18n::Locale;
+    let f = Flash::with_count(
+        FlashLevel::Success,
+        FlashKey::OtherSessionsRevoked,
+        3,
+    );
+    let view = super::render_view_for(f, Locale::En);
+    assert!(view.text.contains("3"),
+        "rendered text must contain the count: {:?}", view.text);
+    assert!(!view.text.contains("{n}"),
+        "rendered text must not contain the placeholder: {:?}", view.text);
+}
+
+#[test]
+fn render_view_no_substitution_when_count_absent() {
+    // Pre-v0.45.0 flashes (no count) render the
+    // catalog string verbatim. Path through
+    // `Cow::Borrowed` — zero allocation.
+    use cesauth_core::i18n::Locale;
+    let f = Flash::new(FlashLevel::Success, FlashKey::SessionRevoked);
+    let view = super::render_view_for(f, Locale::En);
+    assert!(matches!(view.text, std::borrow::Cow::Borrowed(_)),
+        "no-count flash must render via borrowed Cow (zero alloc)");
+}
+
+#[test]
+fn render_view_owns_when_count_substituted() {
+    use cesauth_core::i18n::Locale;
+    let f = Flash::with_count(
+        FlashLevel::Success,
+        FlashKey::OtherSessionsRevoked,
+        5,
+    );
+    let view = super::render_view_for(f, Locale::Ja);
+    assert!(matches!(view.text, std::borrow::Cow::Owned(_)),
+        "count-substituted flash must produce an owned Cow");
+}

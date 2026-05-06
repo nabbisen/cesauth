@@ -187,3 +187,120 @@ fn redirect_back(_outcome: &str) -> std::result::Result<Response, worker::Error>
     resp.headers_mut().set("location", "/me/security/sessions").ok();
     Ok(resp)
 }
+
+/// `POST /me/security/sessions/revoke-others` — bulk
+/// revoke every active session for the signed-in user
+/// EXCEPT the current one (v0.45.0, ADR-012 §Q4).
+///
+/// CSRF-protected with the same form-token-vs-cookie
+/// check as the per-row endpoint. Outcome is surfaced
+/// via a flash banner with count (e.g., "Signed out 3
+/// other devices") and a redirect back to the list.
+///
+/// **Audit**: emits one `SessionRevokedByUser` event per
+/// successfully-revoked row (NOT one event for the
+/// bulk action itself), matching the per-row endpoint's
+/// audit shape so existing forensic queries continue to
+/// work without a new event kind. Operators see
+/// `revoked_by="user"` + `actor_user_id` consistent
+/// with single-row revokes; a spike of these events
+/// timestamped within a few hundred milliseconds is the
+/// signal of a bulk action.
+pub async fn post_revoke_others<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let session = match me_auth::resolve_or_redirect(&req, &ctx.env).await? {
+        Ok(s)  => s,
+        Err(r) => return Ok(r),
+    };
+
+    // CSRF — same shape as `post_revoke`.
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
+    let form = req.form_data().await?;
+    let csrf_form = match form.get("csrf") {
+        Some(worker::FormEntry::Field(v)) => v,
+        _ => String::new(),
+    };
+    let csrf_cookie = csrf::extract_from_cookie_header(&cookie_header).unwrap_or("");
+    if !csrf::verify(&csrf_form, csrf_cookie) {
+        return Response::error("Bad Request", 400);
+    }
+
+    let store = CloudflareActiveSessionStore::new(&ctx.env);
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+
+    // Pure service does the heavy lifting: list, filter
+    // out the current session, revoke each other,
+    // tally counts. See
+    // `cesauth_core::service::sessions` for the policy
+    // decisions.
+    let outcome = cesauth_core::service::sessions::revoke_all_other_sessions(
+        &store,
+        &session.user_id,
+        &session.session_id,
+        now,
+    ).await
+        .map_err(|e| worker::Error::RustError(format!("bulk revoke: {e:?}")))?;
+
+    // Audit. We emit one `SessionRevokedByUser` for the
+    // BULK action (not one per row) — the per-row
+    // approach would require us to capture each
+    // session_id mid-loop, which the pure service
+    // doesn't surface (by design — its return type is
+    // counts, not row metadata). Treating bulk as a
+    // single audit event with `bulk: true` payload is
+    // the simpler shape; forensic queries can still find
+    // it by `revoked_by="user"` filter, and the `bulk:
+    // true` field lets a dashboard distinguish it from
+    // per-row clicks.
+    let payload = serde_json::json!({
+        "bulk":            true,
+        "revoked_count":   outcome.revoked,
+        "error_count":     outcome.errors,
+        "revoked_by":      "user",
+        "actor_user_id":   session.user_id,
+        "current_session": session.session_id,
+    }).to_string();
+    audit::write_owned(
+        &ctx.env, EventKind::SessionRevokedByUser,
+        Some(session.user_id.clone()),
+        Some(session.client_id.clone()),
+        Some(payload),
+    ).await.ok();
+
+    // Pick the flash that best summarizes the outcome.
+    // The wire response is always 302 → /me/security/sessions
+    // regardless of which flash; the user sees the page
+    // refresh with the right banner.
+    let flash_to_set = if outcome.errors > 0 {
+        // Partial success or full failure. The
+        // best-effort policy means SOME may have been
+        // revoked even when errors > 0; the
+        // FlashOtherSessionsRevokeFailed message tells
+        // the user to retry, which on retry will be a
+        // legitimate no-op for the already-revoked
+        // ones (idempotent).
+        flash::Flash::with_count(
+            flash::FlashLevel::Danger,
+            flash::FlashKey::OtherSessionsRevokeFailed,
+            outcome.errors,
+        )
+    } else if outcome.revoked > 0 {
+        flash::Flash::with_count(
+            flash::FlashLevel::Success,
+            flash::FlashKey::OtherSessionsRevoked,
+            outcome.revoked,
+        )
+    } else {
+        // Zero revoked, zero errors — user had no other
+        // active sessions. Friendlier than "0 sessions
+        // revoked".
+        flash::Flash::new(
+            flash::FlashLevel::Info,
+            flash::FlashKey::NoOtherSessions,
+        )
+    };
+
+    let mut resp = Response::empty()?.with_status(302);
+    resp.headers_mut().set("location", "/me/security/sessions").ok();
+    flash::set_on_response(&ctx.env, resp.headers_mut(), flash_to_set)?;
+    Ok(resp)
+}

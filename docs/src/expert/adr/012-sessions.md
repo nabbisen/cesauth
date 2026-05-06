@@ -371,10 +371,41 @@ who want the v0.34.0 behavior can set
 - **Q3**: Geographic / device-fingerprint columns on
   user_sessions. Useful for the user-facing list but
   separable; defer.
-- **Q4**: Bulk "revoke all other sessions" button on the
-  list page. The page has 50 rows max; for users with
-  multiple sessions a bulk option would be friendlier than
-  clicking each row. Defer, low priority.
+- **Q4**: ~~Bulk "revoke all other sessions" button on
+  the list page.~~ **Resolved in v0.45.0.** A new
+  endpoint `POST /me/security/sessions/revoke-others`
+  revokes every active session for the signed-in user
+  EXCEPT the one whose `session_id` matches the
+  cookie-resolved current session. The pure orchestration
+  lives in `cesauth_core::service::sessions::revoke_all_other_sessions`,
+  which takes a store + user_id + current_session_id +
+  now and returns a `BulkRevokeOutcome { revoked,
+  errors, skipped_current }`. Best-effort: a per-row
+  revoke failure increments `errors` but does NOT abort
+  the remaining iterations (matches cesauth's
+  failure-isolation pattern; user gets the most
+  actionable result). The user-facing list page renders
+  a "Sign out all other devices" button conditional on
+  at least one non-current session being present;
+  empty-list and only-current-session pages omit it.
+  Wire response is a 302 redirect back to the list with
+  a flash banner reflecting the outcome — three banner
+  variants (`OtherSessionsRevoked` with count,
+  `OtherSessionsRevokeFailed` with error count,
+  `NoOtherSessions` for the zero-other case). Audit
+  emits one `SessionRevokedByUser` event for the bulk
+  action with `bulk: true` payload — operators see
+  spike-of-`SessionRevokedByUser`-with-`bulk:true` as
+  the bulk-action signal, distinguishable from
+  per-row revokes via the payload field. **Ancillary
+  change**: the flash codec was extended in v0.45.0 to
+  carry an optional `count: Option<u32>` parameter
+  (wire format `key:N` notation, backward-compatible
+  with v0.31–v0.44 cookies); `FlashView::text` migrated
+  from `&'static str` to `Cow<'static, str>` to permit
+  count substitution without leaking strings.
+  Pluralization remains deferred to ADR-013 §Q4 — JA
+  + EN catalog entries use count-agnostic phrasing.
 - **Q5** (surfaced by v0.40.0 work): orphan DOs.
   Cloudflare doesn't support enumerating DOs in a
   namespace, so a session whose D1 mirror write failed

@@ -119,12 +119,16 @@ pub async fn get_handler(req: Request, env: worker::Env) -> Result<Response> {
     // expired flash doesn't keep redelivering on every request.
     let cookie_header = req.headers().get("cookie")?.unwrap_or_default();
     let (flash_msg, clear_header) = flash::take_from_request(&env, &cookie_header);
-    let flash_view = flash_msg.map(|f| FlashView {
-        aria_live:    f.level.aria_live(),
-        css_modifier: f.level.css_modifier(),
-        icon:         f.level.icon(),
-        text:         f.key.display_text_for(locale),
-    });
+    // **v0.45.0** — go through `render_view_for` so the
+    // `{n}` substitution path runs. Pre-v0.45.0 this site
+    // hand-built the FlashView field-by-field; the
+    // hand-built version skipped the count-substitution
+    // step `render_view_for` introduced in v0.45.0.
+    // Functionally identical for the v0.31–v0.44 flashes
+    // (none of them carry a count), but unifies the
+    // projection so future count-bearing flashes route
+    // through one path.
+    let flash_view = flash_msg.map(|f| flash::render_view_for(f, locale));
     let flash_html = templates::flash_block(flash_view);
 
     let html = templates::security_center_page_for(&state, &flash_html, locale);

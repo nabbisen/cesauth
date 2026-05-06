@@ -199,12 +199,28 @@ footer { margin-top: 3rem; color: var(--muted); font-size: 0.8em; text-align: ce
 ///
 /// `aria_live` is `"polite"` or `"assertive"`. `css_modifier` is
 /// `"flash--success"` etc. `icon` is a single Unicode glyph.
-#[derive(Debug, Clone, Copy)]
+/// View model for [`flash_block`]. Carries the level + display
+/// text the worker decided on; the template just slots it into
+/// the standard banner element.
+///
+/// **v0.45.0** — `text` is `Cow<'static, str>` (was
+/// `&'static str`). The owned variant carries
+/// runtime-substituted strings such as the bulk-revoke
+/// flash's count interpolation. The catalog's existing
+/// parameter-free messages still flow through the borrowed
+/// variant with no allocation, so the change is zero-cost
+/// for the v0.31–v0.44 flashes.
+///
+/// **No longer `Copy`** as a consequence — `Cow` isn't.
+/// `Clone` is preserved (bumps a refcount on the borrowed
+/// variant, clones the buffer on the owned variant —
+/// flash text is short and rare so the cost is irrelevant).
+#[derive(Debug, Clone)]
 pub struct FlashView {
     pub aria_live:    &'static str,
     pub css_modifier: &'static str,
     pub icon:         &'static str,
-    pub text:         &'static str,
+    pub text:         std::borrow::Cow<'static, str>,
 }
 
 /// Render a one-shot flash banner. Returns the empty string when
@@ -1088,6 +1104,39 @@ pub fn sessions_page_for(
             .join("\n")
     };
 
+    // **v0.45.0** — bulk revoke (ADR-012 §Q4).
+    //
+    // Button shown only when the user has at least one
+    // OTHER active session. With just the current
+    // session there's nothing to revoke; rendering the
+    // button anyway would either be a no-op (annoying)
+    // or accidentally revoke the current session
+    // (worse). The check `any(|s| !s.is_current)` is
+    // O(n) over a list capped at 50 — trivially cheap.
+    //
+    // Confirmation copy goes inline above the button
+    // (no JS prompt — keeps the page progressive-
+    // enhancement-clean). The phrasing is intentionally
+    // direct: "all other devices will be signed out"
+    // tells the user what's about to happen without
+    // hedging.
+    let bulk_button = if items.iter().any(|s| !s.is_current) {
+        format!(
+            r##"<section class="security-section bulk-revoke" aria-label="Bulk revoke other sessions">
+  <p class="muted">{confirm}</p>
+  <form method="post" action="/me/security/sessions/revoke-others" class="inline-form">
+    <input type="hidden" name="csrf" value="{csrf}">
+    <button type="submit" class="warning">{label}</button>
+  </form>
+</section>"##,
+            confirm = escape(lookup(MessageKey::SessionsRevokeOthersConfirm, locale)),
+            csrf    = escape(csrf_token),
+            label   = escape(lookup(MessageKey::SessionsRevokeOthersButton, locale)),
+        )
+    } else {
+        String::new()
+    };
+
     let body = format!(
         r##"<h1>{title}</h1>
 <p class="muted">{intro}</p>
@@ -1096,6 +1145,8 @@ pub fn sessions_page_for(
   {rows}
 </section>
 
+{bulk_button}
+
 <p class="muted">
   <a href="/me/security">{back}</a>
 </p>"##,
@@ -1103,6 +1154,7 @@ pub fn sessions_page_for(
         intro = escape(lookup(MessageKey::SessionsPageIntro,  locale)),
         back  = escape(lookup(MessageKey::SessionsBackLink,   locale)),
         rows  = rows,
+        bulk_button = bulk_button,
     );
 
     let page_title = format!(

@@ -187,6 +187,18 @@ pub enum FlashKey {
     /// **v0.35.0** — Set after `POST /me/security/sessions/:id/revoke`
     /// succeeds. Pairs with `Success`.
     SessionRevoked,
+    /// **v0.45.0** — Set after `POST /me/security/sessions/revoke-others`
+    /// succeeds with at least one revoke. Pairs with
+    /// `Success`. Carries a count parameter (`{n}`).
+    OtherSessionsRevoked,
+    /// **v0.45.0** — Set after the same endpoint when at
+    /// least one per-row revoke failed. Pairs with `Error`.
+    /// Carries a count parameter (the failure count).
+    OtherSessionsRevokeFailed,
+    /// **v0.45.0** — Set when the user pressed the bulk
+    /// button but had no other active sessions. Pairs with
+    /// `Info`. No count.
+    NoOtherSessions,
 }
 
 impl FlashKey {
@@ -198,6 +210,9 @@ impl FlashKey {
             Self::TotpRecovered   => "totp_recovered",
             Self::LoggedOut       => "logged_out",
             Self::SessionRevoked  => "session_revoked",
+            Self::OtherSessionsRevoked      => "other_sessions_revoked",
+            Self::OtherSessionsRevokeFailed => "other_sessions_revoke_failed",
+            Self::NoOtherSessions           => "no_other_sessions",
         }
     }
 
@@ -208,6 +223,9 @@ impl FlashKey {
             "totp_recovered"   => Some(Self::TotpRecovered),
             "logged_out"       => Some(Self::LoggedOut),
             "session_revoked"  => Some(Self::SessionRevoked),
+            "other_sessions_revoked"       => Some(Self::OtherSessionsRevoked),
+            "other_sessions_revoke_failed" => Some(Self::OtherSessionsRevokeFailed),
+            "no_other_sessions"            => Some(Self::NoOtherSessions),
             _                  => None,
         }
     }
@@ -225,6 +243,9 @@ impl FlashKey {
             Self::TotpRecovered  => MessageKey::FlashTotpRecovered,
             Self::LoggedOut      => MessageKey::FlashLoggedOut,
             Self::SessionRevoked => MessageKey::FlashSessionRevoked,
+            Self::OtherSessionsRevoked      => MessageKey::FlashOtherSessionsRevoked,
+            Self::OtherSessionsRevokeFailed => MessageKey::FlashOtherSessionsRevokeFailed,
+            Self::NoOtherSessions           => MessageKey::FlashNoOtherSessions,
         }
     }
 
@@ -257,11 +278,34 @@ impl FlashKey {
 pub struct Flash {
     pub level: FlashLevel,
     pub key:   FlashKey,
+    /// **v0.45.0** — Optional count parameter for flashes
+    /// whose message contains `{n}` substitution. Currently
+    /// used by the bulk-revoke flashes
+    /// (`FlashOtherSessionsRevoked`,
+    /// `FlashOtherSessionsRevokeFailed`). `None` for the
+    /// pre-v0.45.0 flashes that have no parameters.
+    ///
+    /// **Wire format**: encoded as `key:N` in the cookie
+    /// payload (e.g., `success.other_sessions_revoked:3`),
+    /// where `N` is the decimal count. The `:` separator is
+    /// **not** in any `FlashKey` `as_str()` value (verified
+    /// by the v0.45.0 codec test), so a key without `:`
+    /// decodes as `count=None` and stays
+    /// backward-compatible with v0.31.0–v0.44.0 flashes
+    /// already in flight at the moment of upgrade.
+    pub count: Option<u32>,
 }
 
 impl Flash {
+    /// **v0.31.0** constructor — no count.
     pub fn new(level: FlashLevel, key: FlashKey) -> Self {
-        Self { level, key }
+        Self { level, key, count: None }
+    }
+
+    /// **v0.45.0** constructor — flash with a count
+    /// parameter for `{n}` substitution at render time.
+    pub fn with_count(level: FlashLevel, key: FlashKey, count: u32) -> Self {
+        Self { level, key, count: Some(count) }
     }
 }
 
@@ -272,10 +316,20 @@ impl Flash {
 /// Encode a flash into a signed cookie value. Returns the value
 /// without the `Name=` prefix or attribute string — see
 /// [`set_cookie_header`] for the wrapped form.
+///
+/// **v0.45.0** — if `flash.count` is `Some(N)`, the key segment
+/// is rendered as `<key>:<N>` instead of bare `<key>`. Decoding
+/// rejects multiple `:` and non-numeric counts.
 pub(crate) fn encode(flash: &Flash, mac_key: &[u8]) -> String {
-    // Payload is `"<level_code>.<key>"`. Compact, fixed shape,
-    // single delimiter (`.` is not in any FlashKey string).
-    let payload = format!("{}.{}", flash.level.as_code(), flash.key.as_str());
+    // Payload is `"<level_code>.<key>"` (v0.31.0) or
+    // `"<level_code>.<key>:<count>"` (v0.45.0+). Single `.`
+    // separator (`.` is not in any FlashKey string); `:` only
+    // appears between key and count.
+    let key_segment = match flash.count {
+        Some(n) => format!("{}:{}", flash.key.as_str(), n),
+        None    => flash.key.as_str().to_owned(),
+    };
+    let payload = format!("{}.{}", flash.level.as_code(), key_segment);
 
     let mut mac = HmacSha256::new_from_slice(mac_key)
         .expect("HMAC-SHA256 accepts any key length");
@@ -296,6 +350,8 @@ pub(crate) fn encode(flash: &Flash, mac_key: &[u8]) -> String {
 /// - non-base64url payload or tag
 /// - HMAC mismatch (constant-time)
 /// - unknown level code or unknown key
+/// - **v0.45.0** — multiple `:` in the key segment, or
+///   non-decimal characters in the count, or count overflow
 pub(crate) fn decode(cookie_value: &str, mac_key: &[u8]) -> Option<Flash> {
     let rest = cookie_value.strip_prefix(FORMAT_PREFIX)?;
 
@@ -319,12 +375,29 @@ pub(crate) fn decode(cookie_value: &str, mac_key: &[u8]) -> Option<Flash> {
     mac.update(&payload);
     mac.verify_slice(&tag).ok()?;
 
-    // Payload is "<level_code>.<key>".
+    // Payload is "<level_code>.<key_segment>" where key_segment
+    // is "<key>" or "<key>:<count>".
     let payload_str = std::str::from_utf8(&payload).ok()?;
-    let (level_code, key_str) = payload_str.split_once('.')?;
+    let (level_code, key_segment) = payload_str.split_once('.')?;
     let level = FlashLevel::from_code(level_code)?;
-    let key   = FlashKey::from_str(key_str)?;
-    Some(Flash::new(level, key))
+
+    let (key, count) = match key_segment.split_once(':') {
+        None => (FlashKey::from_str(key_segment)?, None),
+        Some((key_str, count_str)) => {
+            // Reject multi-`:` (`a:b:c`) — split_once gave us
+            // `a` and `b:c`, so check the second half doesn't
+            // also contain `:`.
+            if count_str.contains(':') {
+                return None;
+            }
+            // Parse count strictly — empty, leading-zero-but-
+            // not-zero, leading-`+`/`-`, or non-digit input
+            // all fail. u32 caps the natural range.
+            let n: u32 = count_str.parse().ok()?;
+            (FlashKey::from_str(key_str)?, Some(n))
+        }
+    };
+    Some(Flash { level, key, count })
 }
 
 /// Find the value of `__Host-cesauth_flash` in a raw `Cookie:`
@@ -432,15 +505,34 @@ fn derive_mac_key(env: &Env) -> Result<Vec<u8>> {
 /// shorthand below preserves the default-locale behavior
 /// for callers that haven't yet been migrated to negotiated
 /// locales.
+///
+/// **v0.45.0** — when `flash.count` is `Some(n)`, the
+/// catalog string is rendered with the literal `{n}`
+/// substring replaced by the decimal `n`. Catalog
+/// strings without `{n}` are unaffected. Pluralization
+/// is deferred to ADR-013 §Q4 — for now the JA + EN
+/// strings use a count-agnostic phrasing. **No format
+/// validation here**: a count-bearing Flash whose
+/// MessageKey lacks `{n}` simply renders the catalog
+/// string as-is (the runtime cost of a missed
+/// substitution is a slightly awkward read, not
+/// security-relevant).
 pub fn render_view_for(
     flash:  Flash,
     locale: cesauth_core::i18n::Locale,
 ) -> cesauth_ui::templates::FlashView {
+    let raw = flash.key.display_text_for(locale);
+    let text = match flash.count {
+        Some(n) if raw.contains("{n}") => {
+            std::borrow::Cow::Owned(raw.replace("{n}", &n.to_string()))
+        }
+        _ => std::borrow::Cow::Borrowed(raw),
+    };
     cesauth_ui::templates::FlashView {
         aria_live:    flash.level.aria_live(),
         css_modifier: flash.level.css_modifier(),
         icon:         flash.level.icon(),
-        text:         flash.key.display_text_for(locale),
+        text,
     }
 }
 

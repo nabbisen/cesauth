@@ -12,6 +12,259 @@ changes will always be called out here.
 
 ---
 
+## [0.45.0] - 2026-05-04
+
+Bulk "revoke all other sessions" UX (ADR-012 §Q4
+**Resolved**). Per-operator-request order: tech-debt
+sweep first (v0.44.0, done), bulk-revoke second
+(this release).
+
+### Why this matters
+
+Pre-v0.45.0, `/me/security/sessions` showed up to 50
+session rows with a per-row revoke button. Users
+wanting to sign out everywhere except their current
+device had to click one button per row. After someone
+flags a credential leak ("did I leave my work laptop
+unlocked?") the UX should be one button, not
+N clicks. Most major auth providers expose this; cesauth
+now does too.
+
+### What ships
+
+#### `cesauth_core::service::sessions::revoke_all_other_sessions`
+
+New pure-service module orchestrating `list_for_user`
++ filtered per-row `revoke`. Returns
+`BulkRevokeOutcome { revoked: u32, errors: u32,
+skipped_current: u32 }`. Best-effort semantics
+(matches cesauth's failure-isolation pattern):
+
+- Per-row revoke failure increments `errors` and
+  continues — does NOT abort the batch. The
+  alternative (one error → user sees an error and
+  has no idea which sessions were revoked vs
+  left alone) is worse than "most got revoked,
+  retry the button for the rest" (idempotent).
+- Per-row `Ok(SessionStatus::NotStarted)` (race with
+  sweep) counts as `revoked` — from the user's
+  perspective the row is gone, which is what they
+  wanted.
+- Per-row `Ok(SessionStatus::Active)` (shouldn't
+  happen — `revoke` is supposed to be terminal)
+  counts as `errors` to surface store bugs in the
+  audit counter.
+- Per-user cap of 50 (matches the page's display
+  limit).
+
+#### `POST /me/security/sessions/revoke-others`
+
+Worker handler in `crates/worker/src/routes/me/sessions.rs`.
+CSRF-protected with the same form-token-vs-cookie
+check as the per-row endpoint. Pure-service does the
+heavy lifting; handler picks one of three flashes
+based on outcome and 302-redirects back to the list:
+
+- `revoked > 0 && errors == 0` →
+  `OtherSessionsRevoked` (Success, count substituted).
+- `errors > 0` → `OtherSessionsRevokeFailed` (Danger,
+  error count substituted) regardless of how many
+  succeeded — the message advises retry, which
+  becomes a legitimate no-op for already-revoked
+  rows (idempotent).
+- `revoked == 0 && errors == 0` →
+  `NoOtherSessions` (Info, no count).
+
+Audit emits **one** `SessionRevokedByUser` event with
+`bulk: true` payload field, NOT one per row. The
+per-row approach would require capturing each
+`session_id` mid-loop, which the pure service doesn't
+surface (by design — its return type is counts, not
+row metadata). Operators distinguish bulk from
+per-row clicks via the payload's `bulk` field.
+
+#### Flash codec extended
+
+`Flash` struct gains optional `count: Option<u32>`
+parameter for messages with `{n}` substitution. Wire
+format: `<key>:<N>` notation in the cookie payload
+(e.g., `success.other_sessions_revoked:3`). The `:`
+delimiter is verified by test to not appear in any
+existing `FlashKey::as_str()` value, so:
+
+- Pre-v0.45.0 cookies (no `:`) decode as
+  `count = None` → fully backward-compatible. Cookies
+  in flight at the moment of upgrade still
+  display correctly.
+- New cookies decode `count = Some(N)` with strict
+  parsing (rejects multi-`:`, non-numeric, u32
+  overflow).
+
+Format-prefix bump from `v1:` was **not** needed —
+the change is additive within the existing format,
+not a re-encoding.
+
+`FlashView::text` migrated from `&'static str` to
+`Cow<'static, str>`. The borrowed variant is the
+zero-allocation path for parameter-free flashes
+(v0.31–v0.44); the owned variant carries
+runtime-substituted strings. `FlashView` lost its
+`Copy` derivation (Cow isn't Copy) but kept `Clone`
+— flash text is short and rare so the cost is
+irrelevant.
+
+`render_view_for` does the `{n}` → decimal
+substitution at projection time. Catalog strings
+without `{n}` are unaffected by the substitution
+logic — safe for any combination of count-bearing
+flash + parameter-free MessageKey (the catalog
+string renders verbatim).
+
+#### UI button on `/me/security/sessions`
+
+`sessions_page_for` adds a `<section
+class="bulk-revoke">` above the back link with:
+
+1. Inline confirmation copy
+   (`SessionsRevokeOthersConfirm` MessageKey).
+2. Form posting to
+   `/me/security/sessions/revoke-others` with CSRF
+   token.
+3. Submit button labeled with
+   `SessionsRevokeOthersButton`.
+
+The whole section is **conditional on
+`items.iter().any(|s| !s.is_current)`**. Edge cases
+pinned by tests:
+
+- Empty session list → button hidden.
+- Only the current session → button hidden.
+- Current session not in the listing (D1 mirror
+  drift, ADR-012 §Q5) → button shown (every
+  listed item is "other").
+
+#### i18n catalog
+
+5 new MessageKey variants:
+
+- `SessionsRevokeOthersButton`: the button label.
+- `SessionsRevokeOthersConfirm`: the inline
+  confirmation copy.
+- `FlashOtherSessionsRevoked`: success flash with
+  `{n}` placeholder (e.g., "Signed out 3 other
+  device(s)" / "他の 3 件のセッションをサインアウトしました").
+- `FlashOtherSessionsRevokeFailed`: failure flash
+  with `{n}` for the error count.
+- `FlashNoOtherSessions`: zero-other-sessions
+  info flash.
+
+JA + EN translations included; pluralization
+explicitly deferred to ADR-013 §Q4 (consistent with
+the v0.39.0 deferral). The JA forms are
+count-agnostic ("件"); the EN forms use bare
+"device(s)" as a defensive fallback (slightly
+awkward at n=1 but unambiguous).
+
+MessageKey total: 71 → 76.
+
+### Tests
+
+911 → **937** lib (+26). With migrate integration:
+940 → **966**.
+
+- core: 393 → 403 (+10). All in
+  `service::sessions::tests`:
+  `revokes_all_other_active_sessions_keeps_current`,
+  `no_other_active_sessions_is_zero_count_no_calls`,
+  `user_with_no_sessions_is_zero_count_zero_skipped`,
+  `current_session_not_in_user_list_revokes_all_listed`
+  (the §Q5 drift edge case),
+  `does_not_touch_other_users_sessions` (multi-tenant
+  isolation), `already_revoked_sessions_are_filtered_by_list`,
+  `per_row_failure_increments_errors_does_not_abort`
+  (best-effort failure containment),
+  `list_failure_propagates_as_internal_error`,
+  `revoke_returning_notstarted_counts_as_revoked`
+  (race-with-sweep mental-model match),
+  `second_call_after_first_is_zero_count` (idempotence).
+- ui: 230 → 235 (+5). Bulk button presence in EN +
+  JA, hidden when empty / only-current,
+  shown-when-current-not-listed (§Q5 case).
+- worker: 171 → 182 (+11). 8 in `flash::tests` for the
+  count codec (round-trip, count=0, u32::MAX,
+  multi-`:`, non-numeric, overflow, no-FlashKey-has-
+  colon defensive pin) + 3 for `render_view_for`
+  substitution (substitute-when-template-has-n,
+  zero-alloc-when-no-count, owned-when-substituted).
+
+### Schema / wire / DO
+
+- Schema unchanged (still SCHEMA_VERSION 9). No
+  migration.
+- DO state unchanged.
+- **Wire format**:
+  - Discovery doc unchanged.
+  - Flash cookie format additive only — `key:N`
+    notation in the payload, backward-compatible with
+    v0.31–v0.44 cookies.
+  - One new endpoint: `POST /me/security/sessions/revoke-others`.
+- **No new dependencies.**
+
+### Operator-visible changes
+
+- **New endpoint mounted**:
+  `POST /me/security/sessions/revoke-others`. CSRF
+  token required (existing pattern). Returns 302 to
+  the list page.
+- **Audit dashboards**: `SessionRevokedByUser` events
+  with payload field `bulk: true` are the bulk
+  action; `bulk: false` (or absent) are per-row
+  clicks. A spike of `bulk: true` events is
+  legitimate — users responding to an alert by
+  signing out everywhere is exactly the workflow this
+  release enables.
+- **No `wrangler.toml` change. No new bindings. No
+  schema migration.**
+
+### ADR changes
+
+- **ADR-012 §Q4** marked **Resolved**. Inline
+  resolved-paragraph follows the
+  ADR-011 §Q1 / ADR-012 §Q1 / ADR-014 §Q4 / ADR-014
+  §Q2 inline-resolution style.
+- No new ADR.
+
+### Doc / metadata changes
+
+- `Cargo.toml` workspace version 0.44.0 → 0.45.0.
+- UI footers + tests bumped to v0.45.0.
+- ROADMAP: v0.45.0 Shipped table row.
+- This CHANGELOG entry.
+
+### Upgrade path 0.44.0 → 0.45.0
+
+1. `git pull` or extract this tarball.
+2. `cargo build --workspace --target
+   wasm32-unknown-unknown --release`. **No new
+   production dependencies.**
+3. `wrangler deploy`. **No schema migration. No new
+   bindings.**
+4. Optionally update audit dashboards to break out
+   `bulk: true` `SessionRevokedByUser` events from
+   per-row.
+
+### Forward roadmap
+
+- **Next up (per operator request)**: refresh-token
+  introspection enhancements.
+- Then: i18n-2 continuation (TOTP recovery codes /
+  disable / magic link / error pages), ADR-014 §Q3
+  audit retention, ADR-012 §Q1.5 D1 repair tool.
+- **Future security-track items still open**:
+  ADR-012 §Q2-§Q3, §Q5; ADR-014 §Q1 audience scoping.
+
+---
+
 ## [0.44.0] - 2026-05-03
 
 Tech-debt sweep: drop `jsonwebtoken` in favor of direct
