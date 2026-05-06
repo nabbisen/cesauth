@@ -262,12 +262,39 @@ flag added (their problem, not ours).
   audience. Not blocking v0.38.0 because cesauth's
   current deployments all run with one resource server
   per tenant.
-- **Q2**: Per-resource-server rate limiting. The
-  introspection endpoint may be hit hundreds of times
-  per second by a busy resource server. cesauth's
-  existing `RateLimitStore` could provide a per-client
-  rate limit similar to v0.37.0's per-family bucket on
-  refresh. Not implemented in v0.38.0; defer to demand.
+- **Q2**: ~~Per-resource-server rate limiting.~~
+  **Resolved in v0.43.0.** The introspection endpoint
+  now hits a per-client rate-limit gate after
+  authentication and before any DO lookup or JWT
+  verify. Bucket key shape is `introspect:<client_id>`
+  — the authenticated client_id is the natural
+  rate-limit unit (RFC 7662 introspection requires
+  authentication, so we always have a stable
+  identifier to limit against). Default threshold:
+  600/window, default window: 60s — sized for
+  resource servers that may introspect on every
+  request. `INTROSPECTION_RATE_LIMIT_THRESHOLD = 0`
+  disables the gate (operator opt-out for
+  deployments that have a rate limit upstream at a
+  load balancer or whose RSes legitimately need
+  extreme rates). Per-client isolation pinned by
+  test: a chatty RS_A's saturated bucket does not
+  affect RS_B. Wire response: HTTP 429 with
+  `Retry-After: <secs>` header (RFC 7231 §6.6 +
+  §7.1.3); body code `invalid_request` (RFC 6749
+  §5.2 catch-all since neither RFC 7662 nor RFC 7009
+  define a rate-limit error code; matches v0.37.0's
+  `/token` rate-limit precedent). New audit kind
+  `EventKind::IntrospectionRateLimited` (snake_case
+  `introspection_rate_limited`) emitted on denial
+  with payload `{client_id, threshold, window_secs,
+  retry_after_secs}`. Distinct from the v0.37.0
+  `RefreshRateLimited` because they're different
+  surfaces with different operational semantics — a
+  spike in `introspection_rate_limited` indicates
+  resource-server polling pathology, while
+  `refresh_rate_limited` indicates token-replay
+  probing on `/token`.
 - **Q3**: Audit retention. Every introspection call
   emits an audit row. For a chatty resource server,
   this could fill the audit log quickly. Operators may

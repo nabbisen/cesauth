@@ -12,6 +12,270 @@ changes will always be called out here.
 
 ---
 
+## [0.43.0] - 2026-05-03
+
+Per-client introspection rate limit (ADR-014 §Q2
+**Resolved**). Closes the second of ADR-014's three
+remaining open questions on the introspection endpoint
+(§Q4 was resolved in v0.41.0; §Q1 + §Q3 remain).
+
+### Why this matters
+
+v0.38.0 shipped `/introspect` with **no rate limit**.
+The endpoint requires client authentication, but a
+compromised confidential client (or a malicious resource
+server with valid creds) had unbounded ability to:
+
+1. **Token-existence probing**. Each introspection call
+   reveals whether a token is currently active. With
+   sufficient throughput an attacker could brute-force
+   guesses (cesauth refresh tokens are 16+ random
+   bytes encoded, so practical brute-force is
+   infeasible — but the design shouldn't depend on
+   it).
+2. **DoS amplification**. Each introspection call hits
+   the `RefreshTokenFamily` DO; chatty introspection
+   could degrade legitimate token-rotation traffic.
+3. **Resource-server isolation failure**. One chatty
+   resource server could starve cron-tick budgets
+   that other RSes need.
+
+v0.43.0 caps per-client introspection rate.
+
+### What ships
+
+#### `cesauth_core::service::introspect::check_introspection_rate_limit`
+
+Mirrors the v0.37.0 `/token` per-family rate-limit
+pattern (ADR-011 §Q1) but with a different bucket-key
+namespace and at a different abstraction layer.
+
+```rust
+pub async fn check_introspection_rate_limit<RL>(
+    rates:                   &RL,
+    authenticated_client_id: &str,
+    now_unix:                i64,
+    window_secs:             i64,
+    threshold:               u32,
+) -> CoreResult<IntrospectionRateLimitDecision>
+where RL: RateLimitStore;
+```
+
+Returns `Allowed` or `Denied { retry_after_secs }`.
+
+**Bucket key shape**: `introspect:<client_id>`. The
+authenticated client_id is the natural unit:
+
+- **Per-family** (v0.37.0 pattern) wouldn't apply —
+  introspection consumes tokens across many families,
+  so the per-family bucket can't tell us "this RS is
+  hammering us".
+- **Per-token-jti** would let an attacker probing
+  many distinct tokens against the same client never
+  hit any single jti's bucket.
+- **Per-user-id** would be wrong — introspection
+  responses don't reveal the user (for inactive
+  tokens), so an attacker can't even target by user.
+- **Per-client-id** is the right granularity. RFC
+  7662 requires authentication, so we always have
+  a stable identifier; chatty RS_A doesn't affect
+  RS_B; legitimate per-RS quotas are operator-
+  configurable.
+
+**threshold = 0 disables the gate.** Operators who
+have an upstream rate limit (load balancer, edge
+worker) or whose RSes legitimately need extreme
+rates set `INTROSPECTION_RATE_LIMIT_THRESHOLD=0`. The
+auth-required gate at the endpoint layer is
+unaffected.
+
+#### `Config` additions
+
+```diff
++ pub introspection_rate_limit_threshold:   u32,
++ pub introspection_rate_limit_window_secs: i64,
+```
+
+`INTROSPECTION_RATE_LIMIT_THRESHOLD` env, default
+**600**. `INTROSPECTION_RATE_LIMIT_WINDOW_SECS` env,
+default **60**. Default 600/min = 10/sec is sized
+for resource servers that may introspect on every
+incoming request — substantially more permissive than
+v0.37.0's `/token` default of 5/min (which fires
+specifically on token-replay probing patterns, where
+5 attempts in a window is already pathological).
+
+#### Worker handler `crates/worker/src/routes/oidc/introspect.rs`
+
+Rate-limit check fires:
+
+1. **AFTER** client authentication. The bucket key
+   needs the authenticated client_id, and an
+   unauthenticated attacker shouldn't be able to
+   burn the rate limit on behalf of a victim
+   client_id.
+2. **BEFORE** any DO lookup or JWT verify. A tripped
+   limit doesn't even reach the family store or the
+   signing-key consultation, so DoS amplification is
+   contained.
+
+On denial:
+
+- HTTP **429 Too Many Requests** with `Retry-After:
+  <secs>` header (RFC 7231 §6.6 + §7.1.3) via the
+  existing `oauth_error_response` plumbing
+  (`CoreError::RateLimited`).
+- New audit event `EventKind::IntrospectionRateLimited`
+  (snake_case `introspection_rate_limited`) with payload
+  `{client_id, threshold, window_secs,
+  retry_after_secs}`.
+- Warn-level log line on the `RateLimit` category.
+
+The response shape exactly matches v0.37.0's `/token`
+rate-limit response — same status, same `Retry-After`
+header, same body code. Resource-server clients
+already handling 429s on `/token` (which they should
+be) handle this identically.
+
+#### `EventKind::IntrospectionRateLimited`
+
+New audit kind — distinct from v0.37.0's
+`RefreshRateLimited` because they're different
+surfaces with different operational semantics:
+
+- **`refresh_rate_limited`** spike → `/token`
+  endpoint hit hard, indicates token-replay probing
+  patterns.
+- **`introspection_rate_limited`** spike →
+  `/introspect` endpoint hit hard, indicates
+  resource-server polling pathology OR a compromised
+  confidential client used for mass token probing.
+
+Operators alert on each independently.
+
+### Tests
+
+902 → **911** lib (+9 from v0.43.0 work; 6 in
+`introspect::tests::rate_limit` mod + 3 already
+present from earlier session). With migrate
+integration: 934 → **940**.
+
+- core: 387 → 393 (+6). All in
+  `service::introspect::tests::rate_limit`:
+  - `threshold_zero_always_allows` —
+    operator opt-out path
+  - `first_n_within_window_allowed_then_n_plus_one_denied`
+    — basic limit behavior
+  - `denied_decision_carries_retry_after_secs` —
+    Retry-After value sanity
+  - `rate_limit_is_isolated_per_client_id` — the
+    headline property: chatty RS_A doesn't affect
+    RS_B
+  - `rate_limit_resets_after_window_rolls` — bucket
+    decay semantics
+  - `threshold_one_denies_immediately_after_first_hit`
+    — defensive boundary
+
+  Tests use an inline RefCell-backed
+  `RateLimitStore` stub mirroring the v0.37.0 +
+  v0.42.0 stub-vs-adapter-test pattern.
+- ui: 230 → 230 (no UI changes).
+- worker: 171 → 171 (handler edits, no new tests;
+  all testable logic in pure core service).
+
+### Schema / wire / DO
+
+- Schema unchanged from v0.42.0 (still
+  SCHEMA_VERSION 9). No migration.
+- Wire format unchanged for happy-path
+  introspection. Rate-limit denial returns 429 +
+  `Retry-After` (same shape v0.37.0 `/token`
+  established).
+- DO state unchanged.
+- No new dependencies.
+
+### Operator-visible changes
+
+- **Two new env vars** for tuning:
+  `INTROSPECTION_RATE_LIMIT_THRESHOLD` (default 600),
+  `INTROSPECTION_RATE_LIMIT_WINDOW_SECS` (default 60).
+  Set threshold to 0 to disable. The defaults are
+  permissive enough that legitimate resource-server
+  patterns (one introspection per request, even at
+  a few requests per second per RS) stay well
+  under the limit.
+- **New audit kind to monitor**:
+  `introspection_rate_limited`. Add a panel on the
+  audit dashboard. Steady-state baseline: **0
+  events per day**. Non-zero indicates either:
+  - **Misconfigured RS in tight poll loop** —
+    investigate the RS-side caching (introspection
+    responses are cacheable for the access-token's
+    `exp` window).
+  - **Compromised client_secret** — an attacker
+    using a leaked credential to mass-probe tokens.
+    Rotate the client_secret immediately if no
+    legitimate cause is identified.
+- **No production behavior change for happy-path
+  introspection.** Resource servers operating well
+  under 600/min see no impact.
+
+### ADR changes
+
+- **ADR-014 §Q2** marked **Resolved**. Implementation
+  details + bucket-key rationale + audit-attribution
+  recorded inline in the resolved-paragraph,
+  matching the ADR-011 §Q1 / ADR-012 §Q1 / ADR-014
+  §Q4 inline-resolution style.
+- No new ADR.
+
+### Doc / metadata changes
+
+- `Cargo.toml` version 0.42.0 → 0.43.0.
+- UI footers + tests bumped to v0.43.0.
+- ROADMAP: v0.43.0 Shipped table row.
+- This CHANGELOG entry.
+
+### Upgrade path 0.42.0 → 0.43.0
+
+1. `git pull` or extract this tarball.
+2. `cargo build --workspace --target
+   wasm32-unknown-unknown --release`. **No new
+   production dependencies.**
+3. Optionally tune env vars (defaults are sized for
+   typical deployments):
+   - `INTROSPECTION_RATE_LIMIT_THRESHOLD=600`
+   - `INTROSPECTION_RATE_LIMIT_WINDOW_SECS=60`
+4. `wrangler deploy`. **No schema migration.** No
+   `wrangler.toml` change. No new bindings (reuses
+   the existing `CACHE` KV binding for rate-limit
+   buckets, same as v0.37.0).
+5. Add the audit-dashboard panel for
+   `introspection_rate_limited`.
+
+### Forward roadmap
+
+- **Future security-track items still open**:
+  - ADR-012 §Q1.5 D1 repair tool (decision blocked
+    on observed v0.40.0 drift data)
+  - ADR-012 §Q2 user notification on session timeout
+  - ADR-012 §Q3 device fingerprint columns
+  - ADR-012 §Q4 bulk revoke other sessions
+  - ADR-012 §Q5 orphan DO limitation
+  - ADR-014 §Q1 introspection resource-server
+    audience scoping (multi-tenant correctness)
+  - ADR-014 §Q3 audit retention policy
+- **Tech-debt sweep candidate**: swap jsonwebtoken to
+  `josekit` + `ed25519-dalek` direct, dropping
+  transitive `rsa` (v0.41.0 trade-off).
+- **i18n-2 continued (v0.39.1+)**: TOTP recovery
+  codes, TOTP disable confirm, magic link, error
+  pages, `PrimaryAuthMethod::label`, Security
+  Center enabled-state recovery-codes row (blocked
+  on pluralization — ADR-013 §Q4).
+
+---
+
 ## [0.42.0] - 2026-05-03
 
 RFC 7009 token revocation conformance. Closes a **silent

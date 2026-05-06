@@ -219,3 +219,93 @@ fn decode_refresh_token(token: &str) -> Option<(String, String, i64)> {
 
 #[cfg(test)]
 mod tests;
+
+// =====================================================================
+// v0.43.0 — Per-client introspection rate limit (ADR-014 §Q2)
+// =====================================================================
+
+/// Decision returned by [`check_introspection_rate_limit`].
+/// Allowed-hits proceed to `introspect_token`; denied-hits
+/// surface as HTTP 429 from the worker handler with
+/// `Retry-After` set from `retry_after_secs`.
+#[derive(Debug, PartialEq, Eq)]
+pub enum IntrospectionRateLimitDecision {
+    /// Hit is under the limit. Caller proceeds to
+    /// introspect_token.
+    Allowed,
+    /// Hit exceeded the limit; caller should return 429
+    /// with `Retry-After: <retry_after_secs>` and
+    /// emit an `IntrospectionRateLimited` audit event.
+    Denied { retry_after_secs: i64 },
+}
+
+/// Per-client introspection rate limit. Mirrors the
+/// v0.37.0 `/token` rate limit pattern (ADR-011 §Q1)
+/// but with a different bucket-key namespace.
+///
+/// **Bucket key shape**: `introspect:<client_id>` —
+/// the authenticated client_id is the natural rate-
+/// limit unit. RFC 7662 introspection requires
+/// authentication, so we always have a stable
+/// identifier to limit against. Per-client limits
+/// also mean one chatty resource server doesn't
+/// affect others, and a misconfigured RP that
+/// accidentally polls in tight loop is contained.
+///
+/// **threshold = 0** disables the gate. Operators
+/// who don't want a rate limit at this layer (because
+/// they have one upstream at a load balancer, or
+/// because their resource servers legitimately need
+/// extreme rates) can opt out without code change.
+///
+/// This function is intentionally separate from
+/// `introspect_token` itself: the rate limit needs
+/// the **authenticated** `client_id` as the bucket
+/// key, and that identity isn't (and shouldn't be)
+/// passed to `introspect_token` — introspection only
+/// cares about claims in the token, not who's
+/// asking. Calling order in the worker:
+///
+/// 1. Verify `client_secret_basic` / `client_secret_post`.
+/// 2. Call `check_introspection_rate_limit` with the
+///    authenticated `client_id`. If denied, return
+///    429 + emit audit. If allowed, continue.
+/// 3. Call `introspect_token`.
+pub async fn check_introspection_rate_limit<RL>(
+    rates:                 &RL,
+    authenticated_client_id: &str,
+    now_unix:              i64,
+    window_secs:           i64,
+    threshold:             u32,
+) -> CoreResult<IntrospectionRateLimitDecision>
+where
+    RL: crate::ports::store::RateLimitStore,
+{
+    if threshold == 0 {
+        // Operator opt-out. The auth-required gate at
+        // the endpoint layer still applies, so this
+        // disables only the rapid-poll defense.
+        return Ok(IntrospectionRateLimitDecision::Allowed);
+    }
+
+    let bucket = format!("introspect:{authenticated_client_id}");
+    let dec = rates.hit(
+        &bucket,
+        now_unix,
+        window_secs,
+        threshold,
+        threshold,  // escalate at the same threshold;
+                    // Turnstile escalation isn't relevant
+                    // for resource-server-typed traffic.
+    )
+    .await
+    .map_err(|_| CoreError::Internal)?;
+
+    if dec.allowed {
+        Ok(IntrospectionRateLimitDecision::Allowed)
+    } else {
+        Ok(IntrospectionRateLimitDecision::Denied {
+            retry_after_secs: dec.resets_in,
+        })
+    }
+}

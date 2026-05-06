@@ -96,6 +96,19 @@ pub enum EventKind {
     /// this kind does NOT imply reuse — they're separable
     /// signals.
     RefreshRateLimited,
+    /// **v0.43.0** — Per-client rate limit threshold exceeded
+    /// on `/introspect` (ADR-014 §Q2 resolution). Sibling to
+    /// `RefreshRateLimited`. Payload includes `client_id`
+    /// (the authenticated resource server's id),
+    /// `threshold`, `window_secs`, `retry_after_secs`.
+    /// Fires AFTER auth (we need the authenticated client_id
+    /// as the bucket key) and BEFORE any DO lookup or JWT
+    /// verify, so a tripped limit doesn't even reach the
+    /// family store or signing-key consultation. Distinct
+    /// from `TokenIntrospected` because rate-limited
+    /// requests do NOT proceed to actual introspection;
+    /// the two events are alertable independently.
+    IntrospectionRateLimited,
     /// **v0.38.0** — `POST /introspect` was called (RFC 7662
     /// Token Introspection). Payload includes the requesting
     /// `introspecter_client_id`, the `token_type` reported
@@ -209,6 +222,7 @@ impl EventKind {
             Self::TokenRefreshRejected         => "token_refresh_rejected",
             Self::RefreshTokenReuseDetected    => "refresh_token_reuse_detected",
             Self::RefreshRateLimited           => "refresh_rate_limited",
+            Self::IntrospectionRateLimited     => "introspection_rate_limited",
             Self::TokenIntrospected            => "token_introspected",
             Self::RevocationRequested          => "revocation_requested",
             Self::WebauthnRegistered           => "webauthn_registered",

@@ -88,6 +88,48 @@ pub async fn handler<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
         return unauthorized();
     }
 
+    // **v0.43.0** — per-client introspection rate limit
+    // (ADR-014 §Q2). The check fires AFTER auth (we
+    // need the authenticated client_id as the bucket
+    // key) and BEFORE any DO lookup or JWT verify (so
+    // a tripped limit doesn't even reach the family
+    // store or signing-key consultation). On denial:
+    // emit an `IntrospectionRateLimited` audit event,
+    // map to HTTP 429 with `Retry-After` via the
+    // existing `oauth_error_response` plumbing
+    // (CoreError::RateLimited).
+    let now_for_rl = OffsetDateTime::now_utc().unix_timestamp();
+    let rates = cesauth_cf::ports::store::CloudflareRateLimitStore::new(&ctx.env);
+    let rl_decision = cesauth_core::service::introspect::check_introspection_rate_limit(
+        &rates,
+        &creds.client_id,
+        now_for_rl,
+        cfg.introspection_rate_limit_window_secs,
+        cfg.introspection_rate_limit_threshold,
+    ).await
+        .map_err(|_| worker::Error::RustError("rate limit lookup failed".into()))?;
+
+    use cesauth_core::service::introspect::IntrospectionRateLimitDecision;
+    if let IntrospectionRateLimitDecision::Denied { retry_after_secs } = rl_decision {
+        let payload = serde_json::json!({
+            "client_id":        &creds.client_id,
+            "threshold":        cfg.introspection_rate_limit_threshold,
+            "window_secs":      cfg.introspection_rate_limit_window_secs,
+            "retry_after_secs": retry_after_secs,
+        }).to_string();
+        audit::write_owned(
+            &ctx.env, EventKind::IntrospectionRateLimited,
+            None, Some(creds.client_id.clone()),
+            Some(payload),
+        ).await.ok();
+        log::emit(&cfg.log, Level::Warn, Category::RateLimit,
+            &format!("introspect: rate-limited retry_after={retry_after_secs}s"),
+            Some(&creds.client_id));
+        return crate::error::oauth_error_response(
+            &cesauth_core::error::CoreError::RateLimited { retry_after_secs },
+        );
+    }
+
     // Look up active signing keys for verifying access-token JWTs.
     // **v0.41.0** — multi-key support (ADR-014 §Q4
     // resolved). Pre-v0.41.0 we used `keys.first()` — only the

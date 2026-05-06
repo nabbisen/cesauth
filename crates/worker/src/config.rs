@@ -63,6 +63,19 @@ pub struct Config {
     /// apply regardless).
     pub refresh_rate_limit_threshold:   u32,
     pub refresh_rate_limit_window_secs: i64,
+    /// **v0.43.0** — Per-client introspection rate
+    /// limit threshold (ADR-014 §Q2). Bucket key is
+    /// `introspect:<authenticated_client_id>`; counter
+    /// resets every `introspection_rate_limit_window_secs`.
+    /// Default 600 (= 10/sec sustained over a 60s window).
+    /// Tunes for normal resource-server-typed traffic
+    /// while bounding the damage from a runaway poll
+    /// loop or buggy retry logic. Operators with tighter
+    /// bundle-size or upstream-LB constraints can lower
+    /// this; operators whose RSes legitimately need
+    /// extreme rates can raise it. Set to 0 to disable.
+    pub introspection_rate_limit_threshold:   u32,
+    pub introspection_rate_limit_window_secs: i64,
     /// Operational logging. See `log::LogConfig`.
     pub log:                    LogConfig,
 }
@@ -112,6 +125,14 @@ impl Config {
             // threshold to 0 to disable.
             refresh_rate_limit_threshold:   var_parsed_default("REFRESH_RATE_LIMIT_THRESHOLD",   5)? as u32,
             refresh_rate_limit_window_secs: var_parsed_default("REFRESH_RATE_LIMIT_WINDOW_SECS", 60)?,
+            // v0.43.0: 600/min default per authenticated
+            // client_id (ADR-014 §Q2). Set
+            // INTROSPECTION_RATE_LIMIT_THRESHOLD=0 to
+            // disable; raise for high-traffic resource
+            // servers that legitimately introspect every
+            // request.
+            introspection_rate_limit_threshold:   var_parsed_default("INTROSPECTION_RATE_LIMIT_THRESHOLD",   600)? as u32,
+            introspection_rate_limit_window_secs: var_parsed_default("INTROSPECTION_RATE_LIMIT_WINDOW_SECS", 60)?,
             log:                    LogConfig::from_env(env),
         })
     }
