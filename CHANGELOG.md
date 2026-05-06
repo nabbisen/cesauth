@@ -12,6 +12,217 @@ always be called out here.
 
 ---
 
+## [0.23.0] - 2026-04-28
+
+HTTP security response headers — ADR-007. The pre-existing
+`harden_headers` helper (which set 4 headers per response) is
+replaced by a unified middleware that:
+
+- adds three previously-missing headers (`Strict-Transport-Security`,
+  `Permissions-Policy`, the existing `X-Frame-Options` now gated
+  to HTML responses),
+- consolidates the policy into a single auditable site
+  (`crates/core/src/security_headers.rs` + the worker shim),
+- exposes operator override knobs via `wrangler.toml` env vars,
+- preserves the per-route CSPs the login page, OIDC authorize
+  page, and admin console set themselves (those use `'unsafe-inline'`
+  for current template constraints; nonces are a planned future
+  release).
+
+This v0.23.0 supersedes a prior v0.23.0 release attempt that
+proposed an "account lockout" feature. That attempt was
+**withdrawn** before graduating to canonical status — the design
+was based on the incorrect premise that cesauth has password
+authentication. See "Withdrawal note" below for the full context.
+
+### Withdrawal note — prior v0.23.0 attempt
+
+A v0.23.0 release was prepared that added per-account lockout
+columns to `users`, a `cesauth_core::lockout` library, ADR-006,
+and migration 0007 (`account_lockout`). The work assumed
+cesauth had a password-verify path against which brute-force
+attacks would be mitigated by per-account lockout.
+
+**This assumption was wrong.** cesauth has no password
+authentication at all — Magic Link and WebAuthn are the only
+credential paths, both with their own brute-force resistance
+properties (token entropy and signature cryptography
+respectively). Per-account lockout's primary threat model is
+inapplicable to cesauth's actual surface.
+
+The artifact of the withdrawn attempt is preserved as
+`cesauth-0.23.0-account-lockout-withdrawn.tar.gz` in the release
+archive for historical reference. The ADR-006 number is
+retired (not reused). A future ADR may revisit lockout for the
+OIDC `client_secret` brute-force surface (per-client lockout,
+distinct data model, machine-to-machine threat model); see
+ROADMAP "Later" for the trigger condition.
+
+The `cesauth_core::lockout` module, schema migration 0007,
+and ADR-006 are **not in this release**. Source restored from
+v0.22.0.
+
+### Added — ADR-007
+
+`docs/src/expert/adr/007-security-response-headers.md`
+(Accepted). Settles eight design questions:
+
+- **Q1 — placement**: single middleware. Per-route additions
+  create silent gaps.
+- **Q2 — header set**: universal set always; HTML-only set
+  gated by `Content-Type: text/html`.
+- **Q3 — CSP shape**: per-route CSPs preserved (with
+  `'unsafe-inline'`); a later release does the nonce migration.
+  No `'unsafe-eval'` anywhere.
+- **Q4 — STS**: `max-age=63072000; includeSubDomains`;
+  `preload` is operator opt-in via env var.
+- **Q5 — Permissions-Policy**: disable camera, microphone,
+  geolocation, payment, USB, and others.
+- **Q6 — per-tenant**: no, single deployment-wide policy.
+- **Q7 — operator override**: `SECURITY_HEADERS_CSP` /
+  `SECURITY_HEADERS_STS` / `SECURITY_HEADERS_DISABLE_HTML_ONLY`
+  env vars.
+- **Q8 — testing**: pure-function unit tests + worker
+  integration glue.
+
+### Added — `cesauth_core::security_headers`
+
+New module. Pure functions, no Worker dependencies — testable
+without a Worker harness.
+
+- `SecurityHeadersConfig` — operator-driven config struct
+  with `from_env()` constructor.
+- `DEFAULT_CSP` — the strict default applied as fallback for
+  HTML routes that don't set their own CSP. Has no
+  `'unsafe-inline'` or `'unsafe-eval'` (tripwire test).
+- `DEFAULT_STS` — 2 years + includeSubDomains, no preload.
+- `DEFAULT_PERMISSIONS_POLICY` — 13 disabled features.
+- `DEFAULT_XFO` — `DENY`.
+- `Header { name, value }` — single output type.
+- `headers_for_response(config, is_html, already_set) ->
+  Vec<Header>` — the load-bearing pure function.
+  `already_set` is the list of header names the route already
+  set; the library skips them, so the existing per-route CSPs
+  in cesauth are preserved.
+- `is_html_content_type(Option<&str>) -> bool` — content-type
+  detection with case-insensitive matching, parameter
+  tolerance (`text/html; charset=utf-8`), and tight
+  boundary handling (rejects `text/htmlx`).
+
+### Added — worker middleware
+
+`crates/worker/src/lib.rs` — a `mod security_headers` block
+inside the worker crate that:
+
+- reads the three operator env vars,
+- inspects the outgoing response's `Content-Type` and
+  already-set headers,
+- delegates to `cesauth_core::security_headers::headers_for_response`,
+- writes the result via `worker::Headers::set`.
+
+The pre-existing `harden_headers` function is removed; the new
+middleware is the single application site. Per ADR-007 §Q1, no
+opt-out path exists by design.
+
+### Removed — old behavior
+
+- `harden_headers` (pre-v0.23.0) set `Cache-Control: no-store`
+  on every response. This was clobbering legitimate per-route
+  cache control. Removed; routes that need `Cache-Control: no-store`
+  set it themselves (auth-bearing endpoints already do).
+- `harden_headers` set `Referrer-Policy: no-referrer`
+  universally. The new middleware sets
+  `Referrer-Policy: strict-origin-when-cross-origin` —
+  marginally less strict, more useful for monitoring tools
+  that aggregate by origin. Privacy delta is small (no
+  cross-origin-HTTP referrer; origin-only on cross-origin-HTTPS).
+- `harden_headers` set `X-Frame-Options: DENY` universally.
+  The new middleware gates it to HTML responses. JSON
+  responses don't need it (browsers ignore X-Frame-Options
+  on non-HTML).
+
+### Tests
+
+Total: **407 passing** (+28 over v0.22.0):
+
+- core: **206** (was 178) — 28 new in `security_headers::tests`:
+  - 5 default-value tripwire tests (no `unsafe-inline`,
+    `default-src 'none'`, frame-ancestors, base-uri, STS
+    exact value, permissions-policy spot-checks).
+  - 7 `is_html_content_type` tests covering plain,
+    parameterized, case-insensitive, JSON-rejection,
+    text-plain-rejection, partial-match-rejection,
+    None-handling.
+  - 4 `from_env` tests (defaults, CSP override, STS
+    override, strict `disable_html_only` matching).
+  - 7 `headers_for_response` core tests (HTML full set,
+    JSON universal-only, disable-html-only suppression,
+    config carrythrough, X-Frame-Options DENY, stable
+    order, no-unsafe-anywhere tripwire).
+  - 5 don't-clobber tests (CSP not re-emitted, case-
+    insensitive header-name match, universal headers
+    skipped if already-set, unrelated headers don't
+    affect output).
+- adapter-test: 51 (unchanged).
+- ui: 121 (unchanged).
+- migrate: 29 (unchanged).
+
+### Documentation
+
+- `docs/src/deployment/security-headers.md` — new operator
+  guide. Defaults, opting into HSTS preload, overriding CSP,
+  the debugging escape hatch, verifying with `curl`,
+  per-route CSP exceptions list.
+- `docs/src/SUMMARY.md` — links the new chapter.
+- ADR README index updated with ADR-006 (Withdrawn) and
+  ADR-007 (Accepted).
+
+### Migration (0.22.0 → 0.23.0)
+
+Code-only release. No schema migration. No `wrangler.toml`
+changes required by default — operators who want the env-var
+overrides add them as needed.
+
+For deployments that observed the old `harden_headers`
+behavior, the visible changes are:
+
+1. Three new headers (`Strict-Transport-Security`,
+   `Permissions-Policy`, `Content-Security-Policy` as default
+   on HTML routes that don't set their own).
+2. `Referrer-Policy` value changed from `no-referrer` to
+   `strict-origin-when-cross-origin`.
+3. `Cache-Control: no-store` no longer added by default.
+4. `X-Frame-Options: DENY` now only on HTML responses, not
+   JSON.
+
+Each of these is documented in the new chapter. None should
+break a working deployment; the most likely surface is some
+external monitoring tool that asserts on the old values.
+Verify with `curl -sI` after deploy.
+
+### Deferred
+
+- **CSP without `'unsafe-inline'`.** Templates currently
+  embed `<style>` and `<script>` blocks inline; migrating
+  to nonces or external resources is a templates refactor.
+  Tracked in ROADMAP.
+- **OIDC client_secret brute-force lockout.** Per-client
+  lockout, distinct from the withdrawn user-account
+  lockout. Trigger: production telemetry showing failed
+  `client_secret` attempts at non-trivial volume. ROADMAP
+  "Later".
+- **`SECURITY.md` (vulnerability disclosure policy).**
+  Planned for v0.24.0.
+- **CSRF audit + dependency scan automation review.**
+  Planned for v0.24.0.
+
+### Deferred — unchanged
+
+- **`check_permission` integration on `/api/v1/...`.** Unscheduled.
+- **External IdP federation.** Out of scope.
+
+---
+
 ## [0.22.0] - 2026-04-28
 
 Data migration tooling — Phase 4 of 4: polish. **The data-

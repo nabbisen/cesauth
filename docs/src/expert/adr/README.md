@@ -26,8 +26,22 @@ don't change observable behavior.
 | 003 | System-admin operations from inside the tenant view | Accepted |
 | 004 | Anonymous trial → human user promotion              | Accepted |
 | 005 | Data migration tooling for server-to-server moves   | Accepted |
+| 006 | (withdrawn — see CHANGELOG)                         | Withdrawn |
+| 007 | HTTP security response headers                      | Accepted |
 
 ADRs 001-003 were authored together in v0.11.0 to settle the design
 questions deferred from v0.10.0. Their decisions ship as the
 foundation work in v0.11.0 (schema + types) and the full
 implementation in v0.13.0+.
+
+**ADR-006 was withdrawn before its v0.23.0 release graduated to
+canonical status.** It proposed per-account lockout for password
+brute-force defense, which was based on a faulty premise — cesauth
+has no password authentication path (Magic Link + WebAuthn cover
+the equivalent UX, see ROADMAP "Explicitly out of scope"). The
+withdrawn artifact is preserved at
+`cesauth-0.23.0-account-lockout-withdrawn.tar.gz` for historical
+reference. The ADR-006 number is not reused. A future ADR may
+revisit lockout for the OIDC `client_secret` brute-force surface
+(per-client lockout); see ROADMAP "Later" for the trigger
+condition.

@@ -35,6 +35,7 @@ pub mod magic_link;
 pub mod migrate;
 pub mod oidc;
 pub mod ports;
+pub mod security_headers;
 pub mod service;
 pub mod session;
 pub mod tenancy;

@@ -309,23 +309,100 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .or_else_any_method_async("/*catchall", |_req, _ctx| async move {
             Response::error("not found", 404)
         })
-        .run(req, env)
+        .run(req, env.clone())
         .await;
 
-    // Defensive: attach a handful of baseline security headers on every
-    // response, including errors. Route handlers MAY override.
+    // Apply the security-headers middleware. This catches every
+    // response — handler success, handler error, default-404 —
+    // and ensures the universal headers are present. Per-route
+    // CSPs (login page, OIDC consent) are preserved; the
+    // middleware does not clobber existing headers.
     let _ = ctx;
-    response.map(harden_headers)
+    response.map(|r| security_headers::apply(r, &env))
 }
 
-fn harden_headers(mut resp: Response) -> Response {
-    // These are defaults. Route handlers rendering HTML may override
-    // CSP for pages that legitimately need inline script (the login
-    // page does, and sets its own policy).
-    let h = resp.headers_mut();
-    let _ = h.set("x-content-type-options", "nosniff");
-    let _ = h.set("x-frame-options",        "DENY");
-    let _ = h.set("referrer-policy",        "no-referrer");
-    let _ = h.set("cache-control",          "no-store");
-    resp
+mod security_headers {
+    //! Worker-side glue around `cesauth_core::security_headers`.
+    //!
+    //! Reads operator-supplied env vars
+    //! (`SECURITY_HEADERS_CSP` / `STS` / `DISABLE_HTML_ONLY`),
+    //! inspects the outgoing response's `Content-Type` and
+    //! already-set headers, and writes the additional security
+    //! headers via `worker::Headers::set`.
+    //!
+    //! Pure logic lives in `cesauth_core::security_headers`. This
+    //! module is the I/O shim — env reads, header reads, header
+    //! writes.
+    //!
+    //! Per ADR-007 §Q1, this is the single site that applies
+    //! security headers. Route handlers MAY set their own
+    //! `Content-Security-Policy` (login page, authorize page,
+    //! admin console — all do this currently due to inline
+    //! styles/scripts in templates) and the middleware will not
+    //! clobber. Routes MUST NOT skip the middleware — there's no
+    //! way to opt out, by design.
+
+    use cesauth_core::security_headers::{
+        headers_for_response, is_html_content_type, SecurityHeadersConfig,
+    };
+    use worker::{Env, Response};
+
+    /// The names of headers we MAY set, used to read the
+    /// already-set names off the response. The list is small
+    /// enough to walk linearly.
+    const CANDIDATE_HEADER_NAMES: &[&str] = &[
+        "X-Content-Type-Options",
+        "Referrer-Policy",
+        "Strict-Transport-Security",
+        "Permissions-Policy",
+        "Content-Security-Policy",
+        "X-Frame-Options",
+    ];
+
+    /// Apply the security-headers middleware to one response.
+    /// Reads env, inspects response, writes additional headers.
+    /// Returns the (mutated) response.
+    pub fn apply(mut resp: Response, env: &Env) -> Response {
+        // Build the config from env. `var()` returns Result;
+        // None means the env var is unset.
+        let csp_override = env.var("SECURITY_HEADERS_CSP").ok().map(|v| v.to_string());
+        let sts_override = env.var("SECURITY_HEADERS_STS").ok().map(|v| v.to_string());
+        let disable_value = env.var("SECURITY_HEADERS_DISABLE_HTML_ONLY")
+            .ok().map(|v| v.to_string());
+
+        let config = SecurityHeadersConfig::from_env(
+            csp_override.as_deref(),
+            sts_override.as_deref(),
+            disable_value.as_deref(),
+        );
+
+        // Determine HTML-ness from the response's existing
+        // Content-Type.
+        let content_type = resp.headers().get("Content-Type").ok().flatten();
+        let is_html = is_html_content_type(content_type.as_deref());
+
+        // Find which security headers the route handler already
+        // set. The Headers API doesn't expose iteration over all
+        // names; we probe each candidate explicitly. The list is
+        // bounded and short.
+        let already_set: Vec<&str> = CANDIDATE_HEADER_NAMES
+            .iter()
+            .filter(|name| {
+                resp.headers().get(name).ok().flatten().is_some()
+            })
+            .copied()
+            .collect();
+
+        // Compute the headers to apply.
+        let to_apply = headers_for_response(&config, is_html, &already_set);
+
+        // Write them. `set` overwrites any existing value of the
+        // same name, but the library has already filtered against
+        // `already_set` so we won't clobber.
+        let h = resp.headers_mut();
+        for header in to_apply {
+            let _ = h.set(header.name, &header.value);
+        }
+        resp
+    }
 }
