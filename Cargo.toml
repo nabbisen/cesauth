@@ -17,7 +17,7 @@ members = [
 # `[workspace.package].rust-version`) and the wasm32 target installed.
 
 [workspace.package]
-version      = "0.25.0"
+version      = "0.26.0"
 edition      = "2024"
 rust-version = "1.85"
 license      = "Apache-2.0"
@@ -62,6 +62,21 @@ jsonwebtoken = { version = "10", default-features = false, features = ["use_pem"
 base64     = "0.22"
 sha2       = "0.10"
 hex        = "0.4"
+
+# --- TOTP (RFC 6238), v0.26.0 + ---
+# RustCrypto pattern matching `sha2` 0.10 above. SHA-1 is the only
+# hash supported (ADR-009 §Q1; locked because Google Authenticator
+# silently falls back to SHA-1 on SHA-256 secrets, producing wrong
+# codes — universal authenticator-app compatibility wins).
+sha1       = "0.10"
+hmac       = "0.12"
+# AES-GCM-256 for TOTP secret encryption at rest (ADR-009 §Q5).
+# AAD-bound to row primary key prevents D1-backup-swap attacks.
+aes-gcm    = "0.10"
+# base32 for the `otpauth://` URI's `secret=` parameter
+# (ADR-009 §Q8) and recovery codes (ADR-009 §Q6).
+data-encoding = "2"
+
 # Pin `getrandom` to the 0.2 line. 0.3 is also in the graph via ring, but we
 # only ask for 0.2 ourselves - the `js` feature is only relevant here.
 getrandom  = { version = "0.2", features = ["js"] }

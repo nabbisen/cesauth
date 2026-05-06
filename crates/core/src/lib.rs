@@ -40,6 +40,7 @@ pub mod service;
 pub mod session;
 pub mod tenancy;
 pub mod tenant_admin;
+pub mod totp;
 pub mod turnstile;
 pub mod types;
 pub mod webauthn;

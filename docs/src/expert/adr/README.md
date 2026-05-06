@@ -29,6 +29,7 @@ don't change observable behavior.
 | 006 | (withdrawn — see CHANGELOG)                         | Withdrawn |
 | 007 | HTTP security response headers                      | Accepted |
 | 008 | OIDC `id_token` issuance                            | Draft    |
+| 009 | TOTP (RFC 6238) as a second factor                  | Draft    |
 
 ADRs 001-003 were authored together in v0.11.0 to settle the design
 questions deferred from v0.10.0. Their decisions ship as the

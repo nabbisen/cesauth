@@ -30,7 +30,19 @@ time         = { workspace = true }
 # JWTs are public-key consumer concerns. Mixing them would force either
 # a public-key verify on every cookie (expensive) or publishing the
 # HMAC secret via JWKS (nonsensical).
-hmac         = "0.12"
+#
+# Also used by `cesauth_core::totp` (v0.26.0+) for HMAC-SHA1 TOTP
+# generation per RFC 6238.
+hmac         = { workspace = true }
+
+# --- TOTP (RFC 6238, v0.26.0+) ---
+# See ADR-009 for design rationale. The TOTP library is pure functions
+# with no I/O — encryption helpers, code generation, code verification.
+# Stored secrets are encrypted with AES-GCM-256, the only AEAD we
+# expose at the library API.
+sha1            = { workspace = true }
+aes-gcm         = { workspace = true }
+data-encoding   = { workspace = true }
 
 # --- WebAuthn verification ---
 # `webauthn-rs-core` has a hard dependency on `openssl` which does not

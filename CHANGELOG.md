@@ -12,6 +12,264 @@ always be called out here.
 
 ---
 
+## [0.26.0] - 2026-04-29
+
+Security track Phase 3 of 8: TOTP (RFC 6238) Phase 1 of 2 —
+ADR + schema + library skeleton.
+
+This release lays the foundation for TOTP as a second factor.
+The `cesauth_core::totp` library is fully implemented with
+RFC 6238 vectors verified, AES-GCM encryption at rest, and
+SHA-256-hashed recovery codes. **No HTTP routes**, **no
+enrollment UI**, **no verify wire-up** — those are Phase 2
+(v0.27.0). Operators can deploy this release safely with no
+visible behavior change; the new tables are empty until
+v0.27.0's enrollment flow lands.
+
+The phasing matches the v0.19.0/v0.20.0 (data migration) and
+v0.23.0/v0.24.0 (security headers + CSRF audit) patterns: ship
+the design and library separately from the wire-up. Each phase
+is independently testable and reviewable.
+
+### Added — ADR-009 (Draft)
+
+`docs/src/expert/adr/009-totp.md`. Settles 11 design questions:
+
+- **Q1 algorithm**: SHA-1 only, 6 digits, 30s step, 160-bit
+  secret. All four locked because Google Authenticator
+  silently falls back to SHA-1 on SHA-256 secrets, producing
+  wrong codes — universal authenticator-app compatibility
+  wins.
+- **Q2 skew tolerance**: ±1 step (3 windows total). Wider
+  windows make brute-force easier without UX gain.
+- **Q3 replay protection**: per-secret `last_used_step`;
+  reject ≤ last used.
+- **Q4 storage**: separate `totp_authenticators` table, not
+  WebAuthn's `authenticators`. The two share zero columns.
+- **Q5 encryption at rest**: AES-GCM-256 with deployment key,
+  AAD bound to row id (`"totp:" + id`), key rotation via
+  `secret_key_id` column. Foils D1-backup-swap attacks.
+- **Q6 recovery codes**: 10 per user, 50 bits each, formatted
+  `XXXXX-XXXXX`, **SHA-256-hashed** (not Argon2 — matches
+  cesauth's existing pattern for high-entropy bearer secrets;
+  Argon2 would be the right choice for user-chosen passwords
+  but recovery codes are CSPRNG-generated).
+- **Q7 composition**: TOTP is always a 2nd factor. Magic Link
+  → TOTP if configured. WebAuthn alone → no TOTP. Anonymous
+  → no TOTP (no email yet).
+- **Q8 enrollment**: server-side QR code + manual base32
+  entry. First successful verify confirms (`confirmed_at = now`),
+  mints recovery codes once per user.
+- **Q9 pruning**: extend the existing 04:00 UTC daily cron
+  (ADR-004's anonymous-trial sweep) to also drop
+  `confirmed_at IS NULL` rows older than 24h.
+- **Q10 out of scope**: per-tenant TOTP policy, admin TOTP,
+  backup-code import, WebAuthn-backed TOTP, name-editing
+  post-confirmation. All explicitly deferred.
+- **Q11 migration**: SCHEMA_VERSION 6 → 7. Two new tables
+  (both empty on first deploy). The prod→staging redaction
+  profile drops both tables entirely (TOTP secrets must not
+  survive redaction even hashed).
+
+### Added — schema migration 0007
+
+`migrations/0007_totp.sql`. Two tables:
+
+```sql
+CREATE TABLE totp_authenticators (
+    id                       TEXT    PRIMARY KEY,
+    user_id                  TEXT    NOT NULL,
+    secret_ciphertext        BLOB    NOT NULL,
+    secret_nonce             BLOB    NOT NULL,
+    secret_key_id            TEXT    NOT NULL,
+    last_used_step           INTEGER NOT NULL DEFAULT 0,
+    name                     TEXT,
+    created_at               INTEGER NOT NULL,
+    last_used_at             INTEGER,
+    confirmed_at             INTEGER
+);
+
+CREATE TABLE totp_recovery_codes (
+    id                TEXT    PRIMARY KEY,
+    user_id           TEXT    NOT NULL,
+    code_hash         TEXT    NOT NULL,
+    redeemed_at       INTEGER,
+    created_at        INTEGER NOT NULL
+);
+```
+
+Plus indexes: `idx_totp_authenticators_user`,
+`idx_totp_recovery_codes_user`, partial
+`idx_totp_authenticators_unconfirmed` for the v0.27.0 cron
+sweep.
+
+`SCHEMA_VERSION` bumped 6 → 7. The
+`schema_version_matches_migration_count` test pins the
+invariant.
+
+### Added — `cesauth_core::totp` library
+
+Pure-function library implementing RFC 6238. ~700 lines of
+production code + 51 tests covering RFC 6238 test vectors,
+replay protection edge cases, encryption round-trip with AAD
+binding, base32 codec robustness, recovery code format and
+canonicalization, and `otpauth://` URI shape.
+
+Public API:
+
+- **Constants**: `DIGITS=6`, `STEP_SECONDS=30`,
+  `SECRET_BYTES=20`, `SKEW_STEPS=1`,
+  `RECOVERY_CODES_PER_USER=10`, `ENCRYPTION_KEY_LEN=32`,
+  `ENCRYPTION_NONCE_LEN=12`.
+- **`Secret`**: newtype wrapping `Vec<u8>`. Debug redacts
+  the value. `generate()`, `from_bytes`, `to_base32`,
+  `from_base32` (whitespace/lowercase/padding-tolerant).
+- **`step_for_unix(i64) -> u64`**: Unix-time → TOTP step.
+  Saturates negative timestamps to 0.
+- **`compute_code(secret, step) -> u32`**: HMAC-SHA1 + RFC
+  4226 §5.3 truncation. Pure.
+- **`format_code(u32) -> String`** /
+  **`parse_code(&str) -> Result<u32>`**: zero-pad / parse.
+- **`verify_with_replay_protection(secret, code, last_used_step,
+  now) -> Result<u64>`**: returns the new last_used_step on
+  success. Iterates -SKEW..=+SKEW, rejects steps ≤
+  last_used_step (replay gate), constant-time-compares
+  candidate to submitted code.
+- **`otpauth_uri(issuer, account, secret) -> String`**:
+  Google Authenticator key-uri format. Percent-encodes
+  issuer and account.
+- **`RecoveryCode`**: newtype with redacting Debug, value-
+  rendering Display. `generate_recovery_codes() ->
+  Vec<RecoveryCode>` mints 10 codes.
+  `hash_recovery_code(&str) -> String` SHA-256 hashes the
+  canonical form (uppercase, no whitespace, no dashes) for
+  storage.
+- **`encrypt_secret(secret, key, aad) -> (ciphertext, nonce)`**
+  / **`decrypt_secret(ciphertext, nonce, key, aad) -> Result<Secret>`**:
+  AES-GCM-256 with caller-supplied AAD.
+  **`aad_for_id(id) -> Vec<u8>`** centralizes the AAD format
+  (`"totp:" + id`) so callers can't drift.
+
+### Added — workspace dependencies
+
+- `sha1 = "0.10"` — SHA-1 for HMAC-SHA1 in TOTP. Locked
+  algorithm per ADR-009 §Q1.
+- `aes-gcm = "0.10"` — AES-GCM-256 AEAD. RustCrypto pattern.
+- `data-encoding = "2"` — base32 NOPAD codec. More
+  maintained than the `base32` crate.
+
+`hmac = "0.12"` is now a workspace dep (was in
+`crates/core/Cargo.toml` directly); the comment now mentions
+TOTP usage alongside session cookies.
+
+### Tests
+
+Total: **502 passing** (+51 over v0.25.0):
+
+- core: **265** (was 214) — 51 new in `totp::tests`:
+  - **5 RFC 6238 test vectors** (t=59, 1111111109,
+    1111111111, 1234567890, 2000000000) — pin HMAC-SHA1
+    correctness against the reference.
+  - **4 step_for_unix tests** — epoch behavior, negative
+    saturation, 30s boundaries.
+  - **8 secret round-trip tests** — generate / base32 /
+    bytes round-trip, debug redaction, codec robustness.
+  - **6 format/parse code tests** — leading-zero behavior,
+    non-digit rejection, length bounds.
+  - **8 verify_with_replay_protection tests** — current /
+    previous / next step accept, outside-skew reject,
+    replay-after-success reject, latest-match recording,
+    random-code reject, already-used-step reject.
+  - **4 otpauth_uri tests** — required params, account/
+    issuer URL-encoding, NOPAD secret.
+  - **8 recovery code tests** — count, uniqueness within
+    batch, format, debug redaction, display rendering,
+    hash determinism, hash canonicalization, hash
+    distinctness, hex output.
+  - **8 encryption tests** — round-trip, nonce randomness,
+    AAD mismatch reject, key mismatch reject, ciphertext
+    tampering reject, short-key reject, short-nonce reject,
+    AAD format determinism.
+- adapter-test: 51 (unchanged).
+- ui: 127 (unchanged).
+- worker: 30 (unchanged).
+- migrate: 29 (unchanged).
+
+### Documentation
+
+- `docs/src/expert/adr/009-totp.md` — new ADR Draft.
+- `docs/src/expert/adr/README.md` — ADR-009 added to index.
+- `migrations/0007_totp.sql` — comprehensive comments on
+  schema design, AAD-binding rationale, and v0.27.0
+  follow-up work (cron extension, redaction profile).
+
+### Migration (0.25.0 → 0.26.0)
+
+Schema migration **required**:
+```sh
+wrangler d1 execute cesauth --remote --file migrations/0007_totp.sql
+```
+
+`SCHEMA_VERSION` bumps 6 → 7. Both new tables are empty on
+first deploy. No backfill. No data migration.
+
+**No `wrangler.toml` changes** in v0.26.0. The
+`TOTP_ENCRYPTION_KEY` and `TOTP_ENCRYPTION_KEY_ID` env vars
+are documented in ADR-009 but only become required when
+v0.27.0's enrollment routes land. Operators can deploy
+v0.26.0 today without provisioning these; the empty TOTP
+tables don't exercise the encryption code path.
+
+**No route surface changes**, **no UI changes**, **no
+discovery doc changes**. Pure foundation work.
+
+### Smoke test
+
+```sh
+cargo test --workspace                   # 502 passing
+sqlite3 -readonly /tmp/d1.db ".schema totp_authenticators"
+sqlite3 -readonly /tmp/d1.db ".schema totp_recovery_codes"
+# Both schemas printed.
+
+# Library exercise (in cesauth-core's test binary):
+cargo test -p cesauth-core --lib totp::tests::rfc6238_vector_t_59
+# RFC 6238 reference vector verified.
+```
+
+### Deferred (v0.27.0)
+
+- TOTP enrollment routes at `/me/security/totp/enroll`.
+- TOTP verify gate after Magic Link primary auth.
+- Recovery code redemption flow.
+- Cron sweep extension (drop `confirmed_at IS NULL` rows
+  older than 24h).
+- Redaction profile drops `totp_authenticators` and
+  `totp_recovery_codes` for prod→staging.
+- New deployment chapter
+  `docs/src/deployment/totp.md` documenting
+  `TOTP_ENCRYPTION_KEY` provisioning and rotation.
+- ADR-009 graduates from `Draft` to `Accepted`.
+
+### Discovered during this release
+
+- **`oidc_clients.client_secret_hash` documentation drift**.
+  The schema comment says "argon2id(secret) or NULL" but no
+  Argon2 implementation exists in cesauth as of v0.26.0.
+  Filed as a "Later" ROADMAP item with two resolution paths
+  (implement Argon2id, or relax the comment to match the
+  actual SHA-256 pattern used elsewhere).
+
+### Deferred — unchanged
+
+- **OIDC `id_token` issuance (ADR-008)** — Drafted, queued
+  in ROADMAP "Later" behind the security track.
+- **Audit log hash chain (ADR-010)** — v0.28.0/v0.29.0.
+- **`check_permission` integration on `/api/v1/...`.**
+  Unscheduled.
+- **External IdP federation.** Out of scope.
+
+---
+
 ## [0.25.0] - 2026-04-28
 
 Security track Phase 2 of 8: email verification flow audit +
