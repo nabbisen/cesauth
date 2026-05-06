@@ -27,6 +27,10 @@ time         = { workspace = true }
 getrandom    = { workspace = true }
 # SHA-256 for hashing admin-token plaintext before storage (v0.4.0).
 sha2         = { workspace = true }
+# HMAC-SHA256 for the v0.31.0 flash cookie's signature. The flash
+# module derives a sub-key from SESSION_COOKIE_KEY via HKDF-style
+# expansion and uses HMAC for tamper detection. See flash.rs.
+hmac         = { workspace = true }
 # Used explicitly for `form_urlencoded` parsing in the token endpoint.
 # Present transitively via worker/idna as well, but declaring our own
 # direct dep prevents silent breakage if the transitive path changes.

@@ -72,10 +72,14 @@ pub async fn authenticate_finish<D>(mut req: Request, ctx: RouteContext<D>) -> R
     let cfg  = Config::from_env(&ctx.env)?;
     let rp   = rp_from_config(&cfg);
 
-    // Grab the pending-authorize cookie up front, before we consume
-    // the body (`req.json()` moves out of `req`).
-    let pending = req.headers().get("cookie").ok().flatten()
-        .and_then(|h| post_auth::extract_pending_handle(&h).map(str::to_owned));
+    // Grab the cookie header up front, before we consume the body
+    // (`req.json()` moves out of `req`). We need both the parked-AR
+    // pending handle (for the OAuth flow) AND the full header (so
+    // complete_auth can read the `__Host-cesauth_login_next` cookie
+    // for the no-AR landing case).
+    let cookie_header = req.headers().get("cookie").ok().flatten();
+    let pending = cookie_header.as_deref()
+        .and_then(|h| post_auth::extract_pending_handle(h).map(str::to_owned));
 
     let body: AuthenticateFinishBody = match req.json().await {
         Ok(b)  => b,
@@ -139,6 +143,7 @@ pub async fn authenticate_finish<D>(mut req: Request, ctx: RouteContext<D>) -> R
     ).await.ok();
 
     post_auth::complete_auth(
-        &ctx.env, &cfg, &outcome.user_id, AuthMethod::Passkey, pending.as_deref(),
+        &ctx.env, &cfg, &outcome.user_id, AuthMethod::Passkey,
+        pending.as_deref(), cookie_header.as_deref(),
     ).await
 }

@@ -47,7 +47,17 @@ use cesauth_ui::templates;
 use worker::{Request, Response, Result};
 
 use crate::csrf;
+use crate::flash;
 use crate::routes::me::auth as me_auth;
+
+
+/// Where the disable POST handler 302's the user after a
+/// successful TOTP removal. Pinned as a constant so a future
+/// refactor can't accidentally revert it to `/` (which was the
+/// pre-v0.31.0 silent-redirect target — replaced because the
+/// user lost their flash context on home, and the Security
+/// Center is the natural confirmation surface).
+const DISABLE_SUCCESS_REDIRECT: &str = "/me/security";
 
 
 /// `GET /me/security/totp/disable` — show confirmation page.
@@ -114,13 +124,21 @@ pub async fn post_handler(
     let recovery_repo = CloudflareTotpRecoveryCodeRepository::new(&env);
     let _ = recovery_repo.delete_all_for_user(&session.user_id).await;
 
-    // Redirect home. The "TOTP disabled" notice is intentionally
-    // not surfaced as a flash message — that infrastructure
-    // lands in the v0.32.0 `/me/security` self-service UI; for
-    // v0.30.0 the silent redirect is enough (the user clicked
-    // the disable button, they know what just happened).
+    // Redirect to the Security Center with a success flash. The
+    // user clicked disable; landing them back on the index page
+    // (a) confirms the new state ("TOTP: 無効" badge), and
+    // (b) shows the flash banner with the explicit
+    // "TOTP を無効にしました" notice.
+    //
+    // v0.31.0 P0-B brought the flash infrastructure online; this
+    // is one of four handlers that opted into it.
     let mut resp = Response::empty()?.with_status(302);
-    resp.headers_mut().set("location", "/").ok();
+    resp.headers_mut().set("location", DISABLE_SUCCESS_REDIRECT).ok();
+    flash::set_on_response(
+        &env,
+        resp.headers_mut(),
+        flash::Flash::new(flash::FlashLevel::Success, flash::FlashKey::TotpDisabled),
+    )?;
     Ok(resp)
 }
 
@@ -129,5 +147,38 @@ fn form_get(form: &worker::FormData, key: &str) -> Option<String> {
     match form.get(key) {
         Some(worker::FormEntry::Field(v)) => Some(v),
         _ => None,
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -----------------------------------------------------------------
+    // Disable redirect target — v0.31.0 P0-B / P1-B
+    // -----------------------------------------------------------------
+    //
+    // Pin the post-disable landing. v0.31.0 changed the target
+    // from `/` (silent redirect) to `/me/security` (Security
+    // Center with a success flash), so the user sees the new
+    // "TOTP: 無効" badge and the "TOTP を無効にしました" banner
+    // simultaneously. Reverting either piece would break the
+    // contract that the user gets visible feedback for a
+    // destructive action.
+
+    #[test]
+    fn disable_lands_on_security_center() {
+        assert_eq!(DISABLE_SUCCESS_REDIRECT, "/me/security");
+    }
+
+    #[test]
+    fn disable_target_is_in_me_namespace() {
+        // Pin that the target is allowlisted by
+        // me_auth::validate_next_path so a future tightening of
+        // the validator doesn't lock the user out of their own
+        // post-disable landing page.
+        assert!(me_auth::validate_next_path(DISABLE_SUCCESS_REDIRECT).is_some(),
+            "post-disable target must remain on the /me/ allowlist");
     }
 }

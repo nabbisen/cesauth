@@ -176,12 +176,16 @@ pub const TOTP_ENROLL_TTL_SECS: i64 = 900;
 /// * `auth_method`: how they authenticated (for session record + audit).
 /// * `pending_handle`: value of the `__Host-cesauth_pending` cookie if
 ///   the request carried one. Pass `None` if there was no AR parked.
+/// * `cookie_header`: full incoming `Cookie` header (or `None`). Used
+///   by the no-AR landing path to read `__Host-cesauth_login_next`
+///   set by the login GET handler — see plan v2 §3.2 P1-A.
 pub async fn complete_auth(
     env:            &Env,
     cfg:            &Config,
     user_id:        &str,
     auth_method:    AuthMethod,
     pending_handle: Option<&str>,
+    cookie_header:  Option<&str>,
 ) -> Result<Response> {
     let now = OffsetDateTime::now_utc().unix_timestamp();
 
@@ -242,7 +246,7 @@ pub async fn complete_auth(
     }
 
     // 2+3 — post-gate session start and AR resolution.
-    complete_auth_post_gate(env, cfg, user_id, auth_method, pending).await
+    complete_auth_post_gate(env, cfg, user_id, auth_method, pending, cookie_header).await
 }
 
 /// Park a `Challenge::PendingTotp` containing the resolved AR
@@ -306,11 +310,12 @@ async fn park_totp_gate_and_redirect(
 /// in `complete_auth`'s step 1, or reconstructed from the
 /// `PendingTotp` challenge in the verify route).
 pub(crate) async fn complete_auth_post_gate(
-    env:         &Env,
-    cfg:         &Config,
-    user_id:     &str,
-    auth_method: AuthMethod,
-    pending:     Option<PendingAr>,
+    env:           &Env,
+    cfg:           &Config,
+    user_id:       &str,
+    auth_method:   AuthMethod,
+    pending:       Option<PendingAr>,
+    cookie_header: Option<&str>,
 ) -> Result<Response> {
     let now = OffsetDateTime::now_utc().unix_timestamp();
 
@@ -398,15 +403,27 @@ pub(crate) async fn complete_auth_post_gate(
         }
 
         None => {
-            // No AR was parked. Land on `/` with a session cookie set.
-            // This is the flow for a user who hit `/login` directly.
+            // No AR was parked. Land at the validated next-target
+            // if one was stashed by the login GET handler, else
+            // at `/`. Either way, clear the login_next cookie so
+            // it's a one-shot — a stale next from a prior session
+            // shouldn't redirect a fresh login.
+            let landing = cookie_header
+                .and_then(|h| crate::routes::me::auth::extract_login_next(h)
+                    .map(str::to_owned))
+                .and_then(|encoded| crate::routes::me::auth::decode_and_validate_next(&encoded))
+                .unwrap_or_else(|| "/".to_owned());
             let mut resp = Response::empty()?
                 .with_status(302);
             let h = resp.headers_mut();
-            h.set("location", "/").ok();
+            h.set("location", &landing).ok();
             h.append("set-cookie", &set_session).ok();
             h.append("set-cookie", &clear_pending).ok();
             h.append("set-cookie", &clear_totp).ok();
+            // Always clear the login_next cookie — even if it
+            // wasn't present we emit the clear header (idempotent).
+            h.append("set-cookie",
+                &crate::routes::me::auth::clear_login_next_cookie_header()).ok();
             Ok(resp)
         }
     }

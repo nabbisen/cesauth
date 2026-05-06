@@ -72,9 +72,12 @@ pub async fn register_finish<D>(mut req: Request, ctx: RouteContext<D>) -> Resul
     let cfg  = Config::from_env(&ctx.env)?;
     let rp   = rp_from_config(&cfg);
 
-    // Capture the pending-authorize cookie before consuming the body.
-    let pending = req.headers().get("cookie").ok().flatten()
-        .and_then(|h| post_auth::extract_pending_handle(&h).map(str::to_owned));
+    // Capture the cookie header before consuming the body. We need
+    // the pending handle for OAuth flow continuation AND the full
+    // header so complete_auth can read the login_next cookie.
+    let cookie_header = req.headers().get("cookie").ok().flatten();
+    let pending = cookie_header.as_deref()
+        .and_then(|h| post_auth::extract_pending_handle(h).map(str::to_owned));
 
     let body: RegisterFinishBody = match req.json().await {
         Ok(b)  => b,
@@ -131,6 +134,7 @@ pub async fn register_finish<D>(mut req: Request, ctx: RouteContext<D>) -> Resul
     // Registration doubles as a first-login: issue a session. If a
     // pending `/authorize` handle was carried on the cookie, honor it.
     post_auth::complete_auth(
-        &ctx.env, &cfg, &authn.user_id, AuthMethod::Passkey, pending.as_deref(),
+        &ctx.env, &cfg, &authn.user_id, AuthMethod::Passkey,
+        pending.as_deref(), cookie_header.as_deref(),
     ).await
 }

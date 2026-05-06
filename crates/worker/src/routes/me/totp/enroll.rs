@@ -40,6 +40,7 @@ use crate::config::{
     load_totp_encryption_key, load_totp_encryption_key_id,
 };
 use crate::csrf;
+use crate::flash;
 use crate::post_auth::{
     self, TOTP_ENROLL_TTL_SECS, extract_totp_enroll_id,
     set_totp_enroll_cookie_header,
@@ -150,7 +151,7 @@ pub async fn get_handler(
         }
     };
 
-    let html = templates::totp_enroll_page(&qr_svg, &secret_b32, &csrf_token);
+    let html = templates::totp_enroll_page(&qr_svg, &secret_b32, &csrf_token, None);
     let mut resp = Response::from_html(html)?;
     let h = resp.headers_mut();
     h.append("set-cookie", &set_totp_enroll_cookie_header(&row_id, TOTP_ENROLL_TTL_SECS)).ok();
@@ -244,13 +245,19 @@ pub async fn post_confirm_handler(
             let token = csrf::extract_from_cookie_header(&cookie_header)
                 .map(str::to_owned)
                 .unwrap_or_else(csrf::mint);
-            // The enrollment page doesn't have an `error` slot
-            // in v0.28.0's template, so the error surfaces as a
-            // status code path. (A polish iteration could add an
-            // `error` argument to `totp_enroll_page` similar to
-            // `totp_verify_page`.) For now, render the page
-            // again unchanged — the user types a fresh code.
-            let html = templates::totp_enroll_page(&qr_svg, &secret_b32, &token);
+            // v0.31.0 P0-C: re-render with an inline error so the
+            // user knows the previous code didn't match. Same
+            // secret — they read the next 6-digit code from their
+            // authenticator app and submit again.
+            let html = templates::totp_enroll_page(
+                &qr_svg,
+                &secret_b32,
+                &token,
+                Some(
+                    "入力されたコードが一致しませんでした。\
+                     Authenticator アプリの最新の 6 桁を入力してください。",
+                ),
+            );
             let resp = Response::from_html(html)?;
             return Ok(resp);
         }
@@ -296,15 +303,32 @@ pub async fn post_confirm_handler(
         // Already have codes from a prior enrollment. Don't
         // mint new ones — the user keeps their original set.
         // The recovery-codes page is skipped; the user lands
-        // on home directly.
-        return clear_enroll_cookie_and_redirect("/");
+        // back on the Security Center with a success flash so
+        // the new authenticator's "enabled" status is visible.
+        return clear_enroll_cookie_and_redirect_with_flash(
+            &env,
+            "/me/security",
+            flash::Flash::new(flash::FlashLevel::Success, flash::FlashKey::TotpEnabled),
+        );
     };
 
-    // Render the recovery-codes page once.
+    // Render the recovery-codes page once. The "continue" link
+    // on this page points to /me/security, where the flash
+    // we set here will display the success notice.
+    //
+    // Setting the flash on the recovery-codes-page response (not
+    // a redirect) means the cookie is delivered while the user
+    // is reading the codes; their next navigation (whether the
+    // continue link or any other) carries it to the index.
     let html = templates::totp_recovery_codes_page(&plaintext_codes);
     let mut resp = Response::from_html(html)?;
     let h = resp.headers_mut();
     h.append("set-cookie", &post_auth::clear_totp_enroll_cookie_header()).ok();
+    flash::set_on_response(
+        &env,
+        h,
+        flash::Flash::new(flash::FlashLevel::Success, flash::FlashKey::TotpEnabled),
+    )?;
     Ok(resp)
 }
 
@@ -315,6 +339,22 @@ fn clear_enroll_cookie_and_redirect(target: &str) -> Result<Response> {
     let h = resp.headers_mut();
     h.set("location", target).ok();
     h.append("set-cookie", &post_auth::clear_totp_enroll_cookie_header()).ok();
+    Ok(resp)
+}
+
+/// 302 to `target` while clearing the enroll cookie AND setting
+/// a flash banner for display on the next page. Added in v0.31.0
+/// alongside the flash-message infrastructure (P0-B).
+fn clear_enroll_cookie_and_redirect_with_flash(
+    env:    &worker::Env,
+    target: &str,
+    f:      flash::Flash,
+) -> Result<Response> {
+    let mut resp = Response::empty()?.with_status(302);
+    let h = resp.headers_mut();
+    h.set("location", target).ok();
+    h.append("set-cookie", &post_auth::clear_totp_enroll_cookie_header()).ok();
+    flash::set_on_response(env, h, f)?;
     Ok(resp)
 }
 

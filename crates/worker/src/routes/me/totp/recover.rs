@@ -30,6 +30,7 @@ use worker::{Request, Response, Result};
 
 use crate::config::Config;
 use crate::csrf;
+use crate::flash;
 use crate::post_auth::{
     PendingAr, complete_auth_post_gate, extract_totp_handle,
 };
@@ -128,8 +129,24 @@ pub async fn post_handler(
         return clear_gate_and_redirect("/login");
     }
 
-    // Resume the original post-gate flow.
-    complete_auth_post_gate(&env, &cfg, &user_id, auth_method, ar_fields).await
+    // Resume the original post-gate flow. Setting the flash on
+    // the resulting response (which is either a 302 to the RP's
+    // redirect_uri or a 302 to /, depending on whether a
+    // PendingAuthorize is in scope) ensures the next page tells
+    // the user they just used a recovery code. Plan §3.1 P0-B
+    // calls this `warning.totp_recovered` because the user has
+    // just consumed a one-time code — they should know to
+    // consider re-enrolling if they've lost their authenticator.
+    let mut resp = complete_auth_post_gate(
+        &env, &cfg, &user_id, auth_method, ar_fields,
+        Some(cookie_header.as_str()),
+    ).await?;
+    flash::set_on_response(
+        &env,
+        resp.headers_mut(),
+        flash::Flash::new(flash::FlashLevel::Warning, flash::FlashKey::TotpRecovered),
+    )?;
+    Ok(resp)
 }
 
 

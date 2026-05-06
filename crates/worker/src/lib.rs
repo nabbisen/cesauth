@@ -18,6 +18,7 @@ pub mod audit;
 pub mod config;
 pub mod csrf;
 pub mod error;
+pub mod flash;
 pub mod log;
 pub mod post_auth;
 pub mod routes;
@@ -106,6 +107,12 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
             routes::magic_link::verify(req, ctx).await
         })
         // --- /me/* user self-service (v0.29.0+) -----------------------
+        // Security Center index — added in v0.31.0 (P0-A). Read-only
+        // summary of the user's auth state with links to dedicated
+        // forms for enroll / disable.
+        .get_async ("/me/security",                     |req, ctx| async move {
+            routes::me::security::get_handler(req, ctx.env).await
+        })
         .get_async ("/me/security/totp/enroll",         |req, ctx| async move {
             routes::me::totp::enroll::get_handler(req, ctx.env).await
         })

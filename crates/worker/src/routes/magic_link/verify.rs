@@ -34,9 +34,12 @@ struct VerifyBody {
 }
 
 pub async fn verify<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    // Grab pending-authorize cookie before we consume the body.
-    let pending = req.headers().get("cookie").ok().flatten()
-        .and_then(|h| post_auth::extract_pending_handle(&h).map(str::to_owned));
+    // Grab the cookie header before we consume the body. We need
+    // both the pending-authorize handle (OAuth flow) AND the full
+    // header (so complete_auth can read login_next).
+    let cookie_header_owned = req.headers().get("cookie").ok().flatten();
+    let pending = cookie_header_owned.as_deref()
+        .and_then(|h| post_auth::extract_pending_handle(h).map(str::to_owned));
 
     // Snapshot the CSRF cookie + content-type before body consumption.
     // The form path will compare submitted token against this; the JSON
@@ -151,7 +154,8 @@ pub async fn verify<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     };
 
     post_auth::complete_auth(
-        &ctx.env, &cfg, &user_id, AuthMethod::MagicLink, pending.as_deref(),
+        &ctx.env, &cfg, &user_id, AuthMethod::MagicLink,
+        pending.as_deref(), cookie_header_owned.as_deref(),
     ).await
 }
 

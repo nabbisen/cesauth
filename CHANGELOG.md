@@ -12,6 +12,175 @@ always be called out here.
 
 ---
 
+---
+
+## [0.31.0] - 2026-05-02
+
+UI/UX iteration release. First node-major release after the 5-phase
+TOTP security track closed at v0.30.0; per the user-stated project
+value "重要な予定が完了したタイミングで、UI/UX 改善に取り組みます",
+the schedule turns to user-facing surface improvements before the
+audit-log-hash-chain track (v0.32.0+) starts.
+
+This release implements the six P0 + P1 backlog items from
+`cesauth-v0.31.0-plan-v2.md` (the planning document distilled
+from a PowerPoint UI/UX review). One item (P1-B handler integration
+tests) was split to v0.31.1 per the plan's §6.4 scope-cap policy.
+
+### Added
+
+- **`/me/security` Security Center index page** (P0-A). Read-only
+  surface listing the user's primary auth method (Passkey /
+  MagicLink / Anonymous), TOTP enabled/disabled badge, and
+  recovery-code remaining count. Single-task-per-page rule —
+  links out to `/me/security/totp/enroll` (when disabled) or
+  `/me/security/totp/disable` (when enabled), no inline
+  destructive actions. Anonymous users see a suppressed-TOTP
+  variant. New template `cesauth_ui::templates::security_center_page`
+  and variant `security_center_page_with_flash` for flash-aware
+  rendering. New module `cesauth_worker::routes::me::security`
+  with `get_handler`. Wired in `worker::lib::main` as
+  `GET /me/security`.
+
+- **Recovery-code threshold rendering** (4-tier). N=10 / N=2-9
+  → info badge ("リカバリーコード: N 個有効/残り"), N=1 →
+  warning flash with re-enrollment hint, N=0 → danger flash with
+  admin-contact message. Threshold rationale in plan v2 §3.1
+  P0-A: no recovery-code regeneration path exists, so an early
+  warning would push users toward unnecessary re-enrollment.
+
+- **Flash-message infrastructure** (P0-B). New
+  `__Host-cesauth_flash` cookie (SameSite=Lax, 60s TTL,
+  HMAC-signed over a closed-dictionary payload). Format prefix
+  `v1:` allows future format upgrades without breaking
+  in-flight cookies. New module `cesauth_worker::flash`
+  (~270 lines). Templates side: `flash_block(view) -> String`
+  and `frame_with_flash(title, flash_html, body)`. Wired into
+  4 handlers: `disable` → `success.totp_disabled` (redirect
+  changed `/` → `/me/security`), `enroll/confirm` →
+  `success.totp_enabled` (both recovery-codes-page and
+  direct-redirect paths), `recover` → `warning.totp_recovered`,
+  `logout` → `info.logged_out` (redirect changed `/` → `/login`).
+
+- **`totp_enroll_page` `error: Option<&str>` slot** (P0-C).
+  Mirrors `totp_verify_page`. Wrong-code branch passes Japanese
+  error message instead of silently re-rendering. Code input
+  gained `autofocus` for the wrong-code re-render.
+
+- **8 design tokens** (P0-D) with light + dark mode variants.
+  `--success`, `--success-bg`, `--warning`, `--warning-bg`,
+  `--danger`, `--danger-bg`, `--info`, `--info-bg`. New CSS
+  classes: `.flash` + 4 `.flash--*`, `.badge` + 4 `.badge--*`,
+  `button.danger`, `button.warning`, `.flash__icon`,
+  `.flash__text`, `.visually-hidden` (utility class — fixed
+  latent bug where `totp_verify_page` referenced the class but
+  the rule was missing). All state badges and banners pair
+  color with icon + text label per WCAG 1.4.1.
+
+- **`next` parameter for post-login landing** (P1-A). Pure
+  function `validate_next_path(raw)` with `/me/*` + `/`
+  allowlist; rejects protocol-relative URLs, schemes,
+  Windows UNC, admin paths, api paths, oauth endpoints, login
+  loop, dev paths, machine endpoints, prefix-substring traps.
+  New `redirect_to_login_with_next(req)` base64url-encodes
+  path+query into `?next=`. Login GET handler reads `?next=`,
+  validates, stashes encoded value in `__Host-cesauth_login_next`
+  (5 min, SameSite=Lax). `complete_auth` /
+  `complete_auth_post_gate` thread the cookie header through;
+  the no-AR landing arm consults the cookie via
+  `decode_and_validate_next`.
+
+- **`docs/src/expert/cookies.md`** new chapter (~210 lines)
+  inventorying all 7 cookies. Each entry: name + purpose +
+  lifetime + scope + SameSite + HttpOnly + Secure attributes +
+  strictly-necessary justification per EDPB Guidelines 5/2020
+  §3.1.1. Operator-deployed analytics responsibility note.
+  Inventory maintenance rule documented for future releases.
+  Linked in `docs/src/SUMMARY.md`.
+
+- **ADR-009 added to `docs/src/SUMMARY.md`** (was missed in
+  v0.30.0).
+
+- **`attempts_exhausted` pure helper** in `verify::post_handler`
+  + `DISABLE_SUCCESS_REDIRECT` constant in `disable::post_handler`,
+  both with unit tests. Honest minimum coverage at the worker
+  handler layer pending the env-mock investment in v0.31.1.
+
+### Changed
+
+- **Logout redirect target**: `POST /logout` now 302's to
+  `/login` (was `/`) with `info.logged_out` flash.
+
+- **TOTP disable redirect target**: `POST /me/security/totp/disable`
+  now 302's to `/me/security` (was `/`) with `success.totp_disabled`
+  flash.
+
+- **TOTP enrollment recovery-codes page "continue" link** now
+  points to `/me/security` (was `/`).
+
+- **`totp_enroll_page` template signature**: now takes a fourth
+  argument `error: Option<&str>`. Existing callers updated.
+
+- **`complete_auth` and `complete_auth_post_gate` signatures**:
+  both now take an additional `cookie_header: Option<&str>`
+  parameter. All four worker call sites updated.
+
+- **`me::auth::resolve_or_redirect`** now uses
+  `redirect_to_login_with_next(req)` to encode the user's
+  current path into `?next=`. The legacy `redirect_to_login()`
+  remains for mid-flow failures where the user isn't trying to
+  reach a `/me/*` page.
+
+### Fixed
+
+- **`.visually-hidden` CSS rule was missing**. Class was already
+  referenced by `totp_verify_page` for an SR-only heading but
+  the rule was never written. Added in P0-D's CSS expansion.
+
+### Documentation
+
+- New `docs/src/expert/cookies.md`.
+- `docs/src/SUMMARY.md` updated with cookies chapter + ADR-009
+  link.
+- ROADMAP.md: v0.31.0 marked shipped; new v0.31.1 entry
+  describing the deferred TOTP handler integration tests.
+
+### Tests
+
+573 → ~680 (approximately +107). Breakdown:
+
+- ui: 150 → ~190 (+40). Design-token snapshot tests, flash_block
+  contract tests, security center page tests (4 recovery-code
+  threshold boundaries, conditional links, anonymous suppression,
+  single-task-per-page invariant), totp_enroll_page error slot
+  tests.
+- worker: 47 → ~120 (+~73). 32 flash module tests (round-trip,
+  tamper detection, malformed-input rejection, cookie shape,
+  closed-dictionary defense), 34 me::auth tests (validate_next_path
+  comprehensive coverage, decode round-trip, cookie helpers),
+  TOTP handler pure-helper extracts.
+- core, adapter-test, migrate, do, adapter-cloudflare: unchanged.
+
+### Deferred to v0.31.1
+
+- **TOTP route handler integration tests** (P1-B). Each of the
+  four route handlers deserves at least 3 cases per plan §3.2
+  P1-B (normal / CSRF failure / primary failure mode). The
+  worker crate has no `worker::Env` mock infrastructure;
+  building one (faking D1 + DO + KV + secrets + vars) is its
+  own scope. Plan v2 §6.4 scope-cap policy invoked.
+
+### Migration notes
+
+No D1 schema migration. `SCHEMA_VERSION` stays at 7. No new
+secret or var. The new cookies (`__Host-cesauth_flash` and
+`__Host-cesauth_login_next`) are introduced organically; existing
+deployments need no operator action. Both are strictly necessary
+per EDPB Guidelines 5/2020 §3.1.1; cesauth does not display a
+cookie consent banner.
+
+---
+
 ## [0.30.0] - 2026-04-29
 
 Security track Phase 7 of 11: TOTP Phase 2d — polish + operations.

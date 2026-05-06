@@ -57,6 +57,18 @@ use crate::post_auth::{
 /// economics are unfavorable to the attacker.
 const MAX_ATTEMPTS: u32 = 5;
 
+/// Pure decision: has this attempts count reached the lockout
+/// threshold? Extracted in v0.31.0 PR-9 so the boundary is
+/// testable without standing up a `worker::Env`. Used by
+/// [`post_handler`] in the wrong-code branch.
+///
+/// Test pin: returns `true` for `MAX_ATTEMPTS` and above,
+/// `false` below. The first wrong code increments to 1, the
+/// fifth to 5, and at `>= MAX_ATTEMPTS` we clear the gate.
+fn attempts_exhausted(new_attempts: u32) -> bool {
+    new_attempts >= MAX_ATTEMPTS
+}
+
 
 /// `GET /me/security/totp/verify` — render the prompt page.
 pub async fn get_handler(
@@ -183,7 +195,10 @@ pub async fn post_handler(
     let auth_row = match totp_repo.find_active_for_user(&user_id).await {
         Ok(Some(row)) => row,
         Ok(None) => {
-            return complete_auth_post_gate(&env, &cfg, &user_id, auth_method, ar_fields).await;
+            return complete_auth_post_gate(
+                &env, &cfg, &user_id, auth_method, ar_fields,
+                Some(cookie_header.as_str()),
+            ).await;
         }
         Err(_) => {
             return Err(worker::Error::RustError(
@@ -231,13 +246,16 @@ pub async fn post_handler(
                     "totp last_used_step update failed".into()
                 ));
             }
-            complete_auth_post_gate(&env, &cfg, &user_id, auth_method, ar_fields).await
+            complete_auth_post_gate(
+                &env, &cfg, &user_id, auth_method, ar_fields,
+                Some(cookie_header.as_str()),
+            ).await
         }
         Err(_) => {
             // Bad code. Re-park the challenge with bumped attempts
             // unless we've crossed MAX_ATTEMPTS.
             let new_attempts = attempts.saturating_add(1);
-            if new_attempts >= MAX_ATTEMPTS {
+            if attempts_exhausted(new_attempts) {
                 return clear_gate_and_redirect("/login");
             }
 
@@ -315,4 +333,52 @@ pub(crate) fn clear_gate_and_redirect(target: &str) -> Result<Response> {
     h.set("location", target).ok();
     h.append("set-cookie", &post_auth::clear_totp_cookie_header()).ok();
     Ok(resp)
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -----------------------------------------------------------------
+    // attempts_exhausted boundary — v0.31.0 P1-B
+    // -----------------------------------------------------------------
+    //
+    // Pin the lockout threshold. The handler increments before
+    // calling this; first wrong code → 1, fifth → 5. At >= 5 the
+    // gate clears and the user is bounced to /login.
+    //
+    // Why pin: a future tuning of MAX_ATTEMPTS (say bumping it
+    // to 10) must update both the constant and any UI copy that
+    // mentions "after 5 wrong codes". The boundary test catches
+    // off-by-one regressions during such tunings.
+
+    #[test]
+    fn attempts_under_threshold_does_not_lock() {
+        assert!(!attempts_exhausted(0));
+        assert!(!attempts_exhausted(1));
+        assert!(!attempts_exhausted(4));
+    }
+
+    #[test]
+    fn attempts_at_max_locks() {
+        assert!(attempts_exhausted(MAX_ATTEMPTS));
+    }
+
+    #[test]
+    fn attempts_above_max_locks() {
+        // Defensive: a corrupt PendingTotp claiming attempts=999
+        // should still trigger lockout, not roll under.
+        assert!(attempts_exhausted(MAX_ATTEMPTS + 1));
+        assert!(attempts_exhausted(u32::MAX));
+    }
+
+    #[test]
+    fn max_attempts_is_in_reasonable_range() {
+        // Pin the band: too low (1-2) is friction-heavy on
+        // legitimate users with bad inputs; too high (50+)
+        // weakens the rate-limit story per ADR-009.
+        assert!(MAX_ATTEMPTS >= 3 && MAX_ATTEMPTS <= 10,
+            "MAX_ATTEMPTS = {MAX_ATTEMPTS} should sit in 3-10 band");
+    }
 }

@@ -20,6 +20,7 @@ use worker::{Request, Response, Result, RouteContext};
 use crate::audit::{self, EventKind};
 use crate::config::{Config, load_session_cookie_key};
 use crate::csrf;
+use crate::flash;
 use crate::post_auth;
 
 /// `POST /logout`. Always returns 302 `/` with clearing Set-Cookie
@@ -78,10 +79,23 @@ pub async fn logout<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
         subject, None, None,
     ).await.ok();
 
+    // Redirect to /login with a confirmation flash. Plan v2
+    // §3.1 P0-B: this is the public-facing logout signal; landing
+    // on /login (where they'd next sign in) is more useful than
+    // landing on / which may itself redirect somewhere.
+    //
+    // The flash uses Info level (not Success) — logging out is
+    // a routine action, not a triumph; an assertive announcement
+    // would be over-loud.
     let mut resp = Response::empty()?.with_status(302);
     let h = resp.headers_mut();
-    h.set("location", "/").ok();
+    h.set("location", "/login").ok();
     h.append("set-cookie", &session::clear_cookie_header()).ok();
     h.append("set-cookie", &post_auth::clear_pending_cookie_header()).ok();
+    flash::set_on_response(
+        &ctx.env,
+        h,
+        flash::Flash::new(flash::FlashLevel::Info, flash::FlashKey::LoggedOut),
+    )?;
     Ok(resp)
 }
