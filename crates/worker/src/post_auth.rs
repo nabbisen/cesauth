@@ -445,6 +445,7 @@ fn url_encode_component(s: &str) -> String {
     out
 }
 
+#[derive(Debug)]
 pub(crate) struct PendingAr {
     pub(crate) client_id:             String,
     pub(crate) redirect_uri:          String,

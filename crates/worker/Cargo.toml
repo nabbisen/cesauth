@@ -39,3 +39,11 @@ url          = "2"
 cesauth-core                = { workspace = true }
 cesauth-adapter-cloudflare  = { workspace = true }
 cesauth-ui                  = { workspace = true }
+
+# v0.31.1: dev-deps for the TOTP handler integration tests (P1-B,
+# split from v0.31.0 per plan v2 §6.4). Tests construct in-memory
+# repositories and exercise the extracted decision functions
+# directly, without standing up a `worker::Env` mock.
+[dev-dependencies]
+tokio                = { workspace = true }
+cesauth-adapter-test = { workspace = true }

@@ -60,6 +60,87 @@ use crate::routes::me::auth as me_auth;
 const DISABLE_SUCCESS_REDIRECT: &str = "/me/security";
 
 
+/// Outcome of the `decide_disable_post` pure decision.
+///
+/// Designed to be totally independent of `worker::Env`,
+/// `worker::Response`, and the request body — the decision
+/// captures **what should happen** in domain terms; the
+/// handler maps each variant to a concrete HTTP response.
+///
+/// Extracted in v0.31.1 to make the handler's branching
+/// behavior testable without standing up a `worker::Env` mock.
+/// Tests construct in-memory `TotpAuthenticatorRepository` and
+/// `TotpRecoveryCodeRepository` adapters and exercise
+/// `decide_disable_post` directly.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DisableDecision {
+    /// The submitted CSRF token didn't match the cookie. Handler
+    /// returns 400. We do not distinguish "no token" from "wrong
+    /// token" — both are equally invalid at this layer.
+    CsrfFailure,
+
+    /// Authenticators-table delete failed. TOTP is still active
+    /// for the user — the next Magic Link login will still gate
+    /// on TOTP. Handler returns 500 so the user knows their
+    /// disable didn't take and can retry.
+    AuthDeleteError,
+
+    /// All deletes successful (or recovery-codes-delete failed
+    /// best-effort). TOTP is fully off for this user. Handler
+    /// 302's to `/me/security` with a `success.totp_disabled`
+    /// flash.
+    Success,
+}
+
+/// Pure decision logic for `POST /me/security/totp/disable`.
+///
+/// Inputs:
+/// - `user_id`: authenticated session subject.
+/// - `csrf_form` / `csrf_cookie`: the two halves of the
+///   double-submit CSRF check; `csrf::verify` compares them
+///   constant-time.
+/// - `auth_repo` / `recovery_repo`: storage adapters. Tests pass
+///   in `InMemoryTotpAuthenticatorRepository` /
+///   `InMemoryTotpRecoveryCodeRepository`; production uses the
+///   D1-backed Cloudflare versions. Both impl the same
+///   `cesauth_core::totp::storage` traits.
+///
+/// Behavior:
+/// 1. CSRF guard. Failure → `CsrfFailure` (handler returns 400).
+/// 2. Authenticators-first delete. Failure → `AuthDeleteError`
+///    (handler returns 500). Why authenticators-first: an
+///    authenticator without recovery codes is still a working
+///    credential and the user is still gated; recovery codes
+///    without an authenticator are useless. So the
+///    security-critical delete goes first.
+/// 3. Recovery-codes delete (best-effort). Errors here are
+///    silently swallowed: the authenticators are already gone,
+///    so the recovery codes are now ineffective regardless.
+///    The next disable attempt would clean them up anyway.
+/// 4. Return `Success`.
+pub async fn decide_disable_post<A, R>(
+    user_id:       &str,
+    csrf_form:     &str,
+    csrf_cookie:   &str,
+    auth_repo:     &A,
+    recovery_repo: &R,
+) -> DisableDecision
+where
+    A: TotpAuthenticatorRepository + ?Sized,
+    R: TotpRecoveryCodeRepository  + ?Sized,
+{
+    if !csrf::verify(csrf_form, csrf_cookie) {
+        return DisableDecision::CsrfFailure;
+    }
+    if auth_repo.delete_all_for_user(user_id).await.is_err() {
+        return DisableDecision::AuthDeleteError;
+    }
+    // Best-effort. See module doc and DisableDecision::Success.
+    let _ = recovery_repo.delete_all_for_user(user_id).await;
+    DisableDecision::Success
+}
+
+
 /// `GET /me/security/totp/disable` — show confirmation page.
 pub async fn get_handler(
     req: Request,
@@ -104,42 +185,44 @@ pub async fn post_handler(
 
     let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
 
-    // CSRF guard.
     let form        = req.form_data().await?;
     let csrf_form   = form_get(&form, "csrf").unwrap_or_default();
     let csrf_cookie = csrf::extract_from_cookie_header(&cookie_header).unwrap_or("");
-    if !csrf::verify(&csrf_form, csrf_cookie) {
-        return Response::error("Bad Request", 400);
-    }
 
-    // Authenticators-first ordering. See module doc.
-    let auth_repo = CloudflareTotpAuthenticatorRepository::new(&env);
-    if let Err(_) = auth_repo.delete_all_for_user(&session.user_id).await {
-        return Response::error("totp disable failed (authenticators)", 500);
-    }
-
-    // Recovery codes second. Failures here are logged but not
-    // surfaced — the authenticators are already gone, recovery
-    // codes are useless without them.
+    let auth_repo     = CloudflareTotpAuthenticatorRepository::new(&env);
     let recovery_repo = CloudflareTotpRecoveryCodeRepository::new(&env);
-    let _ = recovery_repo.delete_all_for_user(&session.user_id).await;
 
-    // Redirect to the Security Center with a success flash. The
-    // user clicked disable; landing them back on the index page
-    // (a) confirms the new state ("TOTP: 無効" badge), and
-    // (b) shows the flash banner with the explicit
-    // "TOTP を無効にしました" notice.
-    //
-    // v0.31.0 P0-B brought the flash infrastructure online; this
-    // is one of four handlers that opted into it.
-    let mut resp = Response::empty()?.with_status(302);
-    resp.headers_mut().set("location", DISABLE_SUCCESS_REDIRECT).ok();
-    flash::set_on_response(
-        &env,
-        resp.headers_mut(),
-        flash::Flash::new(flash::FlashLevel::Success, flash::FlashKey::TotpDisabled),
-    )?;
-    Ok(resp)
+    let decision = decide_disable_post(
+        &session.user_id,
+        &csrf_form,
+        csrf_cookie,
+        &auth_repo,
+        &recovery_repo,
+    ).await;
+
+    match decision {
+        DisableDecision::CsrfFailure     => Response::error("Bad Request", 400),
+        DisableDecision::AuthDeleteError => Response::error("totp disable failed (authenticators)", 500),
+        DisableDecision::Success => {
+            // Redirect to the Security Center with a success
+            // flash. The user clicked disable; landing them on
+            // the index page (a) confirms the new state ("TOTP:
+            // 無効" badge), and (b) shows the flash banner with
+            // the "TOTP を無効にしました" notice.
+            //
+            // v0.31.0 P0-B brought the flash infrastructure
+            // online; this is one of four handlers that opted
+            // into it.
+            let mut resp = Response::empty()?.with_status(302);
+            resp.headers_mut().set("location", DISABLE_SUCCESS_REDIRECT).ok();
+            flash::set_on_response(
+                &env,
+                resp.headers_mut(),
+                flash::Flash::new(flash::FlashLevel::Success, flash::FlashKey::TotpDisabled),
+            )?;
+            Ok(resp)
+        }
+    }
 }
 
 
@@ -152,33 +235,4 @@ fn form_get(form: &worker::FormData, key: &str) -> Option<String> {
 
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    // -----------------------------------------------------------------
-    // Disable redirect target — v0.31.0 P0-B / P1-B
-    // -----------------------------------------------------------------
-    //
-    // Pin the post-disable landing. v0.31.0 changed the target
-    // from `/` (silent redirect) to `/me/security` (Security
-    // Center with a success flash), so the user sees the new
-    // "TOTP: 無効" badge and the "TOTP を無効にしました" banner
-    // simultaneously. Reverting either piece would break the
-    // contract that the user gets visible feedback for a
-    // destructive action.
-
-    #[test]
-    fn disable_lands_on_security_center() {
-        assert_eq!(DISABLE_SUCCESS_REDIRECT, "/me/security");
-    }
-
-    #[test]
-    fn disable_target_is_in_me_namespace() {
-        // Pin that the target is allowlisted by
-        // me_auth::validate_next_path so a future tightening of
-        // the validator doesn't lock the user out of their own
-        // post-disable landing page.
-        assert!(me_auth::validate_next_path(DISABLE_SUCCESS_REDIRECT).is_some(),
-            "post-disable target must remain on the /me/ allowlist");
-    }
-}
+mod tests;

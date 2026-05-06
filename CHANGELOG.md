@@ -12,6 +12,186 @@ changes will always be called out here.
 
 ---
 
+---
+
+## [0.32.1] - 2026-05-02
+
+TOTP handler integration tests — landing the P1-B item that was
+deferred from v0.31.0 per plan v2 §6.4. This is an internal-only
+release: zero wire-surface change, zero schema change, zero
+deployment-affecting change. The diff is entirely a
+`crates/worker/src/routes/me/totp/*.rs` refactor that extracts
+each handler's branching logic into a pure-ish decision function
+plus a thin Env-touching handler wrapper, with new tests
+exercising the decision functions via the in-memory adapters
+in `cesauth-adapter-test`.
+
+### Why a refactor for tests
+
+The blocker for v0.31.0 P1-B (and the reason it was deferred per
+plan v2 §6.4) was that the worker crate has no `worker::Env`
+mock infrastructure, and standing one up would have inflated
+that release past the review-able slice. v0.32.1 takes a
+different path — Approach 2 from the v0.32.0 planning
+discussion: refactor the handlers so the branching decision
+logic doesn't need `Env` at all. The decision functions take
+trait-bounded `&impl AuthChallengeStore` /
+`&impl TotpAuthenticatorRepository` /
+`&impl TotpRecoveryCodeRepository` references that production
+satisfies with the Cloudflare D1 / DO adapters and tests
+satisfy with the in-memory adapters from `cesauth-adapter-test`.
+
+The user explicitly authorized breaking internal-API refactors
+during the v0.32.0 planning conversation: "保守性向上、拡張性向上
+を考慮した上で、コード変更を惜しまず、必要であれば破壊的な変更も
+許容する". This release exercises that latitude.
+
+### What ships
+
+Six TOTP handlers refactored into `decide_X` + handler-wrapper
+pairs. All handler signatures unchanged; production wiring
+unaffected.
+
+| Handler | Decision enum | Decision function | New tests |
+|---|---|---|---|
+| `disable::post_handler` | `DisableDecision` | `decide_disable_post` | 5 |
+| `recover::post_handler` | `RecoverDecision` | `decide_recover_post` | 10 |
+| `verify::get_handler` | `VerifyGetDecision` | `decide_verify_get` | 4 |
+| `verify::post_handler` | `VerifyPostDecision` | `decide_verify_post` | 9 |
+| `enroll::get_handler` | `EnrollGetDecision` | `decide_enroll_get` | 4 |
+| `enroll::post_confirm_handler` | `EnrollConfirmDecision` | `decide_enroll_confirm_post` | 8 |
+
+Plus 5 pre-existing `attempts_exhausted` boundary tests and 2
+`DISABLE_SUCCESS_REDIRECT` constant pins preserved verbatim from
+v0.31.0.
+
+40 new integration tests total.
+
+### Decision-extraction pattern
+
+Each `decide_X` function:
+
+- Takes the request-shape inputs the handler has already extracted
+  (CSRF tokens, form fields, cookie-resolved handles).
+- Takes trait-bounded `&impl Repo` references for the
+  storage adapters it needs.
+- Takes any expensive Env-resolved values up front
+  (encryption_key, encryption_key_id, user_email).
+- Returns an enum capturing the decision outcome plus any data
+  the handler needs to build the response (user_id +
+  auth_method + ar_fields for `complete_auth_post_gate`,
+  secret_b32 for re-render, plaintext_codes for the recovery
+  page).
+
+Each handler wrapper:
+
+- Does the request-shape extraction (cookies, form data, session).
+- Does the Env-touching IO (`load_totp_encryption_key`,
+  `read_user_email`).
+- Calls the decision.
+- Maps each decision variant to a `worker::Response`.
+
+The decisions DO perform port-level IO (challenge `take`/`put`,
+`find_active_for_user`, `update_last_used_step`, `confirm`,
+`bulk_create`, etc.) — these are part of the domain semantics,
+not response-building concerns, and they go through trait
+references that tests can satisfy with in-memory adapters.
+
+### Test coverage details
+
+**`decide_disable_post`** (5 tests). Normal happy path, CSRF
+mismatch, empty CSRF strings rejected (defense in depth on
+`csrf::verify`), authenticators-delete failure surfacing as
+AuthDeleteError, recovery-codes-delete failure silently
+swallowed (per ADR-009 module doc — best-effort).
+
+**`decide_recover_post`** (10 tests). Happy path, CSRF mismatch
+(challenge preserved for retry), empty CSRF strings, empty
+code, unknown handle, wrong challenge kind, unknown code (silent
+fail-closed for anti-brute-force), storage error vs.
+no-matching-code distinction, mark_redeemed race-loss
+(MarkRedeemedFailed), code canonicalization (whitespace + case
++ dashes per `hash_recovery_code` contract).
+
+**`decide_verify_get`** (4 tests). Live PendingTotp renders
+(peek-not-take pinned), unknown handle is StaleGate, wrong
+challenge kind is StaleGate, after-take is StaleGate.
+
+**`decide_verify_post`** (9 tests). Happy path with
+last_used_step persistence, CSRF preserves challenge, unknown
+handle, find_active = None yields soft-success
+NoUserAuthenticator, decryption failure with wrong key,
+wrong-code under threshold re-parks with bumped attempts,
+wrong-code at threshold yields Lockout (no re-park), malformed
+code treated as bad (not 400), find_active storage error
+distinct from NoUserAuthenticator.
+
+**`decide_enroll_get`** (4 tests). Happy path inserts
+unconfirmed row + returns render data + verifies AAD
+round-trippability, wrong-length encryption key short-circuits
+before the create() call, repo create failure surfaces as
+StoreError, decryption with wrong row_id AAD fails (pins the
+AAD-binding contract).
+
+**`decide_enroll_confirm_post`** (8 tests). First enrollment
+mints 10 distinct recovery codes + confirms row, additional
+authenticator skips recovery codes (ADR-009 §Q6 contract),
+CSRF preserves state, user_id mismatch returns
+UnknownEnrollment (forged-cookie defense), unknown enroll_id,
+already-confirmed returns AlreadyConfirmed without minting
+duplicates, wrong-code carries secret_b32 for handler
+re-render, decrypt-failure with wrong key.
+
+### Test infrastructure
+
+`crates/worker/Cargo.toml` gained a `[dev-dependencies]` block
+adding `tokio` (for `#[tokio::test]` async runtime) and
+`cesauth-adapter-test` (for the in-memory port impls). No
+production dependencies changed.
+
+Tests use `unimplemented!()` panics in stub repository methods
+that the decision under test should NOT call — a passing test
+is evidence the decision didn't reach beyond its expected port
+contract. This catches regressions where a future refactor
+accidentally widens a decision's port surface.
+
+### Tests
+
+717 → 757 (+40).
+
+- worker: 119 → 159 (+40). All in
+  `routes::me::totp::{disable,recover,verify,enroll}::tests`.
+- core, ui, do, migrate, adapter-test, adapter-cloudflare:
+  unchanged (300, 183, 16, 13, 86, 0).
+
+### Doc / metadata changes
+
+- Cargo.toml `version` 0.32.0 → 0.32.1.
+- `crates/ui/src/tenancy_console/frame.rs` and
+  `crates/ui/src/tenant_admin/frame.rs` footer strings updated;
+  matching test asserts in
+  `crates/ui/src/tenancy_console/tests.rs` and
+  `crates/ui/src/tenant_admin/tests.rs` updated.
+- ROADMAP `v0.31.1` slot marked completed-as-v0.32.1; the
+  Shipped table gets a v0.32.1 row.
+- This CHANGELOG entry.
+
+### Notable changes
+
+None deployment-affecting. Operators upgrading from v0.32.0 do
+not need to re-deploy anything operational; they can ship the
+new build whenever convenient.
+
+### Forward roadmap
+
+- **v0.33.0** — ADR-010 Phase 2: chain verification cron +
+  admin verification UI + chain-head checkpoints. ADR-010
+  graduates to Accepted at end of release.
+- **v0.34.0** — Refresh token reuse hardening.
+- **v0.35.0** — Session hardening + `/me/security/sessions`.
+
+---
+
 ## [0.32.0] - 2026-05-02
 
 Audit log hash chain — Phase 1 of ADR-010. cesauth's audit

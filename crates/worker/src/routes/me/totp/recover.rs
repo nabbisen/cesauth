@@ -19,11 +19,20 @@
 //! and their TOTP authenticator (if they still have it).
 //! Disabling TOTP after recovery is a separate user action
 //! (the v0.30.0 disable flow).
+//!
+//! ## Refactor (v0.31.1 P1-B)
+//!
+//! The decision logic is extracted into [`decide_recover_post`]
+//! so handler tests can exercise the branch table with in-memory
+//! adapters. The handler is the thin wrapper that does the
+//! cookie / form extraction and maps the [`RecoverDecision`] to
+//! a `worker::Response` (including the `complete_auth_post_gate`
+//! call, which needs the live `worker::Env`).
 
 use cesauth_cf::ports::store::CloudflareAuthChallengeStore;
 use cesauth_cf::ports::repo::CloudflareTotpRecoveryCodeRepository;
-use cesauth_core::ports::store::{AuthChallengeStore, Challenge};
-use cesauth_core::totp::{hash_recovery_code};
+use cesauth_core::ports::store::{AuthChallengeStore, AuthMethod, Challenge};
+use cesauth_core::totp::hash_recovery_code;
 use cesauth_core::totp::storage::TotpRecoveryCodeRepository;
 use time::OffsetDateTime;
 use worker::{Request, Response, Result};
@@ -37,42 +46,106 @@ use crate::post_auth::{
 use crate::routes::me::totp::verify::clear_gate_and_redirect;
 
 
-/// `POST /me/security/totp/recover` — redeem a recovery code as
-/// alternative to the standard TOTP verify.
-pub async fn post_handler(
-    mut req: Request,
-    env:     worker::Env,
-) -> Result<Response> {
-    let cfg = Config::from_env(&env)?;
+/// Outcome of [`decide_recover_post`].
+///
+/// Carries enough domain data for the handler to either fail
+/// (clear gate + redirect, or 4xx, or 5xx) or resume the
+/// post-auth flow with the resolved user_id + auth_method +
+/// optional pending AR. The Env-touching pieces
+/// (`complete_auth_post_gate`, flash cookie set) live in the
+/// handler.
+#[derive(Debug)]
+pub(crate) enum RecoverDecision {
+    /// CSRF token missing or didn't match cookie. Handler returns
+    /// 400. The challenge is NOT consumed (we short-circuit before
+    /// calling `take`).
+    CsrfFailure,
 
-    // Cookie + CSRF gates.
-    let cookie_header = match req.headers().get("cookie")? {
-        Some(h) => h,
-        None    => return crate::routes::me::auth::redirect_to_login(),
-    };
-    let totp_handle = match extract_totp_handle(&cookie_header) {
-        Some(h) if !h.is_empty() => h.to_owned(),
-        _ => return crate::routes::me::auth::redirect_to_login(),
-    };
+    /// Form's `code` field was empty after CSRF passed. Handler
+    /// returns 400 — separated from CsrfFailure so a future
+    /// audit log distinguishes the two failure modes.
+    EmptyCode,
 
-    let form        = req.form_data().await?;
-    let csrf_form   = form_get(&form, "csrf").unwrap_or_default();
-    let csrf_cookie = csrf::extract_from_cookie_header(&cookie_header).unwrap_or("");
-    if !csrf::verify(&csrf_form, csrf_cookie) {
-        return Response::error("Bad Request", 400);
+    /// Challenge `take` returned None, wrong variant, or store
+    /// errored. The cookie is now stale; handler clears it and
+    /// 302's to /login. We treat all three as "no usable
+    /// challenge" because none of them differ in the user's
+    /// recovery flow.
+    NoChallenge,
+
+    /// Recovery-code lookup raised a storage error (NOT "no
+    /// match"). Distinct from NoMatchingCode so the handler can
+    /// surface the difference: a storage outage is operator-
+    /// fixable, a wrong code is user-fixable.
+    StorageError,
+
+    /// Hash didn't match any unredeemed row for this user. Fail
+    /// closed: clear gate + 302 /login. We don't re-render the
+    /// verify page with an error because recovery is high-friction
+    /// — sending the user back to /login discourages brute-force
+    /// probing of recovery codes.
+    NoMatchingCode,
+
+    /// Mark-redeemed UPDATE failed. Most plausible cause is a
+    /// concurrent redemption (two browser tabs racing). Fail
+    /// closed: clear gate + 302. Phase 2's audit chain will
+    /// record the attempt regardless.
+    MarkRedeemedFailed,
+
+    /// All gates passed and the recovery code is now consumed.
+    /// Handler invokes `complete_auth_post_gate` with these
+    /// fields and sets a `warning.totp_recovered` flash on the
+    /// resulting response.
+    Success {
+        user_id:     String,
+        auth_method: AuthMethod,
+        ar_fields:   Option<PendingAr>,
+    },
+}
+
+/// Pure decision logic for `POST /me/security/totp/recover`.
+///
+/// All Env-touching IO is excluded: the function operates on
+/// trait-bounded `&impl` references that tests can satisfy with
+/// in-memory adapters from `cesauth-adapter-test`.
+///
+/// Calling order matters:
+///
+/// 1. **CSRF check first.** Failing CSRF must NOT consume the
+///    challenge — the user can retry with a fresh form.
+/// 2. **Empty-code check.** A user submitting an empty form
+///    deserves a clean 400, not a take-and-fail.
+/// 3. **Challenge take.** This is the destructive step (one-shot
+///    consumption). Past this point any failure clears the gate
+///    cookie regardless.
+/// 4. **Recovery-code lookup.** Storage error vs. no-match are
+///    distinguished.
+/// 5. **Mark redeemed.** A failure here returns
+///    MarkRedeemedFailed (not Success) so we never resume an
+///    auth flow with a still-valid recovery code.
+pub(crate) async fn decide_recover_post<C, R>(
+    csrf_form:      &str,
+    csrf_cookie:    &str,
+    submitted_code: &str,
+    totp_handle:    &str,
+    challenges:     &C,
+    recovery_repo:  &R,
+    now_unix:       i64,
+) -> RecoverDecision
+where
+    C: AuthChallengeStore       + ?Sized,
+    R: TotpRecoveryCodeRepository + ?Sized,
+{
+    if !csrf::verify(csrf_form, csrf_cookie) {
+        return RecoverDecision::CsrfFailure;
     }
-    let submitted = form_get(&form, "code").unwrap_or_default();
-    if submitted.is_empty() {
-        return Response::error("Bad Request", 400);
+    if submitted_code.is_empty() {
+        return RecoverDecision::EmptyCode;
     }
 
-    // Take the PendingTotp challenge. Recovery is a one-shot
-    // operation just like verify; consuming the challenge here
-    // ensures a stale gate cookie can't redeem twice.
-    let store = CloudflareAuthChallengeStore::new(&env);
-    let challenge = match store.take(&totp_handle).await {
+    let challenge = match challenges.take(totp_handle).await {
         Ok(Some(c)) => c,
-        _ => return clear_gate_and_redirect("/login"),
+        _           => return RecoverDecision::NoChallenge,
     };
 
     let (user_id, auth_method, ar_fields) = match challenge {
@@ -94,59 +167,99 @@ pub async fn post_handler(
             };
             (user_id, auth_method, ar)
         }
-        _ => return clear_gate_and_redirect("/login"),
+        _ => return RecoverDecision::NoChallenge,
     };
 
-    // Look up the submitted code by SHA-256 of the canonical
-    // form. `hash_recovery_code` does whitespace + dash + case
-    // canonicalization so the user can paste the code in any
-    // reasonable shape (uppercase or lowercase, dash or no dash,
-    // with stray spaces).
-    let code_hash = hash_recovery_code(&submitted);
-    let recovery_repo = CloudflareTotpRecoveryCodeRepository::new(&env);
+    // Hash with the canonical recovery-code form: uppercase, no
+    // whitespace, no dashes. Lets the user paste in any reasonable
+    // shape.
+    let code_hash = hash_recovery_code(submitted_code);
+
     let row = match recovery_repo.find_unredeemed_by_hash(&user_id, &code_hash).await {
         Ok(Some(r)) => r,
-        Ok(None) => {
-            // No matching unredeemed code. Fail closed — bounce
-            // to /login. (We could re-render the verify page
-            // with an error, but recovery is a high-friction
-            // operation; making the user restart from /login
-            // discourages brute-force probing of recovery
-            // codes.)
-            return clear_gate_and_redirect("/login");
-        }
-        Err(_) => {
-            return Err(worker::Error::RustError(
-                "totp recovery lookup failed".into()
-            ));
-        }
+        Ok(None)    => return RecoverDecision::NoMatchingCode,
+        Err(_)      => return RecoverDecision::StorageError,
     };
 
-    // Mark redeemed. If this fails (e.g., concurrent redemption
-    // race lost), fail closed: don't issue a session.
-    let now_unix = OffsetDateTime::now_utc().unix_timestamp();
     if recovery_repo.mark_redeemed(&row.id, now_unix).await.is_err() {
-        return clear_gate_and_redirect("/login");
+        return RecoverDecision::MarkRedeemedFailed;
     }
 
-    // Resume the original post-gate flow. Setting the flash on
-    // the resulting response (which is either a 302 to the RP's
-    // redirect_uri or a 302 to /, depending on whether a
-    // PendingAuthorize is in scope) ensures the next page tells
-    // the user they just used a recovery code. Plan §3.1 P0-B
-    // calls this `warning.totp_recovered` because the user has
-    // just consumed a one-time code — they should know to
-    // consider re-enrolling if they've lost their authenticator.
-    let mut resp = complete_auth_post_gate(
-        &env, &cfg, &user_id, auth_method, ar_fields,
-        Some(cookie_header.as_str()),
-    ).await?;
-    flash::set_on_response(
-        &env,
-        resp.headers_mut(),
-        flash::Flash::new(flash::FlashLevel::Warning, flash::FlashKey::TotpRecovered),
-    )?;
-    Ok(resp)
+    RecoverDecision::Success { user_id, auth_method, ar_fields }
+}
+
+
+/// `POST /me/security/totp/recover` — redeem a recovery code as
+/// alternative to the standard TOTP verify.
+pub async fn post_handler(
+    mut req: Request,
+    env:     worker::Env,
+) -> Result<Response> {
+    let cfg = Config::from_env(&env)?;
+
+    // Cookie + handle extraction — the request-shape concerns.
+    let cookie_header = match req.headers().get("cookie")? {
+        Some(h) => h,
+        None    => return crate::routes::me::auth::redirect_to_login(),
+    };
+    let totp_handle = match extract_totp_handle(&cookie_header) {
+        Some(h) if !h.is_empty() => h.to_owned(),
+        _ => return crate::routes::me::auth::redirect_to_login(),
+    };
+
+    let form        = req.form_data().await?;
+    let csrf_form   = form_get(&form, "csrf").unwrap_or_default();
+    let csrf_cookie = csrf::extract_from_cookie_header(&cookie_header).unwrap_or("");
+    let submitted   = form_get(&form, "code").unwrap_or_default();
+
+    let store         = CloudflareAuthChallengeStore::new(&env);
+    let recovery_repo = CloudflareTotpRecoveryCodeRepository::new(&env);
+    let now_unix      = OffsetDateTime::now_utc().unix_timestamp();
+
+    let decision = decide_recover_post(
+        &csrf_form, csrf_cookie, &submitted, &totp_handle,
+        &store, &recovery_repo, now_unix,
+    ).await;
+
+    match decision {
+        RecoverDecision::CsrfFailure | RecoverDecision::EmptyCode => {
+            Response::error("Bad Request", 400)
+        }
+        RecoverDecision::NoChallenge | RecoverDecision::MarkRedeemedFailed | RecoverDecision::NoMatchingCode => {
+            // All three: clear gate cookie + 302 to /login.
+            // NoMatchingCode is silent (anti-brute-force).
+            // NoChallenge is a stale/empty cookie. MarkRedeemedFailed
+            // is a race we lost. Same outcome at the wire.
+            clear_gate_and_redirect("/login")
+        }
+        RecoverDecision::StorageError => {
+            // Operator-fixable. Surface as a worker error so the
+            // platform-level logging picks it up.
+            Err(worker::Error::RustError(
+                "totp recovery lookup failed".into()
+            ))
+        }
+        RecoverDecision::Success { user_id, auth_method, ar_fields } => {
+            // Resume the original post-gate flow. Setting the
+            // flash on the resulting response (which is either a
+            // 302 to the RP's redirect_uri or a 302 to /,
+            // depending on whether a PendingAuthorize is in
+            // scope) ensures the next page tells the user they
+            // just used a recovery code. Plan §3.1 P0-B calls
+            // this `warning.totp_recovered` because the user
+            // has just consumed a one-time code.
+            let mut resp = complete_auth_post_gate(
+                &env, &cfg, &user_id, auth_method, ar_fields,
+                Some(cookie_header.as_str()),
+            ).await?;
+            flash::set_on_response(
+                &env,
+                resp.headers_mut(),
+                flash::Flash::new(flash::FlashLevel::Warning, flash::FlashKey::TotpRecovered),
+            )?;
+            Ok(resp)
+        }
+    }
 }
 
 
@@ -156,3 +269,6 @@ fn form_get(form: &worker::FormData, key: &str) -> Option<String> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests;
