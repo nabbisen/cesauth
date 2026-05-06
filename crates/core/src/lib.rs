@@ -27,6 +27,7 @@
 
 pub mod admin;
 pub mod anonymous;
+pub mod audit;
 pub mod authz;
 pub mod billing;
 pub mod error;

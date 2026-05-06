@@ -2,10 +2,11 @@
 
 cesauth's persistent state lives in three Cloudflare resources:
 **D1** (relational data — users, tenants, OIDC clients,
-authenticators, etc.), **R2** (audit objects + assets), and
-**Durable Objects** (short-lived auth state — auth codes,
-refresh-token families, active sessions, rate-limit counters).
-Each has different durability and recovery characteristics.
+authenticators, audit events with chain integrity, etc.),
+**R2** (static assets), and **Durable Objects** (short-lived
+auth state — auth codes, refresh-token families, active
+sessions, rate-limit counters). Each has different durability
+and recovery characteristics.
 
 This chapter covers how to back each up, how to restore from
 those backups, and what the realistic recovery scenarios look
@@ -15,8 +16,7 @@ like.
 
 | Resource | Backup priority | Why |
 |---|---|---|
-| **D1** | **Critical** | Source of truth for users, tenants, OIDC clients, authenticators, signing keys. Loss is catastrophic. |
-| **R2 audit** | **Important** | Compliance + incident forensics. Loss prevents post-incident investigation. |
+| **D1** | **Critical** | Source of truth for users, tenants, OIDC clients, authenticators, signing keys, AND audit events with chain integrity (v0.32.0+). Loss is catastrophic. |
 | **R2 assets** | Low | Static UI assets, easily regenerated from the codebase. |
 | **DO state** | **Don't bother** | Short-lived (minutes to a day). Loss only invalidates in-flight auth ceremonies; users re-auth and recover. |
 
@@ -147,7 +147,6 @@ The dump does NOT contain:
 - **JWT private signing keys** (`wrangler secret`).
 - **`SESSION_COOKIE_KEY`** or **`ADMIN_API_KEY`**
   (`wrangler secret`).
-- **R2 audit objects.**
 - **DO state.**
 
 A full restore therefore requires three things in lockstep:
@@ -192,35 +191,45 @@ for the JWT-key, session-key, admin-key rotation procedures.
 Each rotation is a backup event: the new secret value goes into
 the vault before going into `wrangler`.
 
-## R2 audit-bucket backups
+## Audit log backups (v0.32.0+)
 
-R2's lifecycle rules can be configured to:
-
-- **Replicate** to a second R2 bucket on a schedule (currently
-  beta in some Cloudflare accounts).
-- **Archive** to a colder tier after N days.
-- **Delete** after retention expires.
-
-For audit purposes, the conservative configuration is:
-
-```
-Hot:           first 30 days   (Standard tier)
-Infrequent:    30-365 days     (IA tier, cheaper read)
-Archive:       1-7 years       (Archive tier, cold)
-Delete:        7+ years        (depending on jurisdiction)
-```
-
-cesauth doesn't enforce or assume any of this — the audit
-writer just appends objects to the configured bucket. Lifecycle
-is operator policy.
-
-For backup-against-account-compromise scenarios, mirror to
-off-Cloudflare storage:
+Audit events live in the `audit_events` D1 table with a SHA-256
+hash chain over their rows (ADR-010). Backups are part of the
+D1 backup strategy described above:
 
 ```sh
-# Pseudocode — actual implementation depends on your tooling.
-rclone sync r2:cesauth-audit-prod backup:cesauth-audit-prod-mirror
+# Daily full export (D1 includes audit_events automatically).
+wrangler d1 export cesauth-prod --remote --output cesauth-snap.sql
 ```
+
+The chain integrity travels with the export. A restore of
+`cesauth-snap.sql` re-establishes the same chain, so a verifier
+running against the restored database will report it valid
+through the same row.
+
+For backup-against-account-compromise scenarios, mirror the
+nightly export off-Cloudflare. The chain itself doesn't depend
+on Cloudflare-side liveness — a SQL dump preserves all the
+fields (`payload`, `payload_hash`, `previous_hash`, `chain_hash`)
+that the verifier needs.
+
+cesauth does NOT yet provide a separate "audit-only" export.
+Operators who want to ship audit data to long-term cold storage
+can:
+
+```sh
+# Periodic export of just the audit table.
+wrangler d1 execute cesauth-prod --remote \
+  --command "SELECT * FROM audit_events" \
+  --json > audit-$(date +%F).json
+```
+
+Older releases (v0.31.x and earlier) wrote audit events to an
+R2 bucket. v0.32.0 retired that path; existing R2 audit data
+remains on operators' Cloudflare accounts but cesauth no longer
+reads or writes it. Migration of historical R2 events into the
+D1 chain is not provided by cesauth — operators who need it can
+write a one-shot import using their own tooling.
 
 ## Restoring from compromise
 

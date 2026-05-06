@@ -11,16 +11,18 @@ entirely (see [First local run](../beginner/first-local-run.md)).
 |---------------|---------------|-------------------------------------|
 | `DB`          | D1            | `[[d1_databases]]`                  |
 | `CACHE`       | KV            | `[[kv_namespaces]]`                 |
-| `AUDIT`       | R2 bucket     | `[[r2_buckets]]`                    |
 | `ASSETS`      | R2 bucket     | `[[r2_buckets]]`                    |
 | `AUTH_CHALLENGE` | Durable Object | `[[durable_objects.bindings]]`   |
 | `REFRESH_TOKEN_FAMILY` | DO      | `[[durable_objects.bindings]]`      |
 | `ACTIVE_SESSION` | DO          | `[[durable_objects.bindings]]`      |
 | `RATE_LIMIT`  | DO            | `[[durable_objects.bindings]]`      |
 
+(v0.32.0+: the v0.31.x `AUDIT` R2 binding was removed when audit
+moved to D1 with a hash chain — see ADR-010.)
+
 Binding **names** are the contract between `wrangler.toml` and the
 Rust code (`crates/adapter-cloudflare/src/ports/repo.rs` calls
-`env.d1("DB")`, `env.bucket("AUDIT")`, etc.). Binding **IDs** are
+`env.d1("DB")`, `env.bucket("ASSETS")`, etc.). Binding **IDs** are
 the contract between Wrangler and Cloudflare's control plane — you
 fill them in with `wrangler d1 create`, `wrangler kv namespace
 create`, etc. output.

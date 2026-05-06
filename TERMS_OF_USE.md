@@ -82,9 +82,9 @@ expectations and applicable anti-spam law.
 ## 3. Resource limits and cost responsibility
 
 cesauth is intended for **educational use, prototyping, and
-low-to-moderate-traffic production deployments**. It runs on
-standard Cloudflare Workers primitives — there is no special
-allocation or committed-use quota behind it.
+small-to-moderate-traffic deployments**. It runs on standard
+Cloudflare Workers primitives — there is no special allocation
+or committed-use quota behind it.
 
 - **You are responsible for any costs** incurred on your Cloudflare
   account from running cesauth. The software does not meter its own
@@ -132,9 +132,10 @@ disclaimer and the limitation of liability.
 
 This is particularly relevant for an identity service: cesauth aims
 for correctness and has test coverage for the documented behaviors,
-but it is pre-1.0 software and **has not undergone independent
-security audit or FIDO Alliance conformance certification**. Deploy
-it in a context appropriate to that posture — and see
+but it is **in active development** and **has not undergone
+independent security audit or FIDO Alliance conformance
+certification**. Deploy it in a context appropriate to that
+posture — and see
 [`docs/src/expert/security.md`](docs/src/expert/security.md) and
 [`ROADMAP.md`](ROADMAP.md) for the current posture in detail.
 

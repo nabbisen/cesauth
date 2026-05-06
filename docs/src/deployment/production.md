@@ -38,9 +38,9 @@ wrangler kv namespace create CACHE
 # → copy the id
 
 # R2
-wrangler r2 bucket create cesauth-audit-prod
+# v0.32.0+: only the static assets bucket. Audit moved to D1 (ADR-010).
 wrangler r2 bucket create cesauth-assets-prod
-# → copy the bucket_name values
+# → copy the bucket_name value
 
 # Durable Objects don't need create — the four classes are declared
 # in wrangler.toml and provisioned on first deploy.
@@ -189,9 +189,13 @@ at the client.
   currently-deployed Worker. Use categories to filter.
 - Cloudflare's Analytics tab tracks request rates, error rates,
   and p50/p95/p99 latency.
-- The R2 audit bucket grows by one object per security-relevant
-  event. Lifecycle rules (e.g., tier to Infrequent Access after 30
-  days) are configured on the R2 bucket, not in cesauth.
+- The `audit_events` D1 table grows by one row per
+  security-relevant event (v0.32.0+, ADR-010). Row count is
+  visible via `wrangler d1 info` or surfaced in the admin
+  cost dashboard as the `row_count.audit_events` D1 metric.
+  D1 free-tier ceiling is 500 MB; paid is much higher. There
+  is no automatic retention sweep yet (Phase 2+ work); a
+  full-table grow is multi-year at any normal traffic shape.
 
 ## Rolling back
 

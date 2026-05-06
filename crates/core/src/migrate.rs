@@ -68,7 +68,12 @@
 //!   `MAGIC_LINK_MAIL_API_KEY`, `TURNSTILE_SECRET`.
 //! - DO state (active sessions, refresh-token families,
 //!   auth challenges, rate-limit counters).
-//! - R2 audit objects.
+//!
+//! v0.32.0+ note: the `audit_events` table IS in dumps. The
+//! chain hashes (`payload_hash`, `previous_hash`, `chain_hash`)
+//! travel intact, so a re-import preserves the chain's
+//! tamper-evidence. Pre-v0.32.0 audit data lived in R2 and was
+//! out of dump scope; that path was retired by ADR-010.
 //!
 //! A stolen `.cdump` must not be capable of forging tokens; the
 //! signing-key public halves it carries are sufficient for
@@ -205,7 +210,7 @@ pub const FORMAT_VERSION: u32 = 1;
 /// against the destination first; newer dumps are usually
 /// importable but may carry columns this build will silently
 /// drop.
-pub const SCHEMA_VERSION: u32 = 7;
+pub const SCHEMA_VERSION: u32 = 8;
 
 // ---------------------------------------------------------------------
 // Manifest

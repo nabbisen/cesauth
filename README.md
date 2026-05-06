@@ -7,7 +7,6 @@
 > precision in authentication and authorization.
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Status: pre-1.0](https://img.shields.io/badge/status-pre--1.0-orange.svg)](ROADMAP.md)
 
 ---
 
@@ -107,14 +106,7 @@ mdbook serve docs             # http://localhost:3000
   exclusively on the Cloudflare Workers platform. Read this before
   deploying.
 
-cesauth is **pre-1.0**. The public surface (endpoints,
+cesauth is in **active development**. The public surface (endpoints,
 `wrangler.toml` variable names, secret names, D1 schema,
-`core::ports` traits) may change between minor versions until 1.0.
-Breaking changes are called out in [CHANGELOG.md](CHANGELOG.md).
-
----
-
-## License
-
-Apache License, Version 2.0. See [LICENSE](LICENSE) and
-[NOTICE](NOTICE).
+`core::ports` traits) may change between minor versions. Breaking
+changes are called out in [CHANGELOG.md](CHANGELOG.md).

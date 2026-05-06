@@ -1,7 +1,7 @@
 # Roadmap
 
-cesauth is pre-1.0 software. This file tracks what ships today, what
-is planned, and what is deliberately out of scope.
+cesauth is in active development. This file tracks what ships today,
+what is planned, and what is deliberately out of scope.
 
 Format inspired by [Keep a Changelog](https://keepachangelog.com/) and
 the [Semantic Versioning](https://semver.org/) naming for priorities.
@@ -10,8 +10,8 @@ the [Semantic Versioning](https://semver.org/) naming for priorities.
 
 ## Versioning policy
 
-cesauth follows SemVer with one pre-1.0 caveat: the major number stays
-at `0` until the public surface settles. Within `0.x.y`:
+cesauth follows SemVer. The major number stays at `0` while the
+public surface continues to evolve. Within `0.x.y`:
 
 - **Bump the minor (`0.x → 0.x+1`) when** a release introduces a new
   HTTP route surface, a new schema migration, a new public type or
@@ -34,23 +34,18 @@ debt rather than rewriting bundles already shipped — those releases
 are immutable artifacts. Going forward (from 0.18.0 onward) the rule
 above is the policy.
 
-The first `1.0` release will be cut when:
-
-- The OIDC ceremony surface is stable across at least one minor
-  cycle without breaking changes.
-- The tenancy-service API has been exercised by at least one
-  external integrator without protocol-level surprises.
-- The operator surface (admin console, tenant-scoped admin) has
-  reached the "what shipped is what we want" point.
+A future `1.0` will be cut when the public surface settles. There
+is no fixed timeline; the bar is "what shipped is what we want"
+across the OIDC, tenancy, and operator surfaces.
 
 ---
 
-## Shipped (pre-1.0)
+## Shipped
 
 The following subsystems are implemented end-to-end and covered by
 host tests. "Initial" here means the happy path and the documented
-failure modes are in place; it does not imply production-ready with
-zero remaining issues.
+failure modes are in place; it does not assert any particular
+maturity level beyond what each release's CHANGELOG entry says.
 
 | Area                                   | Status   | Where                                             |
 |----------------------------------------|----------|---------------------------------------------------|
@@ -85,6 +80,7 @@ zero remaining issues.
 | **Security track Phase 6: TOTP Phase 2c — HTTP routes + verify gate** | ✅       | Shipped 0.29.0. Wires v0.26.0–v0.28.0's library + storage + presentation into operator-visible behavior at last. **Five new routes** in `cesauth_worker::routes::me::totp`: `GET /me/security/totp/enroll` mints a fresh secret with CSPRNG, encrypts via `aad_for_id(row_uuid)`-bound AES-GCM, parks an unconfirmed `totp_authenticators` row, sets `__Host-cesauth_totp_enroll` short-lived (15 min) cookie, builds the otpauth URI via `cesauth_core::totp::otpauth_uri`, generates QR via `cesauth_core::totp::qr::otpauth_to_svg`, renders `totp_enroll_page`. `POST /me/security/totp/enroll/confirm` validates CSRF, looks up the unconfirmed row + verifies user_id ownership, decrypts the secret, verifies the submitted code via `verify_with_replay_protection`, on success calls `confirm()` (idempotent flip + step advance + last_used_at), then iff this is the user's first confirmed authenticator (recovery_repo.count_remaining=0) mints 10 recovery codes, hashes each via `hash_recovery_code`, bulk-creates the rows, renders `totp_recovery_codes_page` with plaintexts. `GET /me/security/totp/verify` peeks `Challenge::PendingTotp`, mints CSRF, renders `totp_verify_page`. `POST /me/security/totp/verify` takes the challenge (consume), decrypts the user's authenticator secret, verifies code with replay protection, on success persists advanced `last_used_step` then calls `complete_auth_post_gate` to resume the original session-start + AuthCode-mint + redirect. On failure: re-parks with bumped attempts (MAX_ATTEMPTS=5 then bounces to /login), preserves original deadline rather than refreshing TTL, generic error message. `POST /me/security/totp/recover` canonicalizes + SHA-256-hashes the submitted recovery code, looks up via `find_unredeemed_by_hash`, marks redeemed, resumes via `complete_auth_post_gate`. **TOTP gate insertion** in `post_auth::complete_auth`: for `AuthMethod::MagicLink` only, after step 1 (AR taken), checks `find_active_for_user`; on Some(confirmed) calls `park_totp_gate_and_redirect` which carries AR fields **inline** into PendingTotp (eliminates race where the original AR handle could expire between gate-park and verify-resume — distinct improvement over the chained-handle approach considered in earlier ADR drafts), sets `__Host-cesauth_totp` (SameSite=Strict, distinct from pending-authorize's Lax), clears `__Host-cesauth_pending`, 302 to verify page. WebAuthn paths (Passkey AuthMethod) bypass the gate — WebAuthn is itself MFA-strong per ADR-009 §Q7. Storage failure on TOTP lookup fails closed with 500 rather than silently bypassing. **`complete_auth_post_gate` extracted** as `pub(crate)` from the original `complete_auth` body so both no-gate and post-TOTP-verify paths share session-start/AuthCode-mint/redirect logic. **`__Host-cesauth_totp_enroll`** (15 min TTL, generous for app-context-switch cost during enrollment scan) and **`__Host-cesauth_totp`** (5 min TTL, short to avoid abandoned prompts tying up state) cookies introduced; both SameSite=Strict (no cross-site flow involved); helpers `set_*_cookie_header`, `clear_*_cookie_header`, `extract_*` follow the same pattern as `__Host-cesauth_pending`. Routing wired in `worker::lib::main` (5 new routes). 12 new tests in `post_auth::tests` pinning cookie shape (Max-Age preserved, HttpOnly + Secure + SameSite=Strict, `__Host-` prefix), TTL bounds (gate 1-10 min, enroll 5-30 min), distinct-cookie-name property between gate and enroll (must-not-cross-context defense). The route handlers themselves (~800 lines across 3 files) are integration-tested via the existing webauthn / magic-link patterns; v0.30.0 will add explicit handler tests after the disable + cron + redaction work consolidates the test fixture surface. 12 new tests. Total **563 passing**. |
 | **Security track Phase 7: TOTP Phase 2d — polish + ADR Accepted** | ✅       | Shipped 0.30.0. **Final TOTP release** — closes the 5-release track started at v0.26.0. **Disable flow**: `GET /me/security/totp/disable` shows confirmation page (POST/Redirect/GET pattern; warns recovery codes are wiped, offers cancel link, single-click confirm); `POST` validates CSRF and does authenticators-first then recovery-codes deletion (rationale: an authenticator without recovery codes is still a working credential, while recovery codes alone are useless). Best-effort failure semantics — authenticators-delete failure 500s, recovery-codes-delete failure logged-and-swallowed. Redirects home with no flash message (deferred to UI/UX release). **`TotpAuthenticatorRepository::delete_all_for_user`** trait + in-memory + D1 adapters (single-statement user-scoped DELETE, no list-then-delete because there's no per-row audit invariant on credentials, contrast anonymous-user sweep's audit-trail integrity). Both adapters no-op-on-empty / idempotent across retries. **TOTP unconfirmed-enrollment cron sweep** extension to the existing 04:00 UTC daily cron in `crates/worker/src/sweep.rs`: new `totp_unconfirmed_sweep` helper drops `confirmed_at IS NULL AND created_at < now - 86400` rows. The 24-hour window is per ADR-009 §Q9. Same best-effort failure semantics, no audit per row. The partial index `idx_totp_authenticators_unconfirmed` from migration 0007 keeps the lookup cheap. **`RedactionProfile.drop_tables` field** added; both built-in profiles (`prod-to-staging`, `prod-to-dev`) drop both TOTP tables entirely — TOTP secrets must NOT survive redaction even encrypted because a staging operator with the deployment's encryption key could authenticate as real users (ADR-009 §Q5/§Q11). CLI export loop in both main and round-trip-verify paths honor `drop_tables`. `MIGRATION_TABLE_ORDER` + `TENANT_SCOPES` extended for both new tables (Global scope, FK-through-users like the existing WebAuthn `authenticators` table). **Operator chapter** new file `docs/src/deployment/totp.md` (~270 lines): when TOTP fires, encryption key provisioning, key rotation procedure with explicit caveat that dual-key resolution is not yet implemented (workaround: re-enroll users or one-shot helper), admin reset path for lockout recovery via direct D1 deletion, cron sweep semantics, disable-flow operator perspective with no-current-code-required rationale, redaction profile cross-reference, operational invariants (`secret_key_id` load-bearing, partial index load-bearing, cookie SameSite=Strict, recovery codes irretrievable, multi-authenticator semantics), diagnostic queries. Linked in `docs/src/SUMMARY.md`. **Pre-production release gate** — `TOTP_ENCRYPTION_KEY` added to `docs/src/expert/security.md` checklist as item 6, with caveat that TOTP is opt-in at operator level (single-factor magic-link or passkey-only deployments don't need it). **ADR-009 graduates `Draft` → `Accepted`** — the design has been validated end-to-end across 5 releases, no outstanding design questions. ADR header status updated, ADR index updated, Phasing v0.30.0 entry added with implementation details. **10 new tests**: 3 in core (redaction profile drop_tables semantics + defense-in-depth typo guard), 5 in ui (disable template), 2 in adapter-test (delete_all_for_user user-scoping + idempotency). **Note on UI/UX scope**: per the user-stated project value "重要な予定が完了したタイミングで、UI/UX 改善に取り組みます", the disable flow is intentionally minimal — single-page confirm, silent redirect, no flash messages. The `/me/security` index page, flash-message infrastructure, error-slot for the enroll template, CSS for warning/danger button states, and handler integration tests all naturally consolidate in the next release where the UI/UX iteration will tackle them across the surface, not just for TOTP. **TOTP track is now feature-complete for the 0.x series.** Total **573 passing**. |
 | **UI/UX iteration release v0.31.0** | ✅       | Shipped 0.31.0. UI/UX improvements at TOTP-track-completion boundary — first node-major release after the security track closed. Per plan v2 (`cesauth-v0.31.0-plan-v2.md`) all six P0/P1 backlog items shipped, P1-B split to v0.31.1 per the §6.4 scope-cap policy. **P0-A `/me/security` Security Center**: read-only index showing primary auth method (Passkey / MagicLink / Anonymous), TOTP enabled/disabled badge, recovery code remaining count with 4-tier rendering (N=10 → info, N=2-9 → info, N=1 → warning + re-enroll hint, N=0 → danger + admin-contact message). Anonymous-suppression variant (匿名トライアルでは TOTP を有効化できません). Single-task-per-page rule: links to `/me/security/totp/enroll` (when disabled) or `/me/security/totp/disable` (when enabled) — no inline destructive forms. **P0-B flash-message infrastructure**: new `__Host-cesauth_flash` cookie, SameSite=Lax (survives OAuth redirect chain), HttpOnly, 60s TTL. Cookie value is `v1:{b64url(payload)}.{b64url(hmac_sha256(payload))}` with HMAC key derived from `SESSION_COOKIE_KEY` via inline HKDF (`HMAC(session_key, "cesauth flash v1 hmac")`). Payload is `{level_code}.{key}` over a closed dictionary (4 levels × 4 keys); attempting to forge an unknown level or key fails decoding even with valid MAC (defense-in-depth). Set / take / clear API in `cesauth_worker::flash` (~270 lines). 32 unit tests pin the round-trip, tamper detection (payload mutation, tag mutation, wrong key), malformed-input rejection (missing prefix, `v9:` version, multiple separators, non-base64), cookie attribute shape, and the closed-dictionary contract. Templates side: `flash_block(Option<FlashView>) -> String` returns empty for None, otherwise renders `<div class="flash flash--*" role="alert|status" aria-live="assertive|polite">` with icon (✓ ⚠ ⛔ ℹ) + text. `frame_with_flash` splices the banner above body content. Wired into 4 handlers: `disable` → `success.totp_disabled` + redirect to `/me/security`; `enroll/confirm` → `success.totp_enabled` (both first-enrollment recovery-codes-page path and backup-enrollment direct-redirect path); `recover` → `warning.totp_recovered` (consumed code is worth flagging); `logout` → `info.logged_out` + redirect to `/login` (changed from previous `/`). **P0-C `totp_enroll_page` error slot**: signature changed to `totp_enroll_page(qr, secret, csrf, error: Option<&str>)` matching `totp_verify_page`. Error message rendered as `role="alert" aria-live="assertive"` div above the form. Code input gained `autofocus` so the user lands on the input after a wrong-code re-render — they have the authenticator app open, the next 6-digit code is what they want to type. The wrong-code branch in `enroll::post_confirm_handler` passes the Japanese error message; previously this branch silently re-rendered the same secret with no feedback. **P0-D 8 new design tokens**: `--success` `#1f9d55`, `--success-bg` `#e8f5e9`, `--warning` `#b76e00`, `--warning-bg` `#fff7e6`, `--danger` `#c92a2a`, `--danger-bg` `#fdecea`, `--info` `#1864ab`, `--info-bg` `#e7f5ff` (light mode; dark mode `@media (prefers-color-scheme: dark)` overrides shift to deep-tinted variants). New CSS classes: `.flash` + 4 `.flash--*` modifiers, `.badge` + 4 `.badge--*` modifiers, `button.danger` (red bg + white fg + red focus ring), `button.warning` (warning-color outline), `.flash__icon` and `.flash__text` for the icon-plus-text composition, and a `.visually-hidden` utility (this fixed a latent bug — the class was already referenced by `totp_verify_page` for an SR-only heading but the rule was missing from BASE_CSS). All state badges/banners pair color with icon + text label per WCAG 1.4.1. Legacy tokens (`--accent`, `--err`, `--muted`, `--bg`, `--fg`) preserved unchanged. **P1-A `next` parameter**: new pure function `validate_next_path(raw) -> Option<&str>` with allowlist policy `/` and `/me*` only. Rejects: protocol-relative (`//evil.com`), Windows UNC (`\\evil`), any scheme (`https:`, `javascript:`, `data:`, `mailto:`), `/admin/*` (cookie-vs-bearer auth-context mixing), `/api/v1/*` (JSON, not browser landing), `/login` and `/logout` (loop), `/__dev/*`, `/.well-known/*`, machine endpoints, POST-only auth handlers, prefix-substring traps like `/menu`. New `redirect_to_login_with_next(req)` encodes path+query as base64url into `?next=...`, used by `resolve_or_redirect`. Login GET handler reads `?next=`, validates, stashes the encoded value in `__Host-cesauth_login_next` (5 min TTL, SameSite=Lax). `complete_auth` and `complete_auth_post_gate` thread the cookie header through; the no-AR landing arm consults it via `decode_and_validate_next` and 302's there with a clear-cookie header (one-shot). All four entry points (WebAuthn register, WebAuthn authenticate, Magic Link verify, TOTP verify, recovery code redeem) updated to forward the cookie header. 34 new auth-helper tests pin the allowlist + rejection list comprehensively. **`docs/src/expert/cookies.md`** new chapter (~210 lines) inventorying all 7 cookies (`_session`, `_pending`, `-csrf`, `_totp`, `_totp_enroll`, `_flash`, `_login_next`), each with name / purpose / lifetime / scope / SameSite / HttpOnly / Secure attributes and a strictly-necessary justification per EDPB Guidelines 5/2020 §3.1.1. Operator-deployed analytics responsibility note clarifies that cesauth library does not provide a consent-management hook; operators adding analytics cookies own that obligation. Linked in `docs/src/SUMMARY.md` next to security-headers chapter. **Cookie audit added to security pre-production checklist**. Plan v2 §6.4 split policy: P1-B (TOTP route handler integration tests) was deferred to v0.31.1 — the worker crate has no `worker::Env` mock infrastructure, and standing one up would have inflated this release past the review-able slice. Pure-helper extracts shipped here as honest minimum coverage at this layer (`attempts_exhausted` boundary in `verify`, `DISABLE_SUCCESS_REDIRECT` constant in `disable`, both with tests pinning the contract). The full integration suite arrives in v0.31.1 once the env-mock investment lands. Total **~680 passing** (+~107 from v0.30.0). |
+| **Audit log hash chain Phase 1 v0.32.0** | ✅       | Shipped 0.32.0. ADR-010 Draft establishes a SHA-256 hash chain over audit events. **Source of truth = D1**, not R2. Case C chosen during planning over case B (R2 + parallel chain ledger) because two-store design would fork the chain under concurrency, expose cross-store consistency hazards permanently, and force N+1 reads. The R2 `AUDIT` bucket binding is removed from `wrangler.toml` entirely; no maintenance code left for the deprecated path. **D1 schema migration `0008_audit_chain.sql`** introduces `audit_events` (seq AUTOINCREMENT, id UNIQUE, ts, kind, indexed metadata fields, payload, payload_hash, previous_hash, chain_hash, created_at) plus three indexes ((ts), (kind, ts), partial (subject) WHERE NOT NULL) and a genesis row at seq=1. SCHEMA_VERSION 7→8. **`cesauth_core::audit::chain`** new pure-function module (~150 lines) with `compute_payload_hash`, `compute_chain_hash` over canonical byte layout `prev || ":" || payload_hash || ":" || seq || ":" || ts || ":" || kind || ":" || id`, plus verify functions for Phase 2 + genesis sentinels. **`cesauth_core::ports::audit::AuditEventRepository`** trait replaces v0.31.x AuditSink. **In-memory + D1 adapters** implement it; the D1 adapter handles concurrent writers via UNIQUE-collision retry (budget 3). **Worker `audit::write` rewritten internally** — signature compatible (90 call sites unchanged); internals serialize once and hand to repo.append. **`CloudflareAuditQuerySource` rewritten** D1 SELECT instead of R2 list+fetch (N+1 → one query). **Admin metrics**: audit_events added to `D1_COUNTED_TABLES`, `r2_metrics` removed. **`/__dev/audit` route** rewritten. **`docs/src/expert/audit-log-hash-chain.md`** new operator chapter (~250 lines). **R2 audit references purged** across deployment docs (production, preflight, backup-restore, wrangler, data-migration, cron-triggers, environments, storage, logging, ADR-005). **Project-status framing softened across the project** per user instruction: removed "pre-1.0" and "production-ready" claims/badges from README, CHANGELOG, ROADMAP, TERMS_OF_USE, introduction.md, tenancy.md; "production deployment" as deployment-environment label preserved. ADR-010 graduates to Accepted at v0.33.0 after Phase 2 ships. Total **717 passing** (+39 from v0.31.0: 25 chain-hash tests in core, 14 in-memory repository tests in adapter-test). |
 | mdBook documentation                   | ✅       | `docs/`                                            |
 
 ---
@@ -277,13 +273,39 @@ started.
     failure / primary failure modes, per plan v2 §3.2 P1-B.
 
 - **Audit log integrity track.**
-  - **0.32.0** — Audit log hash chain Phase 1: ADR-010 +
-    chain design + values (previous_hash column, computed
-    hash on insert) + transition strategy for existing
-    pre-chain rows. No automated integrity sweep yet.
+  - **0.32.0** ✅ — Audit log hash chain Phase 1 (ADR-010 Draft).
+    Audit events moved from R2 NDJSON objects to a D1 table
+    `audit_events` with SHA-256 hash chain over rows; case C
+    (D1 source-of-truth) chosen during planning over case B
+    (R2 + parallel D1 chain ledger) because the two-store
+    design would have forked the chain under concurrency,
+    permanently exposed cross-store consistency hazards, and
+    forced N+1 reads on every verifier and admin search. R2
+    `AUDIT` binding removed entirely from `wrangler.toml`; no
+    backward-compat code left in the repo. New schema
+    migration `0008_audit_chain.sql` introduces the table,
+    three indexes (`(ts)`, `(kind, ts)`, partial
+    `(subject) WHERE NOT NULL`), and a genesis row at `seq=1`.
+    `cesauth_core::audit::chain` provides pure hash
+    calculation; `cesauth_core::ports::audit::AuditEventRepository`
+    is the trait; in-memory adapter and D1 adapter implement
+    it. Worker `audit::write` rewritten internally (signature
+    unchanged, all 90 call sites work). Admin search rewritten
+    to D1 SELECT; `r2_metrics` removed in favor of
+    `row_count.audit_events`. `/__dev/audit` rewritten.
+    Documentation: ADR-010 Draft, new operator chapter
+    `audit-log-hash-chain.md`, R2 audit references purged
+    across deployment docs. Project-status framing softened
+    across all docs (removed "pre-1.0" / "production-ready"
+    claims) per user instruction during planning. 678 → 717
+    tests (+39: 25 chain-hash tests in core, 14 in-memory
+    repository tests in adapter-test). No verification cron
+    yet — that is Phase 2.
   - **0.33.0** — Audit log hash chain Phase 2: integrity
     sweep cron + admin verification UI (display "chain
-    valid through row N" + flag unexpected gaps).
+    valid through row N" + flag unexpected gaps) + chain-head
+    checkpoint location (open question Q1 in ADR-010). ADR-010
+    graduates to Accepted at end of this release.
   - **0.34.0** — Refresh token reuse detection hardening:
     audit current `RefreshTokenFamily` DO behavior against
     OAuth 2.0 Security BCP (RFC 6749 §10.4 / draft-ietf-
@@ -428,7 +450,8 @@ started.
     `TenancyConsoleTab` / `via=tenancy-console`. Operator-
     visible — bookmarks and scripts targeting the old prefix
     need updating. No compatibility-redirect routes were
-    added; the pre-1.0 SemVer caveat permits the hard rename.
+    added; the SemVer caveat documented in the policy section
+    permits the hard rename.
 
 - **Buffer / follow-up release (shipped in 0.12.1).** Reserved
   as a placeholder slot for any issues the 0.12.0 rename would

@@ -28,6 +28,7 @@
 - [WebAuthn implementation](./expert/webauthn.md)
 - [Session cookies](./expert/sessions.md)
 - [Cookie inventory (v0.31.0)](./expert/cookies.md)
+- [Audit log hash chain (v0.32.0)](./expert/audit-log-hash-chain.md)
 - [CSRF model](./expert/csrf.md)
 - [CSRF audit (v0.24.0)](./expert/csrf-audit.md)
 - [Email verification audit (v0.25.0)](./expert/email-verification-audit.md)
@@ -44,6 +45,7 @@
     - [ADR-007: HTTP security response headers](./expert/adr/007-security-response-headers.md)
     - [ADR-008: OIDC id_token issuance (Draft)](./expert/adr/008-id-token-issuance.md)
     - [ADR-009: TOTP as a second factor](./expert/adr/009-totp.md)
+    - [ADR-010: Audit log hash chain (Draft)](./expert/adr/010-audit-log-hash-chain.md)
 - [Security considerations](./expert/security.md)
 
 ---

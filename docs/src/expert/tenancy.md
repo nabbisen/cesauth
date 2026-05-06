@@ -614,9 +614,9 @@ Naming-debt cleanup:
   The path *suffixes* (`tenants`, `organizations/:oid`,
   `users/:uid/role_assignments`, etc.) are unchanged.
   **Operator-visible breaking change** — any external script
-  targeting the old prefix needs updating. The pre-1.0 SemVer
-  caveat permits this; no compatibility-redirect routes were
-  added.
+  targeting the old prefix needs updating. The SemVer caveat
+  documented in `ROADMAP.md` permits this; no compatibility-redirect
+  routes were added.
 
 - **Public types and identifiers** renamed:
   `SaasTab` → `TenancyConsoleTab`,

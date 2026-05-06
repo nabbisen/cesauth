@@ -95,6 +95,21 @@ pub const MIGRATION_TABLE_ORDER: &[&str] = &[
     // redaction, even hashed. See ADR-009 §Q5 / §Q11.
     "totp_authenticators",
     "totp_recovery_codes",
+
+    // v0.32.0: audit log moved from R2 to D1 with a hash chain
+    // (ADR-010, Phase 1). The chain is deployment-scoped — a
+    // chain row covers the entire deployment, not a single
+    // tenant — so for tenant-scoped exports this table is
+    // treated as Global and exported in full. A `--tenant`
+    // export of audit_events still includes events from other
+    // tenants, which is acceptable: an audit log import would
+    // re-establish the chain anyway, and operators running
+    // tenant-scoped exports for migration scenarios have other
+    // tools to filter audit data after the fact if they need
+    // to. The default redaction profiles preserve audit
+    // payloads (no PII redaction); the field-level redaction
+    // path can address that if needed.
+    "audit_events",
 ];
 
 // ---------------------------------------------------------------------
@@ -163,6 +178,7 @@ pub const TENANT_SCOPES: &[TenantScope] = &[
     TenantScope::OwnColumn("tenant_id"),          // anonymous_sessions
     TenantScope::Global,                          // totp_authenticators (FK users; see authenticators note)
     TenantScope::Global,                          // totp_recovery_codes (FK users; see authenticators note)
+    TenantScope::Global,                          // audit_events (deployment-scoped chain; see MIGRATION_TABLE_ORDER note)
 ];
 
 /// Look up the tenant scope for a table. Returns `None` for

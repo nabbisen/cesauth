@@ -80,7 +80,11 @@ events themselves stay in R2). It does **NOT** contain:
 - `SESSION_COOKIE_KEY`, `ADMIN_API_KEY`.
 - Active sessions (DO state — short-lived, regenerable).
 - Auth challenges, refresh-token families (DO state).
-- R2 audit objects (separate concern, separate tooling).
+- Pre-v0.32.0 R2 audit objects (separate concern, separate
+  tooling). v0.32.0+ audit events live in the `audit_events`
+  D1 table and ARE included in dumps; the chain hashes
+  travel intact, so a re-import of a dump produces a
+  database whose chain verifies identically (ADR-010).
 
 Rationale: a stolen `.cdump` should not be capable of forging
 tokens. The operator coordinates secret regeneration as a

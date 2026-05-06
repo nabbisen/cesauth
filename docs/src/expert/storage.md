@@ -53,17 +53,26 @@ Mixing them in the same trait would let a future contributor
 accidentally put `consume_auth_code` on a store that D1 can't
 guarantee, and the bug would be a race condition in the wild.
 
-## Why R2 for audit, not D1
+## Audit lives in D1 with a hash chain
 
-Audit is append-only and partitioned by day. Each event is a
-separate object under `audit/YYYY/MM/DD/<uuid>.ndjson`. This shape
-matches R2's strengths (per-object HTTP, lifecycle policies for
-retention) and sidesteps D1's row-level change budget, which
-otherwise becomes a bottleneck during a login storm.
+Audit events live in the `audit_events` D1 table (v0.32.0+,
+ADR-010). Each row carries a SHA-256 hash chain over its
+predecessor, making the log tamper-evident: modifying any past
+row invalidates every subsequent `chain_hash`.
+
+The chain ledger is the source of truth. v0.31.x and earlier
+wrote audit events to the R2 `AUDIT` bucket as
+one-NDJSON-object-per-event; that path was retired entirely in
+v0.32.0 alongside the `[[r2_buckets]] AUDIT` binding. Operators
+upgrading retain any historical R2 data on their account, but
+cesauth no longer reads or writes it. See the
+[Audit log hash chain](./audit-log-hash-chain.md) chapter for
+operator perspective and ADR-010 for the design rationale.
 
 The audit retrieval dev endpoint at `/__dev/audit` (gated on
-`WRANGLER_LOCAL="1"`) is covered in the [Inspecting
-state](../beginner/inspecting-state.md) chapter.
+`WRANGLER_LOCAL="1"`) was rewritten to query the D1 table; it
+remains the local-development inspection surface. The admin
+search at `/admin/console/audit` queries the same table.
 
 ## KV is a cache
 

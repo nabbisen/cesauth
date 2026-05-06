@@ -5,12 +5,301 @@ All notable changes to cesauth will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-cesauth is pre-1.0. The public surface — endpoints, `wrangler.toml`
-variable names, secret names, D1 schema, and `core::ports` traits —
-may change between minor versions until 1.0. Breaking changes will
-always be called out here.
+cesauth is in active development. The public surface — endpoints,
+`wrangler.toml` variable names, secret names, D1 schema, and
+`core::ports` traits — may change between minor versions. Breaking
+changes will always be called out here.
 
 ---
+
+## [0.32.0] - 2026-05-02
+
+Audit log hash chain — Phase 1 of ADR-010. cesauth's audit
+events move from R2 NDJSON objects to a D1 table with SHA-256
+hash chain integrity. The chain makes the audit log
+tamper-evident: modifying any past row invalidates every
+subsequent `chain_hash`, and the change becomes detectable
+linearly with the number of intervening rows.
+
+This release establishes the storage shape, the chain
+mechanism, and the write/query paths. The verification cron
+and admin verification UI ship as Phase 2 in v0.33.0.
+
+### Architectural decision
+
+ADR-010 (`docs/src/expert/adr/010-audit-log-hash-chain.md`)
+records the design and the threat model. Status **Draft** until
+Phase 2 lands and the chain has been validated end-to-end
+against deliberate tampering scenarios.
+
+The Phase 1 design was settled with the user during the
+v0.32.0 planning conversation:
+
+- **Source of truth = D1**, not R2 with a parallel chain
+  ledger. The two-store design was rejected because: R2 has no
+  read-your-writes guarantee on `list()` (the chain would
+  fork under concurrency); cross-store consistency was a
+  permanent operational hazard; verification would have been
+  N+1.
+- **No backward compatibility for historical R2 audit data.**
+  The R2 path is retired entirely. Operators retain any
+  pre-v0.32.0 R2 objects on their account but cesauth no
+  longer reads or writes them. Migration tooling for old
+  R2 events into the D1 chain is not provided.
+- **Documentation framing** changed to remove "pre-1.0" /
+  "production-ready" claims. cesauth is in active development;
+  the documents now say so plainly without making maturity
+  assertions either way.
+
+### Added
+
+- **D1 schema migration `0008_audit_chain.sql`** introduces
+  the `audit_events` table with chain columns
+  (`payload_hash`, `previous_hash`, `chain_hash`) plus
+  per-field indexed columns (`subject`, `client_id`, `ip`,
+  `user_agent`, `reason`) for admin search. Three indexes:
+  `(ts)`, `(kind, ts)`, partial `(subject) WHERE subject IS
+  NOT NULL`. The migration also INSERTs a genesis row at
+  `seq=1` with `kind='ChainGenesis'`, all-zero
+  `previous_hash`/`chain_hash`, and empty `{}` payload — the
+  anchor point for the chain.
+
+- **`SCHEMA_VERSION`** bumped 7 → 8. `MIGRATION_TABLE_ORDER`
+  and `TENANT_SCOPES` extended with `audit_events` (Global
+  scope; the chain is deployment-wide, not tenant-scoped).
+
+- **`cesauth_core::audit::chain` module** with pure functions
+  for the chain calculation (~150 lines):
+  `compute_payload_hash(bytes) -> String` (SHA-256, lowercase
+  hex), `compute_chain_hash(prev, payload_hash, seq, ts, kind,
+  id) -> String` over the canonical byte layout `prev || ":"
+  || payload_hash || ":" || seq || ":" || ts || ":" || kind ||
+  ":" || id`, `verify_chain_link(...)` and
+  `verify_payload_hash(...)` for Phase 2's verifier. Genesis
+  sentinels published as constants (`GENESIS_HASH` = 64 zeros,
+  `GENESIS_PAYLOAD_HASH` = SHA-256 of `{}`). 25 unit tests pin
+  determinism, sensitivity to every input field, separator
+  integrity (seq/ts boundary, kind/id boundary), reference
+  vectors with a hash captured at v0.32.0 development time.
+
+- **`cesauth_core::ports::audit::AuditEventRepository` trait**.
+  Replaces the v0.31.x `AuditSink`. Three methods: `append`
+  (chain-extending, with retry-on-collision in
+  implementations), `tail` (Phase 2 verifier needs it), and
+  `search` (admin queries). Value types: `AuditEventRow`,
+  `NewAuditEvent`, `AuditSearch`.
+
+- **`InMemoryAuditEventRepository`** in `cesauth-adapter-test`
+  (~140 lines + 16 tests). Two constructors: `new()` for an
+  empty repository (first append starts at `seq=1`) and
+  `with_genesis()` mirroring the D1 schema (genesis at
+  `seq=1`, real events from `seq=2`). Test coverage: chain
+  validity across multiple appends, `previous_hash`-to-
+  `chain_hash` linking, `payload_hash` recomputability, search
+  filter behavior (kind / subject / since-until / limit /
+  combined), tail retrieval at every population state.
+
+- **`CloudflareAuditEventRepository`** in
+  `cesauth-adapter-cloudflare` (~250 lines). The append path
+  reads the tail, computes the new row's chain hash, attempts
+  INSERT with explicit `seq=N+1`. UNIQUE collision (concurrent
+  writer beat us) triggers retry; the budget is 3 attempts,
+  enough to handle realistic Workers-instance simultaneity.
+  The repository's `id`-collision case (caller produced a
+  duplicate UUID, vanishingly rare) returns
+  `PortError::Conflict` rather than retrying. Search uses
+  parameterized SQL with placeholder binding to avoid
+  injection; the limit is capped at 1000.
+
+- **`docs/src/expert/audit-log-hash-chain.md`** new operator
+  chapter (~250 lines): what's chained, how to read the table
+  with `wrangler d1 execute`, chain semantics in plain
+  language, what the chain protects against and what it
+  doesn't, the genesis row's role, R2-deprecation operator
+  notes, failure modes (the chain doesn't tolerate gaps in
+  `seq`, so best-effort write failures drop events entirely),
+  Phase 2 preview, diagnostic queries. Linked in
+  `docs/src/SUMMARY.md` next to the cookies chapter and
+  ADR-010.
+
+### Changed (breaking — internal API)
+
+- **`cesauth_core::ports::audit` rewritten.** The v0.31.x
+  `AuditSink` trait + `AuditRecord` struct are gone, replaced
+  by `AuditEventRepository` + `AuditEventRow` + `NewAuditEvent`
+  + `AuditSearch`. Adapters that implemented `AuditSink` need
+  to migrate; in this codebase that means
+  `CloudflareAuditSink` → `CloudflareAuditEventRepository` and
+  `InMemoryAuditSink` → `InMemoryAuditEventRepository`. The
+  worker layer's `audit::write` and `audit::write_owned`
+  signatures are unchanged — all 90+ call sites continue to
+  work without modification.
+
+- **`crates/worker/src/audit.rs` internals rewritten** to use
+  the new D1-backed repository. The `EventKind` enum, `Event`
+  struct, `write`, and `write_owned` functions all have the
+  same signatures and semantics as v0.31.x; only the
+  underlying storage changed. `EventKind` gained a public
+  `as_str()` method that returns the snake_case discriminant
+  string (used as the `kind` column value).
+
+- **`CloudflareAuditQuerySource` rewritten** to query D1
+  instead of walking R2. The admin-search code path goes from
+  N+1 (one R2 list + N R2 GETs) to a single D1 SELECT. The
+  `AuditQuery.prefix` field is preserved as the trait shape
+  for backward compatibility but the v0.32.0 D1 backend
+  ignores it (use `since`/`until` filters via the search form
+  instead). `AdminAuditEntry.key` now contains `seq=N`
+  (formatted) rather than an R2 object path; the UI renders
+  it verbatim.
+
+- **`r2_metrics` removed** from
+  `cesauth-adapter-cloudflare::admin::metrics`. The
+  `ServiceId::R2` arm in `snapshot()` returns an empty metric
+  list with an explanatory comment. `D1_COUNTED_TABLES`
+  gained `audit_events`, so the row count for the audit table
+  shows up under `ServiceId::D1` as
+  `row_count.audit_events`.
+
+- **`/__dev/audit` route rewritten** to query D1. Query
+  parameters now: `kind`, `subject`, `since`, `until`,
+  `limit` (capped at 100), `body=1`. Default response is the
+  indexed-fields summary; `body=1` includes the full payload
+  plus chain metadata (`payload_hash`, `previous_hash`,
+  `chain_hash`).
+
+- **`AdminAuditEntry.key` field documentation updated** to
+  reflect the v0.32.0 meaning (chain sequence number rather
+  than R2 object path). The struct shape is unchanged so
+  `cesauth_ui::admin::audit` continues to render it as before.
+
+### Changed (breaking — deployment)
+
+- **`wrangler.toml` removed `[[r2_buckets]] AUDIT`** binding.
+  Existing deployments that left the binding in their own
+  `wrangler.toml` continue to deploy; cesauth simply doesn't
+  reference the binding any more. Removing it is a one-line
+  cleanup. The R2 `cesauth-audit` bucket itself remains on
+  the operator's Cloudflare account; cesauth does not touch
+  it.
+
+- **No migration of historical R2 audit data**. Operators
+  upgrading from v0.31.x retain the R2 bucket; if they need
+  continuity over the cutover they must export R2 events with
+  their own tooling before deploying v0.32.0. This is by
+  design (Q2-c during planning) — the chain starts fresh at
+  the genesis row inserted by migration 0008.
+
+### Documentation
+
+- New `docs/src/expert/audit-log-hash-chain.md` (operator
+  chapter).
+- New `docs/src/expert/adr/010-audit-log-hash-chain.md` (ADR,
+  Draft).
+- `docs/src/SUMMARY.md` and `docs/src/expert/adr/README.md`
+  index updated.
+- `docs/src/expert/storage.md` "Why R2 for audit" subsection
+  rewritten to "Audit lives in D1 with a hash chain".
+- `docs/src/deployment/production.md` step 1 drops the
+  `cesauth-audit-prod` bucket creation; step 9 monitor list
+  drops the R2-audit-bucket-grows note in favor of D1
+  `row_count.audit_events`.
+- `docs/src/deployment/preflight.md` drops the audit bucket
+  preflight item and the R2 audit lifecycle item; updates the
+  billing-alert tip to mention D1 row growth.
+- `docs/src/deployment/backup-restore.md` rewritten to
+  describe audit as part of the D1 backup story; the explicit
+  "R2 audit" backup section is replaced with a note that
+  audit travels in the D1 dump and the chain hashes survive
+  re-import intact.
+- `docs/src/deployment/wrangler.md` bindings table drops the
+  `AUDIT` row and updates the prose example.
+- `docs/src/deployment/data-migration.md` clarifies that
+  v0.32.0+ audit events DO travel in dumps with chain
+  intact.
+- `docs/src/deployment/cron-triggers.md` future-work list
+  swaps "R2 audit lifecycle" for "audit chain verification
+  (Phase 2 of ADR-010)".
+- `docs/src/deployment/environments.md` drops staging audit
+  bucket binding from the example wrangler config and
+  rephrases the per-env audit isolation note.
+- `docs/src/expert/logging.md` "Not audit" framing updated to
+  point at D1 instead of R2.
+- `docs/src/expert/adr/005-data-migration-tooling.md` notes
+  that v0.32.0+ audit IS in the dump (chain travels intact).
+- Module-level rustdocs at `crates/adapter-cloudflare/src/ports.rs`
+  and `crates/core/src/migrate.rs` updated.
+
+- **Project-status framing softened across the project.**
+  Removed "pre-1.0", "production-ready", and "Status: pre-1.0"
+  badge/copy from `README.md`, `CHANGELOG.md`, `ROADMAP.md`,
+  `TERMS_OF_USE.md`, `docs/src/introduction.md`, and
+  `docs/src/expert/tenancy.md`. The new framing is "in active
+  development" without making maturity claims either way.
+  Operational-language uses of "production deployment" (as
+  in "before any production deploy, do X") are preserved
+  unchanged — those are descriptions of the deployment
+  environment, not status claims.
+
+### Tests
+
+678 → 717 (+39).
+
+- core: 275 → 300 (+25). All in `audit::chain::tests`:
+  determinism, output shape (64 lowercase hex), 6 sensitivity
+  tests (one per chain-input field), 2 separator-integrity
+  tests pinning that `seq:ts` and `kind:id` boundaries can't
+  be smuggled past the hash, reference vector pinning the
+  v0.32.0 chain layout, verify-chain-link / verify-payload-hash
+  positive and negative cases, genesis sentinel correctness,
+  constant_time_eq corner cases.
+- adapter-test: 72 → 86 (+14). All in `audit::tests`: empty
+  repo first-append starts at seq=1, with-genesis variant
+  starts user events at seq=2, three-append chain integrity
+  with full hash recomputation, rows-in-seq-order invariant,
+  tail behavior across all population states, search filter
+  per-criterion (kind / subject / time / limit) plus combined
+  AND filter, default newest-first ordering, no-match returns
+  empty.
+- ui, worker, do, migrate: unchanged (183, 119, 16, 13). The
+  worker's `audit::write` is signature-compatible so existing
+  tests pass without modification.
+
+### Migration notes
+
+Apply the new schema migration:
+
+```sh
+wrangler d1 migrations apply cesauth-prod
+# applies 0008_audit_chain.sql
+```
+
+After deploy:
+
+- The `audit_events` table exists with the genesis row at
+  `seq=1`.
+- All new audit events flow into D1 with chain extension.
+- The R2 `AUDIT` bucket no longer receives writes.
+- The `wrangler.toml` example dropped the `AUDIT` binding;
+  operators can leave their own copy unchanged or delete the
+  three-line block.
+
+If `wrangler d1 migrations apply` fails part-way through (the
+genesis-row INSERT in particular), rerun — the migration is
+idempotent only at the schema level, but the genesis row uses
+`seq=1` explicitly so a duplicate-key error from a re-run is a
+benign signal that the migration already completed.
+
+### Forward roadmap
+
+- **v0.31.1** — TOTP handler integration tests (deferred from
+  v0.31.0 per plan v2 §6.4). Approach 2 from the v0.32.0
+  planning discussion: refactor handler decision logic into
+  pure helpers, exercise via `cesauth-adapter-test`. Breaking
+  internal-refactor changes are explicitly OK.
+- **v0.33.0** — ADR-010 Phase 2: chain verification cron + admin
+  verification UI + chain-head checkpoints. ADR-010 graduates
+  to Accepted at the end of this release.
 
 ---
 
@@ -4897,7 +5186,7 @@ review cost.
 ### Migration
 
 This is a hard rename — no compatibility-redirect routes were
-added. The pre-1.0 SemVer caveat at the top of this file
+added. The SemVer caveat documented at the top of this file
 permits this, but operators upgrading from 0.11.0 should:
 
 1. **Check audit-log filters.** Any consumer that splits

@@ -408,8 +408,8 @@ impl AlertCounts {
 // -------------------------------------------------------------------------
 
 /// A single admin-relevant audit entry as the console will render it.
-/// The underlying R2 event shape (`crate::audit::Event`-adjacent) is
-/// parsed into this narrower form.
+/// Projected from `cesauth_core::ports::audit::AuditEventRow` for the
+/// admin search and overview views.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdminAuditEntry {
     pub ts:      i64,
@@ -418,15 +418,20 @@ pub struct AdminAuditEntry {
     pub subject: Option<String>,
     pub client:  Option<String>,
     pub reason:  Option<String>,
-    /// Full R2 object key, so the UI can link to the source object for
-    /// operators who want the raw event.
+    /// Stable reference for the UI to link or display alongside
+    /// the row. v0.32.0+: the chain sequence number formatted as
+    /// `seq=N`. The UI renders this verbatim; treat as opaque.
     pub key:     String,
 }
 
 /// Filter applied when searching audit events.
 #[derive(Debug, Clone, Default)]
 pub struct AuditQuery {
-    /// Date prefix `audit/YYYY/MM/DD/`. None defaults to today.
+    /// Date prefix `audit/YYYY/MM/DD/`. Carried for backward
+    /// compatibility with the v0.31.x admin search form; the
+    /// v0.32.0 D1 backend ignores it (the date is derived from
+    /// the `since`/`until` filters or the default
+    /// "newest first" ordering).
     pub prefix: Option<String>,
     pub limit:  Option<u32>,
     /// Match events whose `kind` contains this substring.

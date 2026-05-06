@@ -87,7 +87,8 @@ from `LOG_LEVEL` and `LOG_EMIT_SENSITIVE`.
 
 - **Not audit.** If an operator later needs to answer "was this
   refresh token revoked at the moment this request arrived?", that
-  answer must come from R2 audit, not from logs which may be gone.
+  answer must come from the `audit_events` D1 table (v0.32.0+,
+  ADR-010), not from logs which may be gone.
 - **Not user-visible.** Errors returned to clients go through
   `error::oauth_error_response`. Logs are for the operator.
 - **Not for PII under normal operation.** Sensitive categories

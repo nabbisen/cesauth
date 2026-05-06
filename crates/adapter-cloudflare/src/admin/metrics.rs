@@ -45,9 +45,10 @@ impl<'a> CloudflareUsageMetricsSource<'a> {
     pub fn new(env: &'a Env) -> Self { Self { env } }
 }
 
-/// Tables we care about for D1 row-count metrics. If 0002 adds more
-/// tables whose growth is operationally interesting (cost_snapshots
-/// itself is one), include them here.
+/// Tables we care about for D1 row-count metrics. v0.32.0 added
+/// `audit_events` (when audit moved from R2 to D1, ADR-010); the
+/// row count is the closest analog to the R2 object count this
+/// snapshot used to surface for the AUDIT bucket.
 const D1_COUNTED_TABLES: &[&str] = &[
     "users",
     "authenticators",
@@ -57,6 +58,7 @@ const D1_COUNTED_TABLES: &[&str] = &[
     "admin_tokens",
     "bucket_safety_state",
     "cost_snapshots",
+    "audit_events",
 ];
 
 async fn count_d1_table(env: &Env, table: &str) -> PortResult<u64> {
@@ -86,47 +88,6 @@ async fn d1_metrics(env: &Env) -> PortResult<Vec<Metric>> {
         }
     }
     Ok(out)
-}
-
-async fn r2_metrics(env: &Env) -> PortResult<Vec<Metric>> {
-    let bucket = match env.bucket("AUDIT") {
-        Ok(b)  => b,
-        Err(_) => return Ok(Vec::new()),
-    };
-
-    // Scan the audit prefix. Listings are paginated (~1000 keys per
-    // page); we cap at a small multiple to bound worker CPU per view.
-    const MAX_PAGES: usize = 10;
-    let mut object_count: u64 = 0;
-    let mut total_bytes: u64 = 0;
-    let mut cursor: Option<String> = None;
-
-    for _ in 0..MAX_PAGES {
-        let mut list = bucket.list().prefix("audit/").limit(1000);
-        if let Some(c) = cursor.as_ref() {
-            list = list.cursor(c);
-        }
-        let page = match list.execute().await {
-            Ok(p)  => p,
-            Err(_) => break,
-        };
-        for o in page.objects() {
-            object_count = object_count.saturating_add(1);
-            total_bytes  = total_bytes.saturating_add(o.size() as u64);
-        }
-        if !page.truncated() {
-            break;
-        }
-        cursor = page.cursor();
-        if cursor.is_none() {
-            break;
-        }
-    }
-
-    Ok(vec![
-        Metric { key: "object_count".into(), value: object_count, unit: MetricUnit::Count },
-        Metric { key: "bytes".into(),        value: total_bytes,  unit: MetricUnit::Bytes },
-    ])
 }
 
 /// Sum the self-maintained per-day counters under `counter:<prefix>:*`
@@ -178,7 +139,16 @@ impl UsageMetricsSource for CloudflareUsageMetricsSource<'_> {
 
         let metrics = match service {
             ServiceId::D1 => d1_metrics(self.env).await.unwrap_or_default(),
-            ServiceId::R2 => r2_metrics(self.env).await.unwrap_or_default(),
+            // v0.32.0: cesauth no longer uses R2 (audit moved to D1
+            // per ADR-010). The R2 metric used to count AUDIT
+            // bucket objects; with audit on D1 the corresponding
+            // signal is `row_count.audit_events` reported under
+            // ServiceId::D1. We return empty here rather than
+            // remove the variant so existing dashboards that probe
+            // this service get a consistent "no signal" answer
+            // until the next admin-console iteration drops the
+            // R2 panel from the UI entirely.
+            ServiceId::R2 => Vec::new(),
             ServiceId::Kv => kv_metrics(self.env).await.unwrap_or_default(),
             ServiceId::Workers => vec![Metric {
                 key: "requests_last_7d".into(),

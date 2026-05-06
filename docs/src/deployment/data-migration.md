@@ -155,9 +155,13 @@ exporting, the destination operator must mint:
 - `MAGIC_LINK_MAIL_API_KEY` (if Magic Link is enabled).
 - `TURNSTILE_SECRET` (if Turnstile is enabled).
 
-R2 audit objects are not in the dump either. Audit history
-stays at the source unless the operator separately replicates
-the R2 bucket.
+v0.32.0+ audit events live in the `audit_events` D1 table and
+are included in the dump alongside the rest of D1 (ADR-010).
+The chain hashes travel intact, so a re-import preserves the
+log's tamper-evidence: a verifier running against the imported
+database produces the same chain head as the source. Pre-v0.32.0
+audit data lived in R2 and was NOT in the dump; operators
+upgrading from v0.31.x retain the R2 bucket separately.
 
 DO state (active sessions, refresh-token families, auth
 challenges, rate-limit counters) is not in the dump. After

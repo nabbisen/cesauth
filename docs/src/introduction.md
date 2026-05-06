@@ -59,7 +59,7 @@ posture, or extending it. You will find:
 
 ## Status
 
-cesauth is **pre-1.0 software under active development**. The
+cesauth is **under active development**. The
 [`ROADMAP.md`](https://github.com/…/cesauth/blob/main/ROADMAP.md) at
 the project root tracks what is shipped, in progress, or planned.
 Breaking changes land in the [`CHANGELOG.md`](https://github.com/…/cesauth/blob/main/CHANGELOG.md)

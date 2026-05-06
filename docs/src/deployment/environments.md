@@ -29,9 +29,9 @@ end users
 ```
 
 The cardinal rule: **no environment shares state with another**.
-Staging's D1 is not production's D1. Staging's R2 audit bucket
-is not production's. A change that destroys staging's data must
-not be capable of destroying production's.
+Staging's D1 is not production's D1. Staging's `audit_events`
+chain is not production's. A change that destroys staging's
+data must not be capable of destroying production's.
 
 ## `wrangler.toml` shape
 
@@ -82,10 +82,7 @@ migrations_dir = "migrations"
 binding = "CACHE"
 id      = "REAL_STAGING_KV_ID"
 
-[[env.staging.r2_buckets]]
-binding     = "AUDIT"
-bucket_name = "cesauth-audit-staging"
-
+# v0.32.0+: only the assets R2 bucket. Audit moved to D1.
 [[env.staging.r2_buckets]]
 binding     = "ASSETS"
 bucket_name = "cesauth-assets-staging"
@@ -176,7 +173,10 @@ Never:
 - **D1 data.** Production user data must never reach staging.
   See [Backup & restore](./backup-restore.md) for the
   prod → staging refresh pattern with PII redaction.
-- **R2 audit objects.** The audit trail is per-environment.
+- **Audit chain.** v0.32.0+ each environment's
+  `audit_events` chain is independent — staging events don't
+  appear in production's chain and vice versa, by virtue of
+  the per-env D1 binding.
 - **Custom Domain.** Each env has its own hostname and edge
   cert.
 

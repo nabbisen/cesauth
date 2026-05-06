@@ -66,11 +66,12 @@ new_classes  = [
 binding = "CACHE"
 id      = "REPLACE_WITH_KV_NAMESPACE_ID"
 
-# --- R2: audit / event logs / static assets ------------------------------
-[[r2_buckets]]
-binding     = "AUDIT"
-bucket_name = "cesauth-audit"
-
+# --- R2: static assets ---------------------------------------------------
+# As of v0.32.0 (ADR-010) audit events live in the D1 `audit_events`
+# table with a hash chain over their rows. The R2 `AUDIT` bucket
+# binding has been removed. Operators with historical R2 audit data
+# may keep the bucket on their Cloudflare account; cesauth no longer
+# reads or writes it.
 [[r2_buckets]]
 binding     = "ASSETS"
 bucket_name = "cesauth-assets"

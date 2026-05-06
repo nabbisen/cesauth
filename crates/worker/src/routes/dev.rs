@@ -13,6 +13,7 @@
 //! enables bypassing the entire authentication ceremony.
 
 use cesauth_cf::ports::store::CloudflareAuthChallengeStore;
+use cesauth_core::ports::audit::AuditEventRepository;
 use cesauth_core::ports::store::{AuthChallengeStore, Challenge};
 use worker::{Request, Response, Result, RouteContext};
 
@@ -77,98 +78,88 @@ pub async fn stage_auth_code<D>(mut req: Request, ctx: RouteContext<D>) -> Resul
 /// directory works but depends on miniflare's on-disk format, which
 /// is not a documented API contract.
 ///
-/// This handler uses the R2 binding itself, so it works identically
-/// against local miniflare and a remote bucket. It is still guarded
-/// by `WRANGLER_LOCAL=1` because shipping an un-authenticated audit
-/// reader to production would be a data-exfiltration gift.
+/// This handler reads from the v0.32.0 `audit_events` D1 table. It
+/// is still guarded by `WRANGLER_LOCAL=1` because shipping an
+/// un-authenticated audit reader to production would be a
+/// data-exfiltration gift.
 ///
 /// Query parameters (all optional):
-/// - `prefix` - narrows to keys with the given prefix. Defaults to
-///              today's date folder `audit/YYYY/MM/DD/`.
-/// - `limit`  - max results, clamped to 100. Default 20.
-/// - `body`   - if `1`, includes each object's body (parsed as JSON)
-///              in the response. Default: keys only.
+/// - `kind`    - exact match on the event `kind` column.
+/// - `subject` - exact match on the event `subject` column.
+/// - `since`   - lower bound on `ts` (Unix seconds, inclusive).
+/// - `until`   - upper bound on `ts` (Unix seconds, inclusive).
+/// - `limit`   - max results, clamped to 100. Default 20.
+/// - `body`    - if `1`, includes each row's full payload + chain
+///               metadata. Default: indexed-fields-only summary.
 ///
-/// Response: JSON object `{ "keys": [...], "truncated": bool, ... }`.
+/// Response: JSON object `{ "rows": [...], "count": N }`.
 pub async fn list_audit<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     if !dev_mode_enabled(&ctx) {
         return Response::error("not found", 404);
     }
 
     let url = req.url()?;
-    let mut prefix: Option<String> = None;
+    let mut kind:    Option<String> = None;
+    let mut subject: Option<String> = None;
+    let mut since:   Option<i64> = None;
+    let mut until:   Option<i64> = None;
     let mut limit: u32 = 20;
     let mut include_body: bool = false;
     for (k, v) in url.query_pairs() {
         match k.as_ref() {
-            "prefix" => prefix = Some(v.into_owned()),
-            "limit"  => limit = v.parse::<u32>().unwrap_or(20).min(100),
-            "body"   => include_body = v == "1",
+            "kind"    => kind    = Some(v.into_owned()),
+            "subject" => subject = Some(v.into_owned()),
+            "since"   => since   = v.parse::<i64>().ok(),
+            "until"   => until   = v.parse::<i64>().ok(),
+            "limit"   => limit   = v.parse::<u32>().unwrap_or(20).min(100),
+            "body"    => include_body = v == "1",
             _ => {}
         }
     }
 
-    // Default prefix: today's UTC day. Matches the key layout in
-    // `audit::write` -> `audit/YYYY/MM/DD/<uuid>.ndjson`.
-    let prefix = prefix.unwrap_or_else(|| {
-        let now = time::OffsetDateTime::now_utc();
-        format!(
-            "audit/{:04}/{:02}/{:02}/",
-            now.year(),
-            u8::from(now.month()),
-            now.day(),
-        )
-    });
-
-    let bucket = match ctx.env.bucket("AUDIT") {
-        Ok(b)  => b,
-        Err(_) => return Response::error("AUDIT bucket unavailable", 500),
+    let repo = cesauth_cf::ports::audit::CloudflareAuditEventRepository::new(&ctx.env);
+    let search = cesauth_core::ports::audit::AuditSearch {
+        kind, subject, since, until,
+        limit: Some(limit),
+    };
+    let rows = match repo.search(&search).await {
+        Ok(r)  => r,
+        Err(e) => return Response::error(format!("audit_events search failed: {e:?}"), 500),
     };
 
-    let listing = match bucket.list().prefix(prefix.clone()).limit(limit).execute().await {
-        Ok(l)  => l,
-        Err(e) => return Response::error(format!("list failed: {e}"), 500),
-    };
-
-    let mut keys: Vec<serde_json::Value> = Vec::new();
-    for obj in listing.objects() {
-        let key = obj.key();
-        if !include_body {
-            keys.push(serde_json::json!({
-                "key":      key,
-                "size":     obj.size(),
-                "uploaded": obj.uploaded().as_millis(),
-            }));
-            continue;
+    let json_rows: Vec<serde_json::Value> = rows.iter().map(|r| {
+        if include_body {
+            serde_json::json!({
+                "seq":           r.seq,
+                "id":            r.id,
+                "ts":            r.ts,
+                "kind":          r.kind,
+                "subject":       r.subject,
+                "client_id":     r.client_id,
+                "ip":            r.ip,
+                "user_agent":    r.user_agent,
+                "reason":        r.reason,
+                "payload":       serde_json::from_str::<serde_json::Value>(&r.payload)
+                                   .unwrap_or_else(|_| serde_json::Value::String(r.payload.clone())),
+                "payload_hash":  r.payload_hash,
+                "previous_hash": r.previous_hash,
+                "chain_hash":    r.chain_hash,
+                "created_at":    r.created_at,
+            })
+        } else {
+            serde_json::json!({
+                "seq":     r.seq,
+                "id":      r.id,
+                "ts":      r.ts,
+                "kind":    r.kind,
+                "subject": r.subject,
+            })
         }
-        // Fetch the body for each key. At `limit <= 100` this is
-        // bounded work, but N network hops for N audit records -
-        // only do this when `body=1` is explicitly asked for.
-        let body = match bucket.get(&key).execute().await {
-            Ok(Some(o)) => match o.body() {
-                Some(b)  => b.text().await.ok(),
-                None     => None,
-            },
-            _ => None,
-        };
-        let parsed = body.as_deref().and_then(|s| {
-            // ndjson: single-object files. Try to parse; if it looks
-            // like multi-line, fall back to the raw string.
-            serde_json::from_str::<serde_json::Value>(s.trim()).ok()
-        });
-        keys.push(serde_json::json!({
-            "key":      key,
-            "size":     obj.size(),
-            "uploaded": obj.uploaded().as_millis(),
-            "body":     parsed.or(body.map(serde_json::Value::String)),
-        }));
-    }
+    }).collect();
 
     let body = serde_json::json!({
-        "prefix":    prefix,
-        "truncated": listing.truncated(),
-        "cursor":    listing.cursor(),
-        "keys":      keys,
+        "rows":  json_rows,
+        "count": rows.len(),
     });
     let mut resp = Response::from_json(&body)?;
     let _ = resp.headers_mut().set("cache-control", "no-store");

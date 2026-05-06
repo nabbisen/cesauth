@@ -181,9 +181,9 @@ slots:
 - **Refresh-token-family compaction** — pruning expired
   refresh-token-family rows at coarser granularity than the
   per-request cleanup.
-- **Audit-log lifecycle** — moving R2 audit objects to
-  cold storage on a schedule, if R2's built-in lifecycle rules
-  prove insufficient.
+- **Audit chain verification** — daily walk over `audit_events`
+  recomputing every `chain_hash` and reporting the first
+  mismatch (Phase 2 of ADR-010, scheduled for v0.33.0).
 
 None are scheduled. When one ships, the schedule and the
 dispatcher branch land together in the same release, and this

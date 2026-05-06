@@ -25,8 +25,9 @@ the rationale — only the checks.
       `Workers KV Storage:Edit`, `Workers R2 Storage:Edit`,
       `Workers D1:Edit`, `Account Settings:Read`.
 - [ ] Billing alerts configured (Cloudflare dashboard →
-      Manage Account → Billing). cesauth's R2 audit growth is
-      the most likely surprise on a small account.
+      Manage Account → Billing). v0.32.0+: D1 row growth
+      (especially `audit_events`) is the surface to watch on
+      a small account; D1 free-tier ceiling is 500 MB.
 
 ## B — Resources provisioned
 
@@ -40,9 +41,10 @@ full table.
 - [ ] **KV namespace** created
       (`wrangler kv namespace create CACHE`). ID copied under
       `[[kv_namespaces]]`.
-- [ ] **R2 audit bucket** created (`cesauth-audit-prod`). Name
-      copied under the matching `[[r2_buckets]]`.
 - [ ] **R2 assets bucket** created (`cesauth-assets-prod`).
+      v0.32.0+: only the assets bucket is needed; the v0.31.x
+      audit bucket binding was removed when audit moved to D1
+      (ADR-010).
 - [ ] Durable Objects: nothing to provision; the four classes
       are declared in `wrangler.toml` and provisioned on first
       deploy.
@@ -167,8 +169,6 @@ After `wrangler deploy`:
       wrangler d1 export cesauth-prod --remote --output cesauth-baseline.sql
       ```
       See [Backup & restore](./backup-restore.md).
-- [ ] R2 audit bucket lifecycle rule configured (e.g., transition
-      to Infrequent Access after 30 days).
 
 ## L — Communication
 
