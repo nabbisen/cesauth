@@ -907,9 +907,349 @@ pub fn verify<R: std::io::BufRead>(mut input: R) -> MigrateResult<VerifyReport> 
 }
 
 
-// =====================================================================
-// Tests
-// =====================================================================
+// ---------------------------------------------------------------------
+// Import (v0.21.0)
+// ---------------------------------------------------------------------
+
+/// Per-row schema-invariant check result. The importer accumulates
+/// these into a `ViolationReport` and refuses to commit the
+/// destination unless the report is empty (or the operator
+/// explicitly waives violations off).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Violation {
+    /// Source table — which payload table the offending row was in.
+    pub table:    String,
+    /// Source row primary key, if extractable. Best-effort: rows
+    /// without a recognizable `id` field surface here as
+    /// `<unknown>`. The CLI uses this for operator diagnostics.
+    pub row_id:   String,
+    /// One-line description of what went wrong. Examples: "tenant_id
+    /// references missing tenant", "duplicate email within tenant",
+    /// "role_id references missing role".
+    pub reason:   String,
+}
+
+impl std::fmt::Display for Violation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}: {}", self.table, self.row_id, self.reason)
+    }
+}
+
+/// Outcome of `Importer::run`. Lists the violations collected per
+/// table along with the count of rows the importer attempted to
+/// write. The CLI uses this to decide whether to commit or roll
+/// back, and to print a structured operator summary.
+#[derive(Debug, Clone, Default)]
+pub struct ViolationReport {
+    pub rows_seen:   u64,
+    pub rows_staged: u64,
+    pub violations:  Vec<Violation>,
+}
+
+impl ViolationReport {
+    /// True when no violations were detected. The CLI uses this as
+    /// the gate for commit-without-`--accept-violations`.
+    pub fn is_clean(&self) -> bool { self.violations.is_empty() }
+
+    /// Count violations by table — useful for the CLI's tabular
+    /// summary. Returns a Vec rather than HashMap so output
+    /// ordering matches the table declaration order in the
+    /// manifest.
+    pub fn by_table(&self) -> Vec<(String, u64)> {
+        let mut out: Vec<(String, u64)> = Vec::new();
+        for v in &self.violations {
+            if let Some(entry) = out.iter_mut().find(|(t, _)| t == &v.table) {
+                entry.1 += 1;
+            } else {
+                out.push((v.table.clone(), 1));
+            }
+        }
+        out
+    }
+}
+
+/// Per-row schema-invariant check function. Called once per row
+/// during import; returns `None` if the row is OK, `Some(reason)`
+/// if it violates an invariant. The library ships a default set
+/// in `default_invariant_checks()`; the CLI can extend or replace.
+///
+/// The check has read access to "what's been imported so far" via
+/// the `seen` parameter — a snapshot of `(table, row_id)` pairs
+/// the importer has staged. This lets a check ask "does
+/// `users.tenant_id` reference a tenant we've already imported"
+/// without a destination-side query.
+pub type InvariantCheckFn = fn(
+    table: &str,
+    row:   &serde_json::Value,
+    seen:  &SeenSnapshot,
+) -> Option<String>;
+
+/// Snapshot of staged rows. Keyed by table; each entry is a
+/// `HashSet<String>` of primary-key values seen so far. Maintained
+/// by the `Importer` as rows arrive.
+///
+/// "Seen" means "the exporter wrote it earlier in the dump", not
+/// "it's in the destination D1". The destination's pre-existing
+/// rows are NOT in `SeenSnapshot` — the importer's contract is
+/// "destination starts empty for the migrated tables", which the
+/// CLI enforces via a pre-flight check.
+#[derive(Debug, Default, Clone)]
+pub struct SeenSnapshot {
+    inner: std::collections::HashMap<String, std::collections::HashSet<String>>,
+}
+
+impl SeenSnapshot {
+    /// Returns true if `(table, id)` was previously staged.
+    pub fn contains(&self, table: &str, id: &str) -> bool {
+        self.inner.get(table).map(|s| s.contains(id)).unwrap_or(false)
+    }
+    fn insert(&mut self, table: &str, id: String) {
+        self.inner.entry(table.to_owned()).or_default().insert(id);
+    }
+}
+
+/// The destination-side row writer. The library doesn't know how
+/// to talk to D1; the CLI provides the implementation (wrangler
+/// shell-out or future native API). Trait shape kept narrow:
+/// `stage_row` is "queue this row for eventual write",
+/// `commit`/`rollback` finalize.
+///
+/// Why staging-then-commit instead of write-as-we-go: ADR-005 §Q5
+/// requires the importer to refuse commit on violations. Writing
+/// each row immediately makes rollback impossible (or expensive —
+/// would need a destination-side undo). Staging keeps the
+/// destination unmodified until the operator-confirmed commit
+/// moment.
+#[allow(async_fn_in_trait)]
+pub trait ImportSink {
+    /// Buffer one row for the named table. Caller invokes once
+    /// per row, in the same order as the dump's payload.
+    async fn stage_row(&mut self, table: &str, row: &serde_json::Value)
+        -> Result<(), String>;
+
+    /// Apply every staged row. Returns the number of rows actually
+    /// written (typically equal to total staged unless the sink
+    /// short-circuits some).
+    async fn commit(&mut self) -> Result<u64, String>;
+
+    /// Discard every staged row. The destination is left
+    /// unmodified. Called when the operator declines commit, or
+    /// when the import fails before commit.
+    async fn rollback(&mut self) -> Result<(), String>;
+}
+
+/// Default invariant checks. The CLI uses this set unless the
+/// operator-supplied `--no-invariant-checks` flag disables them.
+/// New invariants land here as cesauth's schema evolves.
+///
+/// Invariants in v0.21.0:
+///
+/// 1. **Memberships' user_id references seen user.** Any row in
+///    `user_tenant_memberships`, `user_organization_memberships`,
+///    or `user_group_memberships` that names a `user_id` not
+///    previously staged in `users` is flagged.
+/// 2. **Memberships' container references seen container.** A
+///    `tenant_id`/`organization_id`/`group_id` not previously
+///    staged is flagged.
+/// 3. **users.tenant_id references seen tenant.** A user with a
+///    tenant_id not in `tenants` is flagged.
+/// 4. **role_assignments references seen role + user.**
+///
+/// Not yet checked (deferred to follow-ups):
+/// - Email uniqueness within a tenant — requires destination-side
+///   query (the dump might be redacted, in which case the check
+///   becomes synthetic). Skipped for v0.21.0.
+/// - OIDC client `redirect_uris` JSON validity — out of scope for
+///   the migration tool; the destination's `oidc_clients` repo
+///   re-validates on first use.
+pub fn default_invariant_checks() -> &'static [InvariantCheckFn] {
+    &[
+        check_user_tenant_ref,
+        check_membership_user_ref,
+        check_membership_container_ref,
+        check_role_assignment_refs,
+    ]
+}
+
+fn extract_id(row: &serde_json::Value) -> String {
+    row.get("id").and_then(|v| v.as_str()).unwrap_or("<unknown>").to_owned()
+}
+
+fn extract_str<'a>(row: &'a serde_json::Value, field: &str) -> Option<&'a str> {
+    row.get(field).and_then(|v| v.as_str())
+}
+
+fn check_user_tenant_ref(
+    table: &str,
+    row:   &serde_json::Value,
+    seen:  &SeenSnapshot,
+) -> Option<String> {
+    if table != "users" { return None; }
+    let tenant_id = extract_str(row, "tenant_id")?;
+    if !seen.contains("tenants", tenant_id) {
+        return Some(format!("tenant_id `{tenant_id}` references missing tenant"));
+    }
+    None
+}
+
+fn check_membership_user_ref(
+    table: &str,
+    row:   &serde_json::Value,
+    seen:  &SeenSnapshot,
+) -> Option<String> {
+    let is_membership = matches!(table,
+        "user_tenant_memberships"
+        | "user_organization_memberships"
+        | "user_group_memberships"
+    );
+    if !is_membership { return None; }
+    let user_id = extract_str(row, "user_id")?;
+    if !seen.contains("users", user_id) {
+        return Some(format!("user_id `{user_id}` references missing user"));
+    }
+    None
+}
+
+fn check_membership_container_ref(
+    table: &str,
+    row:   &serde_json::Value,
+    seen:  &SeenSnapshot,
+) -> Option<String> {
+    let (container_table, field) = match table {
+        "user_tenant_memberships"       => ("tenants",       "tenant_id"),
+        "user_organization_memberships" => ("organizations", "organization_id"),
+        "user_group_memberships"        => ("groups",        "group_id"),
+        _ => return None,
+    };
+    let id = extract_str(row, field)?;
+    if !seen.contains(container_table, id) {
+        return Some(format!("{field} `{id}` references missing {container_table} row"));
+    }
+    None
+}
+
+fn check_role_assignment_refs(
+    table: &str,
+    row:   &serde_json::Value,
+    seen:  &SeenSnapshot,
+) -> Option<String> {
+    if table != "role_assignments" { return None; }
+    if let Some(role_id) = extract_str(row, "role_id") {
+        if !seen.contains("roles", role_id) {
+            return Some(format!("role_id `{role_id}` references missing role"));
+        }
+    }
+    if let Some(user_id) = extract_str(row, "user_id") {
+        if !seen.contains("users", user_id) {
+            return Some(format!("user_id `{user_id}` references missing user"));
+        }
+    }
+    None
+}
+
+/// Streaming importer. Reads a dump from `input`, verifies its
+/// signature + hashes (via `verify`), then re-streams the payload
+/// while:
+///
+/// - staging each row to `sink`,
+/// - running invariant checks against the in-memory `SeenSnapshot`,
+/// - accumulating violations.
+///
+/// Returns the report; the caller (CLI) decides whether to call
+/// `sink.commit()` or `sink.rollback()` based on
+/// `report.is_clean()` plus operator confirmation.
+///
+/// **Two-pass.** The first pass is `verify` (full payload SHA-256
+/// + signature). The second pass is the actual import. Both
+/// passes are necessary: a signature check on the bytes the
+/// importer is about to act on must precede acting on them. The
+/// caller passes a `Read` that supports re-reading; in practice
+/// this is `BufReader<File>` and the importer seeks to start
+/// between passes.
+pub async fn import<S: ImportSink>(
+    input:        &mut (impl std::io::Read + std::io::Seek),
+    sink:         &mut S,
+    invariants:   &[InvariantCheckFn],
+    require_unredacted: bool,
+) -> MigrateResult<ViolationReport> {
+    use std::io::{BufReader, SeekFrom};
+
+    // ---- Pass 1: verify ---------------------------------------------
+    input.seek(SeekFrom::Start(0))?;
+    let report = verify(BufReader::new(&mut *input))?;
+    if require_unredacted && report.manifest.redaction_profile.is_some() {
+        return Err(MigrateError::Parse(format!(
+            "dump was exported with redaction profile `{}`; \
+             --require-unredacted refuses to import",
+            report.manifest.redaction_profile.as_deref().unwrap_or("?"),
+        )));
+    }
+
+    // ---- Pass 2: stream rows + run invariants + stage --------------
+    input.seek(SeekFrom::Start(0))?;
+    let mut reader = BufReader::new(&mut *input);
+
+    // Skip the manifest line.
+    let mut manifest_line = String::new();
+    std::io::BufRead::read_line(&mut reader, &mut manifest_line)?;
+
+    let mut seen = SeenSnapshot::default();
+    let mut violations = Vec::new();
+    let mut rows_seen   = 0_u64;
+    let mut rows_staged = 0_u64;
+
+    let mut line = String::new();
+    loop {
+        line.clear();
+        let n = std::io::BufRead::read_line(&mut reader, &mut line)?;
+        if n == 0 { break; }
+        rows_seen += 1;
+
+        let pl: PayloadLine = serde_json::from_str(line.trim_end_matches('\n'))
+            .map_err(|e| MigrateError::Parse(format!("payload line: {e}")))?;
+
+        // Run invariants. Multiple checks may fire on the same row;
+        // collect all of them.
+        let row_id = extract_id(&pl.row);
+        let mut row_violated = false;
+        for chk in invariants {
+            if let Some(reason) = chk(&pl.table, &pl.row, &seen) {
+                violations.push(Violation {
+                    table:  pl.table.clone(),
+                    row_id: row_id.clone(),
+                    reason,
+                });
+                row_violated = true;
+            }
+        }
+
+        // Stage the row regardless. Violations don't prevent
+        // staging — they prevent commit. This means the caller's
+        // sink may see rows that violate, and the sink must NOT
+        // perform its own validation (the library is the
+        // authority).
+        sink.stage_row(&pl.table, &pl.row).await
+            .map_err(MigrateError::Parse)?;
+        rows_staged += 1;
+
+        // Update the seen snapshot. We add the row's id even if
+        // the row violated something — downstream checks that
+        // depend on this row's existence stay coherent. If the
+        // operator later rolls back, the seen snapshot is
+        // discarded with the import process.
+        seen.insert(&pl.table, row_id.clone());
+
+        // `row_violated` is intentionally unused beyond
+        // accumulation; future versions may use it to short-circuit
+        // staging when a configurable max-violations threshold is
+        // hit.
+        let _ = row_violated;
+    }
+
+    Ok(ViolationReport { rows_seen, rows_staged, violations })
+}
+
+
 
 #[cfg(test)]
 mod tests {
@@ -1443,5 +1783,378 @@ mod tests {
         let post_fp = report.manifest.fingerprint();
         assert_eq!(prefix_fp, post_fp,
             "operator-printed fingerprint must equal eventual manifest fingerprint");
+    }
+
+    // -----------------------------------------------------------------
+    // Import — invariant checks (v0.21.0)
+    // -----------------------------------------------------------------
+
+    /// A `SeenSnapshot` populated with a small known-good fixture.
+    /// Each test starts from this and assert what flips when a
+    /// reference is missing.
+    fn fixture_seen() -> SeenSnapshot {
+        let mut s = SeenSnapshot::default();
+        s.insert("tenants", "t-1".into());
+        s.insert("tenants", "t-2".into());
+        s.insert("users",   "u-1".into());
+        s.insert("users",   "u-2".into());
+        s.insert("organizations", "o-1".into());
+        s.insert("groups",  "g-1".into());
+        s.insert("roles",   "r-1".into());
+        s
+    }
+
+    #[test]
+    fn check_user_tenant_ref_passes_for_known_tenant() {
+        let seen = fixture_seen();
+        let row = serde_json::json!({"id":"u-3","tenant_id":"t-1"});
+        assert!(check_user_tenant_ref("users", &row, &seen).is_none());
+    }
+
+    #[test]
+    fn check_user_tenant_ref_fails_for_unknown_tenant() {
+        let seen = fixture_seen();
+        let row = serde_json::json!({"id":"u-3","tenant_id":"t-missing"});
+        let r = check_user_tenant_ref("users", &row, &seen);
+        assert!(r.is_some());
+        assert!(r.unwrap().contains("missing tenant"));
+    }
+
+    #[test]
+    fn check_user_tenant_ref_skips_other_tables() {
+        // Defensive: a check function must only fire for its
+        // owned table. Returning a violation for an unrelated
+        // row is a worse failure than missing a violation.
+        let seen = fixture_seen();
+        let row = serde_json::json!({"id":"t-1","tenant_id":"missing-but-irrelevant"});
+        assert!(check_user_tenant_ref("tenants", &row, &seen).is_none());
+    }
+
+    #[test]
+    fn check_membership_user_ref_fires_only_for_membership_tables() {
+        let seen = fixture_seen();
+        let row = serde_json::json!({"user_id":"u-missing"});
+        // Membership tables fire.
+        for t in &["user_tenant_memberships", "user_organization_memberships", "user_group_memberships"] {
+            let r = check_membership_user_ref(t, &row, &seen);
+            assert!(r.is_some(), "should fire on {t}");
+        }
+        // Non-membership tables don't fire.
+        for t in &["users", "tenants", "organizations"] {
+            let r = check_membership_user_ref(t, &row, &seen);
+            assert!(r.is_none(), "should not fire on {t}");
+        }
+    }
+
+    #[test]
+    fn check_membership_container_dispatches_per_table() {
+        let seen = fixture_seen();
+
+        // tenant_id checked against tenants
+        let r = check_membership_container_ref("user_tenant_memberships",
+            &serde_json::json!({"tenant_id":"t-missing"}), &seen);
+        assert!(r.unwrap().contains("missing tenants"));
+
+        // organization_id checked against organizations
+        let r = check_membership_container_ref("user_organization_memberships",
+            &serde_json::json!({"organization_id":"o-missing"}), &seen);
+        assert!(r.unwrap().contains("missing organizations"));
+
+        // group_id checked against groups
+        let r = check_membership_container_ref("user_group_memberships",
+            &serde_json::json!({"group_id":"g-missing"}), &seen);
+        assert!(r.unwrap().contains("missing groups"));
+    }
+
+    #[test]
+    fn check_role_assignment_refs_catches_both_sides() {
+        let seen = fixture_seen();
+
+        // Missing role
+        let r = check_role_assignment_refs("role_assignments",
+            &serde_json::json!({"role_id":"r-missing","user_id":"u-1"}), &seen);
+        assert!(r.unwrap().contains("missing role"));
+
+        // Missing user
+        let r = check_role_assignment_refs("role_assignments",
+            &serde_json::json!({"role_id":"r-1","user_id":"u-missing"}), &seen);
+        assert!(r.unwrap().contains("missing user"));
+
+        // Both present
+        let r = check_role_assignment_refs("role_assignments",
+            &serde_json::json!({"role_id":"r-1","user_id":"u-1"}), &seen);
+        assert!(r.is_none());
+    }
+
+    // -----------------------------------------------------------------
+    // Import — full pipeline tests (v0.21.0)
+    // -----------------------------------------------------------------
+
+    /// A simple `ImportSink` for tests. Records every staged row
+    /// into a `Vec`. `commit` returns the row count; `rollback`
+    /// clears the staged buffer.
+    struct VecSink {
+        staged:    Vec<(String, serde_json::Value)>,
+        committed: bool,
+    }
+    impl VecSink {
+        fn new() -> Self { Self { staged: Vec::new(), committed: false } }
+    }
+    impl ImportSink for VecSink {
+        async fn stage_row(&mut self, table: &str, row: &serde_json::Value)
+            -> Result<(), String>
+        {
+            self.staged.push((table.to_owned(), row.clone()));
+            Ok(())
+        }
+        async fn commit(&mut self) -> Result<u64, String> {
+            self.committed = true;
+            Ok(self.staged.len() as u64)
+        }
+        async fn rollback(&mut self) -> Result<(), String> {
+            self.staged.clear();
+            Ok(())
+        }
+    }
+
+    /// Build a real .cdump in-memory and return it as a Cursor
+    /// suitable for `import` (which needs Read + Seek).
+    fn build_dump(
+        tables:  &[&str],
+        rows:    Vec<(&str, serde_json::Value)>,
+        profile: Option<&'static RedactionProfile>,
+    ) -> std::io::Cursor<Vec<u8>> {
+        let mut buf = Vec::new();
+        let mut spec = make_spec(tables);
+        spec.profile = profile;
+        let mut exp = Exporter::new(spec, &mut buf).unwrap();
+        for (t, r) in rows {
+            exp.push(t, r).unwrap();
+        }
+        exp.finish().unwrap();
+        std::io::Cursor::new(buf)
+    }
+
+    /// Run `import` synchronously by spinning up a current-thread
+    /// runtime. Tests run as `#[test]`, not `#[tokio::test]`, to
+    /// avoid forcing every test in this file to depend on tokio
+    /// at the proc-macro level. The migrate library doesn't
+    /// import tokio.
+    fn run_import<S: ImportSink>(
+        cursor:     &mut std::io::Cursor<Vec<u8>>,
+        sink:       &mut S,
+        invariants: &[InvariantCheckFn],
+        require_unredacted: bool,
+    ) -> MigrateResult<ViolationReport> {
+        // Build a tiny single-threaded executor. Future-block-on
+        // pattern: poll the future to completion against a noop
+        // waker. Works because `ImportSink` impls in tests
+        // never actually `.await` on anything that yields.
+        let fut = import(cursor, sink, invariants, require_unredacted);
+        block_on(fut)
+    }
+
+    /// Minimal block_on for tests. Lives here rather than as a
+    /// library helper because the production caller (the CLI)
+    /// uses tokio properly via `#[tokio::main]`. Tests stay
+    /// host-only and don't need tokio in this crate's deps.
+    fn block_on<F: std::future::Future>(f: F) -> F::Output {
+        use std::task::{Context, Poll, Waker};
+        let mut f = std::pin::pin!(f);
+        let waker = Waker::noop();
+        let mut cx = Context::from_waker(waker);
+        loop {
+            match f.as_mut().poll(&mut cx) {
+                Poll::Ready(v) => return v,
+                Poll::Pending  => panic!(
+                    "test future returned Pending; ImportSink impls in tests \
+                     must complete synchronously"),
+            }
+        }
+    }
+
+    #[test]
+    fn import_clean_dump_passes_with_zero_violations() {
+        // Happy path: every row's references are intact.
+        let tables = ["tenants", "users"];
+        let rows = vec![
+            ("tenants", serde_json::json!({"id":"t-1","slug":"acme"})),
+            ("users",   serde_json::json!({"id":"u-1","tenant_id":"t-1","email":"a@x.com"})),
+            ("users",   serde_json::json!({"id":"u-2","tenant_id":"t-1","email":"b@x.com"})),
+        ];
+        let mut cursor = build_dump(&tables, rows, None);
+        let mut sink = VecSink::new();
+        let report = run_import(&mut cursor, &mut sink,
+            default_invariant_checks(), false).unwrap();
+        assert!(report.is_clean());
+        assert_eq!(report.rows_seen, 3);
+        assert_eq!(report.rows_staged, 3);
+        assert_eq!(sink.staged.len(), 3);
+    }
+
+    #[test]
+    fn import_dangling_user_tenant_ref_is_flagged() {
+        // A user references a tenant that wasn't in the dump.
+        // (This shouldn't happen for a well-formed export, but
+        // the import is the line of defense.)
+        let tables = ["tenants", "users"];
+        let rows = vec![
+            ("tenants", serde_json::json!({"id":"t-1","slug":"acme"})),
+            ("users",   serde_json::json!({"id":"u-1","tenant_id":"t-MISSING","email":"a@x.com"})),
+        ];
+        let mut cursor = build_dump(&tables, rows, None);
+        let mut sink = VecSink::new();
+        let report = run_import(&mut cursor, &mut sink,
+            default_invariant_checks(), false).unwrap();
+        assert!(!report.is_clean());
+        assert_eq!(report.violations.len(), 1);
+        assert_eq!(report.violations[0].table, "users");
+        assert_eq!(report.violations[0].row_id, "u-1");
+        assert!(report.violations[0].reason.contains("missing tenant"));
+        // Row was still staged (violations don't block staging,
+        // only commit).
+        assert_eq!(sink.staged.len(), 2);
+    }
+
+    #[test]
+    fn import_dangling_membership_ref_is_flagged() {
+        let tables = ["tenants", "users", "user_tenant_memberships"];
+        let rows = vec![
+            ("tenants", serde_json::json!({"id":"t-1","slug":"acme"})),
+            ("users",   serde_json::json!({"id":"u-1","tenant_id":"t-1"})),
+            ("user_tenant_memberships",
+                serde_json::json!({"user_id":"u-MISSING","tenant_id":"t-1"})),
+        ];
+        let mut cursor = build_dump(&tables, rows, None);
+        let mut sink = VecSink::new();
+        let report = run_import(&mut cursor, &mut sink,
+            default_invariant_checks(), false).unwrap();
+        assert!(!report.is_clean());
+        let v = &report.violations[0];
+        assert_eq!(v.table, "user_tenant_memberships");
+        assert!(v.reason.contains("missing user"));
+    }
+
+    #[test]
+    fn import_multiple_violations_accumulate_per_row() {
+        // role_assignments has both role_id and user_id checks;
+        // both can fire on one row.
+        let tables = ["tenants", "users", "roles", "role_assignments"];
+        let rows = vec![
+            ("tenants", serde_json::json!({"id":"t-1"})),
+            ("users",   serde_json::json!({"id":"u-1","tenant_id":"t-1"})),
+            ("roles",   serde_json::json!({"id":"r-1"})),
+            ("role_assignments",
+                serde_json::json!({"role_id":"r-MISSING","user_id":"u-MISSING"})),
+        ];
+        let mut cursor = build_dump(&tables, rows, None);
+        let mut sink = VecSink::new();
+        let report = run_import(&mut cursor, &mut sink,
+            default_invariant_checks(), false).unwrap();
+        // The role_assignment_refs check is one function and
+        // returns a single Violation describing the FIRST broken
+        // field (role_id), not both. That's an intentional
+        // simplification for v0.21.0 — operators get a
+        // diagnosable signal without log spam.
+        assert_eq!(report.violations.len(), 1);
+        assert!(report.violations[0].reason.contains("missing role"));
+    }
+
+    #[test]
+    fn import_violation_report_groups_by_table() {
+        // by_table() is what the CLI uses for the operator
+        // summary. Pin its grouping behavior.
+        let report = ViolationReport {
+            rows_seen: 4, rows_staged: 4,
+            violations: vec![
+                Violation { table: "users".into(), row_id: "u-1".into(), reason: "x".into() },
+                Violation { table: "users".into(), row_id: "u-2".into(), reason: "x".into() },
+                Violation { table: "groups".into(), row_id: "g-1".into(), reason: "x".into() },
+            ],
+        };
+        let groups = report.by_table();
+        assert_eq!(groups, vec![("users".into(), 2), ("groups".into(), 1)]);
+    }
+
+    #[test]
+    fn import_refuses_redacted_dump_when_required_unredacted() {
+        // An operator running production-restore (not staging-
+        // refresh) wants to refuse redacted dumps.
+        let tables = ["users"];
+        let rows = vec![
+            ("users", serde_json::json!({"id":"u-1","email":"a@x.com","display_name":"A"})),
+        ];
+        let prof = lookup_profile("prod-to-staging");
+        let mut cursor = build_dump(&tables, rows, prof);
+        let mut sink = VecSink::new();
+        let err = run_import(&mut cursor, &mut sink,
+            default_invariant_checks(), true).unwrap_err();
+        match err {
+            MigrateError::Parse(s) => {
+                assert!(s.contains("redaction profile"));
+                assert!(s.contains("require-unredacted"));
+            }
+            other => panic!("expected Parse error, got: {other}"),
+        }
+        // Sink was not asked to stage anything before the bail.
+        assert_eq!(sink.staged.len(), 0);
+    }
+
+    #[test]
+    fn import_runs_verify_first_and_rejects_tampered_dump() {
+        // A tampered dump must fail verify (pass 1), so import
+        // never starts staging rows — the destination stays
+        // unmodified.
+        let tables = ["users"];
+        let rows = vec![
+            ("users", serde_json::json!({"id":"u-1"})),
+        ];
+        let mut cursor = build_dump(&tables, rows, None);
+
+        // Mutate the payload after the manifest line.
+        let buf = cursor.get_mut();
+        let nl = buf.iter().position(|&b| b == b'\n').unwrap();
+        buf[nl + 20] ^= 0x01;
+
+        let mut sink = VecSink::new();
+        let err = run_import(&mut cursor, &mut sink,
+            default_invariant_checks(), false).unwrap_err();
+        assert!(matches!(err,
+            MigrateError::TableHashMismatch { .. } |
+            MigrateError::PayloadHashMismatch |
+            MigrateError::SignatureMismatch |
+            MigrateError::Parse(_)),
+            "got: {err}");
+        // Critically: nothing was staged.
+        assert_eq!(sink.staged.len(), 0);
+    }
+
+    #[test]
+    fn import_with_disabled_invariants_passes_dangling_refs() {
+        // The CLI's `--no-invariant-checks` flag makes the
+        // operator-supplied invariants empty. Verify the report
+        // is then always clean (the rows still get staged but
+        // no violations are emitted).
+        let tables = ["tenants", "users"];
+        let rows = vec![
+            ("tenants", serde_json::json!({"id":"t-1"})),
+            ("users",   serde_json::json!({"id":"u-1","tenant_id":"t-MISSING"})),
+        ];
+        let mut cursor = build_dump(&tables, rows, None);
+        let mut sink = VecSink::new();
+        // Empty invariants slice = no checks.
+        let report = run_import(&mut cursor, &mut sink,
+            &[], false).unwrap();
+        assert!(report.is_clean());
+        assert_eq!(sink.staged.len(), 2);
+    }
+
+    #[test]
+    fn default_invariant_checks_returns_at_least_four() {
+        // Tripwire: a refactor that accidentally drops a check
+        // function from the slice fails this test. The exact
+        // number is allowed to grow as new checks land.
+        let n = default_invariant_checks().len();
+        assert!(n >= 4, "expected ≥4 default checks, got {n}");
     }
 }

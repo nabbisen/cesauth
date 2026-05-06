@@ -1,6 +1,6 @@
 # ADR-005: Data migration tooling for server-to-server moves
 
-**Status**: Draft (v0.19.0)
+**Status**: Accepted (v0.21.0)
 **Decision**: A standalone host-side CLI binary `cesauth-migrate`
 in a new `crates/migrate/` workspace member, **operator-mediated**
 (not Worker-self-export). Two data formats:

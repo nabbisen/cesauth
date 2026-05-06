@@ -312,6 +312,135 @@ client coordination**. See
 
 ---
 
+## Operation: cross-account data migration
+
+This is **planned operational work**, not an alert. Use when
+moving cesauth's data from one Cloudflare account to another:
+M&A integration, region separation for data residency, isolating
+a compromised account from a fresh one. Full walkthrough in the
+[Data migration](./data-migration.md) chapter; this is the
+runbook quick-reference.
+
+### Pre-flight before invoking `cesauth-migrate export`
+
+Source side:
+
+```sh
+# Confirm wrangler is authenticated to the source.
+wrangler whoami
+
+# Confirm the source D1 size is what you expect.
+wrangler d1 info <source-database>
+```
+
+Destination side, before the importing operator runs `import`:
+
+```sh
+# 1. Mint and push fresh secrets.
+openssl genpkey -algorithm ed25519 \
+  | wrangler secret put JWT_SIGNING_KEY    --env production
+openssl rand -base64 48 | tr -d '\n' \
+  | wrangler secret put SESSION_COOKIE_KEY --env production
+openssl rand -base64 32 | tr -d '\n' \
+  | wrangler secret put ADMIN_API_KEY      --env production
+# (Plus MAGIC_LINK_MAIL_API_KEY, TURNSTILE_SECRET if applicable.)
+
+# 2. Apply schema migrations.
+wrangler d1 migrations apply <destination-database> --remote
+```
+
+### Running the move
+
+Source side:
+
+```sh
+cesauth-migrate export \
+  --output     cesauth-prod-$(date +%Y%m%d).cdump \
+  --account-id <source-account-id> \
+  --database   <source-database>
+```
+
+The CLI prints a 16-hex-char fingerprint to stderr at start.
+**Note this fingerprint somewhere persistent** (incident
+channel, runbook, password manager). Read it aloud to the
+destination operator over a separate channel.
+
+Transmit the dump file to the destination operator out-of-band
+from the fingerprint.
+
+Destination side:
+
+```sh
+cesauth-migrate verify --input cesauth-prod-20260428.cdump
+# Confirm the printed fingerprint matches what the source
+# operator told you. If not, abort.
+
+cesauth-migrate import \
+  --input      cesauth-prod-20260428.cdump \
+  --account-id <destination-account-id> \
+  --database   <destination-database> \
+  --commit
+```
+
+The importer walks five gates (verify, fingerprint handshake,
+secret pre-flight, invariant checks, final commit confirmation).
+At each gate the operator can decline; the destination D1 is
+left untouched until the final commit prompt is answered yes.
+
+### Post-import verification
+
+Immediately after the importer's `✓ Import complete` line:
+
+```sh
+# 1. Confirm row counts match expectation.
+wrangler d1 execute <destination-database> --remote \
+  --command="SELECT count(*) FROM users;"
+
+# 2. Update destination wrangler.toml's JWT_KID to match the
+#    new signing key.
+# (edit wrangler.toml)
+
+# 3. Deploy the Worker against the destination.
+wrangler deploy --env production
+
+# 4. Smoke-test the discovery doc.
+curl -s https://<destination-host>/.well-known/openid-configuration \
+  | jq -r .issuer
+
+# 5. Switch DNS. (Outside cesauth's surface; your registrar/
+#    Cloudflare DNS console.)
+
+# 6. Source-side cleanup, after grace window:
+#    - Revoke source admin tokens.
+#    - Retire source signing keys (set retired_at).
+```
+
+### Common failure modes
+
+**Fingerprint mismatch at handshake.** The dump was tampered
+or substituted in transit. Do NOT continue. Re-export from
+the source and retransmit through a different channel.
+
+**Secret pre-flight fails (`JWT_SIGNING_KEY` not set).** Run
+`wrangler secret put JWT_SIGNING_KEY` at the destination first.
+ADR-005 §Q6.
+
+**Violation report has entries.** Read the violations. If a
+small number (single digits), the source dump may have caught
+mid-action state — re-export. If many, the source schema is
+inconsistent and needs investigation before migration.
+
+**`wrangler d1 execute` fails mid-commit.** A wrangler-side
+or Cloudflare-side issue. The importer surfaces the wrangler
+stderr verbatim. Re-running the import is safe — staged rows
+are in memory only, the destination D1 will not have been
+partially populated by the failed call (D1 batches are
+atomic per call). Note: if SOME table commits succeeded and
+THEN a later table failed, the destination has those earlier
+tables' rows. v0.21.0 doesn't roll those back automatically;
+the operator runs `wrangler d1 execute --command="DROP TABLE x"`
+or applies a fresh-DB cleanup before retrying.
+
 ## Periodic operator tasks
 
 These aren't alerts; they're recurring chores.

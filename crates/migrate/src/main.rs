@@ -12,14 +12,16 @@
 
 use anyhow::{bail, Context, Result};
 use cesauth_core::migrate::{
-    built_in_profiles, lookup_profile, verify, ExportSpec, Exporter,
-    FORMAT_VERSION, SCHEMA_VERSION,
+    built_in_profiles, default_invariant_checks, import, lookup_profile, verify,
+    ExportSpec, Exporter, ImportSink as _, FORMAT_VERSION, SCHEMA_VERSION,
 };
 use clap::{Parser, Subcommand};
 
+mod d1_sink;
 mod d1_source;
 mod schema;
 
+use d1_sink::WranglerD1Sink;
 use d1_source::{D1Source, WranglerD1Source};
 use schema::MIGRATION_TABLE_ORDER;
 
@@ -47,10 +49,9 @@ JWT signing keys, session cookie keys, and admin tokens at the \
 destination; this tool prints a checklist of which secrets are \
 needed.
 
-As of v0.20.0: `export` and `verify` are real. `import` is \
-skeleton-only and lands in v0.21.0 with the operator handshake \
-and invariant accumulation. `--tenant` filtering and resume \
-support land in v0.22.0.\
+As of v0.21.0: `export`, `verify`, and `import` are real. \
+`--tenant` filtering, resume support, and the staging-refresh \
+combinator land in v0.22.0.\
 ",
 )]
 struct Cli {
@@ -125,7 +126,7 @@ enum Command {
     /// before `--commit` — the tool checks via the wrangler
     /// binding API and refuses otherwise. ADR-005 §Q6 walks why.
     ///
-    /// **Not yet implemented.** Lands in v0.21.0.
+    /// Implemented in v0.21.0.
     Import {
         /// Input `.cdump` path.
         #[arg(short, long, value_name = "PATH")]
@@ -187,11 +188,8 @@ async fn main() -> Result<()> {
             do_export(output, account_id, database, profile, tenant).await
         }
 
-        Command::Import { .. } => {
-            bail!(
-                "import not implemented yet (lands in v0.21.0; \
-                 see ADR-005 phasing)."
-            );
+        Command::Import { input, account_id, database, commit, require_unredacted, accept_violations } => {
+            do_import(input, account_id, database, commit, require_unredacted, accept_violations).await
         }
 
         Command::Verify { input } => do_verify(input),
@@ -417,4 +415,235 @@ fn wrap(s: &str, width: usize) -> Vec<String> {
         out.push(cur);
     }
     out
+}
+
+// ---------------------------------------------------------------------
+// Import handler
+// ---------------------------------------------------------------------
+
+async fn do_import(
+    input:              std::path::PathBuf,
+    account_id:         String,
+    database:           String,
+    commit:             bool,
+    require_unredacted: bool,
+    accept_violations:  bool,
+) -> Result<()> {
+    // ---- 1. Open the dump and run verify (pass 1 of import) -------
+    eprintln!("Reading {}...", input.display());
+    let mut file = std::fs::File::open(&input)
+        .with_context(|| format!("opening {}", input.display()))?;
+
+    // Synchronous file I/O for the verify-only print phase. The
+    // import library's two-pass design means we'll re-read; that
+    // requires Seek, which std::fs::File supports.
+    let initial_report = verify(std::io::BufReader::new(&file))
+        .map_err(|e| anyhow::anyhow!("dump failed verification: {e}"))?;
+
+    println!();
+    println!("Dump verified ✓");
+    println!("  cesauth version:   {}", initial_report.manifest.cesauth_version);
+    println!("  Source account:    {}", initial_report.manifest.source_account_id);
+    println!("  Schema version:    {} (this build supports {SCHEMA_VERSION})",
+        initial_report.manifest.schema_version);
+    if initial_report.manifest.schema_version != SCHEMA_VERSION {
+        println!("    ⚠ schema mismatch — proceed with care");
+    }
+    println!("  Redaction profile: {}",
+        initial_report.manifest.redaction_profile.as_deref()
+            .unwrap_or("(none — full unredacted dump)"));
+    println!();
+
+    // ---- 2. Operator handshake — fingerprint confirmation ---------
+    println!("Public-key fingerprint of this dump:");
+    println!("    {}", initial_report.manifest.fingerprint());
+    println!();
+    println!("Confirm with the EXPORTING operator (over a separate channel)");
+    println!("that this fingerprint matches what they printed at export time.");
+    println!();
+
+    let confirmed = prompt_yn(
+        "Does the fingerprint match? Proceed with import?",
+        false,
+    )?;
+    if !confirmed {
+        bail!("import aborted: operator declined fingerprint confirmation");
+    }
+
+    // ---- 3. Pre-flight: destination must have JWT_SIGNING_KEY -----
+    if commit {
+        check_destination_secrets(&database).await
+            .context("destination secrets pre-flight")?;
+    }
+
+    // ---- 4. Run the import library against the destination sink ---
+    eprintln!();
+    eprintln!("Staging rows to destination D1 `{database}`...");
+    let mut sink = WranglerD1Sink::new(database.clone(), None);
+
+    // The library needs Read + Seek; std::fs::File satisfies both.
+    let import_report = import(
+        &mut file,
+        &mut sink,
+        default_invariant_checks(),
+        require_unredacted,
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("import staging failed: {e}"))?;
+
+    // ---- 5. Display the violation report ---------------------------
+    println!();
+    println!("Import staging complete.");
+    println!("  Rows seen:    {}", import_report.rows_seen);
+    println!("  Rows staged:  {}", import_report.rows_staged);
+    println!("  Violations:   {}", import_report.violations.len());
+
+    if !import_report.is_clean() {
+        println!();
+        println!("⚠ Schema invariant violations detected:");
+        for (table, count) in import_report.by_table() {
+            println!("  {table:30} {count} violation(s)");
+        }
+        println!();
+        // Detail dump: first 10 violations. More than that and
+        // the operator should re-export from a clean source.
+        println!("First {} violations:",
+            import_report.violations.len().min(10));
+        for v in import_report.violations.iter().take(10) {
+            println!("  {v}");
+        }
+        if import_report.violations.len() > 10 {
+            println!("  ... and {} more", import_report.violations.len() - 10);
+        }
+        println!();
+    }
+
+    // ---- 6. Decide whether to commit -------------------------------
+    if !commit {
+        println!();
+        println!("--commit was not passed; rolling back staged rows.");
+        println!("The destination D1 was not modified.");
+        sink.rollback().await
+            .map_err(|e| anyhow::anyhow!("rollback failed: {e}"))?;
+        return Ok(());
+    }
+
+    if !import_report.is_clean() && !accept_violations {
+        println!("Refusing to commit: violations present and --accept-violations was not passed.");
+        sink.rollback().await
+            .map_err(|e| anyhow::anyhow!("rollback failed: {e}"))?;
+        bail!(
+            "{} violations present; re-run with --accept-violations to commit anyway",
+            import_report.violations.len(),
+        );
+    }
+
+    // ---- 7. Final commit confirmation ------------------------------
+    let prompt = if import_report.is_clean() {
+        format!(
+            "Commit {} rows to destination `{database}` (account {account_id})?",
+            import_report.rows_staged,
+        )
+    } else {
+        format!(
+            "Commit {} rows DESPITE {} violations?",
+            import_report.rows_staged,
+            import_report.violations.len(),
+        )
+    };
+    let confirmed = prompt_yn(&prompt, false)?;
+    if !confirmed {
+        println!("Operator declined final commit; rolling back.");
+        sink.rollback().await
+            .map_err(|e| anyhow::anyhow!("rollback failed: {e}"))?;
+        return Ok(());
+    }
+
+    // ---- 8. Commit -------------------------------------------------
+    eprintln!();
+    eprintln!("Committing to destination...");
+    let written = sink.commit().await
+        .map_err(|e| anyhow::anyhow!("commit failed: {e}"))?;
+
+    println!();
+    println!("✓ Import complete. {written} rows written to D1 `{database}`.");
+    println!();
+    println!("Post-commit checklist:");
+    println!("  1. Update destination wrangler.toml's JWT_KID to match the new signing key.");
+    println!("  2. Deploy: wrangler deploy --env production");
+    println!("  3. Smoke-test: curl -s https://<destination>/.well-known/openid-configuration");
+    println!("  4. Update DNS to direct user traffic to the destination.");
+    println!("  5. Source-side: revoke old admin tokens, retire old signing keys per ADR-005 §Q6.");
+    Ok(())
+}
+
+/// Prompt the operator with a yes/no question. Reads a single
+/// line from stdin. `default_yes` selects the default-on-Enter
+/// behavior. Refuses ambiguous responses (treats anything other
+/// than y/Y/n/N + Enter as a re-prompt).
+fn prompt_yn(question: &str, default_yes: bool) -> Result<bool> {
+    use std::io::{BufRead as _, Write as _};
+    let prompt_suffix = if default_yes { " [Y/n] " } else { " [y/N] " };
+    let stdin = std::io::stdin();
+    let mut handle = stdin.lock();
+    let mut line = String::new();
+    loop {
+        print!("{question}{prompt_suffix}");
+        std::io::stdout().flush().ok();
+        line.clear();
+        let n = handle.read_line(&mut line)
+            .context("reading stdin")?;
+        if n == 0 {
+            // EOF — treat as decline. Common in scripted invocations
+            // where stdin is closed; refusing here makes the failure
+            // mode explicit rather than silently committing.
+            return Ok(false);
+        }
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return Ok(default_yes);
+        }
+        match trimmed.chars().next().unwrap().to_ascii_lowercase() {
+            'y' => return Ok(true),
+            'n' => return Ok(false),
+            _ => {
+                println!("Please answer y or n.");
+                continue;
+            }
+        }
+    }
+}
+
+/// Pre-flight check for `--commit`: the destination's
+/// `JWT_SIGNING_KEY` secret must already be set. ADR-005 §Q6.
+///
+/// We can't read the secret value through the wrangler CLI (it's
+/// write-only by design), but `wrangler secret list` tells us
+/// whether it exists. The check parses that output.
+async fn check_destination_secrets(database: &str) -> Result<()> {
+    eprintln!("Checking destination has required secrets set...");
+    let output = tokio::process::Command::new("wrangler")
+        .arg("secret")
+        .arg("list")
+        .output()
+        .await
+        .context("running wrangler secret list")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!(
+            "wrangler secret list failed: {stderr}\n\
+             Cannot verify destination is ready. Pass --skip-preflight\n\
+             (NOT yet implemented) or set up wrangler auth first."
+        );
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !stdout.contains("JWT_SIGNING_KEY") {
+        anyhow::bail!(
+            "destination D1 `{database}` does not have JWT_SIGNING_KEY set.\n\
+             Run `wrangler secret put JWT_SIGNING_KEY` (paste an Ed25519 PKCS#8 PEM)\n\
+             before committing the import. ADR-005 §Q6."
+        );
+    }
+    eprintln!("  JWT_SIGNING_KEY: set ✓");
+    Ok(())
 }

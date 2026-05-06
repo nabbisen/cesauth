@@ -137,21 +137,71 @@ fn export_refuses_to_clobber_existing_file() {
 }
 
 #[test]
-fn import_still_returns_explanatory_error() {
-    // Phase 3 hasn't shipped. Import should fail with a message
-    // that points the operator at the landing release, not panic.
+fn import_with_closed_stdin_declines_at_handshake() {
+    // The import path prompts for fingerprint confirmation. With
+    // stdin closed (the default for `Command::output()`), the
+    // prompt's read_line returns 0 bytes immediately, which the
+    // CLI treats as decline. Result: import aborts with a
+    // diagnostic, destination D1 untouched.
     let dir = tempdir();
-    let path = dir.join("e2e-stub.cdump");
+    let path = dir.join("e2e-import-decline.cdump");
     write_dump(&path, None);
 
     let out = cli().args(["import", "-i"])
         .arg(&path)
-        .args(["--account-id", "test", "--database", "test"])
+        .args(["--account-id", "test-acct", "--database", "never-touched"])
+        .output().unwrap();
+    assert!(!out.status.success(), "must abort when handshake is declined");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let combined = format!("{stdout}{stderr}");
+    // Diagnostic must mention the handshake or operator decision
+    // — not crash or report stuck state.
+    assert!(
+        combined.contains("declined")
+            || combined.contains("aborted")
+            || combined.contains("fingerprint"),
+        "abort must be diagnosable. combined: {combined}",
+    );
+    // Verify must have run (pre-handshake) and printed something
+    // about the dump.
+    assert!(combined.contains("Dump verified") || combined.contains("Reading"),
+        "verify pass should run before handshake. combined: {combined}");
+}
+
+#[test]
+fn import_rejects_invalid_dump_before_handshake() {
+    // A dump that fails verify must abort before the handshake
+    // prompt — operators shouldn't be asked to confirm
+    // a fingerprint for a tampered file.
+    let dir = tempdir();
+    let path = dir.join("e2e-import-bad.cdump");
+    write_dump(&path, None);
+
+    // Tamper.
+    let mut bytes = std::fs::read(&path).unwrap();
+    let nl = bytes.iter().position(|&b| b == b'\n').unwrap();
+    bytes[nl + 20] ^= 0xff;
+    std::fs::write(&path, &bytes).unwrap();
+
+    let out = cli().args(["import", "-i"])
+        .arg(&path)
+        .args(["--account-id", "test", "--database", "never-touched"])
         .output().unwrap();
     assert!(!out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("v0.21.0"),
-        "stderr should reference v0.21.0: {stderr}");
+    let combined = format!("{}{}", String::from_utf8_lossy(&out.stdout), stderr);
+    assert!(combined.contains("verification failed")
+        || combined.contains("hash")
+        || combined.contains("signature")
+        || combined.contains("Parse")
+        || combined.contains("UTF-8")
+        || combined.contains("I/O error"),
+        "tampered dump must surface a verify failure. combined: {combined}");
+    // Must NOT have asked for handshake — checking absence of
+    // the prompt phrase.
+    assert!(!combined.contains("[Y/n]") && !combined.contains("[y/N]"),
+        "handshake must not run on a failed-verify dump");
 }
 
 #[test]

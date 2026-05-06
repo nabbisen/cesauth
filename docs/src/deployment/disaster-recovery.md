@@ -171,22 +171,118 @@ than infrastructure failure.
 **Symptom**: an attacker has admin credentials for the
 Cloudflare account hosting cesauth.
 
-**Recovery**: see [Backup & restore → Restoring from
-compromise](./backup-restore.md#restoring-from-compromise) for
-the detailed walkthrough. The high-level shape:
+**Recovery**: this is a multi-stage operation. As of v0.21.0,
+the data-relocation half is supported by `cesauth-migrate` —
+which makes the move from compromised account → fresh account
+mechanical rather than ad-hoc. The shape:
 
-1. Revoke compromised credentials.
-2. Provision a fresh Cloudflare account.
-3. Restore D1 from off-Cloudflare backup.
-4. Regenerate every secret.
-5. Re-deploy.
-6. Switch DNS.
-7. Force every user to re-auth.
-8. Notify users.
+```
+                                 OLD ACCOUNT (compromised)
+                                       │
+                          1. revoke creds, isolate
+                                       │
+                          2. cesauth-migrate export ──► .cdump
+                                                          │
+                                                   3. transmit
+                                                          │
+                                                          ▼
+                                                 NEW ACCOUNT (fresh)
+                                                          │
+                                                4. mint fresh secrets
+                                                          │
+                                                5. cesauth-migrate import
+                                                          │
+                                                  6. deploy + smoke + DNS
+```
 
-This is a multi-day operation. Practice the steps in advance
-on staging — particularly the DNS cutover and the secret
-regeneration.
+Step-by-step:
+
+1. **Revoke compromised credentials immediately.** Cloudflare
+   API tokens, dashboard logins, anything that grants the
+   attacker continued access. The compromised account stays
+   accessible to you for the export step, but harden it first.
+
+2. **Export from the compromised account.** From a host the
+   attacker doesn't control:
+
+   ```sh
+   cesauth-migrate export \
+     --output     cesauth-compromised-$(date +%s).cdump \
+     --account-id <compromised-account-id> \
+     --database   <compromised-database>
+   ```
+
+   The export reads-only; the attacker's admin access doesn't
+   block it. Note the fingerprint the CLI prints — you'll need
+   it at import time.
+
+   If the attacker has wiped the source D1 already, this step
+   is impossible — fall back to a backup restore (the
+   pre-incident `wrangler d1 export` you took as part of your
+   regular backup cadence).
+
+3. **Provision a fresh Cloudflare account.** The compromised
+   account is forfeit until forensics complete; do not
+   re-deploy into it. Standard account setup: D1, R2, KV, DO
+   bindings to match the compromised account's structure.
+
+4. **Mint fresh secrets at the destination.** ALL secrets are
+   new — the compromised account's `JWT_SIGNING_KEY` must be
+   considered known to the attacker. Every JWT issued under it
+   is repudiable.
+
+   ```sh
+   # Fresh JWT signing key with a NEW kid (don't reuse the old).
+   openssl genpkey -algorithm ed25519 \
+     | wrangler secret put JWT_SIGNING_KEY    --env production
+   openssl rand -base64 48 | tr -d '\n' \
+     | wrangler secret put SESSION_COOKIE_KEY --env production
+   openssl rand -base64 32 | tr -d '\n' \
+     | wrangler secret put ADMIN_API_KEY      --env production
+   ```
+
+   Apply schema migrations:
+
+   ```sh
+   wrangler d1 migrations apply <new-database> --remote
+   ```
+
+5. **Import into the new account.** The handshake matters
+   especially in this scenario — if the attacker intercepted
+   the dump in transit, the fingerprint won't match.
+
+   ```sh
+   cesauth-migrate verify --input cesauth-compromised-1714287000.cdump
+   # Confirm fingerprint matches the value from step 2.
+
+   cesauth-migrate import \
+     --input      cesauth-compromised-1714287000.cdump \
+     --account-id <new-account-id> \
+     --database   <new-database> \
+     --commit
+   ```
+
+6. **Update `JWT_KID`, deploy, smoke, switch DNS.** Standard
+   post-import sequence from the data-migration runbook.
+   Expect every existing user session to be invalidated —
+   `SESSION_COOKIE_KEY` rotated, `JWT_SIGNING_KEY` rotated.
+
+7. **Notify users.** Compromise of an auth provider is a
+   disclosable event in most jurisdictions. Coordinate with
+   counsel.
+
+The full procedure runs a few hours of focused work plus
+whatever notification requirements your jurisdiction imposes.
+The `cesauth-migrate`-driven middle (steps 2 and 5) is the
+mechanical part; the surrounding work (forensics, account
+provisioning, DNS cutover, user notification) is what makes
+this multi-day in practice.
+
+Practice the steps in advance on staging — particularly the
+DNS cutover and the fresh-account provisioning. The data
+migration itself is exercised every time your team runs a
+prod→staging refresh, which is the right way to keep the
+muscle memory current.
 
 ## Scenario 5 — Region-wide Cloudflare outage
 

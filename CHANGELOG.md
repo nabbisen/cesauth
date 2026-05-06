@@ -12,6 +12,221 @@ always be called out here.
 
 ---
 
+## [0.21.0] - 2026-04-28
+
+Data migration tooling — Phase 3 of 4: real `import` subcommand.
+This release closes the loop on cross-account moves: a `.cdump`
+exported in v0.20.0 can now be applied to a destination D1 in
+one CLI invocation, with the operator-handshake-and-invariant-
+checks flow ADR-005 specified.
+
+**ADR-005 graduates from `Draft` to `Accepted`.** All six
+design questions are now answered in code; the implementation
+matches the design without surprises that warrant amendment.
+
+The remaining v0.22.0 work is polish (resume support, `--tenant`
+filter, staging-refresh combinator, native HTTP API, per-row
+progress) — none of which changes the design. After v0.22.0,
+the data-migration track is feature-complete and the next slot
+is RFC 7662 Token Introspection.
+
+### Added — `cesauth_core::migrate` library
+
+- **`Violation`** value type: `(table, row_id, reason)` triple,
+  with `Display` impl for one-line operator-readable output.
+- **`ViolationReport`** with `is_clean()` (gate predicate) and
+  `by_table()` (Vec preserving manifest table order — the CLI
+  uses this for the per-table summary block).
+- **`InvariantCheckFn`** typedef + **`SeenSnapshot`** —
+  in-memory FK-ish state. The snapshot tracks
+  `(table, primary_key)` pairs as rows are streamed; checks
+  read it via `seen.contains(table, id)`. No destination-side
+  query needed; everything runs in the importer's process.
+- **`default_invariant_checks()`** — four ship-by-default checks:
+  - `users.tenant_id` references a present tenant.
+  - Memberships' `user_id` references a present user.
+  - Memberships' container_id (`tenant_id`/`organization_id`/
+    `group_id`) references a present container row.
+  - `role_assignments.role_id` and `user_id` both reference
+    present rows. (Returns the first failure rather than
+    accumulating both — keeps log spam down on a misconfigured
+    role_assignment.)
+- **`ImportSink`** trait: async `stage_row` / `commit` /
+  `rollback`. The CLI provides the implementation; the library
+  knows nothing about D1 or wrangler.
+- **`import<S: ImportSink>`** async function. Two-pass:
+  1. `verify` runs first against the dump's bytes (signature,
+     hashes). A bad dump bails before any sink interaction —
+     the destination never sees a tampered file.
+  2. The payload streams again through `sink.stage_row` while
+     each row passes through the invariant checks. Violations
+     accumulate; rows are staged regardless. The decision to
+     commit or roll back belongs to the caller.
+
+  Honors `require_unredacted` flag: a redacted dump errors out
+  pre-staging if this is set, suitable for production-restore
+  scenarios where redaction would be data loss.
+
+### Added — `crates/migrate/`
+
+- **`d1_sink.rs`** module — `WranglerD1Sink` implementing
+  `ImportSink`. Stages rows in a `BTreeMap<table, Vec<row>>`,
+  commits via batched `wrangler d1 execute` (one batch per
+  table). Includes:
+  - `value_to_sql_literal` — JSON-to-SQL converter handling
+    Null, Bool, Number, String (with single-quote escaping),
+    and JSON-blob (re-serialized + quoted).
+  - `sqlite_quote` — proper SQLite single-quoted literal
+    (doubles every embedded `'`). Five unit tests pin
+    behavior.
+  - Identifier check on table + column names. Belt-and-
+    suspenders against the wrangler subprocess receiving
+    something that doesn't tokenize cleanly.
+- **`do_import` CLI handler** in `main.rs`. Walks the five-gate
+  flow: verify → fingerprint handshake → secret pre-flight
+  → invariant checks → final commit confirmation. Each gate
+  the operator can decline; the destination D1 is untouched
+  until the final yes. Post-commit, prints the operational
+  checklist (update JWT_KID, deploy, smoke, DNS, retire old
+  keys).
+- **`prompt_yn`** helper — operator y/n prompt with sane
+  defaults. **EOF on stdin (scripted invocation) is treated
+  as decline.** This is intentional — import requires a
+  human in the loop; making automated runs fail closed is
+  safer than making them silently commit.
+- **`check_destination_secrets`** pre-flight — calls
+  `wrangler secret list`, refuses commit if `JWT_SIGNING_KEY`
+  isn't set at the destination. ADR-005 §Q6 enforced at the
+  CLI gate, not just in documentation.
+- Updated CLI `long_about` and `Import` doc comment to
+  reflect v0.21.0 state.
+
+### Tests
+
+- Total: **358 passing** (+21 over v0.20.0):
+  - core: **166** (was 151) — 15 new in `migrate::tests`:
+    - `check_user_tenant_ref_passes_for_known_tenant`.
+    - `check_user_tenant_ref_fails_for_unknown_tenant` —
+      with descriptive reason.
+    - `check_user_tenant_ref_skips_other_tables` — defensive;
+      a check fires only for its owned table.
+    - `check_membership_user_ref_fires_only_for_membership_tables`.
+    - `check_membership_container_dispatches_per_table` —
+      one test asserting the three (tenant_id, organization_id,
+      group_id) dispatch arms.
+    - `check_role_assignment_refs_catches_both_sides`.
+    - `import_clean_dump_passes_with_zero_violations` —
+      load-bearing happy path.
+    - `import_dangling_user_tenant_ref_is_flagged`.
+    - `import_dangling_membership_ref_is_flagged`.
+    - `import_multiple_violations_accumulate_per_row`.
+    - `import_violation_report_groups_by_table`.
+    - `import_refuses_redacted_dump_when_required_unredacted`.
+    - `import_runs_verify_first_and_rejects_tampered_dump`
+      — the destination must not see a tampered payload.
+    - `import_with_disabled_invariants_passes_dangling_refs`
+      — empty invariants slice is a valid configuration.
+    - `default_invariant_checks_returns_at_least_four` —
+      defensive tripwire.
+
+    Plus a private `block_on` helper (no `unsafe`,
+    uses `std::pin::pin!`) so tests don't drag tokio
+    into core's `[dev-dependencies]`.
+  - adapter-test: 51 (unchanged).
+  - ui: 121 (unchanged).
+  - migrate: **20** (was 14) — 11 unit + 9 integration:
+    - 5 new `d1_sink::tests`: SQL literal handling for
+      primitives + escapes + JSON blobs, sqlite_quote
+      escaping, rollback-without-write.
+    - 2 new integration tests:
+      - `import_with_closed_stdin_declines_at_handshake`
+        — EOF behavior pinned.
+      - `import_rejects_invalid_dump_before_handshake`
+        — verify gate runs before any operator prompt.
+    - Removed: `import_still_returns_explanatory_error`
+      (no longer applicable — import is now real).
+
+### Documentation
+
+- **ADR-005 status** flipped from `Draft` to `Accepted`. ADR
+  README index updated.
+- **`docs/src/deployment/data-migration.md`** — new "Importing"
+  section with end-to-end walkthrough, sample successful
+  output, violation handling, `--accept-violations` and
+  `--require-unredacted` semantics, full operator runbook
+  (pre-flight + during + post-commit). Updated
+  "Limitations as of v0.21.0" section adds three v0.21.0-
+  specific items (no native HTTP client yet, fixed
+  invariant set, no email-uniqueness check).
+- **`docs/src/deployment/runbook.md`** — new
+  "Operation: cross-account data migration" section between
+  the symptom-organized parts and the periodic-tasks table.
+  Pre-flight, running the move, post-import verification,
+  common failure modes (fingerprint mismatch, secret
+  pre-flight failure, violations, mid-commit wrangler
+  failure).
+- **`docs/src/deployment/disaster-recovery.md`** §Scenario 4
+  rewritten — concrete `cesauth-migrate` invocations replace
+  the high-level outline. The data-relocation half of the
+  compromise-recovery procedure is now mechanical.
+
+### Migration (0.20.0 → 0.21.0)
+
+Code-only release. No schema, no `wrangler.toml`. The deployed
+Worker is unaffected.
+
+For operators using the migration tool:
+
+```sh
+cargo install --path crates/migrate --force
+cesauth-migrate import --help
+```
+
+The next time you do a cross-account move (or a
+prod→staging-via-import-rather-than-restore), you have the full
+flow available.
+
+### Smoke test
+
+```sh
+# All workspaces green.
+cargo test --workspace                   # 358 passing
+
+# CLI binary
+./target/debug/cesauth-migrate --version # cesauth-migrate 0.21.0
+./target/debug/cesauth-migrate import --help
+
+# Import smoke against an arbitrary cdump fails cleanly with
+# closed stdin (declines at handshake).
+echo "" | ./target/debug/cesauth-migrate import \
+  --input some.cdump --account-id test --database test
+# -> "import aborted: operator declined fingerprint confirmation"
+```
+
+### Deferred to 0.22.0
+
+- **Resume** for interrupted exports/imports.
+- **`--tenant <slug>` filter** for targeted subset migrations.
+- **First-class staging-refresh combinator** (one CLI call
+  combining export → redaction → import).
+- **Native Cloudflare HTTP API client** as alternative to
+  `wrangler` shell-out.
+- **Per-row progress reporting** (currently per-table).
+- **Custom invariant registration via CLI** — the library
+  accepts a slice of check functions; v0.22.0 exposes a way
+  for operators to add their own.
+- **Email-uniqueness-within-tenant check** — held back from
+  v0.21.0's default set because redacted dumps complicate the
+  semantics. A redaction-aware variant lands when the design
+  is clear.
+
+### Deferred — unchanged
+
+- **`check_permission` integration on `/api/v1/...`.** Unscheduled.
+- **External IdP federation.** Out of scope.
+
+---
+
 ## [0.20.0] - 2026-04-28
 
 Data migration tooling — Phase 2: real `export` + `verify`
