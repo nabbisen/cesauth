@@ -12,6 +12,287 @@ changes will always be called out here.
 
 ---
 
+## [0.39.0] - 2026-05-03
+
+i18n-2 continued: login + TOTP + Security Center page chrome
+migration. Builds on v0.36.0's i18n infrastructure (ADR-013)
+to take four high-traffic end-user surfaces from
+locale-hardcoded prose to catalog-managed bilingual rendering.
+**No new ADR** — the design was anticipated in ADR-013 and
+this release is the planned continuation.
+
+### Why this matters
+
+v0.36.0 shipped the catalog + Accept-Language negotiation but
+only migrated three small surfaces (flash banners,
+`/me/security/sessions` chrome, TOTP enroll wrong-code). The
+four largest-by-visibility user-facing pages — login, TOTP
+enroll, TOTP verify, Security Center index — were still
+locale-hardcoded: login + TOTP pages in English, Security
+Center in Japanese. v0.39.0 moves all four through the
+catalog so users see content in their negotiated locale
+across the entire login+MFA flow.
+
+### What ships
+
+#### Catalog: 48 new `MessageKey` variants
+
+| Surface | Variants |
+|---|---|
+| Login (`/login`)                          | 10 |
+| TOTP enroll (`/me/security/totp/enroll`)  | 11 |
+| TOTP verify (`/me/security/totp/verify`)  | 11 + 1 (`TotpVerifyWrongCode`) |
+| Security Center (`/me/security`)          | 13 |
+| Login `LoginTitle` JA disambiguation      | _existing_ — JA changed from "サインイン" to "サインインする" to differentiate from `SessionsLabelSignIn` ("サインイン" as session-card timestamp label) |
+
+`MessageKey` total: 22 → **70**.
+
+`Locale` set unchanged (Ja, En). All 48 new variants resolve
+in both locales, statically guaranteed by the lookup match's
+exhaustiveness.
+
+#### Catalog completeness tests refactored
+
+The v0.36.0 catalog completeness tests had hardcoded `all_keys`
+arrays (22 elements then) — adding 48 variants would have
+meant editing the same list twice in two test functions, and
+forgetting one would have silently weakened coverage. v0.39.0
+replaces this pattern with `for_each_key(closure)` that pins
+exhaustiveness via a compile-time match: adding a new
+variant without adding it to the iterator is a build error,
+not a missed test. The two existing test bodies
+(`every_message_key_resolves_in_every_locale_to_nonempty`,
+`no_two_keys_share_text_within_a_locale`) now use the
+closure.
+
+The "no two keys share text" test grew an
+`is_legitimate_duplicate` allowlist for shared brand strings
+and concept-reuse: `"Magic Link"` (brand, same in both
+locales), `"Passkey"` / `"パスキー"` (term-of-art shared
+between session row + login heading), `"Active sessions"` /
+`"アクティブなセッション"` (canonical translation reused
+between dedicated page title and Security Center section
+heading). Allowlist is exhaustive; any new collision needs
+explicit allowlist entry or the test fails.
+
+#### `js_string_literal` helper (`cesauth_ui::js_string_literal`)
+
+Encodes a `&str` as a double-quoted JavaScript string
+literal suitable for inlining into `<script>` blocks. Adopted
+in v0.39.0 because the migrated login page interpolates the
+catalog's passkey-failed error message into inline JS — the
+naive concatenation would have broken on translations
+containing quotes, backslashes, newlines, or (more likely
+for JA) `</script>` patterns.
+
+Specifically escapes:
+- `\\`, `"`, `\n`, `\r`, `\t` (named escapes)
+- ASCII controls `0x00..=0x1f` (encoded as `\uXXXX`)
+- `</` (becomes `<\/` to defeat `</script>` element-end)
+- `<!--` (becomes `<\!--`, defensive)
+
+UTF-8 multi-byte sequences pass through unchanged — JS source
+files are UTF-8 and the JS engine constructs strings from
+those code points correctly. Iterates by `char` (not byte)
+so JA codepoints aren't split.
+
+8 dedicated tests in `cesauth_ui::tests`: double-quote +
+backslash escape, newlines/tabs/CR, multi-byte UTF-8
+passthrough (with JA payload), `</script>` neutralization,
+`<!--` neutralization, lone-`<` passthrough, `\uXXXX`
+fallback for other controls.
+
+#### Pages migrated
+
+Each page gains a `_for(.., locale)` variant. The plain
+function becomes a default-locale shorthand returning Ja —
+the same v0.36.0 backward-compat pattern.
+
+- **`login_page_for(csrf, error, sitekey, locale)`** —
+  10 catalog lookups for chrome (title, intro, passkey
+  heading + button + JS-required notice + JS error message,
+  email heading + label + button, page title). The JS
+  passkey-failed message is interpolated via
+  `js_string_literal` into the inline script.
+- **`totp_enroll_page_for(qr_svg, secret_b32, csrf, error, locale)`**
+  — 11 catalog lookups (title, intro, QR aria-label, manual
+  details summary + meta, confirm heading + intro + label +
+  button, cancel link, page title).
+- **`totp_verify_page_for(csrf, error, locale)`** — 11
+  catalog lookups (title, intro, heading, code label,
+  continue button, lost-authenticator details summary,
+  recovery intro + aria + label + button, page title).
+- **`security_center_page_for(state, flash_html, locale)`**
+  — 13 catalog lookups for chrome + nested
+  `totp_section_html_for(enabled, recovery_remaining, locale)`
+  partial migration. **Disabled-state TOTP rendering** flows
+  through the catalog. **Enabled-state + recovery-codes
+  status row** intentionally still carries hardcoded JA —
+  recovery messages need pluralization (4-tier count
+  treatment per plan §3.1 P0-A) and pluralization is
+  ADR-013 §Q4 deferred work. `totp_section_html` (without
+  `_for`) is the default-locale shim.
+
+#### `TotpVerifyWrongCode` MessageKey
+
+The `/me/security/totp/verify` POST handler's wrong-code
+re-render previously emitted a hardcoded `"That code didn't
+match. Try again."`. v0.39.0 moves this to a new
+`MessageKey::TotpVerifyWrongCode` variant **distinct from
+`TotpEnrollWrongCode`**: the enroll surface tells the user
+"enter the LATEST 6-digit code" (a setup hint about the
+30-second TOTP rotation), while the verify surface just says
+"try again" (no setup context, the user already enrolled).
+Same general idea, separable translations.
+
+#### Worker handler wire-up
+
+Five handlers now resolve locale and pass it through:
+
+| Handler | File | Page rendered |
+|---|---|---|
+| `GET /login`           | `routes/ui.rs::login`             | `login_page_for` |
+| `GET /authorize` (login fork) | `routes/oidc/authorize.rs` | `login_page_for` |
+| `GET /me/security`     | `routes/me/security.rs`           | `security_center_page_for` + `flash::display_text_for` |
+| `GET /me/security/totp/enroll`         | `routes/me/totp/enroll.rs::get_handler`         | `totp_enroll_page_for` |
+| `POST /me/security/totp/enroll/confirm` (wrong-code re-render) | `routes/me/totp/enroll.rs::post_confirm_handler` | `totp_enroll_page_for` with `TotpEnrollWrongCode` |
+| `GET /me/security/totp/verify`         | `routes/me/totp/verify.rs::get_handler`         | `totp_verify_page_for` |
+| `POST /me/security/totp/verify` (wrong-code re-render) | `routes/me/totp/verify.rs::post_handler` | `totp_verify_page_for` with `TotpVerifyWrongCode` |
+
+All handlers call `crate::i18n::resolve_locale(&req)` once at
+the top — the resolved locale is stable for the request
+duration (re-resolving per template would risk a single
+response with mixed locales).
+
+### Tests
+
+867 → **889** (+22).
+
+- core: 342 → 342. Catalog grows by 48 variants; the
+  exhaustive-iterator pattern means the same two tests
+  (`every_message_key_resolves_in_every_locale_to_nonempty`,
+  `no_two_keys_share_text_within_a_locale`) cover all of
+  them — no test functions added.
+- ui: 208 → 230 (+22).
+  - 8 new in `cesauth_ui::tests` for `js_string_literal`.
+  - 14 new in `cesauth_ui::templates::tests` —
+    `login_page_for` EN + JA chrome (4 tests including JS
+    interpolation), default-shorthand-returns-JA, TOTP
+    enroll EN + JA + aria-label translated EN + JA,
+    TOTP verify EN + JA, Security Center EN + JA + EN
+    anonymous notice translated.
+- worker: 171 → 171. Handler edits, no new tests; existing
+  handler tests assert on structural properties (CSRF,
+  redirects, status codes) not page-text.
+- adapter-test, do, migrate, adapter-cloudflare: unchanged
+  (117, 16, 13, 0).
+
+### Schema / wire / DO
+
+- Schema unchanged (still SCHEMA_VERSION 9). No migration.
+- Wire format unchanged for OAuth/OIDC clients.
+- DO state unchanged.
+- No new dependencies.
+
+### Operator-visible / breaking-change notice
+
+- **Login page default locale changed**: pre-v0.39.0,
+  `cesauth_ui::templates::login_page` (no `_for`) returned
+  English-hardcoded HTML. Post-v0.39.0, the same shorthand
+  returns Japanese (Default = Ja, per the v0.36.0
+  convention). Worker handlers all use the negotiated
+  `_for(..)` variant, so production traffic with normal
+  `Accept-Language` headers is unaffected. Out-of-tree
+  callers using the no-locale shorthand get a behavior
+  change. Migration: switch to `login_page_for(.., locale)`
+  with the locale you want, or rely on `Accept-Language`
+  via the worker.
+- **TOTP enroll + TOTP verify default locale**: same
+  story. Pre-v0.39.0 these were English-hardcoded; the
+  no-locale shorthand now returns Japanese. Worker
+  handlers use the `_for` variants.
+- Security Center page locale was already Japanese
+  pre-v0.39.0; the v0.39.0 default is unchanged
+  (Japanese), and English consumers now have a working
+  path (`Accept-Language: en` or `_for(.., Locale::En)`).
+
+### Deferred to v0.39.1+
+
+- **TOTP recovery codes display** (`totp_recovery_codes_page`)
+  — JA-hardcoded, deferred.
+- **TOTP disable confirm** (`totp_disable_confirm_page`)
+  — JA-hardcoded, deferred.
+- **Magic link request + sent** (`magic_link_sent_page`)
+  — JA-hardcoded, deferred.
+- **Error pages** (`error_page`) — JA-hardcoded, deferred.
+- **`PrimaryAuthMethod::label()`** — primary-row label on
+  Security Center is independently locale-aware. Migrating
+  this enum's labels touches the admin console
+  (`PrimaryAuthMethod` is used there too) and is a
+  separable thread.
+- **Security Center TOTP enabled-state + recovery-codes
+  status row** — pluralization needed (count-aware messages
+  per plan §3.1 P0-A); blocked on ADR-013 §Q4 (CLDR plural
+  rules / cesauth-style integer-substitution).
+
+### ADR changes
+
+- **No new ADR** — the migration was anticipated in
+  ADR-013 ("v0.36.0 migrates the flash keys + TOTP wrong-
+  code re-render + sessions page chrome. Subsequent
+  releases migrate the rest of the end-user surfaces") and
+  this release is the planned continuation. ADR-013's
+  open questions Q1-Q4 are unchanged.
+- Existing ADR-013 status header in ROADMAP narrative
+  ("partial") will read accurately again — partial through
+  v0.39.0 means recovery codes / disable / magic link /
+  error pages, not login + TOTP main flow + Security
+  Center.
+
+### Doc / metadata changes
+
+- `Cargo.toml` version 0.38.0 → 0.39.0.
+- UI footers + tests bumped to v0.39.0.
+- ROADMAP: i18n-2 continued status updated; v0.39.0 Shipped
+  table row added.
+- This CHANGELOG entry.
+
+### Upgrade path 0.38.0 → 0.39.0
+
+1. `git pull` or extract this tarball over your working
+   tree.
+2. `cargo build --workspace --target wasm32-unknown-unknown
+   --release`. No new production dependencies.
+3. `wrangler deploy`. **No schema migration.** No
+   `wrangler.toml` change. No new bindings.
+4. **No operator action required for production traffic.**
+   Users with `Accept-Language: ja` (or no header) see
+   Japanese; users with `Accept-Language: en` see English.
+5. Out-of-tree `cesauth-ui` callers using the locale-less
+   `login_page` / `totp_enroll_page` / `totp_verify_page`
+   shorthands: switch to the `_for(.., Locale::En)` form
+   if your previous reliance was on English hardcoded
+   output.
+
+### Forward roadmap
+
+- **v0.39.1 / v0.40.0**: continue i18n-2 with the
+  remaining surfaces (recovery codes, TOTP disable, magic
+  link, error pages, `PrimaryAuthMethod::label`).
+- **Future security-track items still open**: D1-DO
+  reconciliation tool (ADR-012 §Q1), user notification on
+  session timeout (ADR-012 §Q2), device fingerprint
+  columns (ADR-012 §Q3), introspection resource-server
+  audience scoping (ADR-014 §Q1), introspection rate
+  limit (ADR-014 §Q2), audit retention policy (ADR-014
+  §Q3), multi-key access-token introspection (ADR-014
+  §Q4).
+- **Feature track candidates**: RFC 7009 token revocation
+  for confidential clients (current `/revoke` is
+  user-pressed only).
+
+---
+
 ## [0.38.0] - 2026-05-03
 
 RFC 7662 OAuth 2.0 Token Introspection (ADR-014 Accepted).

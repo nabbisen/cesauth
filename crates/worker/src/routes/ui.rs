@@ -25,7 +25,9 @@ pub async fn login<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let cfg  = Config::from_env(&ctx.env)?;
     let csrf_token = csrf::mint();
     let sitekey = Some(cfg.turnstile_sitekey.as_str()).filter(|s| !s.is_empty());
-    let html = cesauth_ui::templates::login_page(&csrf_token, None, sitekey);
+    // v0.39.0: negotiate locale from Accept-Language.
+    let locale = crate::i18n::resolve_locale(&req);
+    let html = cesauth_ui::templates::login_page_for(&csrf_token, None, sitekey, locale);
 
     // Read ?next= and decide whether to set the login_next cookie.
     // We validate the decoded path (rejects open-redirect tricks

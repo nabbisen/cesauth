@@ -1101,3 +1101,181 @@ fn sessions_page_default_shorthand_still_renders_japanese() {
     assert!(html.contains("アクティブなセッション"));
     assert!(html.contains("アクティブなセッションはありません"));
 }
+
+// =====================================================================
+// v0.39.0 i18n: login + TOTP enroll/verify + Security Center
+// rendering pins. The migrated `_for(.., locale)` variants
+// must render the locale-appropriate strings; the plain
+// shorthand defaults to Ja per the v0.36.0 backward-compat
+// pattern.
+// =====================================================================
+
+#[test]
+fn login_page_for_en_renders_english_chrome() {
+    let html = login_page_for("csrf", None, None, Locale::En);
+    assert!(html.contains("Sign in"),                  "missing EN title: {html}");
+    assert!(html.contains("Sign in with a passkey"),    "missing EN passkey button");
+    assert!(html.contains("Or email me a code"),        "missing EN email heading");
+    assert!(html.contains("Email me a code"),           "missing EN email button");
+    // No JA leaking through.
+    assert!(!html.contains("サインインする"));
+    assert!(!html.contains("パスキーでサインイン"));
+}
+
+#[test]
+fn login_page_for_ja_renders_japanese_chrome() {
+    let html = login_page_for("csrf", None, None, Locale::Ja);
+    assert!(html.contains("サインインする"),                "missing JA title");
+    assert!(html.contains("パスキーでサインイン"),          "missing JA passkey button");
+    assert!(html.contains("メールアドレス"),                 "missing JA email label");
+    // No EN leaking through.
+    assert!(!html.contains("Sign in with a passkey"));
+    assert!(!html.contains("Or email me a code"));
+}
+
+#[test]
+fn login_page_default_shorthand_returns_japanese() {
+    // v0.39.0 — the plain shorthand follows v0.36.0's
+    // Default = Ja convention. Pre-v0.39.0 this returned
+    // English (page was hardcoded EN); the v0.39.0 break
+    // is intentional and called out in the CHANGELOG.
+    let html = login_page("csrf", None, None);
+    assert!(html.contains("サインインする"),
+        "default-locale login shorthand must render JA per v0.36.0 Default = Ja");
+}
+
+#[test]
+fn login_page_for_en_passkey_failed_message_in_inline_js() {
+    // The JS error message comes through the catalog and
+    // is interpolated as a JS string literal. Pin both
+    // that the EN string is present and that it sits
+    // inside double quotes (i.e., is a string literal,
+    // not raw text).
+    let html = login_page_for("csrf", None, None, Locale::En);
+    assert!(html.contains(r#""Passkey sign-in didn't work. Try the email option.""#),
+        "EN passkey-failed message must appear as a JS string literal: {html}");
+}
+
+#[test]
+fn login_page_for_ja_passkey_failed_message_in_inline_js() {
+    // The JA string contains multi-byte UTF-8; our
+    // js_string_literal helper passes those through
+    // verbatim. Pin that the JA string lands intact.
+    let html = login_page_for("csrf", None, None, Locale::Ja);
+    assert!(html.contains("パスキーでサインインできませんでした"),
+        "JA passkey-failed message must appear in script body: {html}");
+}
+
+// ---------------------------------------------------------------------
+// totp_enroll_page
+// ---------------------------------------------------------------------
+
+#[test]
+fn totp_enroll_page_for_en_renders_english_chrome() {
+    let html = totp_enroll_page_for("<svg/>", "JBSW", "csrf", None, Locale::En);
+    assert!(html.contains("Set up an authenticator"));
+    assert!(html.contains("Confirm with a code"));
+    assert!(html.contains("Confirm and enable"));
+    assert!(html.contains("Cancel and go back"));
+    assert!(!html.contains("Authenticator を設定する"));
+}
+
+#[test]
+fn totp_enroll_page_for_ja_renders_japanese_chrome() {
+    let html = totp_enroll_page_for("<svg/>", "JBSW", "csrf", None, Locale::Ja);
+    assert!(html.contains("Authenticator を設定する"));
+    assert!(html.contains("確認して有効化する"));
+    assert!(!html.contains("Set up an authenticator"));
+}
+
+#[test]
+fn totp_enroll_page_for_en_qr_aria_label_translated() {
+    let html = totp_enroll_page_for("<svg/>", "X", "csrf", None, Locale::En);
+    assert!(html.contains(r#"aria-label="QR code containing your TOTP secret""#),
+        "EN aria-label must be translated: {html}");
+}
+
+#[test]
+fn totp_enroll_page_for_ja_qr_aria_label_translated() {
+    let html = totp_enroll_page_for("<svg/>", "X", "csrf", None, Locale::Ja);
+    assert!(html.contains(r#"aria-label="TOTP シークレットを含む QR コード""#),
+        "JA aria-label must be translated: {html}");
+}
+
+// ---------------------------------------------------------------------
+// totp_verify_page
+// ---------------------------------------------------------------------
+
+#[test]
+fn totp_verify_page_for_en_renders_english_chrome() {
+    let html = totp_verify_page_for("csrf", None, Locale::En);
+    assert!(html.contains("Enter your code"));
+    assert!(html.contains("Authenticator code"));
+    assert!(html.contains("Lost your authenticator?"));
+    assert!(html.contains("Use recovery code"));
+    assert!(!html.contains("Authenticator コード"));
+}
+
+#[test]
+fn totp_verify_page_for_ja_renders_japanese_chrome() {
+    let html = totp_verify_page_for("csrf", None, Locale::Ja);
+    assert!(html.contains("コードを入力してください"));
+    assert!(html.contains("Authenticator コード"));
+    assert!(html.contains("リカバリーコード"));
+    assert!(!html.contains("Enter your code"));
+}
+
+// ---------------------------------------------------------------------
+// security_center_page_for
+// ---------------------------------------------------------------------
+
+#[test]
+fn security_center_page_for_en_renders_english_chrome() {
+    let state = SecurityCenterState {
+        primary_method: PrimaryAuthMethod::Passkey,
+        totp_enabled: false,
+        recovery_codes_remaining: 0,
+    };
+    let html = security_center_page_for(&state, "", Locale::En);
+    assert!(html.contains(">Security<"),                       "EN page title");
+    assert!(html.contains("Sign-in method"),                    "EN primary heading");
+    assert!(html.contains("Two-factor authentication (TOTP)"),  "EN TOTP heading");
+    assert!(html.contains("Active sessions"),                   "EN sessions heading");
+    assert!(html.contains("View sessions"),                     "EN sessions link");
+    assert!(html.contains("Back to home"),                      "EN back link");
+    assert!(html.contains("Enable TOTP"),                       "EN enable-link (disabled state)");
+    assert!(!html.contains("セキュリティ"));
+}
+
+#[test]
+fn security_center_page_for_ja_renders_japanese_chrome() {
+    let state = SecurityCenterState {
+        primary_method: PrimaryAuthMethod::Passkey,
+        totp_enabled: false,
+        recovery_codes_remaining: 0,
+    };
+    let html = security_center_page_for(&state, "", Locale::Ja);
+    assert!(html.contains("セキュリティ"));
+    assert!(html.contains("サインイン方法"));
+    assert!(html.contains("二段階認証 (TOTP)"));
+    assert!(html.contains("TOTP を有効化する"));
+    assert!(!html.contains("Sign-in method"));
+}
+
+#[test]
+fn security_center_page_for_en_anonymous_notice_translated() {
+    let state = SecurityCenterState {
+        primary_method: PrimaryAuthMethod::Anonymous,
+        totp_enabled: false,
+        recovery_codes_remaining: 0,
+    };
+    let html = security_center_page_for(&state, "", Locale::En);
+    assert!(html.contains("anonymous trial"),
+        "EN anonymous TOTP notice must be translated: {html}");
+    // We deliberately do NOT assert that no JA chars appear:
+    // `PrimaryAuthMethod::label()` is independently localized
+    // (still pre-i18n at v0.39.0; defer to v0.39.1+) and may
+    // emit JA into the primary-row {label} slot regardless of
+    // the page's negotiated locale. Migrating PrimaryAuthMethod
+    // is a separable thread (it touches the admin console too).
+}

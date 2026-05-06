@@ -135,7 +135,8 @@ pub async fn get_handler(
                     (t, Some(h))
                 }
             };
-            let html = templates::totp_verify_page(&token, None);
+            let locale = crate::i18n::resolve_locale(&req);
+            let html = templates::totp_verify_page_for(&token, None, locale);
             let mut resp = Response::from_html(html)?;
             if let Some(h) = set_cookie {
                 resp.headers_mut().append("set-cookie", &h).ok();
@@ -439,9 +440,16 @@ pub async fn post_handler(
             let token = csrf::extract_from_cookie_header(&cookie_header)
                 .map(str::to_owned)
                 .unwrap_or_else(csrf::mint);
-            let html = templates::totp_verify_page(
+            // v0.39.0: locale-aware error rendering.
+            let locale = crate::i18n::resolve_locale(&req);
+            let wrong_code = cesauth_core::i18n::lookup(
+                cesauth_core::i18n::MessageKey::TotpVerifyWrongCode,
+                locale,
+            );
+            let html = templates::totp_verify_page_for(
                 &token,
-                Some("That code didn't match. Try again."),
+                Some(wrong_code),
+                locale,
             );
             // Status 200 (not 401) — the user IS authenticated
             // for primary; the form is a continuation, not a

@@ -145,6 +145,68 @@ pub enum MessageKey {
     SessionsLabelLastSeen,
     SessionsLabelClient,
     SessionsLabelSessionId,
+
+    // ---- v0.39.0: login page (`/login`) ----
+    LoginTitle,
+    LoginIntro,
+    LoginPasskeyHeading,
+    LoginPasskeyButton,
+    LoginPasskeyJsRequired,
+    LoginPasskeyFailed,
+    LoginEmailHeading,
+    LoginEmailLabel,
+    LoginEmailButton,
+    LoginPageTitleHtml,
+
+    // ---- v0.39.0: TOTP enroll page (`/me/security/totp/enroll`) ----
+    TotpEnrollTitle,
+    TotpEnrollIntro,
+    TotpEnrollQrAriaLabel,
+    TotpEnrollManualSummary,
+    TotpEnrollManualMeta,
+    TotpEnrollConfirmHeading,
+    TotpEnrollConfirmIntro,
+    TotpEnrollCodeLabel,
+    TotpEnrollConfirmButton,
+    TotpEnrollCancelLink,
+    TotpEnrollPageTitleHtml,
+
+    // ---- v0.39.0: TOTP verify gate page (`/me/security/totp/verify`) ----
+    TotpVerifyTitle,
+    TotpVerifyIntro,
+    TotpVerifyHeading,
+    TotpVerifyCodeLabel,
+    TotpVerifyContinueButton,
+    TotpVerifyLostSummary,
+    TotpVerifyRecoverIntro,
+    TotpVerifyRecoverAriaLabel,
+    TotpVerifyRecoverCodeLabel,
+    TotpVerifyRecoverButton,
+    TotpVerifyPageTitleHtml,
+    /// **v0.39.0** — Inline error rendered when the
+    /// `/me/security/totp/verify` POST receives a non-matching
+    /// 6-digit code. Distinct from `TotpEnrollWrongCode` because
+    /// the *enroll* surface tells the user "enter the LATEST
+    /// 6-digit code" (a setup hint), while *verify* simply asks
+    /// them to try again — they're already past the QR-scan
+    /// step. Same idea, different stage of the user journey;
+    /// keep the keys separate so translations can diverge.
+    TotpVerifyWrongCode,
+
+    // ---- v0.39.0: Security Center index (`/me/security`) ----
+    SecurityTitle,
+    SecurityIntro,
+    SecurityPrimaryHeading,
+    SecurityTotpHeading,
+    SecurityTotpAnonymousNotice,
+    SecurityTotpDisabledBadge,
+    SecurityTotpDisabledIntro,
+    SecurityTotpEnableLink,
+    SecuritySessionsHeading,
+    SecuritySessionsIntro,
+    SecuritySessionsLink,
+    SecurityBackLink,
+    SecurityPageTitleHtml,
 }
 
 /// Resolve `(key, locale) -> &'static str`. Zero allocation.
@@ -249,6 +311,205 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
         SessionsLabelSessionId => match locale {
             Locale::Ja => "セッション ID",
             Locale::En => "Session ID",
+        },
+
+        // ----- v0.39.0: login page -----
+        LoginTitle => match locale {
+            // JA: action-verb form to distinguish from
+            // SessionsLabelSignIn ("サインイン" = sign-in
+            // timestamp label on the session card). The
+            // login page is asking the user to do the
+            // action; the session row is reporting that
+            // it happened. "する" disambiguates while
+            // staying natural.
+            Locale::Ja => "サインインする",
+            Locale::En => "Sign in",
+        },
+        LoginIntro => match locale {
+            Locale::Ja => "パスキーをお持ちであればパスキーで、そうでなければメールアドレスでワンタイムコードを送信します。",
+            Locale::En => "Use your passkey if you have one. Otherwise, enter your email and we'll send you a one-time code.",
+        },
+        LoginPasskeyHeading => match locale {
+            Locale::Ja => "パスキー",
+            Locale::En => "Passkey",
+        },
+        LoginPasskeyButton => match locale {
+            Locale::Ja => "パスキーでサインイン",
+            Locale::En => "Sign in with a passkey",
+        },
+        LoginPasskeyJsRequired => match locale {
+            Locale::Ja => "パスキーによるサインインには JavaScript が必要です。下のメールでサインインをお使いください。",
+            Locale::En => "Passkey sign-in requires JavaScript. Use the email option below.",
+        },
+        LoginPasskeyFailed => match locale {
+            Locale::Ja => "パスキーでサインインできませんでした。メールでのサインインをお試しください。",
+            Locale::En => "Passkey sign-in didn't work. Try the email option.",
+        },
+        LoginEmailHeading => match locale {
+            Locale::Ja => "またはメールでコードを受け取る",
+            Locale::En => "Or email me a code",
+        },
+        LoginEmailLabel => match locale {
+            Locale::Ja => "メールアドレス",
+            Locale::En => "Email address",
+        },
+        LoginEmailButton => match locale {
+            Locale::Ja => "コードをメールで受け取る",
+            Locale::En => "Email me a code",
+        },
+        LoginPageTitleHtml => match locale {
+            Locale::Ja => "サインイン - cesauth",
+            Locale::En => "Sign in - cesauth",
+        },
+
+        // ----- v0.39.0: TOTP enroll -----
+        TotpEnrollTitle => match locale {
+            Locale::Ja => "Authenticator を設定する",
+            Locale::En => "Set up an authenticator",
+        },
+        TotpEnrollIntro => match locale {
+            Locale::Ja => "Google Authenticator、Authy、1Password など RFC 6238 準拠の TOTP アプリで、この QR コードをスキャンしてください:",
+            Locale::En => "Scan this QR code with Google Authenticator, Authy, 1Password, or any other RFC 6238 TOTP app:",
+        },
+        TotpEnrollQrAriaLabel => match locale {
+            Locale::Ja => "TOTP シークレットを含む QR コード",
+            Locale::En => "QR code containing your TOTP secret",
+        },
+        TotpEnrollManualSummary => match locale {
+            Locale::Ja => "スキャンできない場合: 手動で鍵を入力する",
+            Locale::En => "Can't scan? Enter the key manually:",
+        },
+        TotpEnrollManualMeta => match locale {
+            Locale::Ja => "アルゴリズム: SHA-1 · 桁数: 6 · 周期: 30 秒",
+            Locale::En => "Algorithm: SHA-1 · Digits: 6 · Period: 30 seconds",
+        },
+        TotpEnrollConfirmHeading => match locale {
+            Locale::Ja => "コードで確認する",
+            Locale::En => "Confirm with a code",
+        },
+        TotpEnrollConfirmIntro => match locale {
+            Locale::Ja => "スキャン後、アプリには 30 秒ごとに変わる 6 桁のコードが表示されます。現在のコードを入力してセットアップを完了してください。",
+            Locale::En => "After scanning, your app will display a 6-digit code that changes every 30 seconds. Enter the current code to finish setup.",
+        },
+        TotpEnrollCodeLabel => match locale {
+            Locale::Ja => "現在のコード",
+            Locale::En => "Current code",
+        },
+        TotpEnrollConfirmButton => match locale {
+            Locale::Ja => "確認して有効化する",
+            Locale::En => "Confirm and enable",
+        },
+        TotpEnrollCancelLink => match locale {
+            Locale::Ja => "キャンセルして戻る",
+            Locale::En => "Cancel and go back",
+        },
+        TotpEnrollPageTitleHtml => match locale {
+            Locale::Ja => "Authenticator を設定する - cesauth",
+            Locale::En => "Set up an authenticator - cesauth",
+        },
+
+        // ----- v0.39.0: TOTP verify gate -----
+        TotpVerifyTitle => match locale {
+            Locale::Ja => "コードを入力してください",
+            Locale::En => "Enter your code",
+        },
+        TotpVerifyIntro => match locale {
+            Locale::Ja => "セキュリティ強化のため、このアカウントは Authenticator アプリで保護されています。アプリに表示されている 6 桁のコードを入力してください。",
+            Locale::En => "For added security, your account is protected by an authenticator app. Enter the 6-digit code your app shows now.",
+        },
+        TotpVerifyHeading => match locale {
+            Locale::Ja => "Authenticator コード",
+            Locale::En => "Authenticator code",
+        },
+        TotpVerifyCodeLabel => match locale {
+            Locale::Ja => "6 桁のコード",
+            Locale::En => "6-digit code",
+        },
+        TotpVerifyContinueButton => match locale {
+            Locale::Ja => "続ける",
+            Locale::En => "Continue",
+        },
+        TotpVerifyLostSummary => match locale {
+            Locale::Ja => "Authenticator を紛失した場合",
+            Locale::En => "Lost your authenticator?",
+        },
+        TotpVerifyRecoverIntro => match locale {
+            Locale::Ja => "登録時に保存したリカバリーコードを 1 つ使用できます:",
+            Locale::En => "Use a recovery code from your enrollment instead:",
+        },
+        TotpVerifyRecoverAriaLabel => match locale {
+            Locale::Ja => "ワンタイムリカバリーコードで認証する",
+            Locale::En => "Recover with a one-time code",
+        },
+        TotpVerifyRecoverCodeLabel => match locale {
+            Locale::Ja => "リカバリーコード",
+            Locale::En => "Recovery code",
+        },
+        TotpVerifyRecoverButton => match locale {
+            Locale::Ja => "リカバリーコードを使う",
+            Locale::En => "Use recovery code",
+        },
+        TotpVerifyPageTitleHtml => match locale {
+            Locale::Ja => "コードを入力 - cesauth",
+            Locale::En => "Enter your code - cesauth",
+        },
+        TotpVerifyWrongCode => match locale {
+            Locale::Ja => "コードが一致しませんでした。もう一度お試しください。",
+            Locale::En => "That code didn't match. Try again.",
+        },
+
+        // ----- v0.39.0: Security Center index -----
+        SecurityTitle => match locale {
+            Locale::Ja => "セキュリティ",
+            Locale::En => "Security",
+        },
+        SecurityIntro => match locale {
+            Locale::Ja => "サインインと二段階認証の状態を確認します。",
+            Locale::En => "Review your sign-in methods and two-factor settings.",
+        },
+        SecurityPrimaryHeading => match locale {
+            Locale::Ja => "サインイン方法",
+            Locale::En => "Sign-in method",
+        },
+        SecurityTotpHeading => match locale {
+            Locale::Ja => "二段階認証 (TOTP)",
+            Locale::En => "Two-factor authentication (TOTP)",
+        },
+        SecurityTotpAnonymousNotice => match locale {
+            Locale::Ja => "匿名トライアルでは TOTP を有効化できません。通常アカウントへの promote 後に有効化できます。",
+            Locale::En => "TOTP isn't available on anonymous trial accounts. Promote to a regular account first.",
+        },
+        SecurityTotpDisabledBadge => match locale {
+            Locale::Ja => "無効",
+            Locale::En => "Disabled",
+        },
+        SecurityTotpDisabledIntro => match locale {
+            Locale::Ja => "Authenticator アプリで生成する 6 桁コードによる二段階認証を有効にできます。パスキーをお使いの場合は既に強力な認証が有効なので、TOTP は任意です。",
+            Locale::En => "Enable a 6-digit code from your authenticator app as a second factor. If you use a passkey, you already have strong authentication; TOTP is optional.",
+        },
+        SecurityTotpEnableLink => match locale {
+            Locale::Ja => "TOTP を有効化する",
+            Locale::En => "Enable TOTP",
+        },
+        SecuritySessionsHeading => match locale {
+            Locale::Ja => "アクティブなセッション",
+            Locale::En => "Active sessions",
+        },
+        SecuritySessionsIntro => match locale {
+            Locale::Ja => "サインイン中の端末/ブラウザを一覧表示し、不要なセッションを取り消せます。",
+            Locale::En => "List signed-in devices and browsers, and revoke any session you don't recognize.",
+        },
+        SecuritySessionsLink => match locale {
+            Locale::Ja => "セッションを確認する",
+            Locale::En => "View sessions",
+        },
+        SecurityBackLink => match locale {
+            Locale::Ja => "トップへ戻る",
+            Locale::En => "Back to home",
+        },
+        SecurityPageTitleHtml => match locale {
+            Locale::Ja => "セキュリティ - cesauth",
+            Locale::En => "Security - cesauth",
         },
     }
 }

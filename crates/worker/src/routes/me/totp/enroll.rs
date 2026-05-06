@@ -222,7 +222,8 @@ pub async fn get_handler(
                 }
             };
 
-            let html = templates::totp_enroll_page(&qr_svg, &secret_b32, &csrf_token, None);
+            let locale = crate::i18n::resolve_locale(&req);
+            let html = templates::totp_enroll_page_for(&qr_svg, &secret_b32, &csrf_token, None, locale);
             let mut resp = Response::from_html(html)?;
             let h = resp.headers_mut();
             h.append("set-cookie", &set_totp_enroll_cookie_header(&row_id, TOTP_ENROLL_TTL_SECS)).ok();
@@ -456,14 +457,21 @@ pub async fn post_confirm_handler(
             // user knows the previous code didn't match. Same
             // secret — they read the next 6-digit code from their
             // authenticator app and submit again.
-            let html = templates::totp_enroll_page(
+            // v0.39.0: locale-aware via the i18n catalog (the
+            // wrong-code message was migrated to MessageKey
+            // already in v0.36.0; this PR threads the locale
+            // through to the page wrapper).
+            let locale = crate::i18n::resolve_locale(&req);
+            let wrong_code_msg = cesauth_core::i18n::lookup(
+                cesauth_core::i18n::MessageKey::TotpEnrollWrongCode,
+                locale,
+            );
+            let html = templates::totp_enroll_page_for(
                 &qr_svg,
                 &secret_b32,
                 &token,
-                Some(
-                    "入力されたコードが一致しませんでした。\
-                     Authenticator アプリの最新の 6 桁を入力してください。",
-                ),
+                Some(wrong_code_msg),
+                locale,
             );
             Response::from_html(html)
         }

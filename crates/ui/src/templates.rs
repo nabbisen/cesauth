@@ -5,7 +5,7 @@
 //! `Content-Type` and CSP headers. Style is inline-scoped to the page
 //! to avoid shipping a separate CSS file for a handful of rules.
 
-use crate::escape;
+use crate::{escape, js_string_literal};
 
 /// A small stylesheet common to every page. Deliberately modest:
 /// system font stack, high contrast, no vendor CSS reset.
@@ -297,6 +297,26 @@ pub fn login_page(
     error:             Option<&str>,
     turnstile_sitekey: Option<&str>,
 ) -> String {
+    login_page_for(csrf_token, error, turnstile_sitekey, cesauth_core::i18n::Locale::default())
+}
+
+/// Locale-aware variant of [`login_page`] (v0.39.0). Every
+/// visible string flows through `cesauth_core::i18n::lookup`.
+/// The plain `login_page` shorthand defaults to `Locale::Ja`
+/// to preserve the v0.36.0 backward-compat pattern. Pre-v0.39.0
+/// `login_page` was hardcoded English; with v0.39.0 the
+/// shorthand returns Japanese — the locale-less call site
+/// retains the same Default = Ja semantics adopted in v0.36.0,
+/// and English consumers move to `login_page_for(.., Locale::En)`
+/// or rely on `Accept-Language` negotiation in the worker.
+pub fn login_page_for(
+    csrf_token:        &str,
+    error:             Option<&str>,
+    turnstile_sitekey: Option<&str>,
+    locale:            cesauth_core::i18n::Locale,
+) -> String {
+    use cesauth_core::i18n::{lookup, MessageKey};
+
     let err_region = match error {
         Some(msg) => format!(
             r#"<div class="error" role="alert" aria-live="assertive">{}</div>"#,
@@ -324,31 +344,39 @@ pub fn login_page(
 
     // The inline script is tiny and purely progressive: the form works
     // without it. We still set `defer` so it runs after the DOM exists.
+    //
+    // **v0.39.0** — the JS error message comes from the catalog. We
+    // emit it as a JS string literal (double-quoted with the few
+    // characters that have meaning inside a double-quoted JS string
+    // escaped). This stays correct even if a future translation
+    // introduces double quotes / backslashes / newlines.
+    let passkey_failed_js = js_string_literal(lookup(MessageKey::LoginPasskeyFailed, locale));
+
     let body = format!(r#"
-<h1>Sign in</h1>
-<p>Use your passkey if you have one. Otherwise, enter your email and we'll send you a one-time code.</p>
+<h1>{title}</h1>
+<p>{intro}</p>
 
 {turnstile_script}
 
 {err_region}
 
 <noscript>
-  <p class="muted">Passkey sign-in requires JavaScript. Use the email option below.</p>
+  <p class="muted">{js_required}</p>
 </noscript>
 
 <section aria-labelledby="passkey-heading">
-  <h2 id="passkey-heading" class="muted">Passkey</h2>
-  <button id="passkey-btn" type="button">Sign in with a passkey</button>
+  <h2 id="passkey-heading" class="muted">{passkey_heading}</h2>
+  <button id="passkey-btn" type="button">{passkey_button}</button>
 </section>
 
 <form method="POST" action="/magic-link/request" aria-labelledby="mail-heading">
-  <h2 id="mail-heading" class="muted">Or email me a code</h2>
+  <h2 id="mail-heading" class="muted">{email_heading}</h2>
   <input type="hidden" name="csrf" value="{csrf}">
-  <label for="email">Email address</label>
+  <label for="email">{email_label}</label>
   <input id="email" name="email" type="email" required autocomplete="email"
          inputmode="email" spellcheck="false">
   {turnstile_widget}
-  <button type="submit" class="secondary">Email me a code</button>
+  <button type="submit" class="secondary">{email_button}</button>
 </form>
 
 <script defer>
@@ -375,7 +403,7 @@ pub fn login_page(
       if (!f.ok) throw new Error("authentication failed");
       window.location.href = "/";
     }} catch (e) {{
-      err.textContent = "Passkey sign-in didn't work. Try the email option.";
+      err.textContent = {passkey_failed_js};
       err.hidden = false;
     }}
   }});
@@ -419,13 +447,22 @@ pub fn login_page(
 }})();
 </script>
 "#,
-        err_region       = err_region,
-        csrf             = escape(csrf_token),
-        turnstile_script = turnstile_script,
-        turnstile_widget = turnstile_widget,
+        title              = escape(lookup(MessageKey::LoginTitle,             locale)),
+        intro              = escape(lookup(MessageKey::LoginIntro,             locale)),
+        js_required        = escape(lookup(MessageKey::LoginPasskeyJsRequired, locale)),
+        passkey_heading    = escape(lookup(MessageKey::LoginPasskeyHeading,    locale)),
+        passkey_button     = escape(lookup(MessageKey::LoginPasskeyButton,     locale)),
+        email_heading      = escape(lookup(MessageKey::LoginEmailHeading,      locale)),
+        email_label        = escape(lookup(MessageKey::LoginEmailLabel,        locale)),
+        email_button       = escape(lookup(MessageKey::LoginEmailButton,       locale)),
+        passkey_failed_js  = passkey_failed_js,
+        err_region         = err_region,
+        csrf               = escape(csrf_token),
+        turnstile_script   = turnstile_script,
+        turnstile_widget   = turnstile_widget,
     );
 
-    frame("Sign in - cesauth", &body)
+    frame(lookup(MessageKey::LoginPageTitleHtml, locale), &body)
 }
 
 /// Page shown after a Magic Link has been sent. Does not reveal whether
@@ -519,6 +556,20 @@ pub fn totp_enroll_page(
     csrf_token: &str,
     error:      Option<&str>,
 ) -> String {
+    totp_enroll_page_for(qr_svg, secret_b32, csrf_token, error,
+        cesauth_core::i18n::Locale::default())
+}
+
+/// Locale-aware variant of [`totp_enroll_page`] (v0.39.0).
+pub fn totp_enroll_page_for(
+    qr_svg:     &str,
+    secret_b32: &str,
+    csrf_token: &str,
+    error:      Option<&str>,
+    locale:     cesauth_core::i18n::Locale,
+) -> String {
+    use cesauth_core::i18n::{lookup, MessageKey};
+
     let err_block = match error {
         Some(msg) => format!(
             r#"<div class="error" role="alert" aria-live="assertive">{}</div>"#,
@@ -528,41 +579,49 @@ pub fn totp_enroll_page(
     };
 
     let body = format!(
-        r#"<h1>Set up an authenticator</h1>
-<p>Scan this QR code with Google Authenticator, Authy, 1Password,
-or any other RFC 6238 TOTP app:</p>
+        r#"<h1>{title}</h1>
+<p>{intro}</p>
 
-<figure class="qr-figure" aria-label="QR code containing your TOTP secret">
+<figure class="qr-figure" aria-label="{qr_aria}">
 {qr_svg}
 </figure>
 
 <details>
-  <summary>Can't scan? Enter the key manually:</summary>
-  <p class="muted">Algorithm: SHA-1 · Digits: 6 · Period: 30 seconds</p>
+  <summary>{manual_summary}</summary>
+  <p class="muted">{manual_meta}</p>
   <pre class="totp-secret"><code>{secret}</code></pre>
 </details>
 
 {err_block}
 
 <form method="POST" action="/me/security/totp/enroll/confirm" aria-labelledby="confirm-heading">
-  <h2 id="confirm-heading">Confirm with a code</h2>
-  <p>After scanning, your app will display a 6-digit code that
-  changes every 30 seconds. Enter the current code to finish setup.</p>
+  <h2 id="confirm-heading">{confirm_heading}</h2>
+  <p>{confirm_intro}</p>
   <input type="hidden" name="csrf" value="{csrf}">
-  <label for="code">Current code</label>
+  <label for="code">{code_label}</label>
   <input id="code" name="code" type="text" required autocomplete="one-time-code"
          inputmode="numeric" pattern="[0-9]{{6}}" maxlength="6"
          spellcheck="false" autofocus>
-  <button type="submit">Confirm and enable</button>
+  <button type="submit">{confirm_button}</button>
 </form>
 
-<p class="muted"><a href="/">Cancel and go back</a></p>"#,
+<p class="muted"><a href="/">{cancel}</a></p>"#,
+        title           = escape(lookup(MessageKey::TotpEnrollTitle,           locale)),
+        intro           = escape(lookup(MessageKey::TotpEnrollIntro,           locale)),
+        qr_aria         = escape(lookup(MessageKey::TotpEnrollQrAriaLabel,     locale)),
+        manual_summary  = escape(lookup(MessageKey::TotpEnrollManualSummary,   locale)),
+        manual_meta     = escape(lookup(MessageKey::TotpEnrollManualMeta,      locale)),
+        confirm_heading = escape(lookup(MessageKey::TotpEnrollConfirmHeading,  locale)),
+        confirm_intro   = escape(lookup(MessageKey::TotpEnrollConfirmIntro,    locale)),
+        code_label      = escape(lookup(MessageKey::TotpEnrollCodeLabel,       locale)),
+        confirm_button  = escape(lookup(MessageKey::TotpEnrollConfirmButton,   locale)),
+        cancel          = escape(lookup(MessageKey::TotpEnrollCancelLink,      locale)),
         qr_svg    = qr_svg, // pre-validated SVG, intentionally NOT escaped
         secret    = escape(secret_b32),
         err_block = err_block,
         csrf      = escape(csrf_token),
     );
-    frame("Set up an authenticator - cesauth", &body)
+    frame(lookup(MessageKey::TotpEnrollPageTitleHtml, locale), &body)
 }
 
 /// Recovery-codes display page. Shown ONCE after successful
@@ -620,6 +679,17 @@ unavailable. Once a code is used, it can't be reused.</p>
 /// missing / challenge expired) redirect to `/login` rather
 /// than re-render this page.
 pub fn totp_verify_page(csrf_token: &str, error: Option<&str>) -> String {
+    totp_verify_page_for(csrf_token, error, cesauth_core::i18n::Locale::default())
+}
+
+/// Locale-aware variant of [`totp_verify_page`] (v0.39.0).
+pub fn totp_verify_page_for(
+    csrf_token: &str,
+    error:      Option<&str>,
+    locale:     cesauth_core::i18n::Locale,
+) -> String {
+    use cesauth_core::i18n::{lookup, MessageKey};
+
     let error_block = match error {
         Some(msg) => format!(
             r#"<div class="error" role="alert" aria-live="assertive">{}</div>"#,
@@ -629,41 +699,50 @@ pub fn totp_verify_page(csrf_token: &str, error: Option<&str>) -> String {
     };
 
     let body = format!(
-        r#"<h1>Enter your code</h1>
-<p>For added security, your account is protected by an
-authenticator app. Enter the 6-digit code your app shows now.</p>
+        r#"<h1>{title}</h1>
+<p>{intro}</p>
 
 {error_block}
 
 <form method="POST" action="/me/security/totp/verify" aria-labelledby="verify-heading">
-  <h2 id="verify-heading" class="muted">Authenticator code</h2>
+  <h2 id="verify-heading" class="muted">{heading}</h2>
   <input type="hidden" name="csrf" value="{csrf}">
-  <label for="code">6-digit code</label>
+  <label for="code">{code_label}</label>
   <input id="code" name="code" type="text" required autocomplete="one-time-code"
          inputmode="numeric" pattern="[0-9]{{6}}" maxlength="6"
          spellcheck="false" autofocus>
-  <button type="submit">Continue</button>
+  <button type="submit">{continue_button}</button>
 </form>
 
 <details class="muted">
-  <summary>Lost your authenticator?</summary>
-  <p>Use a recovery code from your enrollment instead:</p>
+  <summary>{lost_summary}</summary>
+  <p>{recover_intro}</p>
   <form method="POST" action="/me/security/totp/recover" aria-labelledby="recover-heading">
-    <span id="recover-heading" class="visually-hidden">Recover with a one-time code</span>
+    <span id="recover-heading" class="visually-hidden">{recover_aria}</span>
     <input type="hidden" name="csrf" value="{csrf}">
-    <label for="recovery-code">Recovery code</label>
+    <label for="recovery-code">{recover_code_label}</label>
     <input id="recovery-code" name="code" type="text" required
            autocomplete="off" inputmode="text"
            pattern="[A-Za-z0-9 \-]+"
            maxlength="13"
            spellcheck="false">
-    <button type="submit">Use recovery code</button>
+    <button type="submit">{recover_button}</button>
   </form>
 </details>"#,
-        error_block = error_block,
-        csrf        = escape(csrf_token),
+        title              = escape(lookup(MessageKey::TotpVerifyTitle,             locale)),
+        intro              = escape(lookup(MessageKey::TotpVerifyIntro,             locale)),
+        heading            = escape(lookup(MessageKey::TotpVerifyHeading,           locale)),
+        code_label         = escape(lookup(MessageKey::TotpVerifyCodeLabel,         locale)),
+        continue_button    = escape(lookup(MessageKey::TotpVerifyContinueButton,    locale)),
+        lost_summary       = escape(lookup(MessageKey::TotpVerifyLostSummary,       locale)),
+        recover_intro      = escape(lookup(MessageKey::TotpVerifyRecoverIntro,      locale)),
+        recover_aria       = escape(lookup(MessageKey::TotpVerifyRecoverAriaLabel,  locale)),
+        recover_code_label = escape(lookup(MessageKey::TotpVerifyRecoverCodeLabel,  locale)),
+        recover_button     = escape(lookup(MessageKey::TotpVerifyRecoverButton,     locale)),
+        error_block        = error_block,
+        csrf               = escape(csrf_token),
     );
-    frame("Enter your code - cesauth", &body)
+    frame(lookup(MessageKey::TotpVerifyPageTitleHtml, locale), &body)
 }
 
 /// TOTP disable confirmation page. Shown by `GET /me/security/totp/disable`
@@ -783,71 +862,117 @@ pub fn security_center_page_with_flash(
     state:      &SecurityCenterState,
     flash_html: &str,
 ) -> String {
+    security_center_page_for(state, flash_html, cesauth_core::i18n::Locale::default())
+}
+
+/// Locale-aware variant (v0.39.0). Every visible string flows
+/// through `cesauth_core::i18n::lookup`. The callers above are
+/// default-locale shorthands.
+pub fn security_center_page_for(
+    state:      &SecurityCenterState,
+    flash_html: &str,
+    locale:     cesauth_core::i18n::Locale,
+) -> String {
+    use cesauth_core::i18n::{lookup, MessageKey};
+
     let primary_row = format!(
         r#"<section class="security-row" aria-labelledby="primary-heading">
-  <h2 id="primary-heading">サインイン方法</h2>
+  <h2 id="primary-heading">{heading}</h2>
   <p>{label}</p>
 </section>"#,
-        label = escape(state.primary_method.label()),
+        heading = escape(lookup(MessageKey::SecurityPrimaryHeading, locale)),
+        label   = escape(state.primary_method.label()),
     );
 
     let totp_section = match state.primary_method {
         PrimaryAuthMethod::Anonymous => format!(
             r#"<section class="security-row" aria-labelledby="totp-heading">
-  <h2 id="totp-heading">二段階認証 (TOTP)</h2>
-  <p class="muted">匿名トライアルでは TOTP を有効化できません。
-  通常アカウントへの promote 後に有効化できます。</p>
+  <h2 id="totp-heading">{heading}</h2>
+  <p class="muted">{notice}</p>
 </section>"#,
+            heading = escape(lookup(MessageKey::SecurityTotpHeading,           locale)),
+            notice  = escape(lookup(MessageKey::SecurityTotpAnonymousNotice,   locale)),
         ),
-        _ => totp_section_html(state.totp_enabled, state.recovery_codes_remaining),
+        _ => totp_section_html_for(state.totp_enabled, state.recovery_codes_remaining, locale),
     };
 
     let body = format!(
-        r#"<h1>セキュリティ</h1>
-<p class="muted">サインインと二段階認証の状態を確認します。</p>
+        r#"<h1>{title}</h1>
+<p class="muted">{intro}</p>
 
 {primary_row}
 
 {totp_section}
 
 <section class="security-row" aria-labelledby="sessions-heading">
-  <h2 id="sessions-heading">アクティブなセッション</h2>
-  <p>サインイン中の端末/ブラウザを一覧表示し、不要なセッションを取り消せます。</p>
-  <p><a href="/me/security/sessions">セッションを確認する</a></p>
+  <h2 id="sessions-heading">{sessions_heading}</h2>
+  <p>{sessions_intro}</p>
+  <p><a href="/me/security/sessions">{sessions_link}</a></p>
 </section>
 
-<p class="muted"><a href="/">トップへ戻る</a></p>"#,
-        primary_row = primary_row,
-        totp_section = totp_section,
+<p class="muted"><a href="/">{back}</a></p>"#,
+        title            = escape(lookup(MessageKey::SecurityTitle,            locale)),
+        intro            = escape(lookup(MessageKey::SecurityIntro,            locale)),
+        sessions_heading = escape(lookup(MessageKey::SecuritySessionsHeading,  locale)),
+        sessions_intro   = escape(lookup(MessageKey::SecuritySessionsIntro,    locale)),
+        sessions_link    = escape(lookup(MessageKey::SecuritySessionsLink,     locale)),
+        back             = escape(lookup(MessageKey::SecurityBackLink,         locale)),
+        primary_row      = primary_row,
+        totp_section     = totp_section,
     );
-    frame_with_flash("セキュリティ - cesauth", flash_html, &body)
+    frame_with_flash(lookup(MessageKey::SecurityPageTitleHtml, locale), flash_html, &body)
 }
 
 /// TOTP subsection of the Security Center. Branches on
 /// `enabled`; when enabled, also renders the recovery-codes
 /// status row with the 4-tier threshold treatment from plan
 /// §3.1 P0-A.
+///
+/// **v0.39.0** — the disabled-state rendering goes through
+/// the i18n catalog. The enabled-state + recovery-codes
+/// rendering still carries hardcoded JA pending v0.39.1+
+/// (the count-pluralized recovery messages need additional
+/// thought; see ADR-013 §Q4 — pluralization is deferred
+/// until a real string demands it).
 fn totp_section_html(enabled: bool, recovery_remaining: u32) -> String {
+    totp_section_html_for(enabled, recovery_remaining, cesauth_core::i18n::Locale::default())
+}
+
+fn totp_section_html_for(
+    enabled: bool,
+    recovery_remaining: u32,
+    locale: cesauth_core::i18n::Locale,
+) -> String {
+    use cesauth_core::i18n::{lookup, MessageKey};
+
     if !enabled {
-        return r#"<section class="security-row" aria-labelledby="totp-heading">
-  <h2 id="totp-heading">二段階認証 (TOTP)</h2>
+        return format!(
+            r#"<section class="security-row" aria-labelledby="totp-heading">
+  <h2 id="totp-heading">{heading}</h2>
   <p>
     <span class="badge badge--info">
       <span aria-hidden="true">ⓘ</span>
-      <span>無効</span>
+      <span>{badge}</span>
     </span>
   </p>
-  <p>Authenticator アプリで生成する 6 桁コードによる二段階認証を有効にできます。
-  パスキーをお使いの場合は既に強力な認証が有効なので、TOTP は任意です。</p>
-  <p><a href="/me/security/totp/enroll">TOTP を有効化する</a></p>
-</section>"#.to_owned();
+  <p>{intro}</p>
+  <p><a href="/me/security/totp/enroll">{enable_link}</a></p>
+</section>"#,
+            heading     = escape(lookup(MessageKey::SecurityTotpHeading,         locale)),
+            badge       = escape(lookup(MessageKey::SecurityTotpDisabledBadge,   locale)),
+            intro       = escape(lookup(MessageKey::SecurityTotpDisabledIntro,   locale)),
+            enable_link = escape(lookup(MessageKey::SecurityTotpEnableLink,      locale)),
+        );
     }
 
     let recovery_row = recovery_status_html(recovery_remaining);
 
+    // Enabled path: heading goes through the catalog;
+    // "有効" badge + supporting text + disable link still
+    // hardcoded JA (deferred to v0.39.1).
     format!(
         r#"<section class="security-row" aria-labelledby="totp-heading">
-  <h2 id="totp-heading">二段階認証 (TOTP)</h2>
+  <h2 id="totp-heading">{heading}</h2>
   <p>
     <span class="badge badge--success">
       <span aria-hidden="true">✓</span>
@@ -857,6 +982,8 @@ fn totp_section_html(enabled: bool, recovery_remaining: u32) -> String {
   {recovery_row}
   <p><a href="/me/security/totp/disable">TOTP を無効化する</a></p>
 </section>"#,
+        heading      = escape(cesauth_core::i18n::lookup(
+            cesauth_core::i18n::MessageKey::SecurityTotpHeading, locale)),
         recovery_row = recovery_row,
     )
 }

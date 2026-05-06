@@ -58,98 +58,163 @@ fn from_primary_subtag_returns_none_for_unsupported() {
 // lookup() completeness
 // =====================================================================
 
+/// Iterate every `MessageKey` variant. The match here is
+/// **compiler-exhaustive**: adding a new variant without
+/// adding it to this list is a build error, not a silently-
+/// missed test. This replaces the v0.36.0 manually-listed
+/// array which had become tedious + error-prone with the 47
+/// new variants v0.39.0 added.
+///
+/// The function takes a closure rather than returning a
+/// collection because returning would either box the
+/// closure-friendly iterator (allocation in tests is fine
+/// but ugly) or build a `Vec` (also allocation). The
+/// closure shape is the cleanest of the three.
+fn for_each_key(mut f: impl FnMut(MessageKey)) {
+    use MessageKey::*;
+    // The match below MUST stay exhaustive. If you add a
+    // variant to MessageKey, you'll get a compile error here
+    // — fix it by adding the variant to one of the arms
+    // below. Variants are grouped by surface (matching the
+    // enum definition's grouping) to make the list scannable.
+    let pin: MessageKey = FlashTotpEnabled;
+    match pin {
+        FlashTotpEnabled | FlashTotpDisabled | FlashTotpRecovered |
+        FlashLoggedOut   | FlashSessionRevoked |
+        TotpEnrollWrongCode |
+        SessionsPageTitle | SessionsPageIntro | SessionsPageEmpty |
+        SessionsBackLink  |
+        SessionsCurrentBadge | SessionsCurrentDisabled |
+        SessionsCurrentDisabledTitle | SessionsRevokeButton |
+        SessionsAuthMethodPasskey | SessionsAuthMethodMagicLink |
+        SessionsAuthMethodAdmin   | SessionsAuthMethodUnknown |
+        SessionsLabelSignIn   | SessionsLabelLastSeen |
+        SessionsLabelClient   | SessionsLabelSessionId |
+        // v0.39.0 — login
+        LoginTitle  | LoginIntro |
+        LoginPasskeyHeading  | LoginPasskeyButton  |
+        LoginPasskeyJsRequired | LoginPasskeyFailed |
+        LoginEmailHeading    | LoginEmailLabel     | LoginEmailButton |
+        LoginPageTitleHtml   |
+        // v0.39.0 — TOTP enroll
+        TotpEnrollTitle | TotpEnrollIntro | TotpEnrollQrAriaLabel |
+        TotpEnrollManualSummary | TotpEnrollManualMeta |
+        TotpEnrollConfirmHeading | TotpEnrollConfirmIntro |
+        TotpEnrollCodeLabel | TotpEnrollConfirmButton |
+        TotpEnrollCancelLink | TotpEnrollPageTitleHtml |
+        // v0.39.0 — TOTP verify
+        TotpVerifyTitle | TotpVerifyIntro |
+        TotpVerifyHeading | TotpVerifyCodeLabel |
+        TotpVerifyContinueButton | TotpVerifyLostSummary |
+        TotpVerifyRecoverIntro | TotpVerifyRecoverAriaLabel |
+        TotpVerifyRecoverCodeLabel | TotpVerifyRecoverButton |
+        TotpVerifyPageTitleHtml | TotpVerifyWrongCode |
+        // v0.39.0 — Security Center index
+        SecurityTitle | SecurityIntro | SecurityPrimaryHeading |
+        SecurityTotpHeading | SecurityTotpAnonymousNotice |
+        SecurityTotpDisabledBadge | SecurityTotpDisabledIntro |
+        SecurityTotpEnableLink |
+        SecuritySessionsHeading | SecuritySessionsIntro |
+        SecuritySessionsLink | SecurityBackLink | SecurityPageTitleHtml
+            => {}  // exhaustiveness pin — body is irrelevant
+    }
+    // Now actually iterate. The list below mirrors the match
+    // above; the match is the build-time guard, this is the
+    // runtime walker.
+    let all = [
+        FlashTotpEnabled, FlashTotpDisabled, FlashTotpRecovered,
+        FlashLoggedOut,   FlashSessionRevoked,
+        TotpEnrollWrongCode,
+        SessionsPageTitle, SessionsPageIntro, SessionsPageEmpty,
+        SessionsBackLink,
+        SessionsCurrentBadge, SessionsCurrentDisabled,
+        SessionsCurrentDisabledTitle, SessionsRevokeButton,
+        SessionsAuthMethodPasskey, SessionsAuthMethodMagicLink,
+        SessionsAuthMethodAdmin,   SessionsAuthMethodUnknown,
+        SessionsLabelSignIn,   SessionsLabelLastSeen,
+        SessionsLabelClient,   SessionsLabelSessionId,
+        LoginTitle,  LoginIntro,
+        LoginPasskeyHeading,  LoginPasskeyButton,
+        LoginPasskeyJsRequired, LoginPasskeyFailed,
+        LoginEmailHeading,    LoginEmailLabel,     LoginEmailButton,
+        LoginPageTitleHtml,
+        TotpEnrollTitle, TotpEnrollIntro, TotpEnrollQrAriaLabel,
+        TotpEnrollManualSummary, TotpEnrollManualMeta,
+        TotpEnrollConfirmHeading, TotpEnrollConfirmIntro,
+        TotpEnrollCodeLabel, TotpEnrollConfirmButton,
+        TotpEnrollCancelLink, TotpEnrollPageTitleHtml,
+        TotpVerifyTitle, TotpVerifyIntro,
+        TotpVerifyHeading, TotpVerifyCodeLabel,
+        TotpVerifyContinueButton, TotpVerifyLostSummary,
+        TotpVerifyRecoverIntro, TotpVerifyRecoverAriaLabel,
+        TotpVerifyRecoverCodeLabel, TotpVerifyRecoverButton,
+        TotpVerifyPageTitleHtml, TotpVerifyWrongCode,
+        SecurityTitle, SecurityIntro, SecurityPrimaryHeading,
+        SecurityTotpHeading, SecurityTotpAnonymousNotice,
+        SecurityTotpDisabledBadge, SecurityTotpDisabledIntro,
+        SecurityTotpEnableLink,
+        SecuritySessionsHeading, SecuritySessionsIntro,
+        SecuritySessionsLink, SecurityBackLink, SecurityPageTitleHtml,
+    ];
+    for k in all { f(k); }
+}
+
 /// Every supported locale must resolve every MessageKey to a
-/// non-empty string. Pinning this property here prevents a
-/// future "I added a new MessageKey variant and forgot the
-/// `En` arm" regression from sneaking through review (the
-/// compiler enforces match exhaustiveness, but a developer
-/// could still write an empty literal).
+/// non-empty string.
 #[test]
 fn every_message_key_resolves_in_every_locale_to_nonempty() {
-    let all_keys = [
-        MessageKey::FlashTotpEnabled,
-        MessageKey::FlashTotpDisabled,
-        MessageKey::FlashTotpRecovered,
-        MessageKey::FlashLoggedOut,
-        MessageKey::FlashSessionRevoked,
-        MessageKey::TotpEnrollWrongCode,
-        MessageKey::SessionsPageTitle,
-        MessageKey::SessionsPageIntro,
-        MessageKey::SessionsPageEmpty,
-        MessageKey::SessionsBackLink,
-        MessageKey::SessionsCurrentBadge,
-        MessageKey::SessionsCurrentDisabled,
-        MessageKey::SessionsCurrentDisabledTitle,
-        MessageKey::SessionsRevokeButton,
-        MessageKey::SessionsAuthMethodPasskey,
-        MessageKey::SessionsAuthMethodMagicLink,
-        MessageKey::SessionsAuthMethodAdmin,
-        MessageKey::SessionsAuthMethodUnknown,
-        MessageKey::SessionsLabelSignIn,
-        MessageKey::SessionsLabelLastSeen,
-        MessageKey::SessionsLabelClient,
-        MessageKey::SessionsLabelSessionId,
-    ];
-
-    for key in all_keys {
+    for_each_key(|key| {
         for locale in [Locale::Ja, Locale::En] {
             let text = lookup(key, locale);
             assert!(!text.is_empty(),
                 "lookup({key:?}, {locale:?}) returned empty string — \
                  every key must have a real translation in every locale");
         }
-    }
+    });
 }
 
 /// Within one locale, no two keys may resolve to the SAME
 /// rendered text. If they do, either the keys are redundant
-/// (consolidate) or the translations have drifted to be
-/// indistinguishable (a localization bug). This is a
-/// soft-but-useful invariant; relax it later if a legitimate
-/// duplicate emerges (e.g., "Cancel" used in two distinct
-/// contexts where the developer wants per-context
-/// flexibility).
+/// or the translations have drifted to be indistinguishable.
+/// Some legitimate exceptions are listed in `is_legitimate_duplicate`.
 #[test]
 fn no_two_keys_share_text_within_a_locale() {
-    let all_keys = [
-        MessageKey::FlashTotpEnabled,
-        MessageKey::FlashTotpDisabled,
-        MessageKey::FlashTotpRecovered,
-        MessageKey::FlashLoggedOut,
-        MessageKey::FlashSessionRevoked,
-        MessageKey::TotpEnrollWrongCode,
-        MessageKey::SessionsPageTitle,
-        MessageKey::SessionsPageIntro,
-        MessageKey::SessionsPageEmpty,
-        MessageKey::SessionsBackLink,
-        MessageKey::SessionsCurrentBadge,
-        MessageKey::SessionsCurrentDisabled,
-        MessageKey::SessionsCurrentDisabledTitle,
-        MessageKey::SessionsRevokeButton,
-        // SessionsAuthMethodMagicLink intentionally omitted —
-        // "Magic Link" is the same text in both ja and en
-        // (the brand string), and that's expected.
-        MessageKey::SessionsAuthMethodPasskey,
-        MessageKey::SessionsAuthMethodAdmin,
-        MessageKey::SessionsAuthMethodUnknown,
-        MessageKey::SessionsLabelSignIn,
-        MessageKey::SessionsLabelLastSeen,
-        MessageKey::SessionsLabelClient,
-        MessageKey::SessionsLabelSessionId,
-    ];
+    /// Returns true for the rare cases where two keys
+    /// SHOULD share text (brand strings, repeated labels
+    /// across locale boundaries).
+    fn is_legitimate_duplicate(text: &str) -> bool {
+        // Brand and term-of-art strings: legitimately the
+        // same in every locale or across multiple keys.
+        const SHARED: &[&str] = &[
+            "Magic Link",
+            "パスキー",
+            "Passkey",
+            // The phrase "Active sessions" / "アクティブなセッション"
+            // is used both as the dedicated `/me/security/sessions`
+            // page title (`SessionsPageTitle`) and as the
+            // section heading on the Security Center index
+            // (`SecuritySessionsHeading`). Same concept, two
+            // surfaces; reusing the canonical translation is
+            // correct.
+            "Active sessions",
+            "アクティブなセッション",
+        ];
+        SHARED.contains(&text)
+    }
 
     for locale in [Locale::Ja, Locale::En] {
         let mut seen: std::collections::HashMap<&str, MessageKey> =
             std::collections::HashMap::new();
-        for key in all_keys {
+        for_each_key(|key| {
             let text = lookup(key, locale);
+            if is_legitimate_duplicate(text) { return; }
             if let Some(prev) = seen.insert(text, key) {
                 panic!(
                     "duplicate text {text:?} in locale {locale:?}: \
                      {prev:?} and {key:?} resolve to the same string"
                 );
             }
-        }
+        });
     }
 }
 

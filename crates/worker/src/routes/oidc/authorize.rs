@@ -172,7 +172,9 @@ pub async fn authorize<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
 
     let csrf_token = csrf::mint();
     let sitekey = Some(cfg.turnstile_sitekey.as_str()).filter(|s| !s.is_empty());
-    let html = cesauth_ui::templates::login_page(&csrf_token, None, sitekey);
+    // v0.39.0: negotiate locale for the login page rendering.
+    let locale = crate::i18n::resolve_locale(&req);
+    let html = cesauth_ui::templates::login_page_for(&csrf_token, None, sitekey, locale);
     let mut resp = Response::from_html(html)?;
     // Login page inlines a small script; set an appropriately tight CSP.
     let csp = if sitekey.is_some() {

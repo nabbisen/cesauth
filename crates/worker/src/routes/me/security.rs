@@ -111,6 +111,9 @@ pub async fn get_handler(req: Request, env: worker::Env) -> Result<Response> {
         recovery_codes_remaining: recovery_count,
     };
 
+    // v0.39.0: negotiate locale once for the page.
+    let locale = crate::i18n::resolve_locale(&req);
+
     // Pull flash + always emit the clear cookie. take_from_request
     // expires the cookie regardless of validity, so a tampered or
     // expired flash doesn't keep redelivering on every request.
@@ -120,11 +123,11 @@ pub async fn get_handler(req: Request, env: worker::Env) -> Result<Response> {
         aria_live:    f.level.aria_live(),
         css_modifier: f.level.css_modifier(),
         icon:         f.level.icon(),
-        text:         f.key.display_text(),
+        text:         f.key.display_text_for(locale),
     });
     let flash_html = templates::flash_block(flash_view);
 
-    let html = templates::security_center_page_with_flash(&state, &flash_html);
+    let html = templates::security_center_page_for(&state, &flash_html, locale);
 
     let mut resp = Response::from_html(html)?;
     resp.headers_mut().append("set-cookie", &clear_header).ok();
