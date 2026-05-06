@@ -21,6 +21,7 @@ pub mod error;
 pub mod log;
 pub mod post_auth;
 pub mod routes;
+pub mod sweep;
 pub mod turnstile;
 
 #[allow(clippy::wildcard_imports)]
@@ -30,6 +31,40 @@ use worker::*;
 // land in this cdylib. Do NOT remove these without updating
 // wrangler.toml and verifying DO classes still load.
 pub use cesauth_cf::{ActiveSession, AuthChallenge, RateLimit, RefreshTokenFamily};
+
+/// Cloudflare Workers Cron Trigger entry point.
+///
+/// Configured in `wrangler.toml` `[triggers]` with the schedule
+/// `0 4 * * *` (04:00 UTC daily). The handler dispatches to the
+/// anonymous-trial retention sweep — currently the only scheduled
+/// task. Future scheduled tasks (e.g. operational metric
+/// emission, expired-token cleanup at finer granularity) will
+/// branch on `event.cron()` to multiplex.
+///
+/// Errors from the sweep are logged but never propagated. The
+/// scheduled handler returning an error to the runtime is
+/// effectively visible only in Cloudflare's invocation history;
+/// our `log.rs` channel + the audit trail give operators a more
+/// useful surface for "did the sweep run, what did it do".
+#[event(scheduled)]
+pub async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
+    let cron = event.cron();
+    match cron.as_str() {
+        // Daily anonymous-trial retention sweep. ADR-004 §Q3.
+        "0 4 * * *" => {
+            if let Err(e) = sweep::run(&env).await {
+                console_error!("scheduled sweep failed: {e:?}");
+            }
+        }
+        // Unknown schedule. Either a misconfigured `wrangler.toml`
+        // or a future trigger that hasn't been wired here yet.
+        // Emit a warn-level log and continue — the runtime
+        // doesn't expect us to fail.
+        other => {
+            console_warn!("unknown cron schedule: {other}");
+        }
+    }
+}
 
 #[event(fetch)]
 pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {

@@ -185,4 +185,45 @@ impl UserRepository for CloudflareUserRepository<'_> {
         let rows: Vec<UserRow> = rows.results().map_err(|_| PortError::Serialization)?;
         rows.into_iter().map(|r| r.into_domain()).collect()
     }
+
+    async fn list_anonymous_expired(
+        &self,
+        cutoff_unix: cesauth_core::types::UnixSeconds,
+    ) -> PortResult<Vec<User>> {
+        // The SQL mirrors the v0.18.0 sweep contract exactly. Note
+        // the `email IS NULL` clause: promoted users carry an
+        // email after the promotion path UPDATE, so they're
+        // structurally exempt from the sweep.
+        let db = db(self.env)?;
+        let rows = db.prepare(
+            "SELECT id, tenant_id, email, email_verified, display_name, \
+                    account_type, status, created_at, updated_at \
+             FROM users \
+             WHERE account_type = 'anonymous' \
+               AND email IS NULL \
+               AND created_at < ?1 \
+             ORDER BY id"
+        )
+            .bind(&[d1_int(cutoff_unix)])
+            .map_err(|e| run_err("users.list_anon_expired bind", e))?
+            .all().await
+            .map_err(|_| PortError::Unavailable)?;
+        let rows: Vec<UserRow> = rows.results()
+            .map_err(|_| PortError::Serialization)?;
+        rows.into_iter().map(|r| r.into_domain()).collect()
+    }
+
+    async fn delete_by_id(&self, id: &str) -> PortResult<()> {
+        // FK CASCADEs (anonymous_sessions via 0006, memberships and
+        // role_assignments via 0003) clean up dependent rows.
+        // Missing-row deletes are not an error — the sweep is
+        // idempotent.
+        let db = db(self.env)?;
+        let _ = db.prepare("DELETE FROM users WHERE id = ?1")
+            .bind(&[id.into()])
+            .map_err(|e| run_err("users.delete_by_id bind", e))?
+            .run().await
+            .map_err(|e| run_err("users.delete_by_id run", e))?;
+        Ok(())
+    }
 }

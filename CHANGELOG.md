@@ -12,6 +12,231 @@ always be called out here.
 
 ---
 
+## [0.18.0] - 2026-04-28
+
+Anonymous-trial daily retention sweep — ADR-004 Phase 3, the final
+piece. The flow is now **feature-complete**: visitor mints
+anonymous principal (0.17.0 `/begin`), optionally promotes to
+`human_user` via Magic Link UPDATE-in-place (0.17.0 `/promote`),
+or — if neither — gets cleaned up by the 7-day retention sweep
+shipped here.
+
+This release is also the first 0.5.x and the natural moment to
+formalize cesauth's versioning rule. ROADMAP gains a
+"Versioning policy" section near the top: **minor bumps for new
+HTTP routes, schema migrations, public types/traits, permission
+slugs, or operator-visible config; patch bumps for internal
+changes that preserve all of the above.** The historical 0.4.x
+debt (several patches that should have been minors by this rule)
+stays as-is — those bundles are immutable artifacts. Going
+forward the rule applies; 0.18.0 is the first release under it.
+
+### Added — Cloudflare Workers Cron Trigger (operator-visible config change)
+
+`wrangler.toml` gains a `[triggers]` block:
+
+```toml
+[triggers]
+crons = ["0 4 * * *"]
+```
+
+This is the operator-visible deployment-config change that bumps
+the minor (per the new versioning policy). Operators upgrading
+from 0.17.0 must add this block before `wrangler deploy`, or the
+sweep will never run. The schedule fires the
+`#[event(scheduled)]` handler in `crates/worker/src/lib.rs` at
+04:00 UTC daily — late enough that the previous day's
+promotion-flow stragglers have settled, early enough that
+operators in any timezone see the result before their workday.
+
+Cloudflare's dashboard surfaces invocation history under
+**Workers & Pages → cesauth → Settings → Triggers**;
+`wrangler tail` streams scheduled invocations live.
+
+### Added — `crates/worker/src/sweep.rs`
+
+The new `sweep::run(env)` function runs one pass:
+
+1. Loads `Config` (for log channel + audit destinations).
+2. Computes `cutoff = now - ANONYMOUS_USER_RETENTION_SECONDS`
+   (7 days).
+3. Calls `UserRepository::list_anonymous_expired(cutoff)` to
+   list every row matching `account_type='anonymous' AND
+   email IS NULL AND created_at < cutoff`.
+4. For each row: emits `EventKind::AnonymousExpired` audit
+   FIRST, then `delete_by_id`. Audit-before-delete is the
+   load-bearing ordering — if the delete fails, the audit row
+   still records the principal we *intended* to remove, and
+   the diagnostic query (operator runbook) shows whether the
+   row actually disappeared. ADR-004 §Q5 rationale.
+5. Logs one `Info` summary line at the end:
+   `"anonymous sweep complete: X/Y rows deleted"`.
+
+#### Why list-then-delete instead of bulk DELETE
+
+A single `DELETE FROM users WHERE ...` would be one round-trip,
+but it gives no per-row audit and no operator-visible signal of
+*which* principals were swept. ADR-004 §Q5 requires that
+`User.id` remain queryable across a row's full lifetime
+(including its sweep), so the per-row audit emission is
+load-bearing for that contract. For the expected steady-state
+volume (anonymous trials per day in the tens-to-hundreds), the
+extra round-trips are not a concern.
+
+#### Failure semantics — best-effort, not transactional
+
+If individual row deletes fail, the handler logs `Warn` and
+continues with the next row. The next day's sweep retries the
+survivors. The alternative (one bad row blocking the whole
+sweep indefinitely) is worse for storage growth than partial
+progress. Persistent failures show up as a growing residual
+count visible to operators via the diagnostic query in the
+operator runbook.
+
+### Added — `#[event(scheduled)]` handler
+
+A new entry point in `crates/worker/src/lib.rs` dispatches on
+`event.cron()`:
+
+- `"0 4 * * *"` → `sweep::run(&env).await`.
+- Any other cron expression → `console_warn!` and continue.
+  Future scheduled tasks (operational metrics, finer-grained
+  cleanup) branch here.
+
+Errors from the sweep are logged but never propagated to the
+runtime. Cloudflare's invocation history would surface the
+error at scheduled-handler granularity, but the operational log
+channel + audit trail give a more useful per-row surface for
+"did the sweep run, what did it do".
+
+### Added — `UserRepository` extensions
+
+Two new port methods to back the sweep:
+
+- **`list_anonymous_expired(cutoff_unix) -> Vec<User>`** —
+  returns rows with `account_type='anonymous' AND email IS
+  NULL AND created_at < cutoff`. The `email IS NULL` clause
+  is what structurally exempts promoted users (they carry an
+  email post-promotion) from the sweep. ADR-004 §Q3.
+- **`delete_by_id(id) -> ()`** — hard delete; FK CASCADEs
+  (via 0006 + 0003) clean up `anonymous_sessions`,
+  memberships, role assignments. Idempotent: missing-row
+  delete is `Ok(())`, since the sweep may race with itself
+  or a concurrent admin delete.
+
+Both methods are implemented in the in-memory adapter
+(`crates/adapter-test/src/repo/users.rs`) and the D1 adapter
+(`crates/adapter-cloudflare/src/ports/repo/users.rs`). The
+`StubUsers` test double in `crates/core/src/tenant_admin/tests.rs`
+gains stub implementations so `cargo test -p cesauth-core`
+continues to compile.
+
+### Tests
+
+- Total: **294 passing** (+5 over v0.17.0).
+  - core: 122 (unchanged).
+  - adapter-test: **51** (was 46) — 5 new in `repo::tests`:
+    - `list_anonymous_expired_returns_only_expired_unpromoted` —
+      4-row fixture (young / expired / promoted / human user)
+      verifies only the expired-and-unpromoted row is returned.
+      The promoted row (with email) and the young row are
+      structurally exempt; the human user is excluded by
+      account-type filter.
+    - `list_anonymous_expired_empty_when_nothing_due` — sweep
+      against a cutoff that nothing crosses returns empty
+      (not error, not panic).
+    - `delete_by_id_is_idempotent` — double-delete + missing-id
+      delete both `Ok(())`. The sweep may race with itself
+      across cron invocations.
+    - `delete_by_id_removes_email_uniqueness_lock` — important
+      for the promote-then-re-trial pattern: after delete, the
+      email becomes available for re-registration.
+    - `list_anonymous_expired_skips_human_users_even_if_old` —
+      defense in depth: a `human_user` row past `i64::MAX`
+      seconds old must NEVER be returned. The query filter
+      (`account_type='anonymous'`) is what stands between the
+      sweep and a catastrophic data-loss bug.
+  - ui: 121 (unchanged).
+
+### ADR-004 — feature-complete
+
+- Phase 1 (foundation): v0.16.0. ✅
+- Phase 2 (HTTP routes): v0.17.0, ADR Status → Accepted. ✅
+- Phase 3 (retention sweep): **v0.18.0, this release.** ✅
+
+### Status changes
+
+- **ROADMAP** — Anonymous-trial item moves from "next minor
+  releases" to the "Shipped" table. Versioning policy section
+  added near the top.
+
+### Migration (0.17.0 → 0.18.0)
+
+Code-only release in the schema sense — no new migration; the
+0006_anonymous.sql foundation is unchanged. **However**,
+operators MUST update `wrangler.toml`:
+
+```toml
+# Append:
+[triggers]
+crons = ["0 4 * * *"]
+```
+
+Then `wrangler deploy`. Without the `[triggers]` block, the
+new scheduled handler still ships, but Cloudflare never invokes
+it — the sweep never runs and anonymous users accumulate
+indefinitely. The operator runbook section "Verifying the
+anonymous-trial retention sweep ran" walks the post-deploy
+verification.
+
+### Smoke test
+
+```bash
+# 1) Deploy with the new [triggers] block.
+wrangler deploy
+
+# 2) Verify the trigger registered with Cloudflare.
+#    Dashboard: Workers & Pages → cesauth → Settings → Triggers.
+#    Should list one cron: "0 4 * * *".
+
+# 3) Local smoke-test of the sweep without waiting for 04:00 UTC.
+wrangler dev --test-scheduled
+# Then in another terminal:
+curl http://localhost:8787/cdn-cgi/handler/scheduled
+# -> 200 OK; check `wrangler dev` output for the sweep log line.
+
+# 4) Verify the audit trail:
+wrangler d1 execute cesauth --remote \
+  --command="SELECT count(*) FROM audit_events WHERE kind='anonymous_expired';"
+# -> count of rows the sweep has audited across all runs.
+
+# 5) Diagnostic — anonymous accumulation check:
+wrangler d1 execute cesauth --remote --command=\
+"SELECT count(*) FROM users \
+   WHERE account_type='anonymous' AND email IS NULL \
+     AND created_at < unixepoch() - 7 * 86400;"
+# -> 0 in a healthy deployment. Non-zero shortly after a sweep
+#    means the sweep failed to delete some rows; check
+#    wrangler tail for per-row Warn logs.
+```
+
+### Deferred — unchanged from 0.17.0
+
+- **`check_permission` integration on `/api/v1/...`.**
+  Unscheduled.
+- **External IdP federation.** Out of scope for v0.5.x.
+
+### Next planned
+
+The first 0.18.0 release closes the anonymous-trial roadmap
+slot. Next likely candidates from the ROADMAP:
+
+- **OAuth 2.0 Token Introspection (RFC 7662)** —
+  `POST /introspect`. Already in ROADMAP.
+- **Account lockout** for repeated auth failures.
+
+---
+
 ## [0.17.0] - 2026-04-28
 
 Anonymous trial — HTTP routes. ADR-004 Phase 2: the two endpoints

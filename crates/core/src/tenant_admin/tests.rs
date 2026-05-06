@@ -60,6 +60,13 @@ impl UserRepository for StubUsers {
     async fn list_by_tenant(&self, tid: &str) -> PortResult<Vec<User>> {
         Ok(self.rows.borrow().iter().filter(|u| u.tenant_id == tid).cloned().collect())
     }
+    async fn list_anonymous_expired(&self, _: i64) -> PortResult<Vec<User>> {
+        Ok(Vec::new())
+    }
+    async fn delete_by_id(&self, id: &str) -> PortResult<()> {
+        self.rows.borrow_mut().retain(|u| u.id != id);
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------

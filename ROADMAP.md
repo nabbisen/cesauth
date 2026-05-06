@@ -8,6 +8,43 @@ the [Semantic Versioning](https://semver.org/) naming for priorities.
 
 ---
 
+## Versioning policy
+
+cesauth follows SemVer with one pre-1.0 caveat: the major number stays
+at `0` until the public surface settles. Within `0.x.y`:
+
+- **Bump the minor (`0.x → 0.x+1`) when** a release introduces a new
+  HTTP route surface, a new schema migration, a new public type or
+  trait in `cesauth-core`, a new permission slug, a new operator-visible
+  configuration knob (`wrangler.toml` `[triggers]`, new env var),
+  or a renamed/removed URL. Anything an integrator or operator could
+  observe by reading the release notes and going "I need to do
+  something" earns a minor bump.
+- **Bump the patch (`0.x.y → 0.x.y+1`) when** the change is
+  internal-only: bug fixes that preserve existing behavior, doc
+  updates, dependency upgrades that don't shift any visible
+  behavior, refactors. Security fixes that preserve wire compatibility
+  also count as patch (the v0.15.1 RUSTSEC fix is the canonical
+  example — `Cargo.toml` features narrowed, no surface change).
+
+A few historical 0.4.x releases (notably 0.6.0 through 0.11.0 and
+0.13.0-0.15.0, 0.16.0-0.17.0) by this rubric should arguably have
+been minor bumps rather than patches. We accept that as historical
+debt rather than rewriting bundles already shipped — those releases
+are immutable artifacts. Going forward (from 0.18.0 onward) the rule
+above is the policy.
+
+The first `1.0` release will be cut when:
+
+- The OIDC ceremony surface is stable across at least one minor
+  cycle without breaking changes.
+- The tenancy-service API has been exercised by at least one
+  external integrator without protocol-level surprises.
+- The operator surface (admin console, tenant-scoped admin) has
+  reached the "what shipped is what we want" point.
+
+---
+
 ## Shipped (pre-1.0)
 
 The following subsystems are implemented end-to-end and covered by
@@ -37,7 +74,7 @@ zero remaining issues.
 | Audit log (R2, NDJSON per event)       | ✅       | Covered by `/__dev/audit` browser + searchable via admin console (0.3.0) |
 | **Cost &amp; Data Safety Admin Console** | ✅     | `/admin/console/*` — Overview, Cost, Safety, Audit, Config, Alerts (0.3.0); HTML two-step edit UI for bucket-safety + admin-token CRUD (0.4.0) |
 | Dev-only routes (`/__dev/*`)           | ✅       | Gated on `WRANGLER_LOCAL="1"`                      |
-| **Tenancy-service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.5.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.6.0). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.7.0). Read-only HTML console at `/admin/tenancy/*` (0.8.0, originally `/admin/saas/*`). Mutation forms with preview/confirm pattern (0.9.0) for tenant / organization / group / subscription. Membership add/remove + role grant/revoke forms (0.10.0) bring the HTML console to feature parity with the v0.7.0 JSON API. ADR-001/002/003 settle the tenant-scoped admin surface design (0.11.0) and ship the schema + type foundation (`admin_tokens.user_id`, `AdminPrincipal::user_id`, `is_system_admin()`). Project-hygiene release with naming-debt cleanup (0.12.0) — `saas/` → `tenancy_console/`, `/admin/saas/*` → `/admin/tenancy/*`, plus author/license metadata and `.github/` community documents. Buffer/follow-up release with stale-narrative cleanup + dependency audit (0.12.1). Tenant-scoped admin surface read pages shipped at `/admin/t/<slug>/*` with auth gate + `check_permission` integration (0.13.0). High-risk mutation forms plus a system-admin token-mint UI shipped (0.14.0). Additive membership forms (× 3 flavors) plus affordance gating shipped (0.15.0) — the tenant-scoped surface reaches feature parity with the system-admin tenancy console. Security-fix and audit-infrastructure release (0.15.1): RUSTSEC-2023-0071 in transitive `rsa` removed via `jsonwebtoken` feature narrowing, `cargo audit` integrated via initial sweep + GitHub Actions workflow + operator docs. Anonymous-trial promotion design (ADR-004) plus foundation (migration `0006_anonymous.sql`, `AnonymousSession` type + repository, in-memory + D1 adapters, 3 new audit event kinds) shipped (0.16.0). Anonymous-trial HTTP routes (`POST /api/v1/anonymous/begin` and `/promote`) shipped (0.17.0); ADR-004 graduates to `Accepted`. Daily retention sweep in 0.6.05. |
+| **Tenancy-service data model + authz** | ✅       | Tenants, organizations, groups, memberships, role/permission engine, plans, subscriptions (0.5.0). Cloudflare D1 adapters for every port + `users` table tenant-aware (0.6.0). `/api/v1/...` HTTP routes for tenant / org / group / membership / role-assignment / subscription CRUD with plan-quota enforcement (0.7.0). Read-only HTML console at `/admin/tenancy/*` (0.8.0, originally `/admin/saas/*`). Mutation forms with preview/confirm pattern (0.9.0) for tenant / organization / group / subscription. Membership add/remove + role grant/revoke forms (0.10.0) bring the HTML console to feature parity with the v0.7.0 JSON API. ADR-001/002/003 settle the tenant-scoped admin surface design (0.11.0) and ship the schema + type foundation (`admin_tokens.user_id`, `AdminPrincipal::user_id`, `is_system_admin()`). Project-hygiene release with naming-debt cleanup (0.12.0) — `saas/` → `tenancy_console/`, `/admin/saas/*` → `/admin/tenancy/*`, plus author/license metadata and `.github/` community documents. Buffer/follow-up release with stale-narrative cleanup + dependency audit (0.12.1). Tenant-scoped admin surface read pages shipped at `/admin/t/<slug>/*` with auth gate + `check_permission` integration (0.13.0). High-risk mutation forms plus a system-admin token-mint UI shipped (0.14.0). Additive membership forms (× 3 flavors) plus affordance gating shipped (0.15.0) — the tenant-scoped surface reaches feature parity with the system-admin tenancy console. Security-fix and audit-infrastructure release (0.15.1): RUSTSEC-2023-0071 in transitive `rsa` removed via `jsonwebtoken` feature narrowing, `cargo audit` integrated via initial sweep + GitHub Actions workflow + operator docs. Anonymous-trial promotion design (ADR-004) plus foundation (migration `0006_anonymous.sql`, `AnonymousSession` type + repository, in-memory + D1 adapters, 3 new audit event kinds) shipped (0.16.0). Anonymous-trial HTTP routes (`POST /api/v1/anonymous/begin` and `/promote`) shipped (0.17.0); ADR-004 graduates to `Accepted`. Anonymous-trial daily retention sweep (Cloudflare Workers Cron Trigger, `[triggers]` block in `wrangler.toml`, sweep handler with audit-before-delete ordering, operator runbook diagnostic) shipped (0.18.0); ADR-004 feature-complete. |
 | mdBook documentation                   | ✅       | `docs/`                                            |
 
 ---
@@ -331,19 +368,34 @@ started.
   `not_anonymous`). 289 tests pass (+3 over v0.16.0);
   zero warnings.
 
-- **Anonymous trial — daily retention sweep (0.6.05, next planned).**
-  Cloudflare Workers Cron Trigger configured in
-  `wrangler.toml`. Sweep handler runs:
+- **Anonymous trial — daily retention sweep (shipped in 0.18.0).**
+  ADR-004 Phase 3, the final piece. The flow is now
+  feature-complete. New `[triggers]` block in `wrangler.toml`
+  (operator-visible config change — first cron trigger in
+  cesauth) fires the new `#[event(scheduled)]` handler at
+  04:00 UTC daily. The sweep handler runs:
   ```sql
-  DELETE FROM users
+  SELECT id, ... FROM users
    WHERE account_type='anonymous' AND email IS NULL
      AND created_at < ?  -- now - 7d
   ```
-  FK CASCADE clears `anonymous_sessions`, memberships,
-  role assignments, etc. One `AnonymousExpired` audit
-  event per deleted row. Operator runbook gains "Verifying
-  the retention sweep ran" diagnostic section. After
-  v0.6.05 the anonymous-trial flow is feature-complete.
+  emits one `AnonymousExpired` audit event per row, then
+  deletes the row (FK CASCADEs clean up
+  `anonymous_sessions`, memberships, role assignments).
+  Best-effort failure semantics: per-row failures log `Warn`
+  and continue; the next day's sweep retries the survivors.
+
+  **Operator-visible**: cron invocation history in the
+  Cloudflare dashboard, `wrangler tail` for live streaming,
+  one `Info` summary line per sweep:
+  `"anonymous sweep complete: X/Y rows deleted"`. Operator
+  runbook gains "Verifying the anonymous-trial retention sweep
+  ran" with a residual-count diagnostic query.
+
+  Schema additions: `UserRepository::list_anonymous_expired`
+  and `delete_by_id` port methods; in-memory + D1 adapters;
+  `EventKind::AnonymousExpired` was pre-added in 0.16.0. 294
+  tests pass (+5 over v0.17.0); zero warnings.
 
 - **OAuth 2.0 Token Introspection (RFC 7662).** `POST /introspect`.
   RFC 7009 (`/revoke`) shipped with the OIDC core; the

@@ -5,7 +5,8 @@ use std::sync::Mutex;
 
 use cesauth_core::ports::repo::UserRepository;
 use cesauth_core::ports::{PortError, PortResult};
-use cesauth_core::types::User;
+use cesauth_core::tenancy::AccountType;
+use cesauth_core::types::{UnixSeconds, User};
 
 
 #[derive(Debug, Default)]
@@ -62,5 +63,31 @@ impl UserRepository for InMemoryUserRepository {
             .collect();
         out.sort_by(|a, b| a.id.cmp(&b.id));
         Ok(out)
+    }
+
+    async fn list_anonymous_expired(
+        &self,
+        cutoff_unix: UnixSeconds,
+    ) -> PortResult<Vec<User>> {
+        // Mirror the SQL: account_type='anonymous' AND email IS NULL
+        // AND created_at < cutoff. The email-IS-NULL clause is what
+        // skips promoted rows; ADR-004 §Q3.
+        let m = self.by_id.lock().map_err(|_| PortError::Unavailable)?;
+        let mut out: Vec<User> = m.values()
+            .filter(|u| u.account_type == AccountType::Anonymous
+                     && u.email.is_none()
+                     && u.created_at < cutoff_unix)
+            .cloned()
+            .collect();
+        out.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(out)
+    }
+
+    async fn delete_by_id(&self, id: &str) -> PortResult<()> {
+        let mut m = self.by_id.lock().map_err(|_| PortError::Unavailable)?;
+        m.remove(id);
+        // Idempotent: missing row is not an error. The sweep may
+        // race with itself or with a concurrent admin delete.
+        Ok(())
     }
 }

@@ -111,3 +111,20 @@ LOG_EMIT_SENSITIVE      = "0"
 # Dev surface toggle. Set to "1" ONLY in `.dev.vars` for local development.
 # When unset or any other value, the /__dev/* endpoints return 404.
 WRANGLER_LOCAL          = "0"
+
+# --- Cron Triggers (v0.18.0) -----------------------------------------------
+# Cloudflare Workers Cron Triggers fire the `#[event(scheduled)]` handler
+# in `crates/worker/src/lib.rs` on the schedule below. cesauth uses
+# triggers only for the anonymous-trial retention sweep (ADR-004 §Q3);
+# future triggers will be added to this list and dispatched on the
+# `event.cron()` value.
+#
+# Operator visibility: Cloudflare's dashboard surfaces invocation
+# history under Workers & Pages → cesauth → Settings → Triggers.
+# `wrangler tail --format=pretty` also streams scheduled invocations.
+#
+# Schedule rationale: 04:00 UTC daily. Late enough that the previous
+# day's promotion-flow stragglers have settled; early enough that
+# operators in any timezone see the result before their workday.
+[triggers]
+crons = ["0 4 * * *"]

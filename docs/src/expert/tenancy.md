@@ -1007,14 +1007,96 @@ three checks. Any failure returns 401 with
   depth; in practice unreachable because the promotion
   path revokes the bearer before flipping the type).
 
-### Does NOT ship in v0.4.x (yet)
+### Added in 0.18.0
+
+Anonymous trial — daily retention sweep. ADR-004 Phase 3, the
+final piece. The flow is now **feature-complete**: visitor mints
+anonymous principal (0.17.0 `/begin`), optionally promotes to
+`human_user` (0.17.0 `/promote`), or — if neither — gets cleaned
+up by the sweep shipped here.
+
+#### Cloudflare Workers Cron Trigger
+
+`wrangler.toml` gains a new `[triggers]` block:
+
+```toml
+[triggers]
+crons = ["0 4 * * *"]
+```
+
+This is cesauth's first Cron Trigger. Operators upgrading from
+0.17.0 must add the block; the new `#[event(scheduled)]`
+handler ships in the binary regardless, but Cloudflare won't
+invoke it without the configuration. The schedule is daily at
+04:00 UTC — late enough that the previous day's promotion-flow
+stragglers have settled, early enough that operators in any
+timezone see the result before their workday.
+
+The handler in `crates/worker/src/lib.rs` dispatches on
+`event.cron()`:
+- `"0 4 * * *"` → `sweep::run(&env)`.
+- Any other value → `console_warn!` and continue. Future
+  scheduled tasks branch here.
+
+#### Sweep handler (`crates/worker/src/sweep.rs`)
+
+One pass:
+
+1. Loads `Config`, computes `cutoff = now -
+   ANONYMOUS_USER_RETENTION_SECONDS` (7 days).
+2. `UserRepository::list_anonymous_expired(cutoff)` returns
+   every row matching `account_type='anonymous' AND
+   email IS NULL AND created_at < cutoff`. The
+   `email IS NULL` clause structurally exempts promoted
+   users.
+3. For each row: emits `EventKind::AnonymousExpired` audit
+   FIRST with reason
+   `via=anonymous-sweep,age_secs=<n>`, then calls
+   `delete_by_id`. FK CASCADEs (via 0006 + 0003) clean up
+   `anonymous_sessions`, memberships, role assignments.
+4. Logs one `Info` summary line:
+   `"anonymous sweep complete: X/Y rows deleted"`.
+
+#### Why audit before delete
+
+ADR-004 §Q5 contract: `User.id` remains queryable across the
+row's full lifetime, including its sweep. If the audit row
+records the principal first, then the delete fails for storage
+reasons, the operator's diagnostic query (residual-count check
+in the runbook) shows whether the row actually disappeared —
+the audit is the durable signal of intent.
+
+#### Why list-then-delete instead of bulk DELETE
+
+A single `DELETE FROM users WHERE ...` would be one round-trip
+but gives no per-row audit. ADR-004 §Q5 is the load-bearing
+constraint here. Steady-state volume (anonymous trials per day
+in tens-to-hundreds) makes the extra round-trips irrelevant.
+
+#### Best-effort failure semantics
+
+Per-row delete failures log `Warn` and the sweep continues
+with the next row. Aborting on first failure would let one
+bad row block the whole sweep indefinitely; partial progress
+is strictly better for storage-growth bounds. The next day's
+sweep retries the survivors. Persistent failures show up as a
+growing residual count via the runbook's diagnostic query.
+
+#### `UserRepository` extensions
+
+Two new port methods:
+- `list_anonymous_expired(cutoff_unix) -> Vec<User>`.
+- `delete_by_id(id) -> ()`. Idempotent; missing-row delete
+  is `Ok(())` so the sweep can race with itself or with a
+  concurrent admin delete without spurious errors.
+
+Both implemented in the in-memory adapter + D1 adapter.
+
+### Does NOT ship in v0.5.x (yet)
 
 The CHANGELOG `Deferred` sections and `ROADMAP.md` track each item.
 Headlines:
 
-- **Anonymous-trial daily retention sweep.** Cloudflare Cron
-  Trigger + sweep handler. **0.6.05.** After this the
-  anonymous-trial flow is feature-complete.
 - **`check_permission` integration on `/api/v1/...`.** The
   v0.7.0 JSON API still uses `ensure_role_allows`. Now that
   user-bound tokens exist, `check_permission` is validated in
@@ -1027,7 +1109,7 @@ Headlines:
 
 ---
 
-## Operator runbook (v0.4.x)
+## Operator runbook (v0.5.x)
 
 ### Verifying dependencies before an upgrade
 
@@ -1052,6 +1134,90 @@ The dep-narrowing pattern shipped in 0.15.1 — replacing the
 `ed25519-dalek` + `rand` to drop the unused `rsa` transitive —
 is the model fix when a CVE lands on a dep we don't actually
 call.
+
+### Verifying the anonymous-trial retention sweep ran
+
+v0.18.0 added a Cloudflare Workers Cron Trigger that fires the
+`#[event(scheduled)]` handler in `crates/worker/src/lib.rs` at
+04:00 UTC daily. The handler runs `sweep::run`, which:
+
+1. Lists every `users` row with `account_type='anonymous' AND
+   email IS NULL AND created_at < now - 7d`.
+2. Emits one `AnonymousExpired` audit event per row.
+3. Deletes each row (FK CASCADEs clean up
+   `anonymous_sessions`, memberships, role assignments).
+
+#### Did it run?
+
+Cloudflare's dashboard surfaces invocation history under
+**Workers & Pages → cesauth → Settings → Triggers**. Each
+scheduled invocation appears with its start time and outcome.
+A run that completed cleanly logs one `Info` line via the
+operational log channel (visible in `wrangler tail`):
+
+```
+{"ts":...,"level":"info","category":"storage",
+ "msg":"anonymous sweep complete: 12/12 rows deleted"}
+```
+
+The first number is rows actually deleted; the second is the
+count surveyed. A discrepancy (`X/Y` where `X < Y`) means at
+least one row's delete failed and was logged at `Warn` —
+inspect the `wrangler tail` output for the per-row diagnostic.
+
+#### Did it sweep what it should?
+
+Run the audit-trail query for the previous day:
+
+```sql
+SELECT subject, reason, ts
+  FROM audit_events
+ WHERE kind = 'anonymous_expired'
+   AND ts >= unixepoch() - 86400
+ ORDER BY ts;
+```
+
+(Audit events live in R2; this query shape is conceptual — the
+actual access uses `cesauth-do/audit_query` or the
+`/admin/console/audit` page.) The reason carries
+`via=anonymous-sweep,age_secs=<n>`; ages around 604_800 (7 days)
+or slightly above are normal.
+
+#### Diagnostic: residual count
+
+To check whether anonymous rows are accumulating despite the
+sweep — i.e. the sweep is not catching what it should — run:
+
+```sql
+SELECT count(*) FROM users
+ WHERE account_type = 'anonymous'
+   AND email IS NULL
+   AND created_at < unixepoch() - 7 * 86400;
+```
+
+A healthy deployment returns `0` shortly after each sweep. A
+non-zero value persisting across sweeps points at a row
+that's failing to delete (storage error per row, or an
+orphaned FK reference). The per-row `Warn` log is the next
+place to look.
+
+#### Manual invocation
+
+`wrangler` does not currently expose a "run scheduled now"
+button. To smoke-test the sweep without waiting for 04:00 UTC,
+two options:
+
+1. **Local**: `wrangler dev --test-scheduled` invokes the
+   scheduled handler against the local dev environment. Use
+   for sanity-checking the code path, not for production
+   data.
+2. **Production**: temporarily change the cron expression in
+   `wrangler.toml` to fire imminently (e.g. `*/5 * * * *`),
+   `wrangler deploy`, wait for the next 5-minute boundary,
+   then revert and redeploy. Avoid running this against a
+   loaded production deployment — the sweep is best-effort,
+   not transactional, so a partial run leaves the operator
+   with the same diagnostic state as a normal sweep.
 
 ### Running the migrations
 

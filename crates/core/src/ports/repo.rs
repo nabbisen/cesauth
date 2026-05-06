@@ -8,7 +8,7 @@
 //! method here", that need belongs in `store`, not `repo`.
 
 use super::PortResult;
-use crate::types::{OidcClient, User};
+use crate::types::{OidcClient, UnixSeconds, User};
 use crate::webauthn::StoredAuthenticator;
 
 /// `users` table.
@@ -33,6 +33,36 @@ pub trait UserRepository {
     /// tenant. Pagination lands when a tenant's user count exceeds
     /// what fits on one page.
     async fn list_by_tenant(&self, tenant_id: &str) -> PortResult<Vec<User>>;
+
+    /// Find unpromoted anonymous-trial rows that have outlived the
+    /// retention window. Caller passes the cutoff timestamp
+    /// (typically `now_unix - ANONYMOUS_USER_RETENTION_SECONDS`)
+    /// and gets back every row with `account_type='anonymous' AND
+    /// email IS NULL AND created_at < cutoff`.
+    ///
+    /// The `email IS NULL` clause is what distinguishes promoted
+    /// anonymous users (which carry an email post-promotion and
+    /// MUST NOT be swept) from unpromoted ones. ADR-004 §Q3.
+    ///
+    /// Used by the v0.18.0 daily retention sweep. Pagination is
+    /// omitted for the same reason as `list_by_tenant`; if a
+    /// deployment ever has more than ~10k unpromoted anonymous
+    /// users on the bubble at once, the sweep should be migrated
+    /// to a chunked variant.
+    async fn list_anonymous_expired(
+        &self,
+        cutoff_unix: UnixSeconds,
+    ) -> PortResult<Vec<User>>;
+
+    /// Hard delete by id. Used by the v0.18.0 retention sweep
+    /// after audit emission. Foreign-key CASCADEs (anonymous
+    /// sessions, memberships, role assignments) clean themselves
+    /// up; this method only touches `users`.
+    ///
+    /// `Ok(())` when the row was either deleted or already gone
+    /// (idempotent — the sweep may race with itself in
+    /// pathological scheduling). Errors are storage-level.
+    async fn delete_by_id(&self, id: &str) -> PortResult<()>;
 }
 
 /// `oidc_clients` table.

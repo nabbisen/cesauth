@@ -156,10 +156,11 @@ pub enum AccountType {
     /// Anonymous trial principal. Not a permanent user in the sense
     /// of `HumanUser`; lifecycle is bounded, data retention is
     /// narrow. The promotion flow (anonymous → human_user) is
-    /// designed in ADR-004; foundation (schema, types, port,
-    /// adapters) shipped in v0.16.0; HTTP routes
-    /// (`POST /api/v1/anonymous/begin` and `/promote`) shipped in
-    /// v0.17.0. The daily retention sweep ships in v0.6.05.
+    /// designed in ADR-004 and feature-complete as of v0.18.0:
+    /// foundation (schema, types, port, adapters) shipped in
+    /// v0.16.0; HTTP routes (`POST /api/v1/anonymous/begin` and
+    /// `/promote`) shipped in v0.17.0; daily retention sweep
+    /// (Cloudflare Cron Trigger) shipped in v0.18.0.
     Anonymous,
     /// Ordinary end-user, created by self-registration or invitation.
     HumanUser,
