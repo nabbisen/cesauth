@@ -295,13 +295,46 @@ flag added (their problem, not ours).
   resource-server polling pathology, while
   `refresh_rate_limited` indicates token-replay
   probing on `/token`.
-- **Q3**: Audit retention. Every introspection call
-  emits an audit row. For a chatty resource server,
-  this could fill the audit log quickly. Operators may
-  want a separate retention policy for
-  `token_introspected` rows (shorter than other events).
-  Defer to operator demand; v0.38.0 emits but doesn't
-  expire.
+- **Q3**: ~~Audit retention. Every introspection call
+  emits an audit row.~~ **Resolved in v0.48.0.** A
+  fourth cron pass `audit_retention_cron` runs daily at
+  04:00 UTC after `audit_chain_cron`, prunes audit rows
+  per a two-knob retention policy: a global window
+  (default 365 days, env
+  `AUDIT_RETENTION_DAYS`) and a per-kind window for
+  `TokenIntrospected` (default 30 days, env
+  `AUDIT_RETENTION_TOKEN_INTROSPECTED_DAYS`). The
+  shorter `TokenIntrospected` window reflects the
+  kind's high volume + low post-30-day forensic value
+  (resource-server caching pathology surfaces within
+  hours; spike-of-introspection investigations don't
+  reach back beyond a month). Setting either knob to
+  `0` disables that pass; setting both to `0` is a
+  legitimate "unbounded retention" config — pass exits
+  with zero deletions.
+  **Hash-chain preservation**: pruning preserves the
+  ADR-010 chain integrity by never deleting rows above
+  the verifier's last-checkpointed seq minus a 100-row
+  safety margin (`CHECKPOINT_SAFETY_MARGIN`). The
+  verifier resumes from `last_verified_seq + 1` so
+  pruned rows below that seq are never re-walked; the
+  cross-check anchor row at `last_verified_seq` itself
+  is preserved by the safety margin. Refuses to prune
+  at all when no checkpoint exists (fresh deployment,
+  before `audit_chain_cron` has run) — pruning without
+  a chain anchor opens a forensics-vs-tampering
+  ambiguity the safety margin is meant to prevent.
+  **Genesis row (seq=1) is sacred** — every prune
+  predicate in both the in-memory test adapter and the
+  Cloudflare D1 adapter explicitly excludes it, so an
+  aggressive 0-day retention config still leaves the
+  chain anchor intact for any future re-walk. Pure
+  service in `cesauth_core::audit::retention::run_retention_pass`;
+  the `AuditEventRepository` trait gains a
+  `delete_below_seq(floor_seq, older_than, kind_filter)`
+  method (non-default — adding the trait method to a
+  3rd-party adapter requires an update; cesauth's two
+  in-tree adapters were updated alongside).
 - **Q4**: ~~Multi-key access-token verification.~~
   **Resolved in v0.41.0.** The access-token verify
   path now does kid-directed lookup with a try-each

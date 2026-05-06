@@ -13,4 +13,5 @@
 //! a chain version bump.
 
 pub mod chain;
+pub mod retention;
 pub mod verifier;

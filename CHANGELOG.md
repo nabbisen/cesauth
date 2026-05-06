@@ -12,6 +12,301 @@ changes will always be called out here.
 
 ---
 
+## [0.48.0] - 2026-05-04
+
+Audit retention policy. **ADR-014 §Q3 Resolved.**
+Per-operator-request order: tech-debt sweep
+(v0.44.0), bulk-revoke (v0.45.0), refresh-
+introspection (v0.46.0), i18n-2 (v0.47.0), audit
+retention fifth (this release).
+
+### Why this matters
+
+v0.38.0 added `/introspect` which emits one audit
+row per call. A chatty resource server can produce
+~1 introspection/sec/user. A 1k-active-user
+deployment hits ~86M `token_introspected` rows per
+day. D1 is row-priced; retention without a pruning
+policy means cost scales linearly with deployment
+age. ADR-014 §Q3 was deferred at v0.38.0 because
+the steady-state cost wasn't observable yet;
+v0.48.0 ships the policy now that operators have
+surfaced demand.
+
+The challenge: cesauth's audit log is a
+hash-chained ledger (ADR-010, migrations/0008).
+Naively deleting old rows would break the chain.
+v0.48.0 prunes safely by anchoring on the
+verifier's checkpoint.
+
+### What ships
+
+#### Pure service in core: `cesauth_core::audit::retention`
+
+`run_retention_pass(repo, checkpoints, cfg, now) ->
+RetentionOutcome`. Reads the verifier checkpoint,
+computes a safe `floor_seq`, runs two passes
+(per-kind for `TokenIntrospected`, then global for
+everything else), returns counts.
+
+**Hash-chain preservation strategy**: the verifier
+resumes from `last_verified_seq + 1` and never
+re-walks rows below the checkpoint, so pruning
+those rows is integrity-safe. The cross-check
+anchor row at `last_verified_seq` itself is
+preserved by a 100-row safety margin
+(`CHECKPOINT_SAFETY_MARGIN`):
+
+```text
+floor_seq = max(checkpoint.last_verified_seq - 100, 2)
+```
+
+Rows below `floor_seq` are eligible for pruning;
+rows ≥ `floor_seq` are not. The margin is well
+above the per-cron-pass write rate in any cesauth
+deployment (cron is daily; even at peak
+introspection rate the verifier walks far more
+than 100 rows per pass).
+
+**Genesis row (seq=1) is sacred** — both the
+in-memory test adapter and the Cloudflare D1
+adapter explicitly exclude `seq <= 1` from the
+prune predicate. An aggressive 0-day retention
+config still leaves the chain anchor intact for
+any future re-walk.
+
+**Refuses to prune without a checkpoint** — fresh
+deployments where `audit_chain_cron` hasn't yet
+run produce `Ok(skipped_no_checkpoint = true)`.
+Pruning without a chain anchor opens a
+forensics-vs-tampering ambiguity that the safety
+margin is meant to prevent.
+
+#### Two-knob retention policy
+
+| Knob | Default | Env var |
+|---|---|---|
+| Global window | 365 days | `AUDIT_RETENTION_DAYS` |
+| Per-kind: `TokenIntrospected` | 30 days | `AUDIT_RETENTION_TOKEN_INTROSPECTED_DAYS` |
+
+The shorter `TokenIntrospected` window reflects
+operational value: high volume + low forensic
+interest after ~30 days. Other event kinds
+(`session_revoked_by_user`, `password_reset`,
+`client_credentials_authenticated`, etc.) keep the
+365-day window because they're rare-but-
+forensically-valuable.
+
+Setting either knob to `0` disables that pass.
+Setting both to `0` is a legitimate "I want
+unbounded retention" config — both passes exit
+with zero deletions.
+
+#### Two-pass execution
+
+1. **Per-kind pass**: when `token_introspected_days
+   > 0` and (either `global_days == 0` OR
+   `token_introspected_days < global_days`), delete
+   `TokenIntrospected` rows older than the per-kind
+   window.
+2. **Global pass**: when `global_days > 0`, delete
+   rows of any kind older than the global window.
+   `TokenIntrospected` is excluded from this pass
+   when per-kind was active (preventing
+   double-counting in the outcome).
+
+#### `AuditEventRepository::delete_below_seq` trait method
+
+```rust
+async fn delete_below_seq(
+    &self,
+    floor_seq:   i64,
+    older_than:  i64,
+    kind_filter: AuditRetentionKindFilter,
+) -> PortResult<u32>;
+```
+
+Implementation MUST observe all three gates
+conjunctively (seq < floor, ts < cutoff, kind
+matches filter) AND preserve the genesis row
+(seq=1). The trait method is **non-default** —
+adding to 3rd-party implementors requires an
+update; cesauth's two in-tree adapters
+(`adapter-test` in-memory + `adapter-cloudflare`
+D1) are updated.
+
+#### `AuditRetentionKindFilter` enum
+
+```rust
+pub enum AuditRetentionKindFilter {
+    OnlyKinds(Vec<String>),    // delete IFF kind is in the list
+    ExcludeKinds(Vec<String>), // delete IFF kind is NOT in the list
+}
+```
+
+`OnlyKinds([])` is the delete-zero shortcut (a
+defensive distinction from "any kind"). The D1
+adapter translates filter variants into
+parameterized SQL — kind values are bound as `?n`
+parameters, never concatenated.
+
+#### Fourth cron pass
+
+`audit_retention_cron::run` runs after `sweep` →
+`audit_chain_cron` → `session_index_audit` on the
+daily 04:00 UTC schedule. Independent: a
+retention failure logs to console and propagates
+`Err`, but doesn't block the other passes (the
+runtime drives them via `if let Err`).
+
+Log line shape:
+
+```text
+audit_retention: deleted_token_introspected=12345 deleted_global=42 \
+                 checkpoint_seq=98765 floor_seq=98665 \
+                 (cfg: global_days=365 ti_days=30)
+```
+
+Or on a fresh deployment:
+
+```text
+audit_retention: skipped (no chain checkpoint yet — \
+                 waiting for first verification cron run)
+```
+
+### Tests
+
+957 → **973** lib (+16). With migrate integration:
+986 → **1002**.
+
+- core: 414 → 430 (+16). All in
+  `audit::retention::tests`:
+  - `no_checkpoint_skips_pass` — refuses to prune
+    without a chain anchor.
+  - `checkpoint_present_but_below_safety_margin_is_no_op`
+    — floor_seq lower-bound (max with 2) protects
+    fresh deployments.
+  - `token_introspected_pass_prunes_old_rows_only` —
+    happy path for the 30d window.
+  - `global_pass_prunes_only_above_global_window` —
+    happy path for the 365d window.
+  - `global_pass_excludes_token_introspected_when_per_kind_active`
+    — critical correctness pin: no double-prune.
+  - `global_includes_token_introspected_when_per_kind_disabled`
+    — `ti_days=0` lets global cover TI.
+  - `global_includes_token_introspected_when_per_kind_geq_global`
+    — edge: per-kind window ≥ global skips per-kind.
+  - `global_zero_disables_global_pass` — `global=0`
+    disables global, per-kind still runs.
+  - `floor_seq_protects_recent_rows_even_when_old_by_ts`
+    — chain-walker safety pin.
+  - `checkpoint_at_genesis_keeps_genesis_safe` —
+    genesis row never prunes.
+  - `delete_failure_propagates_as_internal` —
+    error mapping.
+  - `checkpoint_read_failure_propagates_as_internal`
+    — error mapping for the checkpoint store too.
+  - `idempotent_second_call_is_zero_count` —
+    second call after first is no-op.
+  - `default_config_matches_published_defaults` —
+    pin: 365 / 30 (matches CHANGELOG + ADR text).
+  - `safety_margin_is_one_hundred` — pin: 100
+    (matches ADR text).
+  - `kind_token_introspected_constant_matches_event_kind`
+    — pin: catches drift between
+    `KIND_TOKEN_INTROSPECTED` constant and EventKind
+    serde.
+- ui: 244 → 244.
+- worker: 182 → 182 (cron handler is glue; the
+  testable transformation is in the pure core
+  service).
+
+### Schema / wire / DO
+
+- Schema unchanged (still SCHEMA_VERSION 9).
+  Retention DELETE statements operate on the
+  existing `audit_events` table; no migration.
+- Wire format unchanged.
+- DO state unchanged.
+- No new dependencies.
+
+### Operator-visible changes
+
+- **New cron pass** runs daily after the existing
+  three. Default behavior with operator-unset env
+  vars: 365-day global window, 30-day window for
+  `token_introspected`.
+- **New env vars** (both optional):
+  - `AUDIT_RETENTION_DAYS` (default 365)
+  - `AUDIT_RETENTION_TOKEN_INTROSPECTED_DAYS` (default 30)
+- **No production behavior change** until the next
+  cron tick. After that, audit rows past their
+  retention windows start disappearing on each
+  daily run.
+- **Storage cost reduction** scales with the
+  difference between previous unbounded retention
+  and the new windows. Operators with deployments
+  several years old should expect a one-time large
+  prune followed by steady-state.
+- **Audit dashboards** that count
+  `token_introspected` events more than 30 days
+  back will see counts decline. Dashboards relying
+  on `chain_length` from the verifier still get
+  the full count (chain_length is `MAX(seq)`,
+  unaffected by deletes — seq is AUTOINCREMENT and
+  never reused).
+- No `wrangler.toml` change (cron schedule
+  unchanged). No new bindings. No schema
+  migration.
+
+### ADR changes
+
+- **ADR-014 §Q3** marked **Resolved**. Inline
+  resolution paragraph follows the
+  ADR-011 §Q1 / ADR-012 §Q1, §Q4 / ADR-014 §Q4 / §Q2
+  inline-resolution style.
+- No new ADR.
+
+### Doc / metadata changes
+
+- `Cargo.toml` workspace version 0.47.0 → 0.48.0.
+- UI footers + tests bumped to v0.48.0.
+- ROADMAP: v0.48.0 Shipped table row.
+- This CHANGELOG entry.
+
+### Upgrade path 0.47.0 → 0.48.0
+
+1. `git pull` or extract this tarball.
+2. `cargo build --workspace --target
+   wasm32-unknown-unknown --release`. **No new
+   dependencies.**
+3. `wrangler deploy`. **No schema migration. No new
+   bindings.**
+4. **Optionally** set env vars to override
+   defaults:
+   ```
+   wrangler secret put AUDIT_RETENTION_DAYS
+   wrangler secret put AUDIT_RETENTION_TOKEN_INTROSPECTED_DAYS
+   ```
+   Or add them as `[vars]` entries in
+   `wrangler.toml`. Default values are reasonable
+   for most deployments.
+5. **Watch the first cron run** — the daily 04:00
+   UTC pass will surface the first-time prune count
+   in `console_log!`. Long-running deployments
+   should expect substantial deletes on the first
+   pass.
+
+### Forward roadmap
+
+- **Next up (per operator request)**: ADR-012
+  §Q1.5 D1 repair tool.
+- **Future security-track items still open**:
+  ADR-012 §Q2-§Q3, §Q5; ADR-014 §Q1 audience
+  scoping.
+
+---
+
 ## [0.47.0] - 2026-05-04
 
 i18n-2 continuation. Per-operator-request order: tech-

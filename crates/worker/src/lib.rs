@@ -26,6 +26,7 @@ pub mod post_auth;
 pub mod routes;
 pub mod sweep;
 pub mod audit_chain_cron;
+pub mod audit_retention_cron;
 pub mod session_index_audit;
 pub mod turnstile;
 
@@ -73,6 +74,18 @@ pub async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
             // (deferred to §Q1.5).
             if let Err(e) = session_index_audit::run(&env).await {
                 console_error!("session index audit failed: {e:?}");
+            }
+            // v0.48.0: audit retention pass (ADR-014
+            // §Q3 Resolved). Runs LAST in the cron
+            // chain because it depends on a freshly-
+            // written verifier checkpoint from the
+            // audit_chain_cron pass above. Even on a
+            // first run where the checkpoint cron
+            // hasn't run yet (or failed), the
+            // retention pass detects "no checkpoint"
+            // and exits as a safe no-op.
+            if let Err(e) = audit_retention_cron::run(&env).await {
+                console_error!("audit retention cron failed: {e:?}");
             }
         }
         // Unknown schedule. Either a misconfigured `wrangler.toml`

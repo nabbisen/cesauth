@@ -213,6 +213,34 @@ impl AuditEventRepository for InMemoryAuditEventRepository {
         out.truncate(limit as usize);
         Ok(out)
     }
+
+    async fn delete_below_seq(
+        &self,
+        floor_seq:   i64,
+        older_than:  i64,
+        kind_filter: cesauth_core::audit::retention::AuditRetentionKindFilter,
+    ) -> PortResult<u32> {
+        use cesauth_core::audit::retention::AuditRetentionKindFilter as F;
+        let mut guard = self.rows.lock().map_err(|_| PortError::Unavailable)?;
+        let before = guard.len();
+        guard.retain(|r| {
+            // Genesis row (seq=1) is the chain anchor —
+            // never prune it regardless of other gates.
+            if r.seq <= 1 {
+                return true;
+            }
+            let seq_gate  = r.seq < floor_seq;
+            let age_gate  = r.ts  < older_than;
+            let kind_gate = match &kind_filter {
+                F::OnlyKinds(kinds)    => kinds.iter().any(|k| k == &r.kind),
+                F::ExcludeKinds(kinds) => !kinds.iter().any(|k| k == &r.kind),
+            };
+            // Predicate: row MATCHES the delete filter ⇒ remove.
+            // retain keeps !match.
+            !(seq_gate && age_gate && kind_gate)
+        });
+        Ok((before - guard.len()) as u32)
+    }
 }
 
 #[cfg(test)]

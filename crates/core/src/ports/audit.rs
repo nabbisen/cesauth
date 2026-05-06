@@ -143,4 +143,38 @@ pub trait AuditEventRepository {
     /// what's available — callers detect "end of chain" by an
     /// empty (or sub-page) result.
     async fn fetch_after_seq(&self, from_seq: i64, limit: u32) -> PortResult<Vec<AuditEventRow>>;
+
+    /// **v0.48.0** — Delete audit rows for retention policy
+    /// (ADR-014 §Q3). Implementation MUST observe all three
+    /// gates conjunctively — a row is deleted iff:
+    ///
+    /// - `seq < floor_seq`
+    /// - `ts < older_than`
+    /// - the row's `kind` matches the supplied filter
+    ///   (see [`crate::audit::retention::AuditRetentionKindFilter`])
+    ///
+    /// `floor_seq` is the verifier's last-checkpointed seq
+    /// minus a safety margin; the pure service in
+    /// `cesauth_core::audit::retention::run_retention_pass`
+    /// computes it. Implementations MUST NOT prune above
+    /// `floor_seq` even if the other gates would allow it —
+    /// this preserves the chain-verification cross-check
+    /// anchor.
+    ///
+    /// Returns count deleted. Implementations may delete
+    /// in chunks for SQL-level performance; the count
+    /// reflects the total rows removed across all chunks.
+    ///
+    /// **Forward-compat note**: this trait method is
+    /// **non-default** so adding it to a custom implementor
+    /// (e.g., a 3rd-party adapter for a different storage
+    /// backend) requires an update. cesauth's own
+    /// implementations (in-memory + Cloudflare D1) are
+    /// updated alongside.
+    async fn delete_below_seq(
+        &self,
+        floor_seq:   i64,
+        older_than:  i64,
+        kind_filter: crate::audit::retention::AuditRetentionKindFilter,
+    ) -> PortResult<u32>;
 }

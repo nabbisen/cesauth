@@ -291,4 +291,83 @@ impl AuditEventRepository for CloudflareAuditEventRepository<'_> {
         let rows = result.results::<DbRow>().map_err(|_| PortError::Serialization)?;
         Ok(rows.into_iter().map(DbRow::into_domain).collect())
     }
+
+    async fn delete_below_seq(
+        &self,
+        floor_seq:   i64,
+        older_than:  i64,
+        kind_filter: cesauth_core::audit::retention::AuditRetentionKindFilter,
+    ) -> PortResult<u32> {
+        use cesauth_core::audit::retention::AuditRetentionKindFilter as F;
+        let db = db(self.env)?;
+
+        // SQL composition — the kind list is built from
+        // a closed enum of EventKind strings (controlled
+        // by cesauth, never operator/user input), so the
+        // composition is safe. We still use parameter
+        // binding for the values themselves.
+        //
+        // Per-kind branches:
+        //   OnlyKinds([])    — delete-zero shortcut
+        //   OnlyKinds([k])   — `kind = ?n`
+        //   OnlyKinds([k...])— `kind IN (?n,?n+1,...)`
+        //   ExcludeKinds([]) — clause omitted (= "any kind")
+        //   ExcludeKinds([k])— `kind <> ?n`
+        //   ExcludeKinds(ks) — `kind NOT IN (?n,?n+1,...)`
+        let (kind_clause, kind_binds): (String, Vec<String>) = match &kind_filter {
+            F::OnlyKinds(ks) if ks.is_empty() => return Ok(0),
+            F::OnlyKinds(ks) if ks.len() == 1 => (
+                "AND kind = ?3".to_owned(),
+                ks.clone(),
+            ),
+            F::OnlyKinds(ks) => {
+                let placeholders: Vec<String> = (0..ks.len())
+                    .map(|i| format!("?{}", i + 3))
+                    .collect();
+                (format!("AND kind IN ({})", placeholders.join(",")), ks.clone())
+            }
+            F::ExcludeKinds(ks) if ks.is_empty() => (String::new(), Vec::new()),
+            F::ExcludeKinds(ks) if ks.len() == 1 => (
+                "AND kind <> ?3".to_owned(),
+                ks.clone(),
+            ),
+            F::ExcludeKinds(ks) => {
+                let placeholders: Vec<String> = (0..ks.len())
+                    .map(|i| format!("?{}", i + 3))
+                    .collect();
+                (format!("AND kind NOT IN ({})", placeholders.join(",")), ks.clone())
+            }
+        };
+
+        let sql = format!(
+            "DELETE FROM audit_events \
+             WHERE seq < ?1 AND seq > 1 AND ts < ?2 {kind_clause}"
+        );
+
+        // Build the bind vector: ?1 floor_seq, ?2
+        // older_than, then the kind values.
+        let mut binds: Vec<JsValue> = Vec::with_capacity(2 + kind_binds.len());
+        binds.push(d1_int(floor_seq));
+        binds.push(d1_int(older_than));
+        for k in kind_binds {
+            binds.push(JsValue::from_str(&k));
+        }
+
+        let stmt = db.prepare(&sql)
+            .bind(&binds)
+            .map_err(|e| run_err("audit_events.delete_below_seq bind", e))?;
+        // D1's `run` returns `D1Result` with a `.meta()`
+        // object exposing `changes`. We cast through the
+        // worker-rs surface area; some versions expose
+        // it directly, others require fishing it out
+        // via `js_sys`. Fallback path: if the count
+        // isn't extractable, return 0 — the count is
+        // for log-line emission only, not for any
+        // correctness gate.
+        let result = stmt.run().await.map_err(|_| PortError::Unavailable)?;
+        let n = result.meta().ok().flatten()
+            .and_then(|m| m.changes)
+            .unwrap_or(0);
+        Ok(u32::try_from(n).unwrap_or(0))
+    }
 }
