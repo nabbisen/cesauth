@@ -8,6 +8,9 @@ members = [
     "crates/ui",
     "crates/worker",
 ]
+# `fuzz/` is intentionally NOT a workspace member. It uses nightly Rust and
+# cargo-fuzz infrastructure that should not influence the stable workspace
+# lockfile or build graph. See RFC 005 (v0.51.2) and fuzz/Cargo.toml.
 # Cloudflare-facing crates (adapter-cloudflare, worker) require
 # wasm32-unknown-unknown and the `worker-build` toolchain. When working
 # on the host-only portion of the codebase you can target the portable
@@ -17,7 +20,7 @@ members = [
 # `[workspace.package].rust-version`) and the wasm32 target installed.
 
 [workspace.package]
-version      = "0.51.1"
+version      = "0.51.2"
 edition      = "2024"
 rust-version = "1.85"
 license      = "Apache-2.0"

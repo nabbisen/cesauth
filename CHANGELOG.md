@@ -12,6 +12,97 @@ changes will always be called out here.
 
 ---
 
+---
+
+## [0.51.2] - 2026-05-06
+
+Patch release. Implements RFC 005 (`cargo fuzz` for the JWT parser
+surface). No production code change, no schema change, no new env vars.
+
+### Why this release
+
+cesauth's JWS Compact deserializer (`cesauth_core::jwt::signer::verify`
+and `verify_for_introspect`) processes potentially adversarial tokens on
+every protected request. The code is hand-rolled since v0.44.0 (replacing
+`jsonwebtoken`). Example-based tests verify correctness for known inputs;
+libFuzzer finds panics, OOM, and DoS-via-super-linear-parsing on the vast
+adversarial input space that tests can't realistically enumerate.
+
+This is **layer-1** fuzzing: a 60-second one-shot in CI. Continuous fuzzing
+(OSS-Fuzz, ClusterFuzzLite) is a `Later` item.
+
+### What shipped
+
+**RFC 005 — `cargo fuzz` for the JWT parser**
+
+- `fuzz/` directory (NOT a workspace member — keeps nightly fuzz deps
+  out of the stable lockfile).
+  - `fuzz/Cargo.toml`: standalone crate with `libfuzzer-sys = "0.4"` and
+    `cesauth-core` path dep. `[package.metadata] cargo-fuzz = true`.
+  - `fuzz/fuzz_targets/jwt_parse.rs`: single fuzz target exercising both
+    `verify::<AccessTokenClaims>` and `verify_for_introspect::<AccessTokenClaims>`
+    with a fixed test keypair (seed `[1u8; 32]`; not a production key).
+    Non-UTF-8 byte sequences are skipped (the verifier's contract is `&str`).
+    Return value is intentionally discarded — the goal is panic-freedom, not
+    verification success.
+  - `fuzz/corpus/jwt_parse/` (10 seed files): `empty.bin`, `single-dot.bin`,
+    `two-dots.bin`, `three-dots.bin`, `alg-none.bin`, `valid-header-garbage-payload.bin`,
+    `well-formed-no-real-sig.bin`, `oversized-header.bin`, `truncated-payload.bin`,
+    `ascii-with-dots.bin`. Corpus seeds cover the key parser code-paths
+    (empty input, segment-count edge cases, `alg: none` rejection, known-bad-sig).
+- `.github/workflows/fuzz.yml` (new): runs `cargo +nightly fuzz run jwt_parse
+  -- -max_total_time=60` on PRs touching `crates/core/src/jwt/**` or `fuzz/**`.
+  Manual dispatch supports custom time limits. Fuzz artifacts uploaded on
+  failure for offline analysis.
+- `.gitignore`: `fuzz/target/` and `fuzz/artifacts/` excluded (ephemeral);
+  `fuzz/corpus/` IS committed (seed corpus).
+- `Cargo.toml` workspace comment: explicit note that `fuzz/` is intentionally
+  excluded from the workspace.
+
+### Fuzz target goals
+
+1. **Panic-freedom**: `verify` must return `Ok` or `Err` on any byte sequence;
+   never panic or abort.
+2. **OOM resistance**: malformed tokens with giant claimed payloads must not
+   cause unbounded allocation.
+3. **DoS resistance**: pathological input must not trigger super-linear parsing
+   work.
+
+### Running locally
+
+```sh
+# From cesauth/fuzz/
+
+# One-shot (60 seconds, matching CI):
+cargo +nightly fuzz run jwt_parse -- -max_total_time=60
+
+# Extended run (hours, deeper coverage):
+cargo +nightly fuzz run jwt_parse
+
+# Suppress benign leak-on-exit false positives:
+cargo +nightly fuzz run jwt_parse -- -detect_leaks=0
+```
+
+Findings go to `fuzz/artifacts/jwt_parse/`. Report via `.github/SECURITY.md`.
+Do NOT push findings in public PRs.
+
+### Tests
+
+No change to lib test count (871 total, same as v0.51.1). The fuzz target is
+not a `#[test]`; it runs under libFuzzer in CI.
+
+### Schema / wire / DO changes
+
+None. Patch-only: no code change to any production crate, no new routes,
+no new env vars, no schema migration.
+
+### Upgrade procedure
+
+```
+1. Deploy v0.51.2 (drop-in; no action required).
+2. The fuzz CI job runs automatically on future JWT-touching PRs.
+```
+
 ## [0.51.1] - 2026-05-06
 
 Patch release. Implements RFC 004 (WebAuthn typed error responses) and

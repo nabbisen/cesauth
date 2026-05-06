@@ -117,6 +117,13 @@ started.
 
 ### Next minor releases
 
+- ✅ **v0.51.2 — RFC 005 (`cargo fuzz` for JWT parser).**
+  Patch release. `fuzz/` crate (NOT workspace member) + one fuzz target
+  (`jwt_parse`) exercising `verify` and `verify_for_introspect` under
+  libFuzzer. 10-file seed corpus. GH Actions one-shot job (60 s) on PRs
+  touching JWT or fuzz code. `.gitignore` and workspace comment updated.
+  Zero production code change.
+
 - ✅ **v0.51.1 — RFC 004 + RFC 003 (WebAuthn typed errors + proptest).**
   Patch release. Additive wire change (`kind` field on WebAuthn errors)
   + dev-dep addition only.
@@ -1230,7 +1237,7 @@ started.
   Modest dep cost (proptest is dev-dep only). Target slot:
   any maintenance window.
 
-- **`cargo fuzz` for the JWT parser surface.** cesauth
+- ✅ **`cargo fuzz` for the JWT parser surface** — shipped in v0.51.2 (RFC 005). cesauth
   receives potentially adversarial JWTs on every
   `Authorization: Bearer ...` request. The `jsonwebtoken`
   crate itself is upstream-fuzzed, but cesauth's wrappers

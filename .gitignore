@@ -25,3 +25,9 @@ build/
 # --- mdBook ---
 # The generated book/ directory. CI can rebuild it on demand.
 docs/book/
+
+# --- Fuzz (RFC 005, v0.51.2) ---
+# cargo-fuzz build artifacts and findings.
+# Corpus seeds (fuzz/corpus/) ARE committed; everything else is ephemeral.
+fuzz/target/
+fuzz/artifacts/
