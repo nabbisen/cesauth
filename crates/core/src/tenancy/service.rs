@@ -224,3 +224,171 @@ fn validate_slug(s: &str) -> PortResult<()> {
     }
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// RFC 056 — Soft-delete service functions (SaaS guide §9.4)
+// ---------------------------------------------------------------------------
+// Soft-delete transitions set status to `Deleted` using the existing
+// `set_status` port methods. The row is retained for audit trail and
+// potential restore; physical deletion requires a separate GDPR flow
+// (RFC 044 handles users; org/group physical deletion is operator-only).
+// ---------------------------------------------------------------------------
+
+/// Soft-delete a tenant.  Sets status to `TenantStatus::Deleted`.
+///
+/// Returns `Err(PortError::NotFound)` if the tenant does not exist.
+/// A tenant that is already deleted is a no-op (idempotent).
+pub async fn soft_delete_tenant<T: TenantRepository>(
+    tenants:  &T,
+    id:       &str,
+    now_unix: UnixSeconds,
+) -> PortResult<()> {
+    tenants.set_status(id, TenantStatus::Deleted, now_unix).await
+}
+
+/// Soft-delete an organization.  Sets status to `OrganizationStatus::Deleted`.
+pub async fn soft_delete_organization<O: OrganizationRepository>(
+    orgs:     &O,
+    id:       &str,
+    now_unix: UnixSeconds,
+) -> PortResult<()> {
+    orgs.set_status(id, OrganizationStatus::Deleted, now_unix).await
+}
+
+/// Soft-delete a group.  Calls `GroupRepository::delete` which sets
+/// `status = 'deleted'` and records `deleted_at` in the D1 row.
+pub async fn soft_delete_group<G: GroupRepository>(
+    groups:   &G,
+    id:       &str,
+    now_unix: UnixSeconds,
+) -> PortResult<()> {
+    groups.delete(id, now_unix).await
+}
+
+/// Suspend a tenant (e.g. for billing non-payment or ToS violation).
+/// Sets status to `TenantStatus::Suspended`.
+pub async fn suspend_tenant<T: TenantRepository>(
+    tenants:  &T,
+    id:       &str,
+    now_unix: UnixSeconds,
+) -> PortResult<()> {
+    tenants.set_status(id, TenantStatus::Suspended, now_unix).await
+}
+
+/// Restore a suspended or deleted tenant back to `Active`.
+pub async fn restore_tenant<T: TenantRepository>(
+    tenants:  &T,
+    id:       &str,
+    now_unix: UnixSeconds,
+) -> PortResult<()> {
+    tenants.set_status(id, TenantStatus::Active, now_unix).await
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::types::GroupParent;
+
+    fn org_input<'a>(
+        tenant_id: &'a str,
+        org_tenant_id: Option<&'a str>,
+    ) -> NewGroupInput<'a> {
+        NewGroupInput {
+            tenant_id,
+            parent: GroupParent::Tenant,
+            slug: "test-group",
+            display_name: "Test",
+            organization_tenant_id: org_tenant_id,
+        }
+    }
+
+    // ── validate_group_tenant_boundary ────────────────────────────────────
+
+    #[test]
+    fn boundary_passes_when_no_org_tenant() {
+        let input = org_input("t-1", None);
+        assert!(validate_group_tenant_boundary(&input).is_ok(),
+            "no organization_tenant_id: boundary is unconstrained");
+    }
+
+    #[test]
+    fn boundary_passes_when_org_tenant_matches() {
+        let input = org_input("t-1", Some("t-1"));
+        assert!(validate_group_tenant_boundary(&input).is_ok());
+    }
+
+    #[test]
+    fn boundary_fails_when_org_tenant_differs() {
+        let input = org_input("t-1", Some("t-2"));
+        let result = validate_group_tenant_boundary(&input);
+        assert!(result.is_err(),
+            "org from different tenant must fail boundary check");
+    }
+
+    // ── cross_tenant_error_for_group ──────────────────────────────────────
+
+    #[test]
+    fn cross_tenant_error_none_when_no_org_tenant() {
+        let input = org_input("t-1", None);
+        assert!(cross_tenant_error_for_group(&input).is_none());
+    }
+
+    #[test]
+    fn cross_tenant_error_none_when_same_tenant() {
+        let input = org_input("t-1", Some("t-1"));
+        assert!(cross_tenant_error_for_group(&input).is_none());
+    }
+
+    #[test]
+    fn cross_tenant_error_some_when_different_tenant() {
+        let input = org_input("t-1", Some("t-2"));
+        let err = cross_tenant_error_for_group(&input);
+        assert!(err.is_some(), "different tenants must produce an error");
+        match err.unwrap() {
+            CoreError::CrossTenantReference { kind, expected_tenant_id, actual_tenant_id } => {
+                assert_eq!(kind, "organization");
+                assert_eq!(expected_tenant_id, "t-1");
+                assert_eq!(actual_tenant_id, "t-2");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    // ── validate_slug ─────────────────────────────────────────────────────
+
+    #[test]
+    fn slug_valid_examples() {
+        assert!(validate_slug("my-tenant").is_ok());
+        assert!(validate_slug("a").is_ok());
+        assert!(validate_slug("123").is_ok());
+        assert!(validate_slug(&"a".repeat(63)).is_ok());
+    }
+
+    #[test]
+    fn slug_empty_is_rejected() {
+        assert!(validate_slug("").is_err());
+    }
+
+    #[test]
+    fn slug_too_long_is_rejected() {
+        assert!(validate_slug(&"a".repeat(64)).is_err());
+    }
+
+    #[test]
+    fn slug_uppercase_is_rejected() {
+        assert!(validate_slug("MyTenant").is_err());
+    }
+
+    #[test]
+    fn slug_spaces_are_rejected() {
+        assert!(validate_slug("my tenant").is_err());
+    }
+
+    #[test]
+    fn slug_special_chars_are_rejected() {
+        assert!(validate_slug("my_tenant").is_err()); // underscore not allowed
+        assert!(validate_slug("my.tenant").is_err()); // dot not allowed
+    }
+}

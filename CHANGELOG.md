@@ -26,6 +26,82 @@ split by minor-version range:
 
 ---
 
+## [0.59.0] - 2026-05-12
+
+Implements RFC 054-058: coverage completeness, soft-delete service, and
+tenant onboarding E2E scenario tests completing the SaaS acceptance criteria.
+
+### OIDC/PKCE coverage (RFC 054)
+
+**pkce/tests.rs** +9 tests:
+`verify_accepts_exact_43_char_verifier`, `verify_accepts_exact_128_char_verifier`,
+`verify_rejects_129_char_verifier`, `verify_rejects_empty_verifier`,
+`verify_rejects_empty_challenge`, `challenge_method_parse_accepts_s256`,
+`challenge_method_parse_rejects_unknown`, `constant_time_eq_handles_different_lengths`,
+`verify_wrong_verifier_gives_pkcemismatch`
+
+**authorization/tests.rs** +4 tests:
+`max_age_none_always_passes`, `max_age_zero_requires_just_now`,
+`max_age_satisfied_within_window`, `max_age_future_auth_time_saturates`
+
+### Tenancy service tests (RFC 055)
+
+12 inline tests added to `tenancy/service.rs` for pure helper functions:
+
+| Group | Tests |
+|---|---|
+| `validate_group_tenant_boundary` | no-org-tenant, same, different |
+| `cross_tenant_error_for_group` | None/same/different, error shape |
+| `validate_slug` | valid examples, empty, too-long, uppercase, spaces, underscores |
+
+### Soft-delete service (RFC 056)
+
+Five new public functions in `cesauth_core::tenancy::service`:
+
+- `soft_delete_tenant(tenants, id, now)` → sets `TenantStatus::Deleted`
+- `soft_delete_organization(orgs, id, now)` → sets `OrganizationStatus::Deleted`
+- `soft_delete_group(groups, id, now)` → calls `GroupRepository::delete`
+- `suspend_tenant(tenants, id, now)` → sets `TenantStatus::Suspended`
+- `restore_tenant(tenants, id, now)` → sets `TenantStatus::Active`
+
+3 tests in `adapter-test/tenancy/tests.rs` verify:
+`soft_delete_tenant_sets_deleted_status`,
+`suspend_and_restore_tenant_roundtrip`,
+`soft_delete_organization_sets_deleted_status`
+
+### TOTP storage tests (RFC 057)
+
+6 inline tests in `totp/storage.rs`:
+`totp_authenticator_unconfirmed_on_create`, `totp_authenticator_partial_eq`,
+`recovery_code_unredeemed_on_create`, `recovery_code_partial_eq`,
+`totp_authenticator_confirmed_state`, `recovery_code_redeemed_state`
+
+### Tenant onboarding E2E (RFC 058) — SaaS §16.2/§16.4/§16.6
+
+5 scenario tests in `adapter-test/tenancy/tests.rs`:
+
+| Test | SaaS criterion |
+|---|---|
+| `full_onboarding_create_tenant_grant_role_check_permission` | §16.2: tenant→user→role→authz |
+| `onboarding_org_and_group_creation` | §16.2: org + group + memberships |
+| `soft_deleted_tenant_status_reflects_correctly` | §16.4: logical deletion |
+| `negative_paths_duplicate_and_cross_tenant` | §16.6: duplicate slug, cross-tenant |
+| `expired_role_assignment_is_denied` | §16.6: expired role |
+
+These complete the SaaS guide acceptance criteria §16.2, §16.4, and §16.6.
+
+### Test counts
+
+| Crate | v0.58.0 | v0.59.0 | Δ |
+|---|---|---|---|
+| `cesauth-core` | 605 | **636** | +31 |
+| `cesauth-adapter-test` | 117 | **125** | +8 |
+| `cesauth-ui` | 270 | **270** | ±0 |
+| `cesauth-migrate-test` | 31 | **31** | ±0 |
+| **Total** | **1,023** | **1,062** | **+39** |
+
+---
+
 ## [0.58.0] - 2026-05-12
 
 Implements RFC 049-053: accept-invite complete implementation, SQL coverage

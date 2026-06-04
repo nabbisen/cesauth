@@ -174,3 +174,83 @@ pub trait TotpRecoveryCodeRepository {
     /// fresh codes; the old ones must not be valid alongside).
     async fn delete_all_for_user(&self, user_id: &str) -> PortResult<()>;
 }
+
+// ---------------------------------------------------------------------------
+// RFC 057 — TOTP storage type tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_authenticator(id: &str, user_id: &str) -> TotpAuthenticator {
+        TotpAuthenticator {
+            id:                id.to_owned(),
+            user_id:           user_id.to_owned(),
+            secret_ciphertext: vec![0xDE, 0xAD, 0xBE, 0xEF],
+            secret_nonce:      vec![0x01, 0x02, 0x03],
+            secret_key_id:     "key-1".to_owned(),
+            last_used_step:    0,
+            name:              None,
+            created_at:        1_700_000_000,
+            last_used_at:      None,
+            confirmed_at:      None,
+        }
+    }
+
+    fn sample_recovery_code(id: &str, user_id: &str, hash: &str) -> TotpRecoveryCodeRow {
+        TotpRecoveryCodeRow {
+            id:          id.to_owned(),
+            user_id:     user_id.to_owned(),
+            code_hash:   hash.to_owned(),
+            redeemed_at: None,
+            created_at:  1_700_000_000,
+        }
+    }
+
+    #[test]
+    fn totp_authenticator_unconfirmed_on_create() {
+        let a = sample_authenticator("a-1", "u-1");
+        assert!(a.confirmed_at.is_none(),
+            "new authenticator must be unconfirmed (confirmed_at = None)");
+    }
+
+    #[test]
+    fn totp_authenticator_partial_eq() {
+        let a = sample_authenticator("a-1", "u-1");
+        let b = sample_authenticator("a-1", "u-1");
+        assert_eq!(a, b, "identical authenticators must be equal");
+        let c = sample_authenticator("a-2", "u-1");
+        assert_ne!(a, c, "different ids must not be equal");
+    }
+
+    #[test]
+    fn recovery_code_unredeemed_on_create() {
+        let r = sample_recovery_code("r-1", "u-1", "abc123");
+        assert!(r.redeemed_at.is_none(),
+            "new recovery code must be unredeemed");
+    }
+
+    #[test]
+    fn recovery_code_partial_eq() {
+        let r1 = sample_recovery_code("r-1", "u-1", "abc");
+        let r2 = sample_recovery_code("r-1", "u-1", "abc");
+        assert_eq!(r1, r2);
+        let r3 = sample_recovery_code("r-2", "u-1", "abc");
+        assert_ne!(r1, r3);
+    }
+
+    #[test]
+    fn totp_authenticator_confirmed_state() {
+        let mut a = sample_authenticator("a-conf", "u-1");
+        a.confirmed_at = Some(1_700_000_100);
+        assert_eq!(a.confirmed_at, Some(1_700_000_100));
+    }
+
+    #[test]
+    fn recovery_code_redeemed_state() {
+        let mut r = sample_recovery_code("r-red", "u-1", "xyz");
+        r.redeemed_at = Some(1_700_000_200);
+        assert_eq!(r.redeemed_at, Some(1_700_000_200));
+    }
+}

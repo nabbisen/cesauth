@@ -119,3 +119,45 @@ fn max_age_satisfies_freshness() {
     // max_age=0 + now > auth_time -> stale (the "just re-authenticate" case).
     assert!(!session_satisfies_max_age(1000, Some(0), 1001));
 }
+
+// ── RFC 054: session_satisfies_max_age coverage ───────────────────────────
+
+#[test]
+fn max_age_none_always_passes() {
+    assert!(session_satisfies_max_age(1_000_000, None, 9_999_999),
+        "no max_age constraint means any session passes");
+}
+
+#[test]
+fn max_age_zero_requires_just_now() {
+    let auth_time = 1_700_000_000i64;
+    let now       = 1_700_000_000i64;
+    assert!(session_satisfies_max_age(auth_time, Some(0), now),
+        "max_age=0: auth exactly at now satisfies");
+    assert!(!session_satisfies_max_age(auth_time, Some(0), now + 1),
+        "max_age=0: auth 1 second before now does not satisfy");
+}
+
+#[test]
+fn max_age_satisfied_within_window() {
+    let auth_time = 1_700_000_000i64;
+    let max_age   = 3600i64;
+    assert!(session_satisfies_max_age(auth_time, Some(max_age), auth_time + 3600),
+        "auth exactly at boundary satisfies");
+    assert!(!session_satisfies_max_age(auth_time, Some(max_age), auth_time + 3601),
+        "auth one second past boundary does not satisfy");
+}
+
+#[test]
+fn max_age_future_auth_time_saturates() {
+    // auth_time is in the future (clock skew); saturating_sub gives 0 which
+    // satisfies any non-zero max_age.
+    assert!(session_satisfies_max_age(2_000_000_000, Some(60), 1_700_000_000),
+        "future auth_time should saturate to 0 elapsed, satisfying max_age");
+}
+
+// ── RFC 054: StoredChallenge (AuthCode) expiry via Challenge port type ──────
+// StoredChallenge in authorization.rs is distinct from the Challenge enum in
+// ports/store.rs. Expiry semantics are tested via the Challenge type used
+// in token service tests; the session_satisfies_max_age tests above cover
+// the freshness logic.
