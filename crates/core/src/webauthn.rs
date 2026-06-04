@@ -35,6 +35,9 @@ use crate::types::{Id, UnixSeconds};
 pub struct StoredAuthenticator {
     pub id:              Id,
     pub user_id:         Id,
+    /// **RFC 051** — tenant_id for direct tenant-scoped queries and export.
+    /// Backfilled from `users.tenant_id` via migration 0020.
+    pub tenant_id:       Id,
     /// base64url-no-pad of the raw credential ID as the browser sends it.
     pub credential_id:   String,
     /// Raw COSE public key bytes. Left opaque here - verification

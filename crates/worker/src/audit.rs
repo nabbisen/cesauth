@@ -63,6 +63,21 @@ pub enum EventKind {
     // Authentication attempts
     AuthSucceeded,
     AuthFailed,
+
+    // ── RFC 053 — Session lifecycle events ───────────────────────────────
+    /// A new persistent session was created after successful authentication.
+    /// Payload: `session_id`, `user_id`, `auth_method` (webauthn|magic_link|totp).
+    SessionCreated,
+    /// A session was explicitly revoked (by the user or an admin).
+    /// Payload: `session_id`, `user_id`, `revoked_by`.
+    SessionRevoked,
+    /// A session was found idle-expired during the session-index cron pass.
+    /// Payload: `session_id`, `user_id`, `expired_at`.
+    SessionExpired,
+    /// MFA step (TOTP or WebAuthn assertion) was verified during
+    /// an authentication flow that required step-up.
+    /// Payload: `user_id`, `mfa_kind` (totp|webauthn).
+    MfaVerified,
     /// **v0.50.3 (RFC 011)** — `csrf::mint()` was called but the
     /// platform CSPRNG (`getrandom`) returned an error. The request
     /// that triggered the form-render was aborted with HTTP 500 rather
@@ -305,6 +320,10 @@ impl EventKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::AuthSucceeded                => "auth_succeeded",
+            Self::SessionCreated              => "session_created",
+            Self::SessionRevoked              => "session_revoked",
+            Self::SessionExpired              => "session_expired",
+            Self::MfaVerified                 => "mfa_verified",
             Self::AuthFailed                   => "auth_failed",
             Self::CsrfRngFailure               => "csrf_rng_failure",
             Self::AdminUserCreated             => "admin_user_created",

@@ -26,6 +26,88 @@ split by minor-version range:
 
 ---
 
+## [0.58.0] - 2026-05-12
+
+Implements RFC 049-053: accept-invite complete implementation, SQL coverage
+tests, credential tenant isolation, authz hardening, and session audit events.
+
+### /accept-invite full implementation (RFC 049)
+
+`routes/invitations.rs` rewritten to use `CloudflareInvitationRepository`:
+
+- `issue`: creates invitation via D1, sends via mailer port, emits `InvitationIssued`
+- `accept_page`: verifies invitation state and renders context-aware response
+  (valid / expired / revoked / already-accepted)
+- `accept_submit`: verifies, marks accepted, emits `InvitationAccepted`, redirects
+  to magic-link registration flow
+
+### SQL coverage tests (RFC 050)
+
+8 new `migration_chain` integration tests validate the exact SQL used in
+`CloudflareInvitationRepository` and `CloudflareDeletionRequestRepository`
+against a real SQLite database (same query engine as D1):
+
+- `invitation_find_pending_by_tenant_email_sql`
+- `invitation_mark_accepted_sql` / `invitation_mark_revoked_sql`
+- `invitation_list_pending_by_tenant_excludes_expired`
+- `deletion_find_pending_by_user_sql` / `deletion_list_due_sql`
+- `deletion_mark_executed_sql` / `deletion_mark_cancelled_sql`
+
+### Credential tenant isolation (RFC 051)
+
+- **Migration 0020**: `authenticators.tenant_id TEXT NOT NULL` — backfilled
+  from `users.tenant_id` for existing rows, then rebuilt with FK to `tenants(id)`.
+  Index `idx_authenticators_tenant` added.
+- `StoredAuthenticator.tenant_id` field added to the core struct.
+- `registration::finish(…, tenant_id, …)` signature extended; all call sites
+  updated (worker, adapter-test, core tests).
+- D1 adapter `AUTHN_COLUMNS` and INSERT updated to include `tenant_id`.
+- 2 new migrate-test assertions: insert with tenant_id, index existence.
+
+SCHEMA_VERSION: 19 → **20**
+
+### Authorization hardening (RFC 052)
+
+8 new tests added to `authz/tests.rs` pinning the authorization contract:
+
+| Test | What it checks |
+|---|---|
+| `cross_tenant_access_is_denied` | Tenant-A grant denied for Tenant-B query |
+| `system_scope_covers_any_tenant` | System grant allows Tenant-scoped check |
+| `tenant_scope_requires_org_assignment_for_org_query` | Org must have explicit assignment |
+| `org_scope_does_not_cover_different_org` | `org-1` grant blocked from `org-2` |
+| `system_admin_role_covers_user_write` | system_admin has every catalog permission |
+| `user_with_no_assignments_is_denied` | Empty assignment list → Denied |
+| `scope_ref_tenant_identity` | Tenant ScopeRef covers self, not other |
+| `scope_ref_system_covers_all` | System covers all scope types |
+
+**Design note**: `ScopeRef::Organization` does not carry `tenant_id`. A Tenant-scoped
+role therefore does not automatically cover Organization-scoped queries; the
+organization must have a direct role assignment. If tenant→org hierarchical
+coverage is desired, `ScopeRef::Organization` should be extended. This is
+documented in the tests.
+
+### Session audit events (RFC 053)
+
+Four new `EventKind` variants (with `as_str` mappings):
+
+- `SessionCreated` — new persistent session after successful auth
+- `SessionRevoked` — explicit revocation by user or admin
+- `SessionExpired` — idle-expired during cron session-index pass
+- `MfaVerified` — TOTP or WebAuthn step-up verification
+
+### Test counts
+
+| Crate | v0.57.0 | v0.58.0 | Δ |
+|---|---|---|---|
+| `cesauth-core` | 597 | **605** | +8 |
+| `cesauth-adapter-test` | 117 | **117** | ±0 |
+| `cesauth-ui` | 270 | **270** | ±0 |
+| `cesauth-migrate-test` | 21 | **31** | +10 |
+| **Total** | **1,005** | **1,023** | **+18** |
+
+---
+
 ## [0.57.0] - 2026-05-12
 
 Implements RFC 045-048: audit event completeness, invitation/deletion worker

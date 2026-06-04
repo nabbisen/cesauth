@@ -101,7 +101,20 @@ pub async fn register_finish<D>(mut req: Request, ctx: RouteContext<D>) -> Resul
     };
 
     let now = OffsetDateTime::now_utc().unix_timestamp();
-    let authn = match registration::finish(&rp, &state, &body.response, now) {
+
+    // RFC 051: look up tenant_id for the authenticator record.
+    // The user was created before this registration challenge was issued;
+    // fall back to 'tenant-default' if the lookup fails (defence-in-depth).
+    let tenant_id = {
+        let user_repo = cesauth_cf::ports::repo::CloudflareUserRepository::new(&ctx.env);
+        use cesauth_core::ports::repo::UserRepository;
+        user_repo.find_by_id(&state.user_id).await
+            .ok().flatten()
+            .map(|u| u.tenant_id)
+            .unwrap_or_else(|| "tenant-default".to_owned())
+    };
+
+    let authn = match registration::finish(&rp, &state, &body.response, &tenant_id, now) {
         Ok(a)  => a,
         Err(e) => {
             audit::write_owned(

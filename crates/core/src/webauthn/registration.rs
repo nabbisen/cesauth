@@ -140,10 +140,11 @@ pub struct RegistrationResponse {
 /// authenticator; it does not gate any cryptographic step (challenges
 /// carry their own expiry via the DO).
 pub fn finish(
-    rp:       &RelyingParty,
-    state:    &RegistrationState,
-    response: &RegistrationResponse,
-    now_unix: i64,
+    rp:        &RelyingParty,
+    state:     &RegistrationState,
+    response:  &RegistrationResponse,
+    tenant_id: &str,
+    now_unix:  i64,
 ) -> CoreResult<StoredAuthenticator> {
     // 1. Response-shape checks. `type` per WebAuthn is always
     //    "public-key"; anything else indicates the client library is
@@ -213,10 +214,8 @@ pub fn finish(
     Ok(StoredAuthenticator {
         id:              Uuid::new_v4().to_string(),
         user_id:         state.user_id.clone(),
+        tenant_id:       tenant_id.to_owned(),
         credential_id:   credential_id_b64,
-        // Store the CBOR COSE key bytes verbatim. assertion::finish
-        // re-parses this with the same CoseKey parser so round-tripping
-        // is guaranteed.
         public_key:      attested.public_key_cose_bytes.clone(),
         sign_count:      auth_data.sign_count,
         transports:      None,

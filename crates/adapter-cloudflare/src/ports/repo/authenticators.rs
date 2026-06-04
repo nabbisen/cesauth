@@ -33,6 +33,10 @@ impl<'a> CloudflareAuthenticatorRepository<'a> {
 struct AuthnRow {
     id:              String,
     user_id:         String,
+    /// RFC 051: tenant_id for direct tenant-scoped queries.
+    /// Rows written before migration 0020 have this backfilled.
+    #[serde(default = "default_tenant")]
+    tenant_id:       String,
     credential_id:   String,
     public_key:      Vec<u8>,
     sign_count:      i64,
@@ -45,6 +49,8 @@ struct AuthnRow {
     last_used_at:    Option<i64>,
 }
 
+fn default_tenant() -> String { "tenant-default".to_owned() }
+
 impl AuthnRow {
     fn into_domain(self) -> PortResult<StoredAuthenticator> {
         let transports: Option<Vec<String>> = match self.transports {
@@ -54,6 +60,7 @@ impl AuthnRow {
         Ok(StoredAuthenticator {
             id:              self.id,
             user_id:         self.user_id,
+            tenant_id:       self.tenant_id,
             credential_id:   self.credential_id,
             public_key:      self.public_key,
             sign_count:      u32::try_from(self.sign_count).unwrap_or(u32::MAX),
@@ -69,7 +76,7 @@ impl AuthnRow {
 }
 
 const AUTHN_COLUMNS: &str =
-    "id, user_id, credential_id, public_key, sign_count, transports, aaguid, \
+    "id, user_id, tenant_id, credential_id, public_key, sign_count, transports, aaguid, \
      backup_eligible, backup_state, name, created_at, last_used_at";
 
 impl AuthenticatorRepository for CloudflareAuthenticatorRepository<'_> {
@@ -110,13 +117,14 @@ impl AuthenticatorRepository for CloudflareAuthenticatorRepository<'_> {
         };
         db.prepare(
             "INSERT INTO authenticators \
-             (id, user_id, credential_id, public_key, sign_count, transports, aaguid, \
+             (id, user_id, tenant_id, credential_id, public_key, sign_count, transports, aaguid, \
               backup_eligible, backup_state, name, created_at, last_used_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)"
         )
             .bind(&[
                 authn.id.clone().into(),
                 authn.user_id.clone().into(),
+                authn.tenant_id.clone().into(),
                 authn.credential_id.clone().into(),
                 // `public_key` is a byte vector (the COSE key encoding).
                 // D1's BLOB column wants a Uint8Array on the JS side.

@@ -53,6 +53,7 @@ fn finish_accepts_valid_ed25519_assertion() {
     let stored = StoredAuthenticator {
         id:              "authn-1".into(),
         user_id:         "user-1".into(),
+        tenant_id: "tenant-default".to_owned(),
         credential_id:   URL_SAFE_NO_PAD.encode(b"cred-xyz"),
         public_key:      pk.to_cose_bytes(),
         sign_count:      0,
@@ -101,6 +102,7 @@ fn finish_rejects_bad_signature() {
     let pk = CosePublicKey::Ed25519 { raw: signing.verifying_key().to_bytes() };
     let stored = StoredAuthenticator {
         id: "a".into(), user_id: "u".into(),
+        tenant_id: "tenant-default".to_owned(),
         credential_id: URL_SAFE_NO_PAD.encode(b"c"),
         public_key: pk.to_cose_bytes(),
         sign_count: 0, transports: None, aaguid: None,
@@ -132,6 +134,7 @@ fn finish_rejects_non_monotonic_sign_count() {
     let pk = CosePublicKey::Ed25519 { raw: signing.verifying_key().to_bytes() };
     let stored = StoredAuthenticator {
         id: "a".into(), user_id: "u".into(),
+        tenant_id: "tenant-default".to_owned(),
         credential_id: URL_SAFE_NO_PAD.encode(b"c"),
         public_key: pk.to_cose_bytes(),
         sign_count: 5,                      // prior value
@@ -174,6 +177,7 @@ fn finish_rejects_type_confusion() {
     let pk = CosePublicKey::Ed25519 { raw: signing.verifying_key().to_bytes() };
     let stored = StoredAuthenticator {
         id: "a".into(), user_id: "u".into(),
+        tenant_id: "tenant-default".to_owned(),
         credential_id: URL_SAFE_NO_PAD.encode(b"c"),
         public_key: pk.to_cose_bytes(),
         sign_count: 0, transports: None, aaguid: None,

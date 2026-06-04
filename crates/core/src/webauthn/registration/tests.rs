@@ -102,7 +102,7 @@ fn finish_accepts_valid_ed25519_none_attestation() {
         }),
     };
 
-    let authn = finish(&rp, &state, &response, 1_700_000_000).unwrap();
+    let authn = finish(&rp, &state, &response, "tenant-default", 1_700_000_000).unwrap();
     assert_eq!(authn.user_id, "u1");
     assert_eq!(authn.sign_count, 7);
     assert_eq!(authn.credential_id, URL_SAFE_NO_PAD.encode(&cred_id));
@@ -130,7 +130,7 @@ fn finish_rejects_wrong_origin() {
             "attestationObject": URL_SAFE_NO_PAD.encode(&att_obj),
         }),
     };
-    assert!(finish(&rp, &state, &response, 0).is_err());
+    assert!(finish(&rp, &state, &response, "tenant-default", 0).is_err());
 }
 
 #[test]
@@ -155,7 +155,7 @@ fn finish_rejects_wrong_challenge() {
             "attestationObject": URL_SAFE_NO_PAD.encode(&att_obj),
         }),
     };
-    assert!(finish(&rp, &state, &response, 0).is_err());
+    assert!(finish(&rp, &state, &response, "tenant-default", 0).is_err());
 }
 
 #[test]
@@ -181,7 +181,7 @@ fn finish_rejects_type_create_confusion() {
             "attestationObject": URL_SAFE_NO_PAD.encode(&att_obj),
         }),
     };
-    assert!(finish(&rp, &state, &response, 0).is_err());
+    assert!(finish(&rp, &state, &response, "tenant-default", 0).is_err());
 }
 
 #[test]
@@ -206,5 +206,5 @@ fn finish_rejects_rp_id_hash_mismatch() {
             "attestationObject": URL_SAFE_NO_PAD.encode(&att_obj),
         }),
     };
-    assert!(finish(&rp, &state, &response, 0).is_err());
+    assert!(finish(&rp, &state, &response, "tenant-default", 0).is_err());
 }
