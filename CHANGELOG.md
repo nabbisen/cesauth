@@ -26,6 +26,82 @@ split by minor-version range:
 
 ---
 
+## [0.55.0] - 2026-05-09
+
+Addresses all P0/P1 findings from the v0.54.0 external code review
+(RFC 030–039).
+
+### Security / correctness
+
+- **RFC 033**: OIDC nonce now reflected in `id_token` at authorization-code
+  exchange (OIDC Core §3.1.3.6). Previously `None` was passed, causing strict
+  RPs to reject the token.
+- **RFC 030**: `Category::Magic` added to log.rs as a sensitive category.
+  Provider response bodies removed from `MailerError` — eliminates the path
+  where external mail providers echoing back request bodies could expose OTP
+  codes in Cloudflare log drains.
+- **RFC 031**: `MagicLinkMailer` `Box<dyn>` factory replaced with
+  `CloudflareMagicLinkMailer` enum dispatcher. Resolves the dyn-compatibility
+  build blocker (`async fn` in trait is not object-safe).
+- **RFC 034**: `/introspect` handler connected to `find_auth_view` (RFC 026
+  infrastructure). Single D1 read instead of two; TOCTOU window closed.
+- **RFC 037**: `groups` composite FK changed from `ON DELETE SET NULL` to
+  `ON DELETE RESTRICT`. The previous `SET NULL` would attempt to null `tenant_id`
+  (NOT NULL column) causing a constraint error on any org hard-delete.
+
+### Database / schema
+
+- **RFC 032**: Forward repair migration `0016_repair_legacy_0004_fk_and_collation.sql`.
+  Repairs existing DBs where the original broken `0004` was applied: rebuilds
+  `users` with `COLLATE NOCASE` + rebuilds `authenticators`/`consent`/`grants`
+  with FK pointing at `users` (not `users_pre_0004`). Idempotent — clean installs
+  (with fixed 0004) pass through without data change. Includes `PRAGMA foreign_key_check`.
+- **RFC 037**: `0017_groups_fk_restrict.sql` — see above.
+- SCHEMA_VERSION: 15 → **17**
+
+### Audit traceability (RFC 036)
+
+- `NewAuditEvent` gains `request_id: Option<&str>` field.
+- `AuditEventRow` gains `request_id: Option<String>` field.
+- `worker::audit::Event` gains `request_id` + `with_request_id()` builder method.
+- D1 INSERT and SELECT updated to include `request_id` column (migration 0015 added the column).
+- In-memory adapter and Cloudflare D1 adapter thread the field through.
+- `write_owned` (cron paths) passes `request_id: None`.
+
+### CI gates (RFC 035)
+
+- `.github/workflows/test.yml` — `cargo-1.91 test` on host crates on every PR
+- `.github/workflows/clippy.yml` — `cargo-1.91 clippy -D warnings` on host crates
+- `.github/workflows/deny.yml` — `cargo deny check` with `deny.toml` (licenses + advisories)
+- `bundle-size.yml` updated from `stable` to `1.91` toolchain
+- `deny.toml` added to workspace root
+
+### Housekeeping
+
+- **RFC 038**: `nodejs_compat` removed from `wrangler.toml` (RFC 029 measurement: 0 diff)
+- **RFC 039**: `docs/src/beginner/first-oidc-flow.md` and `production.md` updated
+  to remove stale "OTP in audit log" instructions; `preflight.md` updated.
+  Three new drift-scan patterns added: `dev-delivery handle=`, `-> Box<dyn MagicLinkMailer>`,
+  and nodejs_compat return-type patterns.
+
+### Test counts
+
+| Crate | v0.54.0 | v0.55.0 | Δ |
+|---|---|---|---|
+| `cesauth-core` | 557 | **559** | +2 (RFC 033 nonce tests) |
+| `cesauth-adapter-test` | 117 | **117** | ±0 |
+| `cesauth-ui` | 270 | **270** | ±0 |
+| `cesauth-migrate-test` | 14 | **17** | +3 (RFC 032/037) |
+| **Total** | **958** | **963** | **+5** |
+
+### Wire compatibility
+
+Additive only. `id_token.nonce` appears for new flows where the authorize
+request included `nonce=...`; absent otherwise. `audit_events.request_id`
+is nullable — existing rows read back as `None`.
+
+---
+
 ## [0.54.0] - 2026-05-09
 
 Implements RFC 001 (OIDC `id_token` issuance), closing the compliance gap

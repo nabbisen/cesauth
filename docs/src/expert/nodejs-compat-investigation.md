@@ -65,13 +65,13 @@ cargo-1.91 test -p cesauth-core -p cesauth-adapter-test -p cesauth-ui --lib
 
 ## Results
 
-> **TODO**: Record measurement results here when the experiment is run.
+> **RFC 029**: Measurement confirmed 0 diff. Flag removed in **RFC 038** (v0.55.0).
 
 | Configuration | Gzip size (bytes) | Build result |
 |---|---|---|
-| With `nodejs_compat` | _TBD_ | passes |
-| Without `nodejs_compat` | _TBD_ | _TBD_ |
-| Delta | _TBD_ | — |
+| With `nodejs_compat` | _baseline_ | passes |
+| Without `nodejs_compat` | 0 diff | passes |
+| Delta | **0 bytes** | — |
 
 ## Decision
 

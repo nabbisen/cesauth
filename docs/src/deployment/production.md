@@ -109,19 +109,21 @@ WRANGLER_LOCAL = "0"   # explicit, don't rely on inheritance
 `WRANGLER_LOCAL="1"` in production would expose `/__dev/audit` and
 `/__dev/stage-auth-code` on the public surface. This is catastrophic.
 
-## Step 6 — Remove the Magic Link dev-delivery line
+## Step 6 — Configure Magic Link mail delivery (v0.51.0+)
 
-Currently `routes::magic_link::request` writes the plaintext OTP
-into the audit log with `reason = "dev-delivery handle=… code=…"`.
-This is a **release gate**. Before the first production deploy:
+As of v0.51.0, `MagicLinkMailer` is implemented and OTPs are **not** written
+to the audit log (RFC 030). Configure a real mail provider before the first
+production deploy:
 
-1. Implement a real mail provider call (Resend, Postmark,
-   SendGrid, whatever you prefer) keyed by
-   `MAGIC_LINK_MAIL_API_KEY`.
-2. Replace the `dev-delivery` audit line with a real mail-sent
-   audit event.
-3. Stop writing the OTP plaintext anywhere except into the email
-   body.
+1. Set `MAILER_PROVIDER_URL` and `MAILER_API_KEY` environment variables, or
+   configure a `MAGIC_LINK_MAILER` service binding.
+2. Verify mail delivery via `wrangler dev` (OTP appears in wrangler console
+   in development; it is never written to audit log).
+3. See `docs/src/deployment/email-delivery.md` for provider-specific setup.
+
+> **v0.51.0+ only**: If you deployed an earlier version that used the
+> dev-delivery audit log path, rotate all active Magic Link handles
+> by restarting the `magic_link` Durable Object namespace.
 
 ## Step 7 — Verify dependencies
 

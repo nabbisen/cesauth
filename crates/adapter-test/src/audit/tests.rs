@@ -22,6 +22,7 @@ fn ev<'a>(
         payload,
         payload_hash,
         created_at: ts,
+            request_id:    None,
     }
 }
 

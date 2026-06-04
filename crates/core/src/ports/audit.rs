@@ -54,6 +54,9 @@ pub struct AuditEventRow {
     pub previous_hash: String,
     pub chain_hash:    String,
     pub created_at:    i64,
+    /// Per-request correlation identifier from `cf-ray` header (RFC 015 / 036).
+    /// `None` on cron/background events that have no inbound request.
+    pub request_id:    Option<String>,
 }
 
 /// What the writer hands the repository to append. The
@@ -79,6 +82,8 @@ pub struct NewAuditEvent<'a> {
     pub payload:      &'a str,
     pub payload_hash: &'a str,
     pub created_at:   i64,
+    /// Per-request correlation identifier (RFC 036). `None` for cron paths.
+    pub request_id:   Option<&'a str>,
 }
 
 /// Search filter for the admin query path. `kind` filters by

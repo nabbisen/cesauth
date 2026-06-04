@@ -9,7 +9,8 @@
 name               = "cesauth"
 main               = "crates/worker/build/worker/shim.mjs"
 compatibility_date = "2026-04-01"
-compatibility_flags = ["nodejs_compat"]
+# nodejs_compat removed — RFC 029 measurement confirmed 0 diff when removed;
+# no Node.js API call sites exist in the codebase. See ADR-016 / RFC 038.
 
 # --- Rust / WASM build ---------------------------------------------------
 # `worker-build` (installed via `cargo install worker-build`) produces the

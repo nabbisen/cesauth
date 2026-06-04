@@ -1,0 +1,32 @@
+name: Host tests
+
+# RFC 035: Run all host-compilable tests on every PR.
+# Excludes cesauth-adapter-cloudflare and cesauth-worker which require
+# the wasm32-unknown-unknown target and worker-build toolchain.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.91
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y rustc-1.91 cargo-1.91
+
+      - name: Run host crate tests
+        run: |
+          cargo-1.91 test -p cesauth-core \
+                          -p cesauth-adapter-test \
+                          -p cesauth-ui \
+                          --lib
+
+      - name: Run migration integration tests
+        run: |
+          cargo-1.91 test -p cesauth-migrate-test --test migration_chain

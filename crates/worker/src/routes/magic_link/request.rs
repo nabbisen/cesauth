@@ -209,7 +209,10 @@ pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
                 Some(format!("handle={handle} kind={}", e.audit_kind())),
             ).await.ok();
             log::emit(&cfg.log, Level::Error, Category::Magic,
-                &format!("magic_link mailer failed: {e}"),
+                // RFC 030: log only the error kind, not the full error detail.
+                // Full detail (provider response body) could contain the OTP
+                // if the provider echoes back the request body on error.
+                &format!("magic_link mailer failed: kind={}", e.audit_kind()),
                 Some(&body.email));
             // Fall through — same response either way.
         }

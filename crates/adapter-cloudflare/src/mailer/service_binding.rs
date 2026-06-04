@@ -102,11 +102,10 @@ impl MagicLinkMailer for ServiceBindingMailer<'_> {
                 queued_at_unix: now,
             })
         } else if status >= 400 && status < 500 {
-            let detail = resp.text().await.unwrap_or_default();
-            Err(MailerError::Permanent(format!("service binding HTTP {status}: {detail}")))
+            // RFC 030: no response body in error — prevents OTP leak via error echo.
+            Err(MailerError::Permanent(format!("service binding HTTP {status}")))
         } else {
-            let detail = resp.text().await.unwrap_or_default();
-            Err(MailerError::Transient(format!("service binding HTTP {status}: {detail}")))
+            Err(MailerError::Transient(format!("service binding HTTP {status}")))
         }
     }
 }

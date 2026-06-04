@@ -1,0 +1,34 @@
+name: Clippy lint
+
+# RFC 035: Deny all clippy warnings on host-compilable crates.
+# WASM crates (adapter-cloudflare, worker) are excluded; they require
+# the wasm32 target and cannot be linted on a standard Ubuntu runner
+# without worker-build toolchain setup.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.91 + clippy component
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y rustc-1.91 cargo-1.91
+          # The apt package bundles clippy; verify it's present.
+          clippy-driver-1.91 --version || cargo-1.91 clippy --version
+
+      - name: Clippy — host crates
+        run: |
+          cargo-1.91 clippy \
+            -p cesauth-core \
+            -p cesauth-adapter-test \
+            -p cesauth-ui \
+            -p cesauth-migrate-test \
+            --all-targets \
+            -- -D warnings

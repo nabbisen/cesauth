@@ -36,6 +36,7 @@ impl StubRepo {
             previous_hash: "00".into(),
             chain_hash:    "ch".into(),
             created_at:    ts,
+            request_id:    None,
         });
     }
 

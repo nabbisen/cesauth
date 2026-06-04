@@ -361,6 +361,9 @@ pub struct Event<'a> {
     /// Machine-readable reason code. For successes, this is usually
     /// omitted; for failures it's a short slug like "pkce_mismatch".
     pub reason:     Option<&'a str>,
+    /// RFC 036: per-request correlation identifier from `cf-ray`
+    /// (or `local-<uuid>` in dev). `None` for cron-path events.
+    pub request_id: Option<&'a str>,
 }
 
 impl<'a> Event<'a> {
@@ -374,6 +377,7 @@ impl<'a> Event<'a> {
             ip:         None,
             user_agent: None,
             reason:     None,
+            request_id: None,
         }
     }
 
@@ -382,6 +386,8 @@ impl<'a> Event<'a> {
     pub fn with_ip(mut self, ip: &'a str) -> Self          { self.ip         = Some(ip); self }
     pub fn with_user_agent(mut self, ua: &'a str) -> Self  { self.user_agent = Some(ua); self }
     pub fn with_reason(mut self, r: &'a str) -> Self       { self.reason     = Some(r);  self }
+    /// RFC 036: set the per-request correlation id from the cf-ray header.
+    pub fn with_request_id(mut self, rid: &'a str) -> Self { self.request_id = Some(rid); self }
 }
 
 /// Append an event to the chain. Best-effort: a write failure
@@ -419,6 +425,7 @@ pub async fn write(env: &Env, ev: &Event<'_>) {
         payload,
         payload_hash: &payload_hash,
         created_at:   ev.ts,
+        request_id:   ev.request_id,
     };
 
     if let Err(_e) = repo.append(&new_event).await {
@@ -447,6 +454,7 @@ pub async fn write_owned(
         ip:         None,
         user_agent: None,
         reason:     reason.as_deref(),
+        request_id: None, // cron / background callers do not have a request id
     };
     write(env, &ev).await;
     Ok(())

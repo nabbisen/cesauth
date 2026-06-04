@@ -94,12 +94,16 @@ pub enum Category {
     Config,
     /// Dev-only (`WRANGLER_LOCAL`) routes. Safe; guarded off in prod.
     Dev,
+    /// Magic Link delivery path: OTP dispatch, provider responses.
+    /// May carry the recipient email address in error context.
+    /// **Sensitive** — gated by `LOG_EMIT_SENSITIVE`.
+    Magic,
 }
 
 impl Category {
     /// Whether records in this category are dropped by default.
     pub fn is_sensitive(self) -> bool {
-        matches!(self, Category::Auth | Category::Session | Category::Crypto)
+        matches!(self, Category::Auth | Category::Session | Category::Crypto | Category::Magic)
     }
 
     fn as_str(self) -> &'static str {
@@ -112,6 +116,7 @@ impl Category {
             Category::Crypto    => "crypto",
             Category::Config    => "config",
             Category::Dev       => "dev",
+            Category::Magic     => "magic",
         }
     }
 }

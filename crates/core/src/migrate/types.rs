@@ -12,7 +12,7 @@ pub const FORMAT_VERSION: u32 = 1;
 /// against the destination first; newer dumps are usually
 /// importable but may carry columns this build will silently
 /// drop.
-pub const SCHEMA_VERSION: u32 = 15;
+pub const SCHEMA_VERSION: u32 = 17;
 
 // ---------------------------------------------------------------------
 // Manifest

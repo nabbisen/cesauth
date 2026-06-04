@@ -47,7 +47,6 @@ use cesauth_cf::ports::repo::{CloudflareClientRepository, CloudflareSigningKeyRe
 use cesauth_cf::ports::store::CloudflareRefreshTokenFamilyStore;
 use cesauth_core::oidc::introspect::{IntrospectInput, TokenTypeHint};
 use cesauth_core::ports::repo::SigningKeyRepository;
-use cesauth_core::service::client_auth;
 use cesauth_core::service::introspect::introspect_token;
 use time::OffsetDateTime;
 use worker::{Request, Response, Result, RouteContext};
@@ -79,36 +78,20 @@ pub async fn handler<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
         None    => return unauthorized(),
     };
     let clients = CloudflareClientRepository::new(&ctx.env);
-    if let Err(_) = client_auth::verify_client_credentials(
-        &clients, &creds.client_id, &creds.client_secret,
-    ).await {
-        log::emit(&cfg.log, Level::Warn, Category::Auth,
-            "introspect: client auth failed",
-            Some(&creds.client_id));
-        return unauthorized();
-    }
 
-    // **v0.50.3 (RFC 009, ADR-014 §Q1 amendment)** — fetch the
-    // authenticated client row to apply its audience scope.
-    // Fail-closed: a deployment that opted into audience scoping
-    // must not see it silently disabled by a transient hiccup or
-    // an admin DELETE race.
-    //   Ok(Some(c)) → continue with the client
-    //   Ok(None)    → client row missing post-auth (anomalous;
-    //                  admin DELETE race). Fail HTTP 401 + audit.
-    //   Err(_)      → D1 storage outage. Fail HTTP 503.
+    // RFC 034 / RFC 026: single D1 read for both client auth and audience gate.
+    // Previously: verify_client_credentials (read #1) + clients.find (read #2).
+    // Now: find_auth_view (read #1) + check_client_credentials_from_view (pure).
     use cesauth_core::ports::repo::ClientRepository;
-    let requesting_client = match clients.find(&creds.client_id).await {
-        Ok(Some(c)) => c,
+    use cesauth_core::service::client_auth::{check_client_credentials_from_view, ClientAuthOutcome};
+
+    let view = match clients.find_auth_view(&creds.client_id).await {
+        Ok(Some(v)) => v,
         Ok(None) => {
-            log::emit(&cfg.log, Level::Error, Category::Auth,
-                "introspect: client row missing post-auth (admin DELETE race?)",
+            // Client does not exist — treat as auth failure (no information leak).
+            log::emit(&cfg.log, Level::Warn, Category::Auth,
+                "introspect: client not found",
                 Some(&creds.client_id));
-            audit::write_owned(
-                &ctx.env, EventKind::IntrospectionRowMissing,
-                None, Some(creds.client_id.clone()),
-                None,
-            ).await.ok();
             return unauthorized();
         }
         Err(_) => {
@@ -118,6 +101,19 @@ pub async fn handler<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
             return Response::error("service temporarily unavailable", 503);
         }
     };
+
+    match check_client_credentials_from_view(&view, &creds.client_secret) {
+        ClientAuthOutcome::Authenticated => {} // continue
+        ClientAuthOutcome::AuthenticationFailed | ClientAuthOutcome::PublicOrUnknown => {
+            log::emit(&cfg.log, Level::Warn, Category::Auth,
+                "introspect: client auth failed",
+                Some(&creds.client_id));
+            return unauthorized();
+        }
+    }
+
+    // The authenticated client's audience scope from the same read.
+    let requesting_audience = view.audience.clone();
 
     // **v0.43.0** — per-client introspection rate limit
     // (ADR-014 §Q2). The check fires AFTER auth (we
@@ -225,7 +221,8 @@ pub async fn handler<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
         use cesauth_core::service::introspect::{
             apply_introspection_audience_gate, IntrospectionGateOutcome,
         };
-        let client_aud = requesting_client.audience.as_deref();
+        // RFC 034: audience now comes from the single find_auth_view read.
+        let client_aud = requesting_audience.as_deref();
         match apply_introspection_audience_gate(resp, client_aud) {
             IntrospectionGateOutcome::PassedThrough(r) => r,
             IntrospectionGateOutcome::AudienceDenied {

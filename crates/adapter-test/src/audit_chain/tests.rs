@@ -36,6 +36,7 @@ async fn build_chain(n: usize) -> InMemoryAuditEventRepository {
             payload:      "{}",
             payload_hash: &h,
             created_at:   ts,
+            request_id:    None,
         }).await.unwrap();
     }
     repo
@@ -102,11 +103,13 @@ async fn second_run_resumes_from_checkpoint_and_walks_only_new_rows() {
         id: "e3", ts: 200, kind: "k", subject: None, client_id: None,
         ip: None, user_agent: None, reason: None,
         payload: "{}", payload_hash: &h, created_at: 200,
+            request_id:    None,
     }).await.unwrap();
     repo.append(&NewAuditEvent {
         id: "e4", ts: 201, kind: "k", subject: None, client_id: None,
         ip: None, user_agent: None, reason: None,
         payload: "{}", payload_hash: &h, created_at: 201,
+            request_id:    None,
     }).await.unwrap();
 
     let r2 = verify_chain(&repo, &checkpoints, NOW + 1).await.unwrap();
@@ -217,6 +220,7 @@ async fn wholesale_rewrite_is_detected_via_checkpoint_cross_check() {
             subject: None, client_id: None, ip: None, user_agent: None, reason: None,
             payload: r#"{"forged":true}"#, payload_hash: &h,
             created_at: 1000 + i as i64,
+            request_id: None,
         }).await.unwrap();
     }
 

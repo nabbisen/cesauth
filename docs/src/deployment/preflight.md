@@ -229,7 +229,7 @@ degrades:
 | Section E | `WRANGLER_LOCAL` accidents leak dev surfaces; `ISSUER` mismatch breaks every client. |
 | Section F | Anonymous trials accumulate; storage grows unboundedly. |
 | Section G | Browsers refuse the origin; WebAuthn / cookies break. |
-| Section H | Magic-link "delivers" via the audit log — operator can read every user's OTP. **Critical incident posture.** |
+| Section H | Magic-link delivery: configure `MAILER_PROVIDER_URL` / `MAILER_API_KEY` or a service binding. OTP is **not** stored in audit (RFC 030). |
 | Section I | Deploying with known-CVE deps. **Critical incident posture.** |
 | Section J | Silent failure invisible until users complain. |
 | Section K | First incident has no recovery path. |

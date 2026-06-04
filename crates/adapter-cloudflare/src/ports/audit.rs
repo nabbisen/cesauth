@@ -82,6 +82,9 @@ struct DbRow {
     previous_hash: String,
     chain_hash:    String,
     created_at:    i64,
+    /// RFC 036: nullable; rows written before v0.55.0 will be NULL.
+    #[serde(default)]
+    request_id:    Option<String>,
 }
 
 impl DbRow {
@@ -101,13 +104,14 @@ impl DbRow {
             previous_hash: self.previous_hash,
             chain_hash:    self.chain_hash,
             created_at:    self.created_at,
+            request_id:    self.request_id,
         }
     }
 }
 
 const SELECT_COLUMNS: &str =
     "seq, id, ts, kind, subject, client_id, ip, user_agent, reason, \
-     payload, payload_hash, previous_hash, chain_hash, created_at";
+     payload, payload_hash, previous_hash, chain_hash, created_at, request_id";
 
 impl AuditEventRepository for CloudflareAuditEventRepository<'_> {
     async fn append(&self, ev: &NewAuditEvent<'_>) -> PortResult<AuditEventRow> {
@@ -149,8 +153,8 @@ impl AuditEventRepository for CloudflareAuditEventRepository<'_> {
                 "INSERT INTO audit_events (\
                     seq, id, ts, kind, \
                     subject, client_id, ip, user_agent, reason, \
-                    payload, payload_hash, previous_hash, chain_hash, created_at\
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)"
+                    payload, payload_hash, previous_hash, chain_hash, created_at, request_id\
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)"
             )
                 .bind(&[
                     d1_int(next_seq),
@@ -167,6 +171,8 @@ impl AuditEventRepository for CloudflareAuditEventRepository<'_> {
                     prev_hash.clone().into(),
                     chain_hash.clone().into(),
                     d1_int(ev.created_at),
+                    // RFC 036: request_id from cf-ray / local-uuid fallback.
+                    ev.request_id.map(|s| s.into()).unwrap_or(JsValue::NULL),
                 ])
                 .map_err(|e| run_err("audit_events.append bind", e))?;
 
@@ -198,6 +204,7 @@ impl AuditEventRepository for CloudflareAuditEventRepository<'_> {
                         previous_hash: prev_hash,
                         chain_hash,
                         created_at:    ev.created_at,
+                        request_id:    ev.request_id.map(str::to_owned),
                     });
                 }
                 Err(e) => {

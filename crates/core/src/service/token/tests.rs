@@ -390,4 +390,58 @@ mod id_token_tests {
         ).await.unwrap();
         assert!(resp.id_token.is_none(), "no openid → no id_token on refresh");
     }
+
+    #[tokio::test]
+    async fn exchange_code_id_token_carries_nonce_when_authorize_had_one() {
+        // RFC 033 / OIDC Core §3.1.3.6
+        let verifier = "test-verifier-padded-to-exactly-43chars-xxx";
+        let (clients, codes, families, grants, users) =
+            stub_exchange_setup(&["openid"], 1_699_999_900, verifier);
+
+        // Replace the challenge with one that has a nonce.
+        let nonce_val = "unique-nonce-abc-123";
+        use sha2::{Digest, Sha256};
+        use base64::Engine;
+        let mut h = Sha256::new();
+        h.update(verifier.as_bytes());
+        let challenge_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(h.finalize());
+        codes.0.borrow_mut().insert("code-1".to_owned(), Challenge::AuthCode {
+            client_id:             "c-1".to_owned(),
+            redirect_uri:          "https://app.test/cb".to_owned(),
+            user_id:               "u-1".to_owned(),
+            scopes:                Scopes(vec!["openid".to_owned()]),
+            nonce:                 Some(nonce_val.to_owned()),
+            code_challenge:        challenge_b64,
+            code_challenge_method: "S256".to_owned(),
+            issued_at:             1_700_000_000,
+            expires_at:            1_700_000_300,
+            auth_time:             1_699_999_900,
+        });
+
+        let signer = test_signer();
+        let input = ExchangeCodeInput {
+            code:          "code-1",
+            redirect_uri:  "https://app.test/cb",
+            client_id:     "c-1",
+            code_verifier: verifier,
+            now_unix:      1_700_000_000,
+        };
+        let resp = exchange_code(
+            &clients, &codes, &families, &grants, &users, &signer,
+            3600, 86400, &input, "https://t.test",
+        ).await.unwrap();
+
+        let c = decode_id_claims(resp.id_token.as_deref().unwrap());
+        assert_eq!(c.nonce.as_deref(), Some(nonce_val),
+            "RFC 033: nonce from authorize request must appear in id_token");
+    }
+
+    #[tokio::test]
+    async fn exchange_code_id_token_omits_nonce_when_authorize_had_none() {
+        // nonce=None → id_token must not carry nonce claim
+        let resp = run_exchange(&["openid"], 1_699_999_900).await;
+        let c = decode_id_claims(resp.id_token.as_deref().unwrap());
+        assert!(c.nonce.is_none(),
+            "RFC 033: nonce must be absent when authorize did not include one");
+    }
 }

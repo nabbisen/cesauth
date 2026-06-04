@@ -462,3 +462,77 @@ fn created_at_index_exists_on_users() {
         .unwrap();
     assert_eq!(count, 1, "idx_users_created_at should exist after RFC 024");
 }
+
+// ---------------------------------------------------------------------------
+// RFC 032 — 0016 repair migration: COLLATE NOCASE survives
+// ---------------------------------------------------------------------------
+
+#[test]
+fn repair_migration_collate_nocase_survives_full_chain() {
+    // After applying the full chain (including 0016), email uniqueness
+    // must be case-insensitive — same invariant as the RFC 020 test,
+    // but now also validates that 0016 does not break a clean install.
+    let conn = apply_all_migrations().unwrap();
+    let now = 1_700_000_000_i64;
+    conn.execute(
+        "INSERT INTO users (id, tenant_id, email, email_verified, account_type, status, created_at, updated_at)
+         VALUES ('u-r1', 'tenant-default', 'Repair@test.com', 0, 'human_user', 'active', ?1, ?1)",
+        rusqlite::params![now],
+    ).expect("first insert");
+
+    let result = conn.execute(
+        "INSERT INTO users (id, tenant_id, email, email_verified, account_type, status, created_at, updated_at)
+         VALUES ('u-r2', 'tenant-default', 'repair@test.com', 0, 'human_user', 'active', ?1, ?1)",
+        rusqlite::params![now],
+    );
+    assert!(result.is_err(),
+        "after 0016: COLLATE NOCASE must reject case-variant of existing email");
+}
+
+#[test]
+fn repair_migration_authenticators_fk_points_at_users() {
+    let conn = apply_all_migrations().unwrap();
+    let mut stmt = conn.prepare("PRAGMA foreign_key_list(authenticators)").unwrap();
+    let tables: Vec<String> = stmt.query_map([], |row| row.get::<_, String>(2))
+        .unwrap().filter_map(|r| r.ok()).collect();
+    assert!(tables.iter().all(|t| t != "users_pre_0004" && t != "users_pre_0016"),
+        "authenticators FK must not reference any pre_NNNN table: {:?}", tables);
+    assert!(tables.iter().any(|t| t == "users"),
+        "authenticators FK must reference `users`: {:?}", tables);
+}
+
+// ---------------------------------------------------------------------------
+// RFC 037 — groups FK is RESTRICT (hard delete of org/group is refused)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn groups_fk_on_delete_is_restrict_not_set_null() {
+    // Verify that attempting to hard-delete a referenced organization
+    // is rejected (RESTRICT), not silently corrupting tenant_id.
+    let conn = apply_all_migrations().unwrap();
+    conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+    let now = 1_700_000_000_i64;
+
+    conn.execute(
+        "INSERT OR IGNORE INTO tenants (id, slug, display_name, status, created_at, updated_at)
+         VALUES ('t-r', 't-r', 'T', 'active', ?1, ?1)",
+        rusqlite::params![now],
+    ).unwrap();
+    conn.execute(
+        "INSERT INTO organizations (id, tenant_id, slug, display_name, status, created_at, updated_at)
+         VALUES ('org-r', 't-r', 'org-r', 'Org', 'active', ?1, ?1)",
+        rusqlite::params![now],
+    ).unwrap();
+    conn.execute(
+        "INSERT INTO groups (id, tenant_id, parent_kind, organization_id, slug, display_name, status, created_at, updated_at)
+         VALUES ('grp-r', 't-r', 'organization', 'org-r', 'grp', 'Grp', 'active', ?1, ?1)",
+        rusqlite::params![now],
+    ).unwrap();
+
+    // Hard delete the referenced organization — must be REJECTED (RESTRICT).
+    let result = conn.execute("DELETE FROM organizations WHERE id = 'org-r'", []);
+    assert!(
+        result.is_err(),
+        "hard delete of referenced organization must fail with RESTRICT FK"
+    );
+}

@@ -1,0 +1,41 @@
+[graph]
+# Only check host-compilable crates; skip WASM-only crates.
+exclude = ["cesauth-adapter-cloudflare", "cesauth-worker"]
+
+[advisories]
+version = 2
+yanked = "deny"
+ignore = []
+
+[licenses]
+version = 2
+# Allow widely-used permissive licenses.
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "MIT-0",
+    "ISC",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "Unlicense",
+    "OpenSSL",
+    "Zlib",
+]
+exceptions = []
+
+[bans]
+# Deny duplicate versions of security-sensitive crates.
+deny = []
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = false
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

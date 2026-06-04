@@ -1,0 +1,23 @@
+name: Cargo deny (licenses & advisories)
+
+# RFC 035: Check for license compliance and security advisories.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Run daily to catch new advisories published since last PR.
+    - cron: '0 6 * * *'
+
+jobs:
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          log-level: warn
+          command: check
+          arguments: --config deny.toml

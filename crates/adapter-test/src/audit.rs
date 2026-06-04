@@ -59,6 +59,7 @@ impl InMemoryAuditEventRepository {
             previous_hash: GENESIS_HASH.to_owned(),
             chain_hash:    GENESIS_HASH.to_owned(),
             created_at:    0,
+            request_id:    None,
         };
         let me = Self::default();
         me.rows.lock().unwrap().push(genesis);
@@ -163,6 +164,7 @@ impl AuditEventRepository for InMemoryAuditEventRepository {
             previous_hash: prev_hash,
             chain_hash,
             created_at:    ev.created_at,
+            request_id:    ev.request_id.map(str::to_owned),
         };
         guard.push(row.clone());
         Ok(row)

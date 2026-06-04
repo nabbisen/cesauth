@@ -90,7 +90,7 @@ where
         .map_err(|_| CoreError::Internal)?
         .ok_or(CoreError::InvalidGrant("code is unknown or already used"))?;
 
-    let (user_id, scopes, code_challenge, code_challenge_method, redirect_uri, _nonce, challenge_auth_time) =
+    let (user_id, scopes, code_challenge, code_challenge_method, redirect_uri, challenge_nonce, challenge_auth_time) =
         match challenge {
             Challenge::AuthCode {
                 user_id,
@@ -172,7 +172,10 @@ where
             &user,
             &client.id,
             &scopes.0,
-            None, // nonce is already consumed; not needed on id_token at exchange time
+            // RFC 033 / OIDC Core §3.1.3.6: nonce from the authorization
+            // request MUST be reflected in the id_token when present.
+            // Refresh-path id_tokens correctly omit nonce (§12).
+            challenge_nonce.as_deref(),
             challenge_auth_time,
             input.now_unix,
             ID_TOKEN_TTL_SECS,

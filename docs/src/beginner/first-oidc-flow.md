@@ -14,7 +14,9 @@ running. Use two terminals — one for the Worker, one for curl.
 
 > **Magic Link "dev delivery".** `routes::magic_link::request` does
 > not send real email in this build. It writes the plaintext OTP into
-> the audit log as `reason = "dev-delivery handle=… code=…"`. That is
+> console via `wrangler tail`. The OTP is **not** in the audit log (RFC 030).  
+> In development, the code appears in the wrangler dev console log.  
+> **That is"
 > convenient locally and **must be removed before any production
 > deploy**. The tutorial reads the OTP out of the audit log on
 > purpose.
@@ -72,15 +74,18 @@ Expected (trimmed):
   "ts":      1715712345,
   "kind":    "magic_link_issued",
   "subject": "bob@example.com",
-  "reason":  "dev-delivery handle=…uuid… code=AB2CDE34"
+  "reason":  "magic_link_otp_sent handle=…uuid…"
+  // NOTE: The OTP code is NOT in the audit log (v0.54.1+, RFC 030).
 }
 ```
 
 Extract handle and code:
 
 ```sh
-HANDLE=$(echo "$AUDIT" | jq -r '.reason | capture("handle=(?<h>[^ ]+) code=").h')
-CODE=$(echo "$AUDIT"   | jq -r '.reason | capture("code=(?<c>[A-Z0-9]+)").c')
+# The OTP is no longer in the audit log (RFC 030).
+# In development (wrangler dev), the code appears in the console output.
+# Use: wrangler tail --format=pretty | grep "magic_link"
+HANDLE=$(echo "$AUDIT" | jq -r '.reason | capture("handle=(?<h>[^ ]+)").h')
 echo "HANDLE=$HANDLE  CODE=$CODE"
 ```
 

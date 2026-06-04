@@ -156,11 +156,14 @@ impl MagicLinkMailer for HttpsProviderMailer {
                 queued_at_unix: now,
             })
         } else if status >= 400 && status < 500 {
-            let detail = resp.text().await.unwrap_or_default();
-            Err(MailerError::Permanent(format!("provider HTTP {status}: {detail}")))
+            // RFC 030: Do NOT include the response body in the error.
+            // External providers may echo back the request body on errors,
+            // which would cause the OTP code to appear in log drains.
+            // Log only the HTTP status; operator can check the provider
+            // dashboard for the delivery attempt details.
+            Err(MailerError::Permanent(format!("provider HTTP {status}")))
         } else {
-            let detail = resp.text().await.unwrap_or_default();
-            Err(MailerError::Transient(format!("provider HTTP {status}: {detail}")))
+            Err(MailerError::Transient(format!("provider HTTP {status}")))
         }
     }
 }

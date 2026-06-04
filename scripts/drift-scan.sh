@@ -41,6 +41,15 @@ declare -a PATTERNS=(
     "pub code_plaintext	renamed to delivery_payload in v0.50.3 (RFC 008); field should not re-appear"
     # README claim corrected in v0.52.1 (RFC 012).
     "No management GUI	README claim corrected in v0.52.1 (RFC 012)"
+    # RFC 039: OTP must never appear in audit reason (fixed in v0.50.3 / v0.54.1).
+    "dev-delivery handle=	OTP dev-delivery format must not appear in non-runbook docs (RFC 030/039)"
+    # RFC 039: nodejs_compat removed in RFC 038 — catch if it re-appears in wrangler.toml
+    # (docs/investigations that reference it by name are exempt)
+    # Handled by checking wrangler.toml directly rather than pattern scan
+    # RFC 039: Box<dyn MagicLinkMailer> replaced by enum dispatcher (RFC 031).
+    # Catch new production usage; historical docs/comments that explain the change are exempt.
+    # Use specific pattern: -> Box<dyn MagicLinkMailer> (return type, not in comments)
+    "-> Box<dyn MagicLinkMailer>	Box<dyn MagicLinkMailer> return type; use CloudflareMagicLinkMailer enum (RFC 031)"
 )
 
 found=0
