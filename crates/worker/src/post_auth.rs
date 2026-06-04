@@ -366,6 +366,11 @@ pub(crate) async fn complete_auth_post_gate(
                 code_challenge_method: ar.code_challenge_method,
                 issued_at:             now,
                 expires_at:            now + cfg.auth_code_ttl_secs,
+                // RFC 001: the auth_time is the moment the user completed
+                // their credential step (Magic Link verify, WebAuthn, TOTP).
+                // `now` is the correct value here — this function is called
+                // immediately after the successful credential verification.
+                auth_time:             now,
             };
             let store = CloudflareAuthChallengeStore::new(env);
             store.put(&code, &code_chal).await

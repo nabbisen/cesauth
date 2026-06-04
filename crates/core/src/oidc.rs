@@ -14,6 +14,7 @@
 pub mod audience;
 pub mod authorization;
 pub mod discovery;
+pub mod id_token;
 pub mod introspect;
 pub mod pkce;
 pub mod token;

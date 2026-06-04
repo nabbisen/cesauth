@@ -43,6 +43,7 @@ impl RefreshTokenFamilyStore for StubFamilyStore {
             reused_jti:        None,
             reused_at:         None,
             reuse_was_retired: None,
+            auth_time:         init.auth_time,
         });
         Ok(())
     }
@@ -110,6 +111,7 @@ async fn install_family(
         scopes:    scopes.iter().map(|s| s.to_string()).collect(),
         first_jti: first_jti.into(),
         now_unix:  100,
+        auth_time: 0,
     }).await.unwrap();
 }
 

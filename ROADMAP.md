@@ -81,7 +81,7 @@ full narrative is in the [archive](docs/changelog-archive/README.md).
 | `cargo fuzz` for JWT parser (RFC 005) | v0.51.2 | [CHANGELOG](CHANGELOG.md) |
 | CSP nonces + RFC lifecycle policy (RFC 006/019) | v0.52.0 | [CHANGELOG](CHANGELOG.md) |
 | Doc/repo hygiene + drift-scan (RFC 007/012) | v0.52.1 | [CHANGELOG](CHANGELOG.md) |
-| Migration chain hygiene (RFC 020–024) | v0.53.0 | [CHANGELOG](CHANGELOG.md) |
+| OIDC `id_token` issuance, ADR-008 §Q1-Q11 (RFC 001) | v0.54.0 | [CHANGELOG](CHANGELOG.md) |
 | Workers operational readiness + route contracts (RFC 013/025/027) | v0.53.0 | [CHANGELOG](CHANGELOG.md) |
 | `/introspect` hot path, rustfmt removal (RFC 026/029) | v0.53.0 | [CHANGELOG](CHANGELOG.md) |
 | CHANGELOG/ROADMAP volume, audit request traceability (RFC 015/028) | v0.53.0 | [CHANGELOG](CHANGELOG.md) |
@@ -1343,7 +1343,10 @@ started.
   former is more rigorous; the latter is more honest. Either
   is fine; the current state — schema lying — is not.
 
-- **OIDC `id_token` issuance.** Drafted as ADR-008 in v0.25.0.
+- ✅ **OIDC `id_token` issuance** — shipped v0.54.0 (RFC 001, ADR-008).
+  cesauth now fully implements OIDC Core §3.1.2.2.
+  Discovery doc restored to OIDC posture.
+  See `docs/src/expert/adr/008-id-token-issuance.md`.
   Closes the OIDC compliance gap surfaced by the v0.25.0 email
   verification audit: `exchange_code` and `rotate_refresh`
   currently return `id_token: null`, and the discovery doc was

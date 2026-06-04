@@ -15,14 +15,18 @@ use uuid::Uuid;
 
 use crate::error::{CoreError, CoreResult};
 use crate::jwt::{AccessTokenClaims, JwtSigner};
+use crate::oidc::id_token::{build_id_token_claims, sign_id_token};
 use crate::oidc::pkce::{self, ChallengeMethod};
 use crate::oidc::token::TokenResponse;
-use crate::ports::repo::{ClientRepository, Grant, GrantRepository};
+use crate::ports::repo::{ClientRepository, Grant, GrantRepository, UserRepository};
 use crate::ports::store::{
     AuthChallengeStore, Challenge, FamilyInit, RateLimitStore, RefreshTokenFamilyStore,
     RotateOutcome,
 };
 use crate::types::Scopes;
+
+/// Default id_token TTL: 1 hour (same as access token in the reference deployment).
+const ID_TOKEN_TTL_SECS: i64 = 3600;
 
 /// Input to `exchange_code`. All fields are borrowed from the incoming
 /// request; the caller is responsible for parsing the HTTP form body.
@@ -53,21 +57,24 @@ pub struct ExchangeCodeInput<'a> {
 /// If step 5 fails after step 2, we've consumed a code without issuing
 /// a token. That's a user-visible "try again" which is acceptable;
 /// silently retrying step 2 would allow a leaked code to be reused.
-pub async fn exchange_code<CR, AS, FS, GR>(
+pub async fn exchange_code<CR, AS, FS, GR, UR>(
     clients:   &CR,
     codes:     &AS,
     families:  &FS,
     grants:    &GR,
+    users:     &UR,
     signer:    &JwtSigner,
     access_ttl_secs:  i64,
     refresh_ttl_secs: i64,
     input:     &ExchangeCodeInput<'_>,
+    iss:       &str,
 ) -> CoreResult<TokenResponse>
 where
     CR: ClientRepository,
     AS: AuthChallengeStore,
     FS: RefreshTokenFamilyStore,
     GR: GrantRepository,
+    UR: UserRepository,
 {
     // 1. Client.
     let client = clients
@@ -83,7 +90,7 @@ where
         .map_err(|_| CoreError::Internal)?
         .ok_or(CoreError::InvalidGrant("code is unknown or already used"))?;
 
-    let (user_id, scopes, code_challenge, code_challenge_method, redirect_uri, _nonce) =
+    let (user_id, scopes, code_challenge, code_challenge_method, redirect_uri, _nonce, challenge_auth_time) =
         match challenge {
             Challenge::AuthCode {
                 user_id,
@@ -92,8 +99,9 @@ where
                 code_challenge_method,
                 redirect_uri,
                 nonce,
+                auth_time,
                 ..
-            } => (user_id, scopes, code_challenge, code_challenge_method, redirect_uri, nonce),
+            } => (user_id, scopes, code_challenge, code_challenge_method, redirect_uri, nonce, auth_time),
             _ => return Err(CoreError::InvalidGrant("handle is not a code")),
         };
 
@@ -133,6 +141,7 @@ where
             scopes:    scopes.0.clone(),
             first_jti: refresh_jti.clone(),
             now_unix:  input.now_unix,
+            auth_time: challenge_auth_time,
         })
         .await
         .map_err(|_| CoreError::Internal)?;
@@ -140,7 +149,7 @@ where
     grants
         .create(&Grant {
             id:         family_id.clone(),
-            user_id,
+            user_id:    user_id.clone(),
             client_id:  client.id.clone(),
             scopes:     scopes.0.clone(),
             issued_at:  input.now_unix,
@@ -151,12 +160,34 @@ where
 
     let refresh_token = encode_refresh(&family_id, &refresh_jti, refresh_ttl_secs, input.now_unix);
 
+    // RFC 001: issue id_token when the scopes include "openid".
+    let id_token = if scopes.0.iter().any(|s| s == "openid") {
+        let user = users
+            .find_by_id(&user_id)
+            .await
+            .map_err(|_| CoreError::Internal)?
+            .ok_or(CoreError::InvalidGrant("user deleted between authorize and token exchange"))?;
+        let claims = build_id_token_claims(
+            iss,
+            &user,
+            &client.id,
+            &scopes.0,
+            None, // nonce is already consumed; not needed on id_token at exchange time
+            challenge_auth_time,
+            input.now_unix,
+            ID_TOKEN_TTL_SECS,
+        );
+        Some(sign_id_token(&claims, signer)?)
+    } else {
+        None
+    };
+
     Ok(TokenResponse {
         access_token,
         token_type: "Bearer",
         expires_in: access_ttl_secs,
         refresh_token: Some(refresh_token),
-        id_token: None,
+        id_token,
         scope: scopes.to_space_separated(),
     })
 }
@@ -190,19 +221,22 @@ pub struct RotateRefreshInput<'a> {
 /// `retired_jtis` ring before the legitimate party notices.
 /// The atomic-revoke-on-reuse invariant continues to apply
 /// regardless; rate limit is DoS bounding, not security.
-pub async fn rotate_refresh<CR, FS, RL>(
+pub async fn rotate_refresh<CR, FS, RL, UR>(
     clients:  &CR,
     families: &FS,
     rates:    &RL,
+    users:    &UR,
     signer:   &JwtSigner,
     access_ttl_secs:  i64,
     refresh_ttl_secs: i64,
     input:    &RotateRefreshInput<'_>,
+    iss:      &str,
 ) -> CoreResult<TokenResponse>
 where
     CR: ClientRepository,
     FS: RefreshTokenFamilyStore,
     RL: RateLimitStore,
+    UR: UserRepository,
 {
     let (family_id, presented_jti) = decode_refresh(input.refresh_token)?;
 
@@ -284,12 +318,36 @@ where
             let access_token = signer.sign(&claims)?;
             let refresh_token = encode_refresh(&family_id, &new_current_jti, refresh_ttl_secs, input.now_unix);
 
+            // RFC 001: issue fresh id_token when scopes include "openid".
+            // ADR-008 §Q10: auth_time is the family's original auth time,
+            // NOT the rotation moment.
+            let id_token = if scopes.0.iter().any(|s| s == "openid") {
+                let user = users
+                    .find_by_id(&fam.user_id)
+                    .await
+                    .map_err(|_| CoreError::Internal)?
+                    .ok_or(CoreError::InvalidGrant("user deleted; cannot issue id_token"))?;
+                let claims_id = build_id_token_claims(
+                    iss,
+                    &user,
+                    &client.id,
+                    &scopes.0,
+                    None, // no nonce on refresh (already consumed at authorization)
+                    fam.auth_time,         // original auth event time
+                    input.now_unix,        // iat for this id_token
+                    ID_TOKEN_TTL_SECS,
+                );
+                Some(sign_id_token(&claims_id, signer)?)
+            } else {
+                None
+            };
+
             Ok(TokenResponse {
                 access_token,
                 token_type: "Bearer",
                 expires_in: access_ttl_secs,
                 refresh_token: Some(refresh_token),
-                id_token: None,
+                id_token,
                 scope: scopes.to_space_separated(),
             })
         }

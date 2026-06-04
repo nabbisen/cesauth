@@ -63,6 +63,12 @@ pub struct DiscoveryDocument {
     pub code_challenge_methods_supported:      &'static [&'static str],
     pub grant_types_supported:                 &'static [&'static str],
     pub scopes_supported:                      &'static [&'static str],
+    /// **RFC 001** — Ed25519 is the only signing algorithm.
+    pub id_token_signing_alg_values_supported: &'static [&'static str],
+    /// **RFC 001** — OIDC Core §8.1: only public subject identifiers.
+    pub subject_types_supported:               &'static [&'static str],
+    /// **RFC 001** — Claims cesauth may include in id_tokens.
+    pub claims_supported:                      &'static [&'static str],
 }
 
 impl DiscoveryDocument {
@@ -96,16 +102,18 @@ impl DiscoveryDocument {
                 "client_secret_basic",
                 "client_secret_post",
             ],
-            code_challenge_methods_supported:      &["S256"],   // plain is forbidden
+            code_challenge_methods_supported:      &["S256"],
             grant_types_supported:                 &["authorization_code", "refresh_token"],
-            // No `openid` until v0.26.0 lands id_token issuance.
-            // `profile` and `email` are advertised because they
-            // describe what the access token's `scope` claim can
-            // carry through to userinfo-style consumers; they don't
-            // imply id_token support on their own (RFC 6749).
-            // `offline_access` is advertised because that's how a
-            // client requests a refresh token.
-            scopes_supported:                      &["profile", "email", "offline_access"],
+            // RFC 001: `openid` scope now advertised — id_token issuance ships.
+            scopes_supported: &["openid", "profile", "email", "offline_access"],
+            // RFC 001: OIDC Core metadata.
+            id_token_signing_alg_values_supported: &["EdDSA"],
+            subject_types_supported:               &["public"],
+            // ADR-008 §Q9: every claim build_id_token_claims may emit.
+            claims_supported: &[
+                "iss", "sub", "aud", "exp", "iat", "auth_time",
+                "nonce", "email", "email_verified", "name",
+            ],
         }
     }
 }
@@ -119,26 +127,21 @@ mod tests {
     use super::*;
 
     // -----------------------------------------------------------------
-    // v0.25.0 honest-reset shape — pin the contract that the
-    // discovery doc reflects what cesauth actually delivers. When
-    // v0.26.0 lands ID token issuance, these tests update to add
-    // the `openid` scope and the OIDC-specific metadata fields back.
+    // RFC 001 — restore OIDC posture (inverted from v0.25.0 honest-reset)
     // -----------------------------------------------------------------
 
     #[test]
-    fn discovery_does_not_advertise_openid_scope() {
-        // OIDC-only feature; cesauth doesn't yet emit id_tokens.
-        // Advertising `openid` would mislead RPs.
+    fn discovery_advertises_openid_scope() {
+        // RFC 001: id_token issuance ships; openid scope is now real.
         let d = DiscoveryDocument::new("https://auth.example.com");
-        assert!(!d.scopes_supported.contains(&"openid"),
-            "scopes_supported must NOT include `openid` until id_token is real");
+        assert!(d.scopes_supported.contains(&"openid"),
+            "scopes_supported must include openid now that id_token issuance ships");
     }
 
     #[test]
-    fn discovery_advertises_oauth2_scopes_only() {
-        // OAuth 2.0 scopes that don't imply OIDC. Pin the exact set.
+    fn discovery_advertises_full_scope_set() {
         let d = DiscoveryDocument::new("https://auth.example.com");
-        assert_eq!(d.scopes_supported, &["profile", "email", "offline_access"]);
+        assert_eq!(d.scopes_supported, &["openid", "profile", "email", "offline_access"]);
     }
 
     #[test]
@@ -149,16 +152,12 @@ mod tests {
 
     #[test]
     fn discovery_grant_types_match_implementation() {
-        // The token endpoint accepts authorization_code +
-        // refresh_token. Advertising any other grant_type
-        // would mislead RPs.
         let d = DiscoveryDocument::new("https://auth.example.com");
         assert_eq!(d.grant_types_supported, &["authorization_code", "refresh_token"]);
     }
 
     #[test]
     fn discovery_code_challenge_methods_is_s256_only() {
-        // `plain` PKCE is forbidden — the verifier rejects it.
         let d = DiscoveryDocument::new("https://auth.example.com");
         assert_eq!(d.code_challenge_methods_supported, &["S256"]);
         assert!(!d.code_challenge_methods_supported.contains(&"plain"));
@@ -171,36 +170,67 @@ mod tests {
         assert_eq!(d.token_endpoint,         "https://auth.example.com/token");
         assert_eq!(d.jwks_uri,               "https://auth.example.com/jwks.json");
         assert_eq!(d.revocation_endpoint,    "https://auth.example.com/revoke");
-        // v0.38.0
         assert_eq!(d.introspection_endpoint, "https://auth.example.com/introspect");
     }
 
-    /// **v0.38.0** — RFC 7662 §2.1 requires authentication on
-    /// the introspection endpoint. The advertised methods must
-    /// not include `none`.
     #[test]
     fn discovery_introspection_endpoint_requires_authentication() {
         let d = DiscoveryDocument::new("https://auth.example.com");
         assert!(!d.introspection_endpoint_auth_methods_supported.contains(&"none"),
             "RFC 7662 §2.1: introspection must require client authentication");
         assert!(d.introspection_endpoint_auth_methods_supported.contains(&"client_secret_basic"),
-            "client_secret_basic must be advertised — it's the spec-recommended method for /introspect");
+            "client_secret_basic must be advertised");
     }
 
     #[test]
-    fn discovery_serializes_without_oidc_fields() {
-        // Pin that the wire output omits the OIDC-specific fields.
-        // A future maintainer who adds `id_token_signing_alg_values_supported`
-        // back without also implementing id_token issuance fails this
-        // test.
+    fn discovery_advertises_eddsa_signing_alg() {
+        let d = DiscoveryDocument::new("https://auth.example.com");
+        assert!(d.id_token_signing_alg_values_supported.contains(&"EdDSA"),
+            "id_token_signing_alg_values_supported must include EdDSA");
+    }
+
+    #[test]
+    fn discovery_advertises_public_subject_type() {
+        let d = DiscoveryDocument::new("https://auth.example.com");
+        assert_eq!(d.subject_types_supported, &["public"]);
+    }
+
+    #[test]
+    fn discovery_advertises_claims_supported() {
+        let d = DiscoveryDocument::new("https://auth.example.com");
+        // The mandatory OIDC Core claims must be present.
+        for claim in &["iss", "sub", "aud", "exp", "iat", "auth_time"] {
+            assert!(d.claims_supported.contains(claim),
+                "claims_supported must include required claim '{}': {:?}",
+                claim, d.claims_supported);
+        }
+    }
+
+    #[test]
+    fn discovery_claims_supported_lists_every_claim_id_token_emits() {
+        // Pin the no-drift invariant (ADR-008 §Q9 + RFC 001 §"Security considerations").
+        // If build_id_token_claims gains a new claim, update claims_supported too.
+        let d = DiscoveryDocument::new("https://auth.example.com");
+        let expected_claims = [
+            "iss", "sub", "aud", "exp", "iat", "auth_time",
+            "nonce", "email", "email_verified", "name",
+        ];
+        for c in &expected_claims {
+            assert!(d.claims_supported.contains(c),
+                "claims_supported must include '{}' which build_id_token_claims can emit", c);
+        }
+    }
+
+    #[test]
+    fn discovery_serializes_with_oidc_fields() {
         let d = DiscoveryDocument::new("https://auth.example.com");
         let json = serde_json::to_string(&d).unwrap();
-        assert!(!json.contains("id_token_signing_alg_values_supported"),
-            "OIDC field must not appear in v0.25.0 discovery: {json}");
-        assert!(!json.contains("subject_types_supported"),
-            "OIDC field must not appear in v0.25.0 discovery: {json}");
-        assert!(!json.contains("\"openid\""),
-            "openid scope must not appear in scopes_supported: {json}");
+        assert!(json.contains("id_token_signing_alg_values_supported"),
+            "RFC 001: OIDC field must appear in discovery doc");
+        assert!(json.contains("subject_types_supported"),
+            "RFC 001: OIDC field must appear in discovery doc");
+        assert!(json.contains("\"openid\""),
+            "RFC 001: openid scope must appear in scopes_supported");
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! `POST /token` - authorization-code exchange and refresh rotation.
 
 use cesauth_cf::ports::{
-    repo::{CloudflareClientRepository, CloudflareGrantRepository},
+    repo::{CloudflareClientRepository, CloudflareGrantRepository, CloudflareUserRepository},
     store::{CloudflareAuthChallengeStore, CloudflareRefreshTokenFamilyStore},
 };
 use cesauth_core::jwt::JwtSigner;
@@ -70,6 +70,7 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
     let codes    = CloudflareAuthChallengeStore::new(&ctx.env);
     let families = CloudflareRefreshTokenFamilyStore::new(&ctx.env);
     let grants   = CloudflareGrantRepository::new(&ctx.env);
+    let users    = CloudflareUserRepository::new(&ctx.env);
 
     let grant = match req_in.classify() {
         Ok(g)  => g,
@@ -86,8 +87,9 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
                 now_unix:      now,
             };
             match token_service::exchange_code(
-                &clients, &codes, &families, &grants, &signer,
+                &clients, &codes, &families, &grants, &users, &signer,
                 cfg.access_token_ttl_secs, cfg.refresh_token_ttl_secs, &input,
+                &cfg.issuer,
             ).await {
                 Ok(tr) => {
                     audit::write_owned(
@@ -125,8 +127,9 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
             };
             let rates = cesauth_cf::ports::store::CloudflareRateLimitStore::new(&ctx.env);
             match token_service::rotate_refresh(
-                &clients, &families, &rates, &signer,
+                &clients, &families, &rates, &users, &signer,
                 cfg.access_token_ttl_secs, cfg.refresh_token_ttl_secs, &input,
+                &cfg.issuer,
             ).await {
                 Ok(tr) => {
                     audit::write_owned(

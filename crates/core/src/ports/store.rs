@@ -36,6 +36,13 @@ pub enum Challenge {
         code_challenge_method: String,
         issued_at:             i64,
         expires_at:            i64,
+        /// **RFC 001** — Unix timestamp of the authentication event (when the
+        /// user completed WebAuthn, Magic Link, or TOTP verification).  Set at
+        /// AuthCode-mint time.  `#[serde(default)]` keeps pre-RFC 001 challenges
+        /// functional (they deserialize with `auth_time = 0`; the id_token builder
+        /// falls back to `issued_at` when it sees 0).
+        #[serde(default)]
+        auth_time: i64,
     },
     /// A parked authorization request waiting for the user to complete
     /// authentication. The post-auth handler reads this, mints an
@@ -183,6 +190,15 @@ pub struct FamilyState {
     /// access wouldn't normally know a valid retired jti.
     #[serde(default)]
     pub reuse_was_retired: Option<bool>,
+
+    // ---------- RFC 001: id_token auth_time ----------
+    /// Unix timestamp of the original authentication event.  Set when
+    /// the family is initialized from the `Challenge::AuthCode.auth_time`
+    /// value.  `#[serde(default)]` keeps pre-RFC 001 DOs functional
+    /// (they deserialize with `auth_time = 0`; refresh-path id_token
+    /// builder falls back to `created_at` when it sees 0).
+    #[serde(default)]
+    pub auth_time: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,6 +209,10 @@ pub struct FamilyInit {
     pub scopes:    Vec<String>,
     pub first_jti: String,
     pub now_unix:  i64,
+    /// Authentication timestamp from `Challenge::AuthCode.auth_time`.
+    /// `0` when the challenge was minted before RFC 001 shipped; the
+    /// DO stores it in `FamilyState.auth_time` for refresh-path id_token.
+    pub auth_time: i64,
 }
 
 /// Outcome of a rotation attempt.

@@ -43,6 +43,7 @@ impl StubFamilyStore {
             created_at:      100,
             last_rotated_at: 100,
             revoked_at:      None,
+        auth_time: 0,
             reused_jti:        None,
             reused_at:         None,
             reuse_was_retired: None,

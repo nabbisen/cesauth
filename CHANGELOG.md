@@ -26,6 +26,76 @@ split by minor-version range:
 
 ---
 
+## [0.54.0] - 2026-05-09
+
+Implements RFC 001 (OIDC `id_token` issuance), closing the compliance gap
+documented in ADR-008. cesauth now issues fully-spec-compliant id_tokens on
+`authorization_code` exchange and `refresh_token` rotation when the `openid`
+scope is present.
+
+### What shipped
+
+**OIDC `id_token` issuance (RFC 001)**
+
+- `crates/core/src/oidc/id_token.rs` — pure module with:
+  - `build_id_token_claims(iss, user, client_id, scopes, nonce, auth_time, iat, ttl)`
+    — scope-driven claim population per ADR-008 §Q2.
+  - `sign_id_token(claims, signer)` — thin wrapper over the existing Ed25519
+    JWS Compact serializer; `kid` header set identically to access tokens.
+- `Challenge::AuthCode.auth_time: i64` — unix timestamp of the authentication
+  event; `#[serde(default)]` for migration compatibility (pre-RFC 001 challenges
+  deserialize with 0 and fall back to `issued_at`).
+- `FamilyState.auth_time: i64` + `FamilyInit.auth_time: i64` — same pattern;
+  refresh-path id_token preserves the **original** auth_time, not the rotation
+  moment (ADR-008 §Q10).
+- `service::token::exchange_code` — new `users: &UR` and `iss: &str` generic
+  parameters; issues id_token when `openid` ∈ scopes.
+- `service::token::rotate_refresh` — same signature extension.
+- `post_auth::complete_auth_post_gate` — writes `auth_time: now` to AuthCode
+  at the moment the credential step completes.
+- Worker `/token` handler — creates `CloudflareUserRepository` and forwards
+  `iss` from config to both token service functions.
+
+**Discovery doc restored to OIDC posture**
+
+- `DiscoveryDocument` gains `id_token_signing_alg_values_supported: ["EdDSA"]`,
+  `subject_types_supported: ["public"]`, `claims_supported: [...]` (10 fields).
+- `scopes_supported` restored to `["openid", "profile", "email", "offline_access"]`.
+- 8 v0.25.0 "honest-reset" tests inverted to assert OIDC posture.
+
+### Test counts
+
+| Crate | v0.53.0 | v0.54.0 | Δ |
+|---|---|---|---|
+| `cesauth-core` | 532 | 557 | +25 |
+| `cesauth-adapter-test` | 117 | 117 | ±0 |
+| `cesauth-ui` | 270 | 270 | ±0 |
+| `cesauth-migrate-test` | 14 | 14 | ±0 |
+| **Total** | **933** | **958** | **+25** |
+
+New tests:
+- 12 `oidc::id_token::tests::*` — unit tests for claim assembly and JWT signing
+- 8 `service::token::tests::id_token_tests::*` — integration tests against
+  inline stubs covering exchange + rotate id_token issuance, auth_time
+  preservation, and no-openid-scope suppression
+- 5 `oidc::discovery::*` — new OIDC-posture assertions (8 old tests inverted)
+
+### Wire changes
+
+**Additive only.** Existing `TokenResponse.id_token` was already present as
+`Option<String>` (serialized as `null` pre-RFC 001); it now carries a real
+value when `openid` ∈ scopes.  Clients that do not request `openid` see no
+change.
+
+**Discovery doc** field additions are additive; JSON parsers that ignore
+unknown fields see no change.
+
+### Breaking changes
+
+None.
+
+---
+
 ## [0.53.0] - 2026-05-09
 
 Implements RFC 020 (migration chain hygiene), RFC 021 (user FK cascade

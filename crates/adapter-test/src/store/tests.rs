@@ -33,7 +33,8 @@ fn sample_auth_code() -> Challenge {
         code_challenge:        "x".into(),
         code_challenge_method: "S256".into(),
         issued_at:             0,
-        expires_at:             60,
+        expires_at:            60,
+        auth_time:             0,
     }
 }
 
@@ -67,6 +68,7 @@ async fn refresh_reuse_burns_family() {
         scopes:    vec!["openid".into()],
         first_jti: "j1".into(),
         now_unix:  0,
+        auth_time: 0,
     };
     store.init(&init).await.unwrap();
 
@@ -121,6 +123,7 @@ async fn refresh_reuse_with_unknown_jti_marks_was_retired_false() {
         scopes:    vec!["openid".into()],
         first_jti: "j1".into(),
         now_unix:  0,
+        auth_time: 0,
     };
     store.init(&init).await.unwrap();
 
@@ -158,6 +161,7 @@ async fn refresh_reuse_then_more_attempts_preserve_first_forensics() {
         scopes:    vec!["openid".into()],
         first_jti: "j1".into(),
         now_unix:  0,
+        auth_time: 0,
     };
     store.init(&init).await.unwrap();
 
@@ -204,6 +208,7 @@ async fn admin_revoke_does_not_populate_reuse_forensics() {
         scopes:    vec!["openid".into()],
         first_jti: "j1".into(),
         now_unix:  0,
+        auth_time: 0,
     };
     store.init(&init).await.unwrap();
     store.revoke("f", 50).await.unwrap();
