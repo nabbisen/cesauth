@@ -25,7 +25,9 @@ use worker::{D1Database, Env};
 
 mod authenticators;
 mod clients;
+mod deletions;
 mod grants;
+mod invitations;
 mod signing_keys;
 mod totp_authenticators;
 mod totp_recovery_codes;
@@ -33,7 +35,9 @@ mod users;
 
 pub use authenticators::CloudflareAuthenticatorRepository;
 pub use clients::CloudflareClientRepository;
+pub use deletions::CloudflareDeletionRequestRepository;
 pub use grants::CloudflareGrantRepository;
+pub use invitations::CloudflareInvitationRepository;
 pub use signing_keys::CloudflareSigningKeyRepository;
 pub use totp_authenticators::CloudflareTotpAuthenticatorRepository;
 pub use totp_recovery_codes::CloudflareTotpRecoveryCodeRepository;

@@ -89,6 +89,7 @@ impl DurableObject for RefreshTokenFamily {
                     reused_jti:        None,
                     reused_at:         None,
                     reuse_was_retired: None,
+                    auth_time:         init.auth_time,
                 };
                 storage.put(KEY, &fam).await?;
                 Response::from_json(&Outcome::Ok)

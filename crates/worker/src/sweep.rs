@@ -222,3 +222,67 @@ async fn totp_unconfirmed_sweep(
 
     deleted
 }
+
+// ---------------------------------------------------------------------------
+// RFC 047 — Deletion request sweep
+// ---------------------------------------------------------------------------
+
+/// Execute all deletion requests that are past their `scheduled_at` time.
+///
+/// Called from the daily cron pass.  Each execution:
+///   1. Lists pending requests where `scheduled_at <= now`.
+///   2. For each: calls `UserRepository::delete_by_id` + marks request executed.
+///   3. Emits a `DeletionExecuted` audit event per row.
+///
+/// Returns the number of deletions executed this pass.
+pub async fn sweep_pending_deletions(env: &Env) -> worker::Result<usize> {
+    use cesauth_cf::ports::repo::{CloudflareDeletionRequestRepository, CloudflareUserRepository};
+    use cesauth_core::deletion;
+
+    let cfg = match crate::config::Config::from_env(env) {
+        Ok(c)  => c,
+        Err(e) => {
+            worker::console_error!("deletion sweep config load failed: {e:?}");
+            return Err(e);
+        }
+    };
+
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    let del_repo  = CloudflareDeletionRequestRepository::new(env);
+    let user_repo = CloudflareUserRepository::new(env);
+
+    let due = match del_repo.list_due(now).await {
+        Ok(v)  => v,
+        Err(e) => {
+            log::emit(&cfg.log, Level::Error, Category::Storage,
+                &format!("deletion sweep list_due failed: {e:?}"), None);
+            return Ok(0);
+        }
+    };
+
+    let mut executed = 0_usize;
+    for req in &due {
+        match deletion::execute_deletion(&del_repo, &user_repo, &req.id, "sweep", now).await {
+            Ok(()) => {
+                executed += 1;
+                audit::write_owned(
+                    env, audit::EventKind::DeletionExecuted,
+                    None, None,
+                    Some(format!("request:{} user:{} sweep", req.id, req.user_id)),
+                ).await.ok();
+            }
+            Err(e) => {
+                log::emit(&cfg.log, Level::Error, Category::Storage,
+                    &format!("deletion sweep execute id={} failed: {e:?}", req.id),
+                    None);
+            }
+        }
+    }
+
+    if executed > 0 {
+        log::emit(&cfg.log, Level::Info, Category::Storage,
+            &format!("deletion sweep executed {executed} deletion(s)"), None);
+    }
+
+    Ok(executed)
+}

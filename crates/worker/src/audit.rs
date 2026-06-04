@@ -184,6 +184,29 @@ pub enum EventKind {
     /// operation.  Payload includes `operation_id`, `before`, `after`,
     /// and `preview_ts` (linking back to the `OperationPreviewed` event).
     OperationApplied,
+
+    // ── RFC 043 — Invitation tokens ───────────────────────────────────────
+    /// Tenant admin issued an invitation to an email address.
+    /// Payload: `tenant_slug`, `email` (recipient), `role`, `expires_at`.
+    InvitationIssued,
+    /// Invitee accepted an invitation and completed registration.
+    /// Payload: `invitation_id`, `user_id` (newly created/linked), `tenant_slug`.
+    InvitationAccepted,
+    /// Admin manually revoked a pending invitation before it was accepted.
+    /// Payload: `invitation_id`, `email`, `tenant_slug`.
+    InvitationRevoked,
+
+    // ── RFC 044 — Deletion requests / GDPR Article 17 ────────────────────
+    /// A user (self) or admin submitted a deletion request.
+    /// Payload: `request_id`, `user_id`, `scheduled_at`, `requested_by`.
+    DeletionRequested,
+    /// Physical deletion was executed (by cron sweep or admin).
+    /// Payload: `request_id`, `user_id`, `executed_by`.
+    /// Note: the user row and cascaded data no longer exist after this event.
+    DeletionExecuted,
+    /// A pending deletion request was cancelled before execution.
+    /// Payload: `request_id`, `user_id`, `cancelled_by`.
+    DeletionCancelled,
     /// **v0.38.0** — `POST /introspect` was called (RFC 7662
     /// Token Introspection). Payload includes the requesting
     /// `introspecter_client_id`, the `token_type` reported
@@ -319,6 +342,12 @@ impl EventKind {
             Self::OidcClientAudienceChanged     => "oidc_client_audience_changed",
             Self::OperationPreviewed            => "operation_previewed",
             Self::OperationApplied              => "operation_applied",
+            Self::InvitationIssued              => "invitation_issued",
+            Self::InvitationAccepted            => "invitation_accepted",
+            Self::InvitationRevoked             => "invitation_revoked",
+            Self::DeletionRequested             => "deletion_requested",
+            Self::DeletionExecuted              => "deletion_executed",
+            Self::DeletionCancelled             => "deletion_cancelled",
             Self::TokenIntrospected            => "token_introspected",
             Self::RevocationRequested          => "revocation_requested",
             Self::WebauthnRegistered           => "webauthn_registered",

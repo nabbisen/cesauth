@@ -26,6 +26,78 @@ split by minor-version range:
 
 ---
 
+## [0.57.0] - 2026-05-12
+
+Implements RFC 045-048: audit event completeness, invitation/deletion worker
+layers, D1 adapters, cron sweep, and subscription service extension.
+
+### Audit (RFC 045)
+
+Six new `EventKind` variants with `as_str` mappings:
+
+| Variant | Payload |
+|---|---|
+| `InvitationIssued` | `tenant_slug`, `email`, `role`, `expires_at` |
+| `InvitationAccepted` | `invitation_id`, `user_id`, `tenant_slug` |
+| `InvitationRevoked` | `invitation_id`, `email`, `tenant_slug` |
+| `DeletionRequested` | `request_id`, `user_id`, `scheduled_at`, `requested_by` |
+| `DeletionExecuted` | `request_id`, `user_id`, `executed_by` |
+| `DeletionCancelled` | `request_id`, `user_id`, `cancelled_by` |
+
+### Invitation worker layer (RFC 046)
+
+- `crates/worker/src/routes/invitations.rs` — three handlers:
+  - `POST /admin/t/:slug/invitations` — issue invite, emit `InvitationIssued`
+  - `GET  /accept-invite` — render accept page for recipient
+  - `POST /accept-invite` — verify + mark accepted, emit `InvitationAccepted`
+- `CloudflareInvitationRepository` D1 adapter in
+  `adapter-cloudflare/src/ports/repo/invitations.rs`
+- `InMemoryInvitationRepository` in `adapter-test/src/repo/invitations.rs`
+
+### Deletion worker layer (RFC 047)
+
+- `crates/worker/src/routes/deletions.rs` — four handlers:
+  - `POST /me/security/delete-account`
+  - `GET  /admin/t/:slug/deletion-requests`
+  - `POST /admin/t/:slug/deletion-requests/:id/cancel`
+  - `POST /admin/t/:slug/deletion-requests/:id/execute`
+- `sweep_pending_deletions(env)` added to `sweep.rs` — cron-driven physical delete
+  of requests past `scheduled_at`
+- `CloudflareDeletionRequestRepository` D1 adapter in
+  `adapter-cloudflare/src/ports/repo/deletions.rs`
+- `InMemoryDeletionRequestRepository` in `adapter-test/src/repo/deletions.rs`
+
+### Subscription service extension (RFC 048)
+
+Added to the existing `cesauth_core::billing` module:
+
+- `change_plan(subs_repo, plan_repo, history_repo, tenant_id, to_plan_id, actor, now)`
+  — updates subscription row + appends `SubscriptionHistoryEntry`
+- `is_feature_enabled(subs_repo, plan_repo, tenant_id, flag)` — async feature gate
+- `check_quota(subs_repo, plan_repo, tenant_id, quota_name, current)` — quota check
+- 9 new tests (change_plan success/failure, is_feature_enabled, check_quota)
+
+### Routes
+
+160 routes documented in `route-contracts.md` (+7 new routes).
+
+### Bug fix
+
+`adapter-cloudflare/src/refresh_token_family.rs`: `FamilyState` construction
+was missing `auth_time` field added in RFC 001.
+
+### Test counts
+
+| Crate | v0.56.0 | v0.57.0 | Δ |
+|---|---|---|---|
+| `cesauth-core` | 588 | **597** | +9 |
+| `cesauth-adapter-test` | 117 | **117** | ±0 |
+| `cesauth-ui` | 270 | **270** | ±0 |
+| `cesauth-migrate-test` | 21 | **21** | ±0 |
+| **Total** | **996** | **1,005** | **+9** |
+
+---
+
 ## [0.56.0] - 2026-05-12
 
 Implements RFC 040-044: OIDC compliance completion, technical debt clearance,

@@ -83,6 +83,13 @@ code-review responsibility.
 | GET | `/admin/console/config` | System admin | none | config page | n/a | N/A (GET) |
 | POST | `/admin/console/config/:bucket/preview` | System admin | none | config preview | n/a | required |
 | POST | `/admin/console/config/:bucket/apply` | System admin | `config_applied` | redirect | n/a | required |
+| POST | `/admin/t/:slug/invitations` | Tenant admin | `invitation_issued` | redirect | CSRF | required |
+| GET  | `/accept-invite` | public (invite link) | none | HTML | n/a | N/A |
+| POST | `/accept-invite` | public (invite link) | `invitation_accepted` | redirect | n/a | N/A |
+| POST | `/me/security/delete-account` | authenticated user | `deletion_requested` | redirect | CSRF | session |
+| GET  | `/admin/t/:slug/deletion-requests` | Tenant admin | none | HTML | n/a | required |
+| POST | `/admin/t/:slug/deletion-requests/:id/cancel` | Tenant admin | `deletion_cancelled` | redirect | CSRF | required |
+| POST | `/admin/t/:slug/deletion-requests/:id/execute` | Tenant admin | `deletion_executed` | redirect | CSRF | required |
 | POST | `/admin/console/config/log_level/preview` | System admin | `operation_previewed` | preview page | n/a | required |
 | POST | `/admin/console/config/log_level/apply` | System admin | `operation_applied` | redirect | n/a | required |
 | GET | `/admin/console/alerts` | System admin | none | alerts page | n/a | N/A (GET) |

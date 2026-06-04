@@ -12,7 +12,9 @@
 
 mod authenticators;
 mod clients;
+mod deletions;
 mod grants;
+mod invitations;
 mod signing_keys;
 mod totp_authenticators;
 mod totp_recovery_codes;
@@ -20,7 +22,9 @@ mod users;
 
 pub use authenticators::InMemoryAuthenticatorRepository;
 pub use clients::InMemoryClientRepository;
+pub use deletions::InMemoryDeletionRequestRepository;
 pub use grants::InMemoryGrantRepository;
+pub use invitations::InMemoryInvitationRepository;
 pub use signing_keys::InMemorySigningKeyRepository;
 pub use totp_authenticators::InMemoryTotpAuthenticatorRepository;
 pub use totp_recovery_codes::InMemoryTotpRecoveryCodeRepository;

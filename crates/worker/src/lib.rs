@@ -173,6 +173,10 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .post_async("/me/security/sessions/:session_id/revoke", |req, ctx| async move {
             routes::me::sessions::post_revoke(req, ctx).await
         })
+        // RFC 044: Self-service deletion request
+        .post_async("/me/security/delete-account", |req, ctx| async move {
+            routes::deletions::request_self(req, ctx).await
+        })
         .get_async ("/me/security/totp/enroll",         |req, ctx| async move {
             routes::me::totp::enroll::get_handler(req, ctx.env).await
         })
@@ -331,6 +335,14 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .post_async("/admin/t/:slug/groups/:gid/memberships",                                |req, ctx| async move { routes::admin::tenant_admin::forms::membership_add::submit_group(req, ctx).await })
         .get_async ("/admin/t/:slug/groups/:gid/memberships/:uid/delete",                    |req, ctx| async move { routes::admin::tenant_admin::forms::membership_remove::confirm_group(req, ctx).await })
         .post_async("/admin/t/:slug/groups/:gid/memberships/:uid/delete",                    |req, ctx| async move { routes::admin::tenant_admin::forms::membership_remove::submit_group(req, ctx).await })
+        // RFC 043: Invitation tokens
+        .post_async("/admin/t/:slug/invitations",                  |req, ctx| async move { routes::invitations::issue(req, ctx).await })
+        .get_async ("/accept-invite",                              |req, ctx| async move { routes::invitations::accept_page(req, ctx).await })
+        .post_async("/accept-invite",                              |req, ctx| async move { routes::invitations::accept_submit(req, ctx).await })
+        // RFC 044: Deletion requests
+        .get_async ("/admin/t/:slug/deletion-requests",            |req, ctx| async move { routes::deletions::admin_list(req, ctx).await })
+        .post_async("/admin/t/:slug/deletion-requests/:id/cancel", |req, ctx| async move { routes::deletions::admin_cancel(req, ctx).await })
+        .post_async("/admin/t/:slug/deletion-requests/:id/execute",|req, ctx| async move { routes::deletions::admin_execute(req, ctx).await })
         // --- system-admin token-mint UI (v0.14.0) -------------------
         // Lives on the system-admin surface so tenant admins cannot
         // self-mint per ADR-002 / ADR-003. Issues user-bound tokens
