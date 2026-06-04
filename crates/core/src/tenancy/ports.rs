@@ -170,6 +170,14 @@ pub struct NewGroupInput<'a> {
     pub parent:       GroupParent,
     pub slug:         &'a str,
     pub display_name: &'a str,
+    /// The tenant_id of the organization referenced in `parent`, when
+    /// `parent` is `GroupParent::Organization`.  The worker handler
+    /// resolves this via a fresh repository read before calling the
+    /// service; the service-layer validator uses it to enforce the
+    /// cross-tenant boundary invariant (RFC 023).  `None` means
+    /// either the parent is `GroupParent::Tenant`, or the caller
+    /// omitted the check (legacy behaviour).
+    pub organization_tenant_id: Option<&'a str>,
 }
 
 /// Shape for `create_tenant`.

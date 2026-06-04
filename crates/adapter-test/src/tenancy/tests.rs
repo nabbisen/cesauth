@@ -98,6 +98,7 @@ async fn end_to_end_tenant_org_group_membership() {
         parent: GroupParent::Organization { organization_id: eng.id.clone() },
         slug: "oncall",
         display_name: "Engineering On-call",
+        organization_tenant_id: Some(&tenant.id),
     }, 1300).await.unwrap();
     assert_eq!(oncall.parent.organization_id(), Some(eng.id.as_str()));
 

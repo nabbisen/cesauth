@@ -14,6 +14,40 @@ follow the linked chapter for the actual procedure.
 production](./production.md) at least once.** It does not repeat
 the rationale — only the checks.
 
+## Cloudflare plan tier (RFC 025)
+
+cesauth is designed for the **Paid plan**.
+
+The authentication hot path (`/authorize`, `/token`, `/introspect`,
+`/revoke`, login flows) fits comfortably within Free-plan limits.
+The daily cron maintenance passes — sweep, audit chain verification,
+session-index audit, audit retention, session-index repair — rely on
+per-invocation budgets that only Paid provides:
+
+| Limit | Free | Paid | cesauth cron uses |
+|---|---|---|---|
+| Subrequests per invocation | 50 | 1 000 | up to ~1 100 (session-index audit, full batch) |
+| D1 queries per invocation  | 50 | 1 000 | up to ~1 050 (audit retention, full batch) |
+| Worker gzip size           | 3 MiB | 10 MiB | ≤ 2.5 MiB (CI-budgeted; see `BUNDLE_SIZE_BUDGET.md`) |
+| CPU per invocation (HTTP)  | 10 ms | 30 s | nominal |
+| CPU per invocation (cron)  | 30 s | 30 s | nominal |
+
+**Free-plan operators** can run cesauth with reduced cron batch sizes.
+Set the following env vars before deploying to fit within 50 subrequests:
+
+```toml
+# wrangler.toml — Free-plan tuning
+[vars]
+SESSION_INDEX_AUDIT_BATCH_LIMIT  = "30"
+SESSION_INDEX_REPAIR_BATCH_LIMIT = "30"
+```
+
+Audit retention and sweep are D1-only; they fit within Free limits at
+their default batch sizes (100 rows).
+
+> A Free-plan-optimized default configuration is tracked as a future
+> enhancement.  The current defaults are sized for Paid.
+
 ## A — Cloudflare account & billing
 
 - [ ] Cloudflare account created with the Workers Paid plan

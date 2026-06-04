@@ -7,7 +7,9 @@
 //! other, but the navbar is its own concern.
 
 use crate::escape;
+use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::types::Role;
+use cesauth_core::i18n::Locale;
 
 /// Tabs in the tenancy console nav.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,6 +59,19 @@ pub fn tenancy_console_frame(
     active_tab: TenancyConsoleTab,
     body:       &str,
 ) -> String {
+    tenancy_console_frame_for(title, role, role_name, active_tab, Locale::default(), body)
+}
+
+/// Locale-aware variant of [`tenancy_console_frame`].
+pub fn tenancy_console_frame_for(
+    title:      &str,
+    role:       Role,
+    role_name:  Option<&str>,
+    active_tab: TenancyConsoleTab,
+    locale:     Locale,
+    body:       &str,
+) -> String {
+    let scope = ScopeBadge::Tenancy;
     let nonce = crate::render_nonce();
     let title_esc  = escape(title);
     let role_label = role.label();
@@ -67,6 +82,9 @@ pub fn tenancy_console_frame(
         Role::Super      => "super",
     };
     let name_esc = role_name.map(escape).unwrap_or_default();
+    let scope_class = scope.css_class();
+    let scope_label = scope.label_for(locale);
+    let scope_aria  = scope.aria_label_for(locale);
 
     let nav: String = NAV_TABS.iter().map(|t| {
         let current = if *t == active_tab { r#" aria-current="page""# } else { "" };
@@ -128,6 +146,7 @@ pub fn tenancy_console_frame(
 <body>
   <header>
     <h1>cesauth tenancy console</h1>
+    <span class="{scope_class}" aria-label="{scope_aria}">{scope_label}</span>
     <span class="badge {role_badge}">{role_label}</span>
     {name_html}
   </header>
@@ -139,6 +158,9 @@ pub fn tenancy_console_frame(
   <footer>cesauth tenancy console — v0.50.2 (full mutation surface for Operations+)</footer>
 </body>
 </html>"##,
+        scope_class = scope_class,
+        scope_label = scope_label,
+        scope_aria  = scope_aria,
         name_html = if name_esc.is_empty() {
             String::new()
         } else {

@@ -11,6 +11,7 @@
 //! already-resolved `OidcClient`, the already-extracted PKCE verifier,
 //! and so on. This lets us stay storage-agnostic and unit-testable.
 
+pub mod audience;
 pub mod authorization;
 pub mod discovery;
 pub mod introspect;

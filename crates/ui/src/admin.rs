@@ -29,6 +29,7 @@ pub mod config_edit;
 pub mod cost;
 pub mod frame;
 pub mod overview;
+pub mod preview;
 pub mod safety;
 pub mod tokens;
 

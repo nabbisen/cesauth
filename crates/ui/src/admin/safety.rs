@@ -1,6 +1,7 @@
 //! Data Safety Dashboard page (§4.3).
 
 use crate::escape;
+use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::policy::role_allows;
 use cesauth_core::admin::types::{AdminAction, AdminPrincipal, BucketSafetyState, DataSafetyReport};
 
@@ -20,6 +21,7 @@ pub fn safety_page(
         principal.role,
         principal.name.as_deref(),
         Tab::Safety,
+        &ScopeBadge::System,
         &body,
     )
 }

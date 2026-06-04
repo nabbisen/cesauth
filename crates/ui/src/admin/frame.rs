@@ -12,7 +12,9 @@
 //! and Alert Center pages.
 
 use crate::escape;
+use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::types::Role;
+use cesauth_core::i18n::Locale;
 
 /// Nav-tab identifier. Used by the frame to render the active link
 /// with `aria-current="page"`.
@@ -72,11 +74,28 @@ const TABS_ORDER: [Tab; 7] = [
 /// `title` is used verbatim inside `<title>` and `<h1>`; it is
 /// HTML-escaped here so callers may pass untrusted strings (bucket
 /// names, etc.) without double-escaping.
+///
+/// `scope` is the `ScopeBadge` to display next to the brand (RFC 016).
+/// For `/admin/console/*` use `ScopeBadge::System`.
 pub fn admin_frame(
     title:       &str,
     role:        Role,
     role_name:   Option<&str>,
     active_tab:  Tab,
+    scope:       &ScopeBadge<'_>,
+    body:        &str,
+) -> String {
+    admin_frame_for(title, role, role_name, active_tab, scope, Locale::default(), body)
+}
+
+/// Locale-aware variant of [`admin_frame`].
+pub fn admin_frame_for(
+    title:       &str,
+    role:        Role,
+    role_name:   Option<&str>,
+    active_tab:  Tab,
+    scope:       &ScopeBadge<'_>,
+    locale:      Locale,
     body:        &str,
 ) -> String {
     let nonce = crate::render_nonce();
@@ -89,6 +108,9 @@ pub fn admin_frame(
         Role::Super      => "super",
     };
     let name_esc = role_name.map(escape).unwrap_or_default();
+    let scope_class = scope.css_class();
+    let scope_label = scope.label_for(locale);
+    let scope_aria  = scope.aria_label_for(locale);
 
     let nav: String = TABS_ORDER.iter()
         .filter(|t| t.visible_to(role))
@@ -118,6 +140,17 @@ pub fn admin_frame(
     --ok:       #0a8f4e;
     --warn:     #c67a00;
     --critical: #a6261d;
+    /* RFC 016 scope tokens — intentionally distinct from semantic ok/warn/danger/info */
+    --scope-system:  #6b3aa0;
+    --scope-tenancy: #1864ab;
+    --scope-tenant:  #1f9d55;
+  }}
+  @media (prefers-color-scheme: dark) {{
+    :root {{
+      --scope-system:  #c084fc;
+      --scope-tenancy: #60a5fa;
+      --scope-tenant:  #4ade80;
+    }}
   }}
   * {{ box-sizing: border-box; }}
   body {{ margin: 0; font: 14px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); }}
@@ -126,6 +159,13 @@ pub fn admin_frame(
     display: flex; align-items: center; gap: 20px;
   }}
   header.site .brand {{ font-weight: 600; letter-spacing: 0.05em; }}
+  header.site .scope-badge {{
+    padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 500;
+    border: 1px solid currentColor;
+  }}
+  header.site .scope-badge.scope-system  {{ color: var(--scope-system);  background: #f5f0fb; }}
+  header.site .scope-badge.scope-tenancy {{ color: var(--scope-tenancy); background: #e7f5ff; }}
+  header.site .scope-badge.scope-tenant  {{ color: var(--scope-tenant);  background: #e8f5e9; }}
   header.site .role-badge {{
     margin-left: auto; padding: 3px 8px; border-radius: 3px;
     background: #eee; color: var(--muted); font-size: 12px;
@@ -182,6 +222,7 @@ pub fn admin_frame(
 <body>
 <header class="site">
   <span class="brand">cesauth admin</span>
+  <span class="{scope_class}" aria-label="{scope_aria}">{scope_label}</span>
   <span class="role-badge {role_badge}" aria-label="Current admin role: {role_label}">{role_label}{name_suffix}</span>
 </header>
 <nav class="tabs" aria-label="Console sections"><ul>{nav}</ul></nav>
@@ -193,11 +234,14 @@ pub fn admin_frame(
 </body>
 </html>
 "##,
-        title_esc = title_esc,
-        role_label = role_label,
-        role_badge = role_badge,
+        title_esc   = title_esc,
+        role_label  = role_label,
+        role_badge  = role_badge,
+        scope_class = scope_class,
+        scope_label = scope_label,
+        scope_aria  = scope_aria,
         name_suffix = if name_esc.is_empty() { String::new() } else { format!(" · {name_esc}") },
-        nav = nav,
-        body = body,
+        nav         = nav,
+        body        = body,
     )
 }

@@ -1,6 +1,7 @@
 //! Cost Dashboard page (§4.2).
 
 use crate::escape;
+use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::policy::{format_change, format_metric};
 use cesauth_core::admin::types::{AdminPrincipal, CostTrend, ServiceId};
 
@@ -27,6 +28,7 @@ pub fn cost_page(
         principal.role,
         principal.name.as_deref(),
         Tab::Cost,
+        &ScopeBadge::System,
         &body,
     )
 }

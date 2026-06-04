@@ -30,7 +30,7 @@
 use sha2::{Digest, Sha256};
 
 use crate::error::{CoreError, CoreResult};
-use crate::ports::repo::ClientRepository;
+use crate::ports::repo::{ClientAuthView, ClientRepository};
 
 /// Verify a presented `client_secret` against the stored hash for
 /// `client_id`. Returns `Ok(())` on success, `Err(CoreError::InvalidClient)`
@@ -153,6 +153,32 @@ where
                 Ok(ClientAuthOutcome::AuthenticationFailed)
             }
         }
+    }
+}
+
+/// **RFC 026** — Verify a presented `client_secret` against a pre-read
+/// [`ClientAuthView`] without performing any additional I/O.
+///
+/// Designed for the `/introspect` hot path, where the view is already
+/// fetched for the audience gate. The same constant-time comparison and
+/// conflated-failure contract as [`verify_client_credentials`] apply.
+///
+/// Returns:
+/// - `Authenticated`     — credentials match the stored hash.
+/// - `AuthenticationFailed` — confidential client, wrong secret.
+/// - `PublicOrUnknown`   — `client_secret_hash` is `None` (public client).
+pub fn check_client_credentials_from_view(
+    view:             &ClientAuthView,
+    presented_secret: &str,
+) -> ClientAuthOutcome {
+    let Some(ref stored_hex) = view.client_secret_hash else {
+        return ClientAuthOutcome::PublicOrUnknown;
+    };
+    let presented_hex = sha256_hex(presented_secret.as_bytes());
+    if constant_time_eq(presented_hex.as_bytes(), stored_hex.as_bytes()) {
+        ClientAuthOutcome::Authenticated
+    } else {
+        ClientAuthOutcome::AuthenticationFailed
     }
 }
 

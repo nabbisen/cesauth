@@ -1,6 +1,7 @@
 //! Audit Log search page (§4.4).
 
 use crate::escape;
+use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::types::{AdminAuditEntry, AdminPrincipal, AuditQuery};
 
 use super::frame::{admin_frame, Tab};
@@ -17,6 +18,7 @@ pub fn audit_page(principal: &AdminPrincipal, q: &AuditQuery, entries: &[AdminAu
         principal.role,
         principal.name.as_deref(),
         Tab::Audit,
+        &ScopeBadge::System,
         &body,
     )
 }

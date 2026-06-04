@@ -18,6 +18,17 @@
 PRAGMA foreign_keys = ON;
 
 -- ------------------------------------------------------------------------
+-- schema_meta
+-- Tracks the applied schema version.  Every migration writes its own
+-- version number here; the Rust constant SCHEMA_VERSION is authoritative
+-- for the expected value.
+-- ------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS schema_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+-- ------------------------------------------------------------------------
 -- users
 -- A user can exist with no email at all (username-less passkey first).
 -- `email` is therefore nullable; when present it is unique and lowercased.
@@ -141,3 +152,6 @@ CREATE TABLE IF NOT EXISTS jwt_signing_keys (
 
 CREATE INDEX IF NOT EXISTS idx_jwt_signing_keys_active
     ON jwt_signing_keys(retired_at) WHERE retired_at IS NULL;
+
+-- v0.4.x (initial): SCHEMA_VERSION 1.
+INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '1');

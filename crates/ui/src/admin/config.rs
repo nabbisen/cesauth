@@ -11,6 +11,7 @@
 //! path.
 
 use crate::escape;
+use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::policy::role_allows;
 use cesauth_core::admin::types::{AdminAction, AdminPrincipal, DataSafetyReport, Threshold};
 
@@ -33,6 +34,7 @@ pub fn config_page(
         principal.role,
         principal.name.as_deref(),
         Tab::Config,
+        &ScopeBadge::System,
         &body,
     )
 }

@@ -247,6 +247,17 @@ pub enum MessageKey {
 
     // Error page
     ErrorPageBackLink,
+
+    // --- RFC 016: admin scope badge ---
+    /// `/admin/console/*` — deployment-wide system scope.
+    AdminScopeSystem,
+    /// `/admin/tenancy/*` — cross-tenant operator console.
+    AdminScopeTenancy,
+    /// `/admin/t/<slug>/*` — single-tenant scope.
+    /// The slug is interpolated by the caller using the
+    /// `{slug}` placeholder; the returned string contains
+    /// `{slug}` verbatim for the caller to substitute.
+    AdminScopeTenant,
 }
 
 /// Resolve `(key, locale) -> &'static str`. Zero allocation.
@@ -719,14 +730,23 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
 
         // ----- Error page -----
         ErrorPageBackLink => match locale {
-            // Generic "back to sign in" link on the
-            // error page. Title and detail are caller-
-            // supplied (the worker maps specific errors
-            // to localized strings before passing in;
-            // we don't surface internal error detail
-            // verbatim).
             Locale::Ja => "サインインに戻る",
             Locale::En => "Back to sign in",
+        },
+
+        // ----- RFC 016 admin scope badge -----
+        AdminScopeSystem => match locale {
+            Locale::Ja => "システム全体",
+            Locale::En => "System scope",
+        },
+        AdminScopeTenancy => match locale {
+            Locale::Ja => "テナント運用",
+            Locale::En => "Tenancy scope",
+        },
+        AdminScopeTenant => match locale {
+            // The caller substitutes `{slug}` at render time.
+            Locale::Ja => "テナント: {slug}",
+            Locale::En => "Tenant: {slug}",
         },
     }
 }

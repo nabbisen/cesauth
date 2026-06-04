@@ -298,3 +298,6 @@ CREATE TABLE IF NOT EXISTS subscription_history (
 );
 CREATE INDEX IF NOT EXISTS idx_subhist_sub  ON subscription_history(subscription_id, occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_subhist_tenant ON subscription_history(tenant_id, occurred_at DESC);
+
+-- SCHEMA_VERSION 3.
+INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '3');

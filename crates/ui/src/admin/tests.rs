@@ -152,3 +152,36 @@ fn token_list_empty_explains_bootstrap_fallback() {
     assert!(out.contains("ADMIN_API_KEY"),
         "empty-list state must explain the bootstrap bearer");
 }
+
+// =====================================================================
+// RFC 016 — scope badge tests for admin (system) frame
+// =====================================================================
+
+#[test]
+fn admin_frame_renders_scope_badge_with_correct_class() {
+    let out = overview_page(&empty_summary(Role::Super));
+    assert!(
+        out.contains("scope-badge scope-system"),
+        "admin frame must carry scope-badge scope-system class"
+    );
+}
+
+#[test]
+fn admin_frame_scope_badge_label_ja_default() {
+    // Default locale is JA; badge renders "システム全体".
+    let out = overview_page(&empty_summary(Role::Operations));
+    assert!(
+        out.contains("システム全体"),
+        "admin frame scope badge must show 'システム全体' (JA default): missing in: {}",
+        &out[..out.find("</head>").unwrap_or(200)]
+    );
+}
+
+#[test]
+fn admin_frame_scope_badge_aria_label_carries_full_prose() {
+    let out = overview_page(&empty_summary(Role::Super));
+    assert!(
+        out.contains("Operating scope:"),
+        "admin frame scope badge aria-label must contain 'Operating scope:'"
+    );
+}

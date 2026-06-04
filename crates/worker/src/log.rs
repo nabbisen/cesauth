@@ -123,6 +123,10 @@ pub struct LogConfig {
     pub min_level:      Level,
     /// If false (default), records in sensitive categories are dropped.
     pub emit_sensitive: bool,
+    /// Per-request correlation identifier sourced from `cf-ray` or a
+    /// local UUIDv4 fallback (RFC 015).  `None` for cron/background
+    /// paths where there is no inbound request.
+    pub request_id:     Option<String>,
 }
 
 impl Default for LogConfig {
@@ -130,6 +134,7 @@ impl Default for LogConfig {
         Self {
             min_level:      Level::Info,
             emit_sensitive: false,
+            request_id:     None,
         }
     }
 }
@@ -149,7 +154,13 @@ impl LogConfig {
         let emit_sensitive = env.var("LOG_EMIT_SENSITIVE").ok()
             .map(|v| v.to_string() == "1")
             .unwrap_or(false);
-        Self { min_level, emit_sensitive }
+        Self { min_level, emit_sensitive, request_id: None }
+    }
+
+    /// Produce a per-request config with `request_id` set (RFC 015).
+    /// All other fields are copied from `self`.
+    pub fn with_request_id(self, request_id: String) -> Self {
+        Self { request_id: Some(request_id), ..self }
     }
 }
 
@@ -164,6 +175,9 @@ struct Record<'a> {
     msg:      &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     subject:  Option<&'a str>,
+    /// Per-request correlation key (RFC 015). Absent on cron/background paths.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    request_id: Option<&'a str>,
 }
 
 /// Emit a log record. No-op when level or sensitivity gates would
@@ -186,11 +200,12 @@ pub fn emit(
     }
 
     let rec = Record {
-        ts:       OffsetDateTime::now_utc().unix_timestamp(),
+        ts:         OffsetDateTime::now_utc().unix_timestamp(),
         level,
-        category: category.as_str(),
+        category:   category.as_str(),
         msg,
         subject,
+        request_id: cfg.request_id.as_deref(),
     };
 
     let line = match serde_json::to_string(&rec) {

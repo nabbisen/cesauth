@@ -1,6 +1,7 @@
 //! Unit tests for `service::client_auth`.
 
 use super::*;
+use crate::ports::repo::ClientAuthView;
 use crate::ports::PortResult;
 use crate::types::OidcClient;
 
@@ -19,6 +20,16 @@ impl ClientRepository for StubClients {
 
     async fn client_secret_hash(&self, client_id: &str) -> PortResult<Option<String>> {
         Ok(self.map.get(client_id).cloned().unwrap_or(None))
+    }
+
+    async fn find_auth_view(&self, client_id: &str) -> PortResult<Option<ClientAuthView>> {
+        use crate::types::TokenAuthMethod;
+        Ok(self.map.get(client_id).map(|hash| ClientAuthView {
+            client_id:          client_id.to_owned(),
+            client_secret_hash: hash.clone(),
+            audience:           None,
+            token_auth_method:  TokenAuthMethod::ClientSecretBasic,
+        }))
     }
 
     async fn create(&self, _: &OidcClient, _: Option<&str>) -> PortResult<()> {
@@ -195,4 +206,67 @@ async fn optional_confidential_empty_secret_returns_auth_failed() {
         &clients, "conf_demo", Some(""),
     ).await.unwrap();
     assert_eq!(outcome, ClientAuthOutcome::AuthenticationFailed);
+}
+
+// -----------------------------------------------------------------------
+// RFC 026 — check_client_credentials_from_view tests
+// -----------------------------------------------------------------------
+
+fn make_view(secret: Option<&str>, audience: Option<&str>) -> ClientAuthView {
+    use crate::types::TokenAuthMethod;
+    // Build a SHA-256 hex hash of the secret when present.
+    let hash = secret.map(|s| {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(s.as_bytes());
+        format!("{:x}", h.finalize())
+    });
+    ClientAuthView {
+        client_id:          "test-client".to_owned(),
+        client_secret_hash: hash,
+        audience:           audience.map(str::to_owned),
+        token_auth_method:  TokenAuthMethod::ClientSecretBasic,
+    }
+}
+
+#[test]
+fn from_view_correct_secret_returns_authenticated() {
+    let view = make_view(Some("super_secret"), None);
+    assert_eq!(
+        check_client_credentials_from_view(&view, "super_secret"),
+        ClientAuthOutcome::Authenticated
+    );
+}
+
+#[test]
+fn from_view_wrong_secret_returns_auth_failed() {
+    let view = make_view(Some("super_secret"), None);
+    assert_eq!(
+        check_client_credentials_from_view(&view, "wrong"),
+        ClientAuthOutcome::AuthenticationFailed
+    );
+}
+
+#[test]
+fn from_view_no_hash_returns_public_or_unknown() {
+    let view = make_view(None, None);
+    assert_eq!(
+        check_client_credentials_from_view(&view, "anything"),
+        ClientAuthOutcome::PublicOrUnknown
+    );
+}
+
+#[test]
+fn from_view_audience_field_preserved() {
+    let view = make_view(Some("s"), Some("https://api.example.com"));
+    assert_eq!(view.audience.as_deref(), Some("https://api.example.com"));
+}
+
+#[test]
+fn from_view_empty_secret_returns_auth_failed() {
+    let view = make_view(Some("real_secret"), None);
+    assert_eq!(
+        check_client_credentials_from_view(&view, ""),
+        ClientAuthOutcome::AuthenticationFailed
+    );
 }

@@ -1,6 +1,7 @@
 //! Overview page (§4.1).
 
 use crate::escape;
+use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::types::OverviewSummary;
 
 use super::frame::{admin_frame, Tab};
@@ -18,6 +19,7 @@ pub fn overview_page(s: &OverviewSummary) -> String {
         s.principal.role,
         s.principal.name.as_deref(),
         Tab::Overview,
+        &ScopeBadge::System,
         &body,
     )
 }

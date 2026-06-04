@@ -1,6 +1,6 @@
 //! `ClientRepository` D1 adapter.
 
-use cesauth_core::ports::repo::ClientRepository;
+use cesauth_core::ports::repo::{ClientAuthView, ClientRepository};
 use cesauth_core::ports::{PortError, PortResult};
 use cesauth_core::types::{ClientType, OidcClient, TokenAuthMethod};
 use serde::Deserialize;
@@ -96,6 +96,47 @@ impl ClientRepository for CloudflareClientRepository<'_> {
             Ok(Some(r)) => Ok(r.client_secret_hash),
             Ok(None)    => Err(PortError::NotFound),
             Err(_)      => Err(PortError::Unavailable),
+        }
+    }
+
+    /// RFC 026 — single D1 read returning the auth + audience snapshot.
+    /// Replaces the previous two-query pattern (`client_secret_hash` then
+    /// `find`) in the `/introspect` handler.
+    async fn find_auth_view(&self, client_id: &str) -> PortResult<Option<ClientAuthView>> {
+        let db   = db(self.env)?;
+        let stmt = db.prepare(
+            "SELECT id, client_secret_hash, audience, token_auth_method \
+             FROM oidc_clients WHERE id = ?1 LIMIT 1"
+        )
+            .bind(&[client_id.into()])
+            .map_err(|_| PortError::Unavailable)?;
+
+        #[derive(Deserialize)]
+        struct AuthRow {
+            id:                 String,
+            client_secret_hash: Option<String>,
+            #[serde(default)]
+            audience:           Option<String>,
+            token_auth_method:  String,
+        }
+
+        match stmt.first::<AuthRow>(None).await {
+            Ok(Some(row)) => {
+                let token_auth_method = match row.token_auth_method.as_str() {
+                    "none"                => TokenAuthMethod::None,
+                    "client_secret_basic" => TokenAuthMethod::ClientSecretBasic,
+                    "client_secret_post"  => TokenAuthMethod::ClientSecretPost,
+                    _                     => return Err(PortError::Serialization),
+                };
+                Ok(Some(ClientAuthView {
+                    client_id:          row.id,
+                    client_secret_hash: row.client_secret_hash,
+                    audience:           row.audience,
+                    token_auth_method,
+                }))
+            }
+            Ok(None) => Ok(None),
+            Err(_)   => Err(PortError::Unavailable),
         }
     }
 

@@ -112,6 +112,9 @@ const SELECT_COLUMNS: &str =
 impl AuditEventRepository for CloudflareAuditEventRepository<'_> {
     async fn append(&self, ev: &NewAuditEvent<'_>) -> PortResult<AuditEventRow> {
         let db = db(self.env)?;
+        // RFC 014 Path A — record start time for latency telemetry.
+        let start_ms = js_sys::Date::now() as u64;
+        let mut retries = 0u32;
 
         for _attempt in 0..APPEND_RETRY_BUDGET {
             // Read tail.
@@ -169,6 +172,17 @@ impl AuditEventRepository for CloudflareAuditEventRepository<'_> {
 
             match stmt.run().await {
                 Ok(_) => {
+                    // RFC 014 telemetry: warn when append is slow or required retries.
+                    // 100ms is the threshold for "something is contending or D1 is slow".
+                    let duration_ms = js_sys::Date::now() as u64 - start_ms;
+                    if duration_ms > 100 || retries > 0 {
+                        worker::console_warn!(
+                            "audit_append latency_ms={duration_ms} retries={retries} kind={kind}",
+                            duration_ms = duration_ms,
+                            retries     = retries,
+                            kind        = ev.kind,
+                        );
+                    }
                     return Ok(AuditEventRow {
                         seq:           next_seq,
                         id:            ev.id.to_owned(),
@@ -198,6 +212,7 @@ impl AuditEventRepository for CloudflareAuditEventRepository<'_> {
                             return Err(PortError::Conflict);
                         }
                         // seq collision → retry.
+                        retries += 1;
                         continue;
                     }
                     return Err(PortError::Unavailable);

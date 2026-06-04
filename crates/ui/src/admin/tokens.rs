@@ -15,6 +15,7 @@
 //! that is a post-tenant-boundaries decision.
 
 use crate::escape;
+use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::types::{AdminPrincipal, Role};
 
 use super::frame::{admin_frame, Tab};
@@ -81,6 +82,7 @@ pub fn list_page(principal: &AdminPrincipal, tokens: &[AdminPrincipal]) -> Strin
         principal.role,
         principal.name.as_deref(),
         Tab::Tokens,
+        &ScopeBadge::System,
         &body,
     )
 }
@@ -140,6 +142,7 @@ pub fn new_form(principal: &AdminPrincipal, error: Option<&str>) -> String {
         principal.role,
         principal.name.as_deref(),
         Tab::Tokens,
+        &ScopeBadge::System,
         &body,
     )
 }
@@ -185,6 +188,7 @@ pub fn created_page(
         principal.role,
         principal.name.as_deref(),
         Tab::Tokens,
+        &ScopeBadge::System,
         &body,
     )
 }

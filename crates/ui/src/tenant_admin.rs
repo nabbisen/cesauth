@@ -36,6 +36,7 @@
 //!   form exposes it yet. Lands in 0.14.0.
 
 pub mod frame;
+pub mod oidc_clients;
 pub mod overview;
 pub mod organizations;
 pub mod users;

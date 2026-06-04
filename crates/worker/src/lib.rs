@@ -24,6 +24,7 @@ pub mod flash;
 pub mod i18n;
 pub mod log;
 pub mod post_auth;
+pub mod request_id;
 pub mod routes;
 pub mod sweep;
 pub mod audit_chain_cron;

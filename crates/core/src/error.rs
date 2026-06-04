@@ -117,6 +117,24 @@ pub enum CoreError {
     /// variant as we understand more failure modes.
     #[error("internal error")]
     Internal,
+
+    // --- Tenant boundary --------------------------------------------------
+    /// **v0.53.x (RFC 023)** — A reference crossed tenant boundaries.
+    ///
+    /// Emitted by service-layer validators when a group/organization
+    /// creation request references a parent from a different tenant.  The
+    /// composite FK constraint would catch the same violation at INSERT
+    /// time; this variant surfaces a typed error for structured admin-UI
+    /// messaging before reaching storage.
+    ///
+    /// Maps to HTTP 422 at the wire layer.
+    #[error("cross-tenant reference rejected: {kind} expected tenant {expected_tenant_id} but got {actual_tenant_id}")]
+    CrossTenantReference {
+        /// Short label for the violated relationship ("organization" or "group").
+        kind:               &'static str,
+        expected_tenant_id: String,
+        actual_tenant_id:   String,
+    },
 }
 
 impl From<serde_json::Error> for CoreError {

@@ -602,3 +602,55 @@ wrangler d1 execute cesauth-db --command \
 - **The chain re-baseline accepts the loss** of the verifiable-chain-back-
   to-genesis property in exchange for a clean post-purge state. Future
   verification runs from the new baseline forward.
+
+---
+
+## Operation: detecting audit-append contention (RFC 014 / ADR-017)
+
+**Symptom**: Logpush queries surface `audit_append latency_ms=... retries=...`
+warnings at increasing rate.
+
+### Diagnosis
+
+| Pattern | Likely cause |
+|---|---|
+| `latency_ms > 100, retries = 0` | D1 transient slowness, not write contention |
+| `retries > 0` consistently | Concurrent appends racing on `seq` |
+| `latency_ms > 1000` repeatedly | Approaching D1 serialization ceiling (~100 events/s) |
+
+Search Logpush for the warning pattern:
+
+```bash
+# wrangler tail filter (live)
+wrangler tail --format=pretty | grep "audit_append"
+
+# Logpush query (historical)
+SELECT * FROM logs WHERE message LIKE '%audit_append%'
+ORDER BY timestamp DESC LIMIT 100;
+```
+
+### Mitigation
+
+**Short-term**:
+
+1. Reduce `INTROSPECTION_RATE_LIMIT_THRESHOLD` (default 600/min) — the most
+   common source of high audit-event volume.  Lower to 200-300 for a
+   contended deployment.
+2. Reduce `AUDIT_RETENTION_DAYS` — smaller table = faster tail reads.
+3. If `/introspect` volume is genuinely high and the rate limit reduction
+   impacts legitimate RS traffic, consider Path B (see ADR-017).
+
+**Medium-term**: Migrate to the DO-serialized append design (RFC 014 follow-up
++ ADR-017 §"Path B design").
+
+### Ceiling reference
+
+| Concurrency | Sustained rate |
+|---|---|
+| No concurrency (single worker instance) | ~300 events/s |
+| Low (2-4 instances) | ~100 events/s |
+| High (10+ instances) | ~30 events/s |
+
+Healthy deployments with the default rate limit (600 req/min introspect per
+RS client) produce at most ~10 audit events/s per client.  Sustained warnings
+indicate either high client count or a mis-configured rate limit.

@@ -1,0 +1,23 @@
+name: Formatting check
+
+# RFC 029: Verify that all Rust source files pass `cargo fmt --check`.
+# No custom rustfmt.toml exists; the codebase uses rustfmt 2024-edition
+# defaults (confirmed clean by the RFC 029 measurement pass).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check

@@ -130,7 +130,9 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         TotpDisablePageTitle | TotpDisableHeading |
         TotpDisableAlertStrong | TotpDisableAlertBody | TotpDisableRecoveryHint |
         TotpDisableConfirmHeading | TotpDisableSubmit |
-        ErrorPageBackLink
+        ErrorPageBackLink |
+        // RFC 016 — admin scope badge
+        AdminScopeSystem | AdminScopeTenancy | AdminScopeTenant
             => {}  // exhaustiveness pin — body is irrelevant
     }
     // Now actually iterate. The list below mirrors the match
@@ -184,6 +186,8 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         TotpDisableAlertStrong, TotpDisableAlertBody, TotpDisableRecoveryHint,
         TotpDisableConfirmHeading, TotpDisableSubmit,
         ErrorPageBackLink,
+        // RFC 016
+        AdminScopeSystem, AdminScopeTenancy, AdminScopeTenant,
     ];
     for k in all { f(k); }
 }

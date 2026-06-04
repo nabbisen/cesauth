@@ -154,3 +154,6 @@ VALUES
     ('ASSETS', 0, 0, 0, 0, 0,
      'Static assets served through the Worker. Public egress fine but verify.',
      NULL, NULL, strftime('%s','now'));
+
+-- SCHEMA_VERSION 2.
+INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '2');

@@ -1,0 +1,70 @@
+name: Worker bundle size budget
+
+# RFC 025: Fail CI if the Workers bundle gzip size exceeds the declared
+# budget. This catches dependency additions and feature growth before
+# they reach a Cloudflare deploy that silently truncates the bundle.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install worker-build
+        run: cargo install worker-build --locked
+
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          # --dry-run builds the bundle locally without uploading.
+          # No API_TOKEN is needed.
+          command: deploy --dry-run --outdir bundled/
+
+      - name: Check bundle gzip size against budget
+        run: |
+          set -euo pipefail
+          bundle="$(find bundled/ -name '*.js' -size +0 -print -quit)"
+          if [ -z "$bundle" ]; then
+            echo "Error: no .js file found in bundled/" >&2
+            exit 1
+          fi
+          gz_size=$(gzip -c "$bundle" | wc -c)
+
+          # Budget = 2.5 MiB (2621440 bytes).
+          # Rationale: Free-plan gzip ceiling is 3 MiB; we keep 500 KiB
+          # headroom so a feature release doesn't immediately trip the
+          # Free-plan limit.  Paid-plan ceiling is 10 MiB.
+          # Update this value in BUNDLE_SIZE_BUDGET.md when intentionally
+          # raising it; the CI gate is a deliberate speed-bump, not a
+          # gotcha.  See RFC 025 §"Step 1".
+          BUDGET=2621440
+
+          echo "Bundle: $bundle"
+          echo "Gzip size:  $gz_size bytes"
+          echo "Budget:     $BUDGET bytes"
+          echo "Usage:      $(( gz_size * 100 / BUDGET ))%"
+
+          if [ "$gz_size" -gt "$BUDGET" ]; then
+            echo ""
+            echo "❌  Bundle gzip size $gz_size exceeds budget $BUDGET bytes." >&2
+            echo "    See BUNDLE_SIZE_BUDGET.md for how to investigate and" >&2
+            echo "    how to raise the budget intentionally." >&2
+            exit 1
+          fi
+          echo "✅  Bundle within budget."
+
+      - name: Upload bundle artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-bundle
+          path: bundled/
+          retention-days: 30

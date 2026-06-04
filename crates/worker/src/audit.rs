@@ -168,6 +168,22 @@ pub enum EventKind {
     /// present but audience doesn't match) and `TokenIntrospected`
     /// (successful authenticated introspection).
     IntrospectionRowMissing,
+    /// **RFC 017** — An admin changed `oidc_clients.audience` via the
+    /// tenant admin editor.  Payload includes `client_id`, `before`
+    /// (previous audience value or "null"), `after` (new audience value
+    /// or "null"), and `tenant_slug`.  Both audiences are operator-
+    /// controlled identifiers, not secret material; audit exposure is safe.
+    OidcClientAudienceChanged,
+    /// **RFC 018** — An admin submitted the preview form for a destructive
+    /// operation but has not yet applied it.  Payload includes
+    /// `operation_id`, `before`, and `after`.  A preview event without a
+    /// subsequent `OperationApplied` event indicates the operator
+    /// reconsidered; useful for incident forensics.
+    OperationPreviewed,
+    /// **RFC 018** — An admin applied a previously previewed destructive
+    /// operation.  Payload includes `operation_id`, `before`, `after`,
+    /// and `preview_ts` (linking back to the `OperationPreviewed` event).
+    OperationApplied,
     /// **v0.38.0** — `POST /introspect` was called (RFC 7662
     /// Token Introspection). Payload includes the requesting
     /// `introspecter_client_id`, the `token_type` reported
@@ -300,6 +316,9 @@ impl EventKind {
             Self::IntrospectionRateLimited     => "introspection_rate_limited",
             Self::IntrospectionAudienceMismatch => "introspection_audience_mismatch",
             Self::IntrospectionRowMissing       => "introspection_row_missing",
+            Self::OidcClientAudienceChanged     => "oidc_client_audience_changed",
+            Self::OperationPreviewed            => "operation_previewed",
+            Self::OperationApplied              => "operation_applied",
             Self::TokenIntrospected            => "token_introspected",
             Self::RevocationRequested          => "revocation_requested",
             Self::WebauthnRegistered           => "webauthn_registered",

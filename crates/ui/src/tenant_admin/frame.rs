@@ -19,7 +19,9 @@
 //!   system-admin work, leave this surface entirely.
 
 use crate::escape;
+use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::types::Role;
+use cesauth_core::i18n::Locale;
 
 /// Tabs in the tenant-admin nav. All hrefs are built per-render
 /// because they include the tenant slug.
@@ -91,6 +93,22 @@ pub fn tenant_admin_frame(
     active_tab:          TenantAdminTab,
     body:                &str,
 ) -> String {
+    tenant_admin_frame_for(title, tenant_slug, tenant_display_name,
+                           role, role_name, active_tab, Locale::default(), body)
+}
+
+/// Locale-aware variant of [`tenant_admin_frame`].
+pub fn tenant_admin_frame_for(
+    title:               &str,
+    tenant_slug:         &str,
+    tenant_display_name: &str,
+    role:                Role,
+    role_name:           Option<&str>,
+    active_tab:          TenantAdminTab,
+    locale:              Locale,
+    body:                &str,
+) -> String {
+    let scope = ScopeBadge::Tenant(tenant_slug);
     let nonce = crate::render_nonce();
     let title_esc        = escape(title);
     let slug_esc         = escape(tenant_slug);
@@ -103,6 +121,9 @@ pub fn tenant_admin_frame(
         Role::Super      => "super",
     };
     let name_esc = role_name.map(escape).unwrap_or_default();
+    let scope_class  = scope.css_class();
+    let scope_label  = scope.label_for(locale);
+    let scope_aria   = scope.aria_label_for(locale);
 
     let nav: String = NAV_TABS.iter().map(|t| {
         let current = if *t == active_tab { r#" aria-current="page""# } else { "" };
@@ -136,6 +157,9 @@ pub fn tenant_admin_frame(
     header .badge.security   {{ background: #d35400; }}
     header .badge.operations {{ background: #2980b9; }}
     header .badge.super      {{ background: #c0392b; }}
+    /* RFC 016 scope badge — green for tenant scope */
+    header .scope-badge {{ font-size: 0.75em; padding: 2px 8px; border-radius: 10px; font-weight: 500;
+                           border: 1px solid rgba(255,255,255,0.5); color: #fff; }}
     nav {{ background: #e3eaf2; padding: 0 24px; }}
     nav ul {{ list-style: none; margin: 0; padding: 0; display: flex; gap: 0; flex-wrap: wrap; }}
     nav li a {{ display: block; padding: 10px 16px; color: #1e3a5f; text-decoration: none; border-bottom: 2px solid transparent; }}
@@ -161,6 +185,7 @@ pub fn tenant_admin_frame(
     <h1>cesauth tenant admin</h1>
     <span class="tenant-name">{tenant_name_esc}</span>
     <span class="tenant-slug">{slug_esc}</span>
+    <span class="{scope_class}" aria-label="{scope_aria}">{scope_label}</span>
     <span class="badge {role_badge}">{role_label}</span>
     {name_html}
   </header>
@@ -172,6 +197,9 @@ pub fn tenant_admin_frame(
   <footer>cesauth tenant admin — v0.50.2 (mutations + affordance gating)</footer>
 </body>
 </html>"##,
+        scope_class  = scope_class,
+        scope_label  = scope_label,
+        scope_aria   = scope_aria,
         name_html = if name_esc.is_empty() {
             String::new()
         } else {

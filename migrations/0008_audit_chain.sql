@@ -126,3 +126,6 @@ INSERT INTO audit_events (
     '0000000000000000000000000000000000000000000000000000000000000000',
     strftime('%s', 'now')
 );
+
+-- SCHEMA_VERSION 8.
+INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '8');

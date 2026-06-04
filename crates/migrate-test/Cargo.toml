@@ -1,0 +1,14 @@
+[package]
+name    = "cesauth-migrate-test"
+version = { workspace = true }
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+
+# This crate has no library code; it is purely an integration-test host.
+# It uses rusqlite (bundled SQLite) to apply the migration chain against
+# an in-memory database and assert structural invariants.
+
+[dev-dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+cesauth-core = { workspace = true }

@@ -111,3 +111,6 @@ CREATE TABLE IF NOT EXISTS totp_recovery_codes (
 
 CREATE INDEX IF NOT EXISTS idx_totp_recovery_codes_user
   ON totp_recovery_codes(user_id);
+
+-- SCHEMA_VERSION 7.
+INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '7');

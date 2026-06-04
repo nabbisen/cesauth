@@ -17,6 +17,7 @@
 //! visual treatment matches the rest of the admin surface.
 
 use crate::escape;
+use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::types::{AdminPrincipal, AuditChainStatus};
 
 use super::frame::{admin_frame, Tab};
@@ -38,6 +39,7 @@ pub fn audit_chain_status_page(
         principal.role,
         principal.name.as_deref(),
         Tab::Audit,
+        &ScopeBadge::System,
         &body,
     )
 }

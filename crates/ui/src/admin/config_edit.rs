@@ -21,6 +21,7 @@
 //! POSTs is the operator's own browser. Keeping it simple.
 
 use crate::escape;
+use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::types::{
     AdminPrincipal, BucketSafetyChange, BucketSafetyDiff, BucketSafetyState,
 };
@@ -48,6 +49,7 @@ pub fn edit_form(
         principal.role,
         principal.name.as_deref(),
         Tab::Config,
+        &ScopeBadge::System,
         &body,
     )
 }
@@ -75,6 +77,7 @@ pub fn confirm_page(
         principal.role,
         principal.name.as_deref(),
         Tab::Config,
+        &ScopeBadge::System,
         &body,
     )
 }

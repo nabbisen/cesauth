@@ -3,7 +3,7 @@
 use super::*;
 use crate::error::CoreError;
 use crate::ports::PortResult;
-use crate::ports::repo::ClientRepository;
+use crate::ports::repo::{ClientAuthView, ClientRepository};
 use crate::ports::store::{
     AuthMethod, FamilyInit, FamilyState, RefreshTokenFamilyStore, RotateOutcome,
 };
@@ -79,6 +79,9 @@ impl ClientRepository for StubClients {
     }
     async fn client_secret_hash(&self, client_id: &str) -> PortResult<Option<String>> {
         Ok(self.map.get(client_id).cloned().unwrap_or(None))
+    }
+    async fn find_auth_view(&self, _: &str) -> PortResult<Option<ClientAuthView>> {
+        unimplemented!("revoke must not call find_auth_view")
     }
     async fn create(&self, _: &OidcClient, _: Option<&str>) -> PortResult<()> {
         unimplemented!()

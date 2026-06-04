@@ -9,6 +9,7 @@
 //! The layer is port-generic, not Cloudflare-specific — it is
 //! unit-testable against the in-memory adapters.
 
+use crate::error::CoreError;
 use crate::ports::{PortError, PortResult};
 use crate::types::UnixSeconds;
 use uuid::Uuid;
@@ -137,6 +138,7 @@ where
     G: GroupRepository,
 {
     validate_slug(input.slug)?;
+    validate_group_tenant_boundary(input)?;
     let group = Group {
         id:                Uuid::new_v4().to_string(),
         tenant_id:         input.tenant_id.to_owned(),
@@ -150,6 +152,42 @@ where
     };
     groups.create(&group).await?;
     Ok(group)
+}
+
+/// Validate that a [`NewGroupInput`] does not reference parents from a
+/// different tenant (RFC 023, defense-in-depth layer above the schema FK).
+///
+/// Returns `Err(PortError::PreconditionFailed)` when the resolved
+/// `organization_tenant_id` does not match `input.tenant_id`.
+/// Returns `Ok(())` when the field is absent (the schema FK is the
+/// ultimate guard in that case).
+///
+/// A typed `CoreError::CrossTenantReference` is available for worker
+/// handlers that need to emit a structured audit event or API error body.
+pub fn validate_group_tenant_boundary(input: &NewGroupInput<'_>) -> PortResult<()> {
+    if let Some(org_tid) = input.organization_tenant_id {
+        if org_tid != input.tenant_id {
+            return Err(PortError::PreconditionFailed(
+                "organization belongs to a different tenant",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Produce a [`CoreError::CrossTenantReference`] for the given input when
+/// the organization tenant does not match.  Used by worker handlers to emit
+/// the structured audit event and a 422 response body.
+pub fn cross_tenant_error_for_group(input: &NewGroupInput<'_>) -> Option<CoreError> {
+    let org_tid = input.organization_tenant_id?;
+    if org_tid == input.tenant_id {
+        return None;
+    }
+    Some(CoreError::CrossTenantReference {
+        kind:               "organization",
+        expected_tenant_id: input.tenant_id.to_owned(),
+        actual_tenant_id:   org_tid.to_owned(),
+    })
 }
 
 /// Add a user to a group.

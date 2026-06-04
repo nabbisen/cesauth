@@ -1,6 +1,7 @@
 //! Alert Center page (§4.6).
 
 use crate::escape;
+use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::types::{AdminPrincipal, Alert, AlertLevel};
 
 use super::frame::{admin_frame, Tab};
@@ -31,6 +32,7 @@ pub fn alerts_page(principal: &AdminPrincipal, now_unix: i64, alerts: &[Alert]) 
         principal.role,
         principal.name.as_deref(),
         Tab::Alerts,
+        &ScopeBadge::System,
         &body,
     )
 }

@@ -1516,3 +1516,122 @@ fn different_render_calls_use_their_own_nonce() {
     assert!(!html_b.contains("nonce_AAA"),
         "second render must not leak first nonce");
 }
+
+// =====================================================================
+// RFC 027 — Accessibility: every flash level renders icon + text + class
+// =====================================================================
+
+/// Canonical FlashLevel data from the worker crate, inlined here so
+/// cesauth-ui stays independent of the worker crate.  These values must
+/// match `cesauth_worker::flash::FlashLevel`.  A drift detector test in
+/// the worker crate will catch any mismatch.
+struct FlashLevelSpec {
+    css_modifier: &'static str,
+    aria_live:    &'static str,
+    icon:         &'static str,
+}
+
+const FLASH_LEVELS: &[FlashLevelSpec] = &[
+    FlashLevelSpec { css_modifier: "flash--info",    aria_live: "polite",    icon: "\u{2139}" }, // ℹ
+    FlashLevelSpec { css_modifier: "flash--success", aria_live: "polite",    icon: "\u{2713}" }, // ✓
+    FlashLevelSpec { css_modifier: "flash--warning", aria_live: "assertive", icon: "\u{26A0}" }, // ⚠
+    FlashLevelSpec { css_modifier: "flash--danger",  aria_live: "assertive", icon: "\u{26D4}" }, // ⛔
+];
+
+#[test]
+fn every_flash_level_pairs_css_class_icon_and_text() {
+    // WCAG 1.4.1 Use of Color: color must not be the sole visual means
+    // of conveying information.  Each flash level must carry all three:
+    //   1. CSS class  (visual color styling)
+    //   2. Icon glyph (shape signal, color-blind safe)
+    //   3. Text label (rendered in the flash__text span)
+    for spec in FLASH_LEVELS {
+        let view = FlashView {
+            aria_live:    spec.aria_live,
+            css_modifier: spec.css_modifier,
+            icon:         spec.icon,
+            text:         std::borrow::Cow::Borrowed("test message"),
+        };
+        let html = flash_block(Some(view));
+
+        // 1. CSS class
+        assert!(
+            html.contains(spec.css_modifier),
+            "flash level '{}' missing css modifier class: {html}",
+            spec.css_modifier
+        );
+
+        // 2. Icon — inside an aria-hidden span
+        assert!(
+            html.contains(r#"class="flash__icon" aria-hidden="true""#),
+            "flash level '{}' missing aria-hidden icon span: {html}",
+            spec.css_modifier
+        );
+        assert!(
+            html.contains(spec.icon),
+            "flash level '{}' icon character '{}' not present in output: {html}",
+            spec.css_modifier,
+            spec.icon
+        );
+
+        // 3. Text — inside a flash__text span
+        assert!(
+            html.contains(r#"class="flash__text""#),
+            "flash level '{}' missing flash__text span: {html}",
+            spec.css_modifier
+        );
+        assert!(
+            html.contains("test message"),
+            "flash level '{}' text not rendered: {html}",
+            spec.css_modifier
+        );
+    }
+}
+
+#[test]
+fn flash_block_icon_is_aria_hidden_not_in_text_span() {
+    // Screen readers must not announce the icon glyph in addition to
+    // the text — that would produce "tick TOTP enrolled" instead of
+    // "TOTP enrolled".  Pin the separation: icon is in aria-hidden
+    // span, text is in flash__text span with the icon absent.
+    let html = flash_block(Some(FlashView {
+        aria_live:    "polite",
+        css_modifier: "flash--success",
+        icon:         "\u{2713}",
+        text:         std::borrow::Cow::Borrowed("TOTP enrolled"),
+    }));
+
+    // icon must appear before </span> with aria-hidden="true"
+    assert!(
+        html.contains(r#"<span class="flash__icon" aria-hidden="true">✓</span>"#),
+        "icon must be in aria-hidden span: {html}"
+    );
+
+    // flash__text span must contain the text but NOT the icon
+    let text_span_start = html.find(r#"class="flash__text""#).expect("flash__text span missing");
+    let text_content = &html[text_span_start..];
+    assert!(
+        !text_content.contains("\u{2713}"),
+        "icon character must not appear inside flash__text span: {html}"
+    );
+}
+
+#[test]
+fn flash_block_polite_uses_role_status_assertive_uses_role_alert() {
+    // WAI-ARIA best practice: polite → role=status, assertive → role=alert.
+    // Pinned separately from the existing tests so regression surfaces
+    // at the right semantic level.
+    let polite_html = flash_block(Some(FlashView {
+        aria_live: "polite", css_modifier: "flash--info",
+        icon: "ℹ", text: std::borrow::Cow::Borrowed("fyi"),
+    }));
+    assert!(polite_html.contains(r#"role="status""#) && polite_html.contains(r#"aria-live="polite""#),
+        "polite flash must pair role=status with aria-live=polite: {polite_html}");
+
+    let assertive_html = flash_block(Some(FlashView {
+        aria_live: "assertive", css_modifier: "flash--danger",
+        icon: "⛔", text: std::borrow::Cow::Borrowed("error"),
+    }));
+    assert!(assertive_html.contains(r#"role="alert""#) && assertive_html.contains(r#"aria-live="assertive""#),
+        "assertive flash must pair role=alert with aria-live=assertive: {assertive_html}");
+}

@@ -1,0 +1,20 @@
+name: Route contracts check
+
+# RFC 027: Fail CI if a route registered in crates/worker/src/lib.rs
+# does not have a corresponding row in docs/src/expert/route-contracts.md.
+#
+# This is a lightweight shell-only check; no Rust toolchain required.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  route-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check route contracts
+        run: bash scripts/route-contracts-check.sh

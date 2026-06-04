@@ -50,3 +50,6 @@
 -- ============================================================================
 
 ALTER TABLE oidc_clients ADD COLUMN audience TEXT;
+
+-- SCHEMA_VERSION 10.
+INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '10');

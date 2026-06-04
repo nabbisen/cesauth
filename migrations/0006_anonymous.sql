@@ -77,3 +77,6 @@ CREATE INDEX IF NOT EXISTS idx_anonymous_sessions_created
 -- is always 0 or 1, but the index is cheap insurance).
 CREATE INDEX IF NOT EXISTS idx_anonymous_sessions_user
     ON anonymous_sessions (user_id);
+
+-- SCHEMA_VERSION 6.
+INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '6');

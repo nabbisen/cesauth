@@ -66,5 +66,5 @@ CREATE TABLE IF NOT EXISTS user_sessions (
 CREATE INDEX IF NOT EXISTS user_sessions_user_idx
   ON user_sessions (user_id, created_at DESC);
 
--- v0.35.0 SCHEMA_VERSION 8 -> 9.
+-- SCHEMA_VERSION 9.
 INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '9');

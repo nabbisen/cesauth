@@ -8,7 +8,7 @@
 //! method here", that need belongs in `store`, not `repo`.
 
 use super::PortResult;
-use crate::types::{OidcClient, UnixSeconds, User};
+use crate::types::{OidcClient, TokenAuthMethod, UnixSeconds, User};
 use crate::webauthn::StoredAuthenticator;
 
 /// `users` table.
@@ -75,7 +75,29 @@ pub trait ClientRepository {
     /// time verification without the hash format crossing the boundary.
     async fn client_secret_hash(&self, client_id: &str) -> PortResult<Option<String>>;
 
+    /// Atomic snapshot of the data needed to authenticate a client **and**
+    /// enforce its audience-scoping policy.  Returns `None` if the client
+    /// does not exist; `Err` if the storage layer cannot answer.
+    ///
+    /// Consolidates two previously-separate D1 reads (`client_secret_hash` +
+    /// `find`) into a single query, closing the TOCTOU window between auth
+    /// and audience-gate checks.  See RFC 026.
+    async fn find_auth_view(&self, client_id: &str) -> PortResult<Option<ClientAuthView>>;
+
     async fn create(&self, client: &OidcClient, secret_hash: Option<&str>) -> PortResult<()>;
+}
+
+/// Minimal projection of `oidc_clients` consumed by the `/introspect`
+/// authentication + audience-gate hot path (RFC 026).
+///
+/// Intentionally omits large columns (`redirect_uris`, `allowed_scopes`)
+/// that are not needed for the introspection code path.
+#[derive(Clone, Debug)]
+pub struct ClientAuthView {
+    pub client_id:          String,
+    pub client_secret_hash: Option<String>,
+    pub audience:           Option<String>,
+    pub token_auth_method:  TokenAuthMethod,
 }
 
 /// `authenticators` table (WebAuthn credentials).

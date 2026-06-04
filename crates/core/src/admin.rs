@@ -38,7 +38,9 @@
 
 pub mod policy;
 pub mod ports;
+pub mod preview;
 pub mod service;
+pub mod scope;
 pub mod types;
 
 #[cfg(test)]

@@ -42,3 +42,6 @@ ALTER TABLE admin_tokens ADD COLUMN user_id TEXT;
 CREATE INDEX IF NOT EXISTS idx_admin_tokens_user_id
     ON admin_tokens(user_id)
     WHERE user_id IS NOT NULL;
+
+-- SCHEMA_VERSION 5.
+INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '5');
