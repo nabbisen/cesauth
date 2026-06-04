@@ -83,3 +83,105 @@ impl Jwk {
 pub struct JwksDocument {
     pub keys: Vec<Jwk>,
 }
+
+// ---------------------------------------------------------------------------
+// RFC 060 — JWT claims serialization tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── AccessTokenClaims ─────────────────────────────────────────────────
+
+    #[test]
+    fn access_token_claims_round_trip_json() {
+        let c = AccessTokenClaims {
+            iss:   "https://auth.example.com".to_owned(),
+            sub:   "u-001".to_owned(),
+            aud:   "https://api.example.com".to_owned(),
+            exp:   1_700_001_000,
+            iat:   1_700_000_000,
+            jti:   "jti-abc".to_owned(),
+            scope: "openid email".to_owned(),
+            cid:   "client-1".to_owned(),
+        };
+        let json  = serde_json::to_string(&c).unwrap();
+        let back: AccessTokenClaims = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.sub, "u-001");
+        assert_eq!(back.scope, "openid email");
+        assert_eq!(back.cid, "client-1");
+    }
+
+    #[test]
+    fn access_token_claims_contains_all_required_fields() {
+        let c = AccessTokenClaims {
+            iss: "i".to_owned(), sub: "s".to_owned(), aud: "a".to_owned(),
+            exp: 2000, iat: 1000, jti: "j".to_owned(),
+            scope: "openid".to_owned(), cid: "c".to_owned(),
+        };
+        let json = serde_json::to_string(&c).unwrap();
+        for field in &["iss", "sub", "aud", "exp", "iat", "jti", "scope", "cid"] {
+            assert!(json.contains(field), "JWT must contain field {field}");
+        }
+    }
+
+    // ── IdTokenClaims ─────────────────────────────────────────────────────
+
+    #[test]
+    fn id_token_nonce_omitted_when_none() {
+        let c = IdTokenClaims {
+            iss: "i".to_owned(), sub: "s".to_owned(), aud: "a".to_owned(),
+            exp: 2000, iat: 1000, auth_time: 900,
+            nonce: None, email: None, email_verified: None, name: None,
+        };
+        let json = serde_json::to_string(&c).unwrap();
+        assert!(!json.contains("nonce"),          "absent nonce must not appear in JSON");
+        assert!(!json.contains("email"),          "absent email must not appear in JSON");
+        assert!(!json.contains("email_verified"), "absent email_verified must not appear");
+        assert!(!json.contains("\"name\""),       "absent name must not appear in JSON");
+    }
+
+    #[test]
+    fn id_token_optional_fields_present_when_some() {
+        let c = IdTokenClaims {
+            iss: "i".to_owned(), sub: "s".to_owned(), aud: "a".to_owned(),
+            exp: 2000, iat: 1000, auth_time: 900,
+            nonce: Some("n123".to_owned()),
+            email: Some("u@example.com".to_owned()),
+            email_verified: Some(true),
+            name: Some("Alice".to_owned()),
+        };
+        let json = serde_json::to_string(&c).unwrap();
+        assert!(json.contains("\"nonce\""));
+        assert!(json.contains("\"email\""));
+        assert!(json.contains("\"email_verified\""));
+        assert!(json.contains("\"name\""));
+    }
+
+    // ── Jwk ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn jwk_ed25519_constructor() {
+        let jwk = Jwk::ed25519("kid-1".to_owned(), "base64urlpubkey".to_owned());
+        assert_eq!(jwk.kty, "OKP");
+        assert_eq!(jwk.crv, "Ed25519");
+        assert_eq!(jwk.alg, "EdDSA");
+        assert_eq!(jwk.use_, "sig");
+        assert_eq!(jwk.kid, "kid-1");
+        assert_eq!(jwk.x, "base64urlpubkey");
+    }
+
+    #[test]
+    fn jwks_document_serializes_keys_array() {
+        let doc = JwksDocument {
+            keys: vec![Jwk::ed25519("k1".to_owned(), "x1".to_owned())],
+        };
+        let json = serde_json::to_string(&doc).unwrap();
+        assert!(json.contains("\"keys\""), "JWKS must have keys array");
+        assert!(json.contains("\"OKP\""));
+        assert!(json.contains("\"k1\""));
+        // RFC 7517: `use` field name (serialized as "use" not "use_")
+        assert!(json.contains("\"use\""), "JWK must serialize use_ as \"use\"");
+    }
+}

@@ -274,3 +274,122 @@ pub fn format_change(permille: Option<i64>) -> String {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// RFC 059 — admin/policy.rs tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::types::{AdminAction, AlertKind, AlertLevel, MetricUnit, Role, ServiceId};
+
+    // ── role_allows ────────────────────────────────────────────────────────
+
+    #[test]
+    fn readonly_can_only_view_and_read_tenancy() {
+        assert!( role_allows(Role::ReadOnly, AdminAction::ViewConsole));
+        assert!( role_allows(Role::ReadOnly, AdminAction::ViewTenancy));
+        assert!(!role_allows(Role::ReadOnly, AdminAction::VerifyBucketSafety));
+        assert!(!role_allows(Role::ReadOnly, AdminAction::EditBucketSafety));
+        assert!(!role_allows(Role::ReadOnly, AdminAction::EditThreshold));
+        assert!(!role_allows(Role::ReadOnly, AdminAction::CreateUser));
+        assert!(!role_allows(Role::ReadOnly, AdminAction::RevokeSession));
+        assert!(!role_allows(Role::ReadOnly, AdminAction::ManageAdminTokens));
+        assert!(!role_allows(Role::ReadOnly, AdminAction::ManageTenancy));
+    }
+
+    #[test]
+    fn security_can_verify_and_revoke_but_not_mutate() {
+        assert!( role_allows(Role::Security, AdminAction::VerifyBucketSafety));
+        assert!( role_allows(Role::Security, AdminAction::RevokeSession));
+        assert!(!role_allows(Role::Security, AdminAction::EditBucketSafety));
+        assert!(!role_allows(Role::Security, AdminAction::ManageAdminTokens));
+        assert!(!role_allows(Role::Security, AdminAction::ManageTenancy));
+    }
+
+    #[test]
+    fn operations_can_edit_but_not_manage_tokens() {
+        assert!( role_allows(Role::Operations, AdminAction::EditBucketSafety));
+        assert!( role_allows(Role::Operations, AdminAction::EditThreshold));
+        assert!( role_allows(Role::Operations, AdminAction::CreateUser));
+        assert!( role_allows(Role::Operations, AdminAction::ManageTenancy));
+        assert!(!role_allows(Role::Operations, AdminAction::ManageAdminTokens));
+    }
+
+    #[test]
+    fn super_can_do_everything() {
+        let all_actions = [
+            AdminAction::ViewConsole,
+            AdminAction::VerifyBucketSafety,
+            AdminAction::EditBucketSafety,
+            AdminAction::EditThreshold,
+            AdminAction::CreateUser,
+            AdminAction::RevokeSession,
+            AdminAction::ManageAdminTokens,
+            AdminAction::ViewTenancy,
+            AdminAction::ManageTenancy,
+        ];
+        for action in all_actions {
+            assert!(role_allows(Role::Super, action),
+                "Super must allow {action:?}");
+        }
+    }
+
+    // ── format_metric ──────────────────────────────────────────────────────
+
+    #[test]
+    fn format_metric_count_under_thousand() {
+        assert_eq!(format_metric(0,   MetricUnit::Count), "0");
+        assert_eq!(format_metric(999, MetricUnit::Count), "999");
+    }
+
+    #[test]
+    fn format_metric_count_with_thousands_separators() {
+        assert_eq!(format_metric(1_000,     MetricUnit::Count), "1,000");
+        assert_eq!(format_metric(1_234_567, MetricUnit::Count), "1,234,567");
+    }
+
+    #[test]
+    fn format_metric_bytes_scaling() {
+        assert_eq!(format_metric(512,             MetricUnit::Bytes), "512 B");
+        assert_eq!(format_metric(1024,            MetricUnit::Bytes), "1.00 KiB");
+        assert_eq!(format_metric(1024 * 1024,     MetricUnit::Bytes), "1.00 MiB");
+        assert_eq!(format_metric(1024 * 1024 * 1024, MetricUnit::Bytes), "1.00 GiB");
+    }
+
+    #[test]
+    fn format_metric_permille() {
+        assert_eq!(format_metric(42, MetricUnit::Permille), "42‰");
+    }
+
+    #[test]
+    fn format_metric_seconds() {
+        assert_eq!(format_metric(3600, MetricUnit::Seconds), "3600s");
+    }
+
+    // ── format_change ──────────────────────────────────────────────────────
+
+    #[test]
+    fn format_change_none_is_dash() {
+        assert_eq!(format_change(None), "—");
+    }
+
+    #[test]
+    fn format_change_zero_is_unchanged() {
+        assert_eq!(format_change(Some(0)), "unchanged");
+    }
+
+    #[test]
+    fn format_change_positive() {
+        // +123 permille = +12.3%
+        assert_eq!(format_change(Some(123)),  "+12.3%");
+        assert_eq!(format_change(Some(10)),   "+1.0%");
+    }
+
+    #[test]
+    fn format_change_negative() {
+        // -45 permille = -4.5%
+        assert_eq!(format_change(Some(-45)), "-4.5%");
+    }
+}

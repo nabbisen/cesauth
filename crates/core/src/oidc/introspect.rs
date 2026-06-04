@@ -417,3 +417,103 @@ impl IntrospectionResponse {
         resp
     }
 }
+
+// ---------------------------------------------------------------------------
+// RFC 059 — IntrospectionResponse constructor tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inactive_has_no_extra_fields() {
+        let r = IntrospectionResponse::inactive();
+        assert!(!r.active);
+        assert!(r.sub.is_none(),       "inactive must omit sub");
+        assert!(r.scope.is_none(),     "inactive must omit scope");
+        assert!(r.exp.is_none(),       "inactive must omit exp");
+        assert!(r.x_cesauth.is_none(), "inactive must omit x_cesauth");
+    }
+
+    #[test]
+    fn inactive_serializes_only_active_false() {
+        let json = serde_json::to_string(&IntrospectionResponse::inactive()).unwrap();
+        assert_eq!(json, "{\"active\":false}",
+            "RFC 7662 §2.2: inactive response MUST NOT include other claims");
+    }
+
+    #[test]
+    fn active_access_sets_active_true_and_fields() {
+        // active_access(scope, client_id, sub, jti, iat, exp, aud)
+        let r = IntrospectionResponse::active_access(
+            "openid email".to_owned(),
+            "c-456".to_owned(),
+            "u-123".to_owned(),
+            "jti-1".to_owned(),
+            1_700_000_000,
+            1_700_001_000,
+            Some("https://api.example.com".to_owned()),
+        );
+        assert!(r.active);
+        assert_eq!(r.sub.as_deref(), Some("u-123"));
+        assert_eq!(r.token_type.as_deref(), Some("Bearer"));
+        assert_eq!(r.scope.as_deref(), Some("openid email"));
+        assert_eq!(r.client_id.as_deref(), Some("c-456"));
+        assert_eq!(r.exp, Some(1_700_001_000));
+        assert_eq!(r.iat, Some(1_700_000_000));
+        assert_eq!(r.jti.as_deref(), Some("jti-1"));
+        assert_eq!(r.aud.as_deref(), Some("https://api.example.com"));
+    }
+
+    #[test]
+    fn active_access_without_audience() {
+        let r = IntrospectionResponse::active_access(
+            "openid".to_owned(), "c-1".to_owned(), "u-1".to_owned(), "j-1".to_owned(), 1000, 2000, None,
+        );
+        assert!(r.aud.is_none());
+    }
+
+    #[test]
+    fn active_refresh_sets_active_true() {
+        // active_refresh(scope, client_id, sub, jti, iat, exp)
+        let r = IntrospectionResponse::active_refresh(
+            "openid".to_owned(), "c-789".to_owned(), "u-456".to_owned(),
+            "jti-r".to_owned(), 1_700_000_000, 1_700_002_000,
+        );
+        assert!(r.active);
+        assert!(r.token_type.is_none(), "refresh tokens have no token_type");
+        assert_eq!(r.sub.as_deref(), Some("u-456"));
+    }
+
+    #[test]
+    fn token_type_hint_parse() {
+        assert_eq!(TokenTypeHint::parse("access_token"),  Some(TokenTypeHint::AccessToken));
+        assert_eq!(TokenTypeHint::parse("refresh_token"), Some(TokenTypeHint::RefreshToken));
+        assert_eq!(TokenTypeHint::parse("unknown"),       None);
+        assert_eq!(TokenTypeHint::parse(""),              None);
+    }
+
+    #[test]
+    fn family_classification_serializes_snake_case() {
+        let json = serde_json::to_string(&FamilyClassification::Current).unwrap();
+        assert_eq!(json, "\"current\"");
+        let json2 = serde_json::to_string(&FamilyClassification::Revoked).unwrap();
+        assert_eq!(json2, "\"revoked\"");
+    }
+
+    #[test]
+    fn inactive_with_ext_includes_x_cesauth() {
+        let ext = CesauthIntrospectionExt {
+            family_state: Some(FamilyClassification::Revoked),
+            revoked_at:   Some(1_700_000_000),
+            revoke_reason: Some(RevokeReason::ReuseDetected),
+            current_jti:  None,
+        };
+        let r = IntrospectionResponse::inactive_with_ext(ext);
+        assert!(!r.active);
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(json.contains("x_cesauth"),   "extension must appear in JSON");
+        assert!(json.contains("\"revoked\""),  "family_state must serialize");
+    }
+}

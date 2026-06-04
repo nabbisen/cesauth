@@ -26,6 +26,85 @@ split by minor-version range:
 
 ---
 
+## [0.60.0] - 2026-05-12
+
+Implements RFC 059-064: coverage completeness across previously untested
+modules and documentation completing SaaS guide §16.7 acceptance criteria.
+
+### admin/policy.rs tests (RFC 059)
+
+13 inline tests covering all 6 public functions:
+
+- `role_allows` — full permission matrix for ReadOnly/Security/Operations/Super
+- `format_metric` — Count with thousands separators, Bytes scaling (B/KiB/MiB/GiB), Permille, Seconds
+- `format_change` — None/zero/positive/negative permille formatting
+
+### oidc/introspect.rs tests (RFC 059)
+
+8 tests covering `IntrospectionResponse` constructors (RFC 7662 compliance):
+
+- `inactive_serializes_only_active_false` — privacy invariant: inactive responses contain NO other claims
+- `active_access_sets_active_true_and_fields` — all RFC 7662 §2.2 fields present
+- `active_access_without_audience`, `active_refresh_sets_active_true`
+- `token_type_hint_parse`, `family_classification_serializes_snake_case`
+- `inactive_with_ext_includes_x_cesauth`
+
+### jwt/claims.rs tests (RFC 060)
+
+6 tests covering JWT claim serialization:
+
+- `access_token_claims_round_trip_json` — serde round-trip
+- `access_token_claims_contains_all_required_fields` — all 8 JWT fields present
+- `id_token_nonce_omitted_when_none` — `skip_serializing_if` correctness
+- `id_token_optional_fields_present_when_some`
+- `jwk_ed25519_constructor`, `jwks_document_serializes_keys_array` — `use_` → `"use"` rename
+
+### Documentation (RFC 061-062) — SaaS guide §16.7
+
+**`docs/src/expert/data-model.md`** (new):
+- Full ASCII entity-relationship diagram for SCHEMA_VERSION 20
+- Durable Objects inventory (AuthChallengeStore, RefreshTokenFamilyStore, etc.)
+- `role_assignments` scope types table
+- Key invariants (email COLLATE NOCASE, cascade rules, audit append-only)
+- Migration history table (0001–0020)
+
+**`docs/src/expert/admin-operations.md`** (new):
+- Tenant lifecycle (provision, suspend, soft-delete)
+- Invitation management (issue, revoke)
+- Deletion request queue (cancel, execute)
+- Session management and cron sweep behaviour
+- Audit log structure and chain verification
+- Plan management and key rotation
+
+**`docs/src/deployment/migration-procedures.md`** (new):
+- Fresh deployment instructions
+- Version-by-version upgrade paths (v0.56 → v0.59 → v0.60)
+- Pre-flight check for migration 0020 (authenticator tenant_id backfill)
+- Rollback policy and data export guidance
+
+`docs/src/SUMMARY.md` updated with all three new documents.
+
+### §16.7 acceptance criteria status
+
+| Criterion | Status |
+|---|---|
+| Data model ER diagram | ✅ `docs/src/expert/data-model.md` |
+| API specification | ✅ `docs/src/expert/route-contracts.md` (160 routes) |
+| Migration procedures | ✅ `docs/src/deployment/migration-procedures.md` |
+| Admin operations guide | ✅ `docs/src/expert/admin-operations.md` |
+
+### Test counts
+
+| Crate | v0.59.0 | v0.60.0 | Δ |
+|---|---|---|---|
+| `cesauth-core` | 636 | **663** | +27 |
+| `cesauth-adapter-test` | 125 | **125** | ±0 |
+| `cesauth-ui` | 270 | **270** | ±0 |
+| `cesauth-migrate-test` | 31 | **31** | ±0 |
+| **Total** | **1,062** | **1,089** | **+27** |
+
+---
+
 ## [0.59.0] - 2026-05-12
 
 Implements RFC 054-058: coverage completeness, soft-delete service, and
