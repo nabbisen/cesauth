@@ -45,6 +45,8 @@ pub struct DiscoveryDocument {
     /// authentication to ask "is this token currently active,
     /// and what claims does it carry?".
     pub introspection_endpoint:                String,
+    /// **RFC 040** — OIDC Core §5.3 UserInfo endpoint.
+    pub userinfo_endpoint:                     String,
     pub response_types_supported:              &'static [&'static str],
     pub token_endpoint_auth_methods_supported: &'static [&'static str],
     /// **v0.38.0** — Auth methods accepted at the introspection
@@ -87,6 +89,7 @@ impl DiscoveryDocument {
             jwks_uri:                              format!("{issuer}/jwks.json"),
             revocation_endpoint:                   format!("{issuer}/revoke"),
             introspection_endpoint:                format!("{issuer}/introspect"),
+            userinfo_endpoint:                     format!("{issuer}/userinfo"),
             response_types_supported:              &["code"],
             token_endpoint_auth_methods_supported: &[
                 "none",

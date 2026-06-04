@@ -26,6 +26,90 @@ split by minor-version range:
 
 ---
 
+## [0.56.0] - 2026-05-12
+
+Implements RFC 040-044: OIDC compliance completion, technical debt clearance,
+and the first two SaaS-required features from the commercial extension guide.
+
+### OIDC compliance (RFC 040)
+
+- **`GET /userinfo` + `POST /userinfo`** — OIDC Core §5.3.  Accepts a Bearer
+  access token; returns claims gated by granted scopes (`email`, `profile`).
+- `build_userinfo_claims(sub, user, scopes)` pure function in
+  `cesauth_core::oidc::userinfo` (10 unit tests).
+- `DiscoveryDocument.userinfo_endpoint` field added — discovery doc now
+  complete per OIDC Discovery 1.0.
+
+### Technical debt — token service (RFC 041)
+
+- `TokenDeps<CR,AS,FS,GR,UR,RL>` struct replaces 5-parameter generic lists on
+  `exchange_code` and `rotate_refresh`.  Call sites construct `TokenDeps` once
+  per request.
+- `TokenConfig { access_ttl_secs, refresh_ttl_secs, iss }` bundles static
+  config; no more repeating TTLs at every call site.
+- Zero wire change.  Test stubs updated.
+
+### Preview-and-apply: first adopter (RFC 042)
+
+- `POST /admin/console/config/log_level/preview` — RFC 018 infrastructure
+  first live use.  Renders an impact statement + HMAC-signed preview token.
+- `POST /admin/console/config/log_level/apply` — verifies preview token
+  (TTL 5 min, CSRF-bound), persists new level to `CONFIG_KV`, emits
+  `OperationApplied` audit event.
+- Routes added to route-contracts.md.
+
+### SaaS features (RFC 043 / RFC 044)
+
+**RFC 043 — Invitation tokens** (`crates/core/src/invitation.rs`)
+
+- `invitation_tokens` table (migration 0018): unique pending invite per
+  `(tenant_id, email)`, 72-hour TTL, full accept/revoke lifecycle.
+- `issue_invitation`, `verify_invitation`, `accept_invitation`,
+  `revoke_invitation` pure service functions.
+- `InvitationVerifyOutcome`: `Valid | Expired | Revoked | AlreadyAccepted | NotFound`.
+- `InvitationRepository` port trait.
+- 11 unit tests covering conflict, expiry, email case-insensitivity, etc.
+
+**RFC 044 — Deletion requests / GDPR Article 17** (`crates/core/src/deletion.rs`)
+
+- `deletion_requests` table (migration 0019): one pending request per user,
+  configurable grace period (default 30 days), request row retained post-delete.
+- `schedule_deletion`, `execute_deletion` (calls `UserRepository::delete_by_id`
+  + ON DELETE CASCADE), `cancel_deletion` service functions.
+- `DeletionRequestRepository` port trait.
+- `DeletionRequest.is_due(now)` helper for cron sweep.
+- 8 unit tests covering conflict, execution, cancellation, grace period boundary.
+
+**New `CoreError::Conflict`** variant — reusable for both invitation and deletion
+uniqueness violations.
+
+### Schema
+
+SCHEMA_VERSION: 17 → **19** (migrations 0018–0019)
+
+### Test counts
+
+| Crate | v0.55.0 | v0.56.0 | Δ |
+|---|---|---|---|
+| `cesauth-core` | 559 | **588** | +29 |
+| `cesauth-adapter-test` | 117 | **117** | ±0 |
+| `cesauth-ui` | 270 | **270** | ±0 |
+| `cesauth-migrate-test` | 17 | **21** | +4 |
+| **Total** | **963** | **996** | **+33** |
+
+### Remaining work for RFC 043/044
+
+Both `invitation` and `deletion` cores are complete with tests.  Worker
+routes (HTTP handlers, Cloudflare D1 adapters) are the next step:
+
+- `POST /admin/t/:slug/invitations`, `GET/POST /accept-invite`
+- `POST /me/security/delete-account`, admin deletion queue routes
+- Cron: `sweep_pending_deletions`
+- Audit `EventKind`: `InvitationIssued`, `InvitationAccepted`, `InvitationRevoked`,
+  `DeletionRequested`, `DeletionExecuted`, `DeletionCancelled`
+
+---
+
 ## [0.55.0] - 2026-05-09
 
 Addresses all P0/P1 findings from the v0.54.0 external code review

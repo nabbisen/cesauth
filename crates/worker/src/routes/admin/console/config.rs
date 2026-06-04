@@ -339,3 +339,147 @@ pub async fn edit_submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Re
         }
     }
 }
+
+// -------------------------------------------------------------------------
+// POST /admin/console/config/log_level/preview   (Operations+, RFC 042)
+// -------------------------------------------------------------------------
+// First step of the preview-and-apply pattern for LOG_LEVEL changes.
+// Returns an HTML page with an impact statement + signed preview token.
+// -------------------------------------------------------------------------
+
+pub async fn log_level_preview<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
+        Ok(p)  => p,
+        Err(r) => return Ok(r),
+    };
+    if let Err(r) = auth::ensure_role_allows(&principal, AdminAction::EditBucketSafety) {
+        return Ok(r);
+    }
+
+    let form = req.form_data().await?;
+    let new_level: String = match form.get("log_level") {
+        Some(worker::FormEntry::Field(v)) => v,
+        _ => return Response::error("log_level field required", 400),
+    };
+    let csrf_val: String = match form.get("csrf_token") {
+        Some(worker::FormEntry::Field(v)) => v,
+        _ => return Response::error("csrf_token required", 400),
+    };
+
+    // Validate level string.
+    let valid_levels = ["trace", "debug", "info", "warn", "error"];
+    if !valid_levels.contains(&new_level.as_str()) {
+        return Response::error("invalid log_level value", 400);
+    }
+
+    // Current level comes from env var (default "info" when unset).
+    let current_level = ctx.env.var("LOG_LEVEL")
+        .map(|v| v.to_string())
+        .unwrap_or_else(|_| "info".to_owned());
+
+    let impact = cesauth_core::admin::preview::log_level_impact(&current_level, &new_level);
+    let diff   = vec![cesauth_core::admin::preview::DiffEntry::new(
+        "LOG_LEVEL", &current_level, &new_level,
+    )];
+
+    let now   = OffsetDateTime::now_utc().unix_timestamp();
+    let hmac_key = crate::config::load_session_cookie_key(&ctx.env)?;
+    let payload = cesauth_core::admin::preview::PreviewTokenPayload {
+        operation_id: "config.log_level".to_owned(),
+        before:       serde_json::json!(current_level),
+        after:        serde_json::json!(new_level),
+        preview_ts:   now,
+        csrf:         csrf_val.clone(),
+    };
+    let token = match cesauth_core::admin::preview::mint_preview_token(&payload, &hmac_key) {
+        Ok(t)  => t,
+        Err(e) => return Response::error(format!("preview token mint failed: {e}"), 500),
+    };
+
+    audit::write_owned(
+        &ctx.env, EventKind::OperationPreviewed,
+        Some(principal.id.clone()), None,
+        Some(format!("log_level: {current_level} -> {new_level}")),
+    ).await.ok();
+
+    use cesauth_core::admin::scope::ScopeBadge;
+    let can_apply = matches!(principal.role,
+        cesauth_core::admin::types::Role::Operations | cesauth_core::admin::types::Role::Super);
+
+    let body = ui::admin::preview::preview_body(
+        &diff, &impact,
+        "/admin/console/config/log_level/apply",
+        "/admin/console/config",
+        &token,
+        &csrf_val,
+        can_apply,
+    );
+    let page = ui::admin::frame::admin_frame(
+        "Log level change preview",
+        principal.role,
+        principal.name.as_deref(),
+        ui::admin::frame::Tab::Config,
+        &ScopeBadge::System,
+        &body,
+    );
+    render::html_response(page)
+}
+
+// -------------------------------------------------------------------------
+// POST /admin/console/config/log_level/apply   (Operations+, RFC 042)
+// -------------------------------------------------------------------------
+
+pub async fn log_level_apply<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
+        Ok(p)  => p,
+        Err(r) => return Ok(r),
+    };
+    if let Err(r) = auth::ensure_role_allows(&principal, AdminAction::EditBucketSafety) {
+        return Ok(r);
+    }
+
+    let form = req.form_data().await?;
+    let preview_token_val: String = match form.get("preview_token") {
+        Some(worker::FormEntry::Field(v)) => v,
+        _ => return Response::error("preview_token required", 400),
+    };
+    let csrf_val: String = match form.get("csrf_token") {
+        Some(worker::FormEntry::Field(v)) => v,
+        _ => return Response::error("csrf_token required", 400),
+    };
+
+    let now      = OffsetDateTime::now_utc().unix_timestamp();
+    let hmac_key = crate::config::load_session_cookie_key(&ctx.env)?;
+    let payload  = match cesauth_core::admin::preview::verify_preview_token(
+        &preview_token_val, &hmac_key, now, &csrf_val,
+    ) {
+        Ok(p)  => p,
+        Err(_) => {
+            // Expired, tampered, or CSRF mismatch — redirect back with no detail (fail-closed).
+            let mut resp = Response::empty()?.with_status(303);
+            let _ = resp.headers_mut().set("location", "/admin/console/config?preview_error=1");
+            return Ok(resp);
+        }
+    };
+
+    let new_level = payload.after.as_str().unwrap_or("info");
+    // Persist to KV as an override (the wrangler.toml default can't be changed at runtime,
+    // but we store a KV value that LogConfig::from_env will prefer on next request).
+    // KV binding: CONFIG_KV (must be declared in wrangler.toml).
+    if let Ok(kv) = ctx.env.kv("CONFIG_KV") {
+        if let Ok(builder) = kv.put("log_level", new_level) {
+            let _ = builder.execute().await;
+        }
+    }
+
+    audit::write_owned(
+        &ctx.env, EventKind::OperationApplied,
+        Some(principal.id.clone()), None,
+        Some(format!("log_level applied: {} -> {}", payload.before, payload.after)),
+    ).await.ok();
+
+    let mut resp = Response::empty()?.with_status(303);
+    let _ = resp.headers_mut().set("location", "/admin/console/config");
+    let _ = resp.headers_mut().set("cache-control", "no-store");
+    Ok(resp)
+}

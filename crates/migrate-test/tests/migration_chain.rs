@@ -536,3 +536,81 @@ fn groups_fk_on_delete_is_restrict_not_set_null() {
         "hard delete of referenced organization must fail with RESTRICT FK"
     );
 }
+
+// ---------------------------------------------------------------------------
+// RFC 043 — 0018: invitation_tokens table exists
+// ---------------------------------------------------------------------------
+
+#[test]
+fn invitation_tokens_table_exists_after_0018() {
+    let conn = apply_all_migrations().unwrap();
+    // Should be able to insert a minimal row.
+    let now = 1_700_000_000i64;
+    conn.execute(
+        "INSERT INTO invitation_tokens
+           (id, tenant_id, email, role, issued_by, issued_at, expires_at)
+         VALUES ('inv-1', 'tenant-default', 'alice@test.com', 'member', 'admin-1', ?1, ?1 + 259200)",
+        rusqlite::params![now],
+    ).expect("invitation_tokens insert should succeed after 0018");
+}
+
+#[test]
+fn invitation_tokens_unique_pending_per_email_tenant() {
+    let conn = apply_all_migrations().unwrap();
+    conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+    let now = 1_700_000_000i64;
+
+    conn.execute(
+        "INSERT INTO invitation_tokens
+           (id, tenant_id, email, role, issued_by, issued_at, expires_at)
+         VALUES ('inv-a', 'tenant-default', 'bob@test.com', 'member', 'admin-1', ?1, ?1 + 259200)",
+        rusqlite::params![now],
+    ).unwrap();
+
+    // Second pending invite for same tenant+email must be rejected.
+    let result = conn.execute(
+        "INSERT INTO invitation_tokens
+           (id, tenant_id, email, role, issued_by, issued_at, expires_at)
+         VALUES ('inv-b', 'tenant-default', 'bob@test.com', 'admin', 'admin-1', ?1, ?1 + 259200)",
+        rusqlite::params![now],
+    );
+    assert!(result.is_err(),
+        "unique index must prevent two pending invitations for the same email in the same tenant");
+}
+
+// ---------------------------------------------------------------------------
+// RFC 044 — 0019: deletion_requests table exists
+// ---------------------------------------------------------------------------
+
+#[test]
+fn deletion_requests_table_exists_after_0019() {
+    let conn = apply_all_migrations().unwrap();
+    let now = 1_700_000_000i64;
+    conn.execute(
+        "INSERT INTO deletion_requests
+           (id, user_id, tenant_id, requested_at, requested_by, scheduled_at, status)
+         VALUES ('del-1', 'u-ghost', 'tenant-default', ?1, 'u-ghost', ?1 + 2592000, 'pending')",
+        rusqlite::params![now],
+    ).expect("deletion_requests insert should succeed after 0019");
+}
+
+#[test]
+fn deletion_requests_unique_pending_per_user() {
+    let conn = apply_all_migrations().unwrap();
+    let now = 1_700_000_000i64;
+    conn.execute(
+        "INSERT INTO deletion_requests
+           (id, user_id, tenant_id, requested_at, requested_by, scheduled_at, status)
+         VALUES ('del-x', 'u-double', 'tenant-default', ?1, 'u-double', ?1 + 2592000, 'pending')",
+        rusqlite::params![now],
+    ).unwrap();
+
+    let result = conn.execute(
+        "INSERT INTO deletion_requests
+           (id, user_id, tenant_id, requested_at, requested_by, scheduled_at, status)
+         VALUES ('del-y', 'u-double', 'tenant-default', ?1, 'admin', ?1 + 2592000, 'pending')",
+        rusqlite::params![now],
+    );
+    assert!(result.is_err(),
+        "unique index must prevent two pending deletion requests for the same user");
+}

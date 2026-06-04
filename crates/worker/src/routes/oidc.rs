@@ -11,6 +11,9 @@ mod introspect;
 mod jwks;
 mod revoke;
 mod token;
+mod userinfo;
+
+pub use userinfo::handler as userinfo_handler;
 
 pub use authorize::authorize;
 pub use discovery::discovery;

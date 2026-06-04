@@ -18,3 +18,4 @@ pub mod id_token;
 pub mod introspect;
 pub mod pkce;
 pub mod token;
+pub mod userinfo;

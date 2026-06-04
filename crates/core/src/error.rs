@@ -18,6 +18,9 @@ pub enum CoreError {
     // --- Validation / input ------------------------------------------------
     #[error("invalid request: {0}")]
     InvalidRequest(&'static str),
+    /// A unique-constraint conflict (duplicate invite, duplicate resource, etc.).
+    #[error("conflict: resource already exists")]
+    Conflict,
 
     #[error("invalid grant: {0}")]
     InvalidGrant(&'static str),

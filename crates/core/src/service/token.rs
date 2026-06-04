@@ -5,11 +5,10 @@
 //! * `exchange_code` - authorization_code -> access + refresh (+ id).
 //! * `rotate_refresh` - refresh_token -> new access + refresh.
 //!
-//! The only Cloudflare-awareness here is the shape of the ports: we
-//! assume a DO-backed `AuthChallengeStore` will single-consume codes
-//! and a DO-backed `RefreshTokenFamilyStore` will serialize rotations.
-//! Swapping to the in-memory `adapter-test` is a matter of passing
-//! different trait implementers.
+//! **RFC 041** — dependency injection via `TokenDeps` struct eliminates
+//! the 5-type-parameter footprint that previous callers had to spell out.
+//! Wire compatibility is unchanged; the worker constructs `TokenDeps`
+//! inline before calling.
 
 use uuid::Uuid;
 
@@ -27,6 +26,44 @@ use crate::types::Scopes;
 
 /// Default id_token TTL: 1 hour (same as access token in the reference deployment).
 const ID_TOKEN_TTL_SECS: i64 = 3600;
+
+// ---------------------------------------------------------------------------
+// Dependency + config structs (RFC 041)
+// ---------------------------------------------------------------------------
+
+/// All repository dependencies needed by the token endpoint flows.
+///
+/// Construct once per request and pass by reference to `exchange_code` /
+/// `rotate_refresh`. This replaces the previous 4-5 generic type parameters
+/// per function, making call sites readable and error messages tractable.
+pub struct TokenDeps<'r, CR, AS, FS, GR, UR, RL>
+where
+    CR: ClientRepository,
+    AS: AuthChallengeStore,
+    FS: RefreshTokenFamilyStore,
+    GR: GrantRepository,
+    UR: UserRepository,
+    RL: RateLimitStore,
+{
+    pub clients:  &'r CR,
+    pub codes:    &'r AS,
+    pub families: &'r FS,
+    pub grants:   &'r GR,
+    pub users:    &'r UR,
+    pub rates:    &'r RL,
+}
+
+/// Static configuration for token issuance (TTLs, issuer).
+///
+/// These values come from the deployment's `wrangler.toml` / `Config` struct
+/// and are constant for the lifetime of the worker instance.
+#[derive(Debug, Clone)]
+pub struct TokenConfig<'a> {
+    pub access_ttl_secs:  i64,
+    pub refresh_ttl_secs: i64,
+    /// Issuer URL, e.g. `"https://auth.example.com"`.
+    pub iss:              &'a str,
+}
 
 /// Input to `exchange_code`. All fields are borrowed from the incoming
 /// request; the caller is responsible for parsing the HTTP form body.
@@ -57,17 +94,11 @@ pub struct ExchangeCodeInput<'a> {
 /// If step 5 fails after step 2, we've consumed a code without issuing
 /// a token. That's a user-visible "try again" which is acceptable;
 /// silently retrying step 2 would allow a leaked code to be reused.
-pub async fn exchange_code<CR, AS, FS, GR, UR>(
-    clients:   &CR,
-    codes:     &AS,
-    families:  &FS,
-    grants:    &GR,
-    users:     &UR,
-    signer:    &JwtSigner,
-    access_ttl_secs:  i64,
-    refresh_ttl_secs: i64,
-    input:     &ExchangeCodeInput<'_>,
-    iss:       &str,
+pub async fn exchange_code<CR, AS, FS, GR, UR, RL>(
+    deps:   &TokenDeps<'_, CR, AS, FS, GR, UR, RL>,
+    signer: &JwtSigner,
+    cfg:    &TokenConfig<'_>,
+    input:  &ExchangeCodeInput<'_>,
 ) -> CoreResult<TokenResponse>
 where
     CR: ClientRepository,
@@ -75,16 +106,17 @@ where
     FS: RefreshTokenFamilyStore,
     GR: GrantRepository,
     UR: UserRepository,
+    RL: RateLimitStore,
 {
     // 1. Client.
-    let client = clients
+    let client = deps.clients
         .find(input.client_id)
         .await
         .map_err(|_| CoreError::Internal)?
         .ok_or(CoreError::InvalidClient)?;
 
     // 2. Consume the code.
-    let challenge = codes
+    let challenge = deps.codes
         .take(input.code)
         .await
         .map_err(|_| CoreError::Internal)?
@@ -124,7 +156,7 @@ where
         iss:   signer.issuer().to_owned(),
         sub:   user_id.clone(),
         aud:   client.id.clone(),
-        exp:   input.now_unix + access_ttl_secs,
+        exp:   input.now_unix + cfg.access_ttl_secs,
         iat:   input.now_unix,
         jti:   access_jti,
         scope: scopes.to_space_separated(),
@@ -133,7 +165,7 @@ where
     let access_token = signer.sign(&claims)?;
 
     // 5. Init family + grant.
-    families
+    deps.families
         .init(&FamilyInit {
             family_id: family_id.clone(),
             user_id:   user_id.clone(),
@@ -146,7 +178,7 @@ where
         .await
         .map_err(|_| CoreError::Internal)?;
 
-    grants
+    deps.grants
         .create(&Grant {
             id:         family_id.clone(),
             user_id:    user_id.clone(),
@@ -158,17 +190,17 @@ where
         .await
         .map_err(|_| CoreError::Internal)?;
 
-    let refresh_token = encode_refresh(&family_id, &refresh_jti, refresh_ttl_secs, input.now_unix);
+    let refresh_token = encode_refresh(&family_id, &refresh_jti, cfg.refresh_ttl_secs, input.now_unix);
 
     // RFC 001: issue id_token when the scopes include "openid".
     let id_token = if scopes.0.iter().any(|s| s == "openid") {
-        let user = users
+        let user = deps.users
             .find_by_id(&user_id)
             .await
             .map_err(|_| CoreError::Internal)?
             .ok_or(CoreError::InvalidGrant("user deleted between authorize and token exchange"))?;
         let claims = build_id_token_claims(
-            iss,
+            cfg.iss,
             &user,
             &client.id,
             &scopes.0,
@@ -188,7 +220,7 @@ where
     Ok(TokenResponse {
         access_token,
         token_type: "Bearer",
-        expires_in: access_ttl_secs,
+        expires_in: cfg.access_ttl_secs,
         refresh_token: Some(refresh_token),
         id_token,
         scope: scopes.to_space_separated(),
@@ -224,22 +256,19 @@ pub struct RotateRefreshInput<'a> {
 /// `retired_jtis` ring before the legitimate party notices.
 /// The atomic-revoke-on-reuse invariant continues to apply
 /// regardless; rate limit is DoS bounding, not security.
-pub async fn rotate_refresh<CR, FS, RL, UR>(
-    clients:  &CR,
-    families: &FS,
-    rates:    &RL,
-    users:    &UR,
-    signer:   &JwtSigner,
-    access_ttl_secs:  i64,
-    refresh_ttl_secs: i64,
-    input:    &RotateRefreshInput<'_>,
-    iss:      &str,
+pub async fn rotate_refresh<CR, AS, FS, GR, UR, RL>(
+    deps:   &TokenDeps<'_, CR, AS, FS, GR, UR, RL>,
+    signer: &JwtSigner,
+    cfg:    &TokenConfig<'_>,
+    input:  &RotateRefreshInput<'_>,
 ) -> CoreResult<TokenResponse>
 where
     CR: ClientRepository,
+    AS: AuthChallengeStore,
     FS: RefreshTokenFamilyStore,
-    RL: RateLimitStore,
+    GR: GrantRepository,
     UR: UserRepository,
+    RL: RateLimitStore,
 {
     let (family_id, presented_jti) = decode_refresh(input.refresh_token)?;
 
@@ -254,7 +283,7 @@ where
     // threshold = 0 disables the gate (operator opt-out).
     if input.rate_limit_threshold > 0 {
         let bucket = format!("refresh:{family_id}");
-        let dec = rates.hit(
+        let dec = deps.rates.hit(
             &bucket,
             input.now_unix,
             input.rate_limit_window_secs,
@@ -270,14 +299,14 @@ where
         }
     }
 
-    let client = clients
+    let client = deps.clients
         .find(input.client_id)
         .await
         .map_err(|_| CoreError::Internal)?
         .ok_or(CoreError::InvalidClient)?;
 
     let new_jti = Uuid::new_v4().to_string();
-    let outcome = families
+    let outcome = deps.families
         .rotate(&family_id, &presented_jti, &new_jti, input.now_unix)
         .await
         .map_err(|_| CoreError::Internal)?;
@@ -288,7 +317,7 @@ where
             // access token. Peek is fine here: we are inside the
             // rotate->peek ordering on the same DO instance, so the
             // peek sees the post-rotation state.
-            let fam = families
+            let fam = deps.families
                 .peek(&family_id)
                 .await
                 .map_err(|_| CoreError::Internal)?
@@ -312,26 +341,26 @@ where
                 iss:   signer.issuer().to_owned(),
                 sub:   fam.user_id.clone(),
                 aud:   client.id.clone(),
-                exp:   input.now_unix + access_ttl_secs,
+                exp:   input.now_unix + cfg.access_ttl_secs,
                 iat:   input.now_unix,
                 jti:   Uuid::new_v4().to_string(),
                 scope: scopes.to_space_separated(),
                 cid:   client.id.clone(),
             };
             let access_token = signer.sign(&claims)?;
-            let refresh_token = encode_refresh(&family_id, &new_current_jti, refresh_ttl_secs, input.now_unix);
+            let refresh_token = encode_refresh(&family_id, &new_current_jti, cfg.refresh_ttl_secs, input.now_unix);
 
             // RFC 001: issue fresh id_token when scopes include "openid".
             // ADR-008 §Q10: auth_time is the family's original auth time,
             // NOT the rotation moment.
             let id_token = if scopes.0.iter().any(|s| s == "openid") {
-                let user = users
+                let user = deps.users
                     .find_by_id(&fam.user_id)
                     .await
                     .map_err(|_| CoreError::Internal)?
                     .ok_or(CoreError::InvalidGrant("user deleted; cannot issue id_token"))?;
                 let claims_id = build_id_token_claims(
-                    iss,
+                    cfg.iss,
                     &user,
                     &client.id,
                     &scopes.0,
@@ -348,7 +377,7 @@ where
             Ok(TokenResponse {
                 access_token,
                 token_type: "Bearer",
-                expires_in: access_ttl_secs,
+                expires_in: cfg.access_ttl_secs,
                 refresh_token: Some(refresh_token),
                 id_token,
                 scope: scopes.to_space_separated(),

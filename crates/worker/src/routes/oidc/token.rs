@@ -71,6 +71,22 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
     let families = CloudflareRefreshTokenFamilyStore::new(&ctx.env);
     let grants   = CloudflareGrantRepository::new(&ctx.env);
     let users    = CloudflareUserRepository::new(&ctx.env);
+    let rates    = cesauth_cf::ports::store::CloudflareRateLimitStore::new(&ctx.env);
+
+    // RFC 041: single deps + config bundle replaces per-call arg lists.
+    let deps = token_service::TokenDeps {
+        clients: &clients,
+        codes:   &codes,
+        families: &families,
+        grants:  &grants,
+        users:   &users,
+        rates:   &rates,
+    };
+    let tok_cfg = token_service::TokenConfig {
+        access_ttl_secs:  cfg.access_token_ttl_secs,
+        refresh_ttl_secs: cfg.refresh_token_ttl_secs,
+        iss:              &cfg.issuer,
+    };
 
     let grant = match req_in.classify() {
         Ok(g)  => g,
@@ -86,11 +102,7 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
                 code_verifier: g.code_verifier,
                 now_unix:      now,
             };
-            match token_service::exchange_code(
-                &clients, &codes, &families, &grants, &users, &signer,
-                cfg.access_token_ttl_secs, cfg.refresh_token_ttl_secs, &input,
-                &cfg.issuer,
-            ).await {
+            match token_service::exchange_code(&deps, &signer, &tok_cfg, &input).await {
                 Ok(tr) => {
                     audit::write_owned(
                         &ctx.env, EventKind::TokenIssued,
@@ -121,16 +133,10 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
                 client_id:     g.client_id,
                 scope:         g.scope,
                 now_unix:      now,
-                // v0.37.0: per-family rate limit (ADR-011 §Q1).
                 rate_limit_threshold:   cfg.refresh_rate_limit_threshold,
                 rate_limit_window_secs: cfg.refresh_rate_limit_window_secs,
             };
-            let rates = cesauth_cf::ports::store::CloudflareRateLimitStore::new(&ctx.env);
-            match token_service::rotate_refresh(
-                &clients, &families, &rates, &users, &signer,
-                cfg.access_token_ttl_secs, cfg.refresh_token_ttl_secs, &input,
-                &cfg.issuer,
-            ).await {
+            match token_service::rotate_refresh(&deps, &signer, &tok_cfg, &input).await {
                 Ok(tr) => {
                     audit::write_owned(
                         &ctx.env, EventKind::TokenRefreshed,

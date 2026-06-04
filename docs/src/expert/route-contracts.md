@@ -18,6 +18,8 @@ code-review responsibility.
 
 | Method | Path | Actor | Audit kind | View / template | Rendering test | CSRF |
 |---|---|---|---|---|---|---|
+| GET | `/userinfo` | RP / end user | none (read) | JSON (UserInfoClaims) | n/a | N/A (Bearer) |
+| POST | `/userinfo` | RP / end user | none (read) | JSON (UserInfoClaims) | n/a | N/A (Bearer) |
 | GET | `/.well-known/openid-configuration` | RP / public | none | JSON | n/a | N/A (GET, JSON) |
 | GET | `/jwks.json` | RP / public | none | JSON | n/a | N/A (GET, JSON) |
 | GET | `/authorize` | Anonymous | none (read) | `authorize_login_page` | `templates::tests::authorize_*` | N/A (GET) |
@@ -81,6 +83,8 @@ code-review responsibility.
 | GET | `/admin/console/config` | System admin | none | config page | n/a | N/A (GET) |
 | POST | `/admin/console/config/:bucket/preview` | System admin | none | config preview | n/a | required |
 | POST | `/admin/console/config/:bucket/apply` | System admin | `config_applied` | redirect | n/a | required |
+| POST | `/admin/console/config/log_level/preview` | System admin | `operation_previewed` | preview page | n/a | required |
+| POST | `/admin/console/config/log_level/apply` | System admin | `operation_applied` | redirect | n/a | required |
 | GET | `/admin/console/alerts` | System admin | none | alerts page | n/a | N/A (GET) |
 | POST | `/admin/console/thresholds/:name` | System admin | `threshold_set` | redirect | n/a | required |
 | GET | `/admin/console/config/:bucket/edit` | System admin | none | edit form | n/a | N/A (GET) |

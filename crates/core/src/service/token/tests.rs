@@ -22,7 +22,7 @@ fn decode_rejects_garbage() {
 
 #[cfg(test)]
 mod id_token_tests {
-    use super::{exchange_code, rotate_refresh, ExchangeCodeInput, RotateRefreshInput};
+    use super::{exchange_code, rotate_refresh, ExchangeCodeInput, RotateRefreshInput, TokenDeps, TokenConfig};
     use super::encode_refresh;
 
     use std::cell::RefCell;
@@ -236,6 +236,21 @@ mod id_token_tests {
         )
     }
 
+
+    fn make_deps_cfg<'a>(
+        clients:  &'a StubClients,
+        codes:    &'a StubCodes,
+        families: &'a StubFamilies,
+        grants:   &'a StubGrants,
+        users:    &'a StubUsers,
+        rates:    &'a StubRates,
+        iss:      &'a str,
+    ) -> (TokenDeps<'a, StubClients, StubCodes, StubFamilies, StubGrants, StubUsers, StubRates>, TokenConfig<'a>) {
+        let deps = TokenDeps { clients, codes, families, grants, users, rates };
+        let cfg  = TokenConfig { access_ttl_secs: 3600, refresh_ttl_secs: 86400, iss };
+        (deps, cfg)
+    }
+
     async fn run_exchange(scopes: &[&str], auth_time: i64) -> TokenResponse {
         let (clients, codes, families, grants, users) =
             stub_exchange_setup(scopes, auth_time, "test-verifier-padded-to-exactly-43chars-xxx");
@@ -247,10 +262,8 @@ mod id_token_tests {
             code_verifier: "test-verifier-padded-to-exactly-43chars-xxx",
             now_unix:      1_700_000_000,
         };
-        exchange_code(
-            &clients, &codes, &families, &grants, &users, &signer,
-            3600, 86400, &input, "https://t.test",
-        ).await.unwrap()
+        let (deps, tok_cfg) = make_deps_cfg(&clients, &codes, &families, &grants, &users, &StubRates, "https://t.test");
+        exchange_code(&deps, &signer, &tok_cfg, &input).await.unwrap()
     }
 
     // ── tests ────────────────────────────────────────────────────────
@@ -316,10 +329,14 @@ mod id_token_tests {
             rate_limit_threshold:   0,
             rate_limit_window_secs: 60,
         };
-        let resp = rotate_refresh(
-            &StubClients(client_map), &families, &StubRates, &StubUsers(user_map),
-            &test_signer(), 3600, 86400, &input, "https://t.test",
-        ).await.unwrap();
+        let resp = {
+            let clients_s = StubClients(client_map);
+            let users_s   = StubUsers(user_map);
+            let codes_s   = StubCodes(RefCell::new(HashMap::new()));
+            let deps = TokenDeps { clients: &clients_s, codes: &codes_s, families: &families, grants: &StubGrants, users: &users_s, rates: &StubRates };
+            let tok_cfg = TokenConfig { access_ttl_secs: 3600, refresh_ttl_secs: 86400, iss: "https://t.test" };
+            rotate_refresh(&deps, &test_signer(), &tok_cfg, &input).await
+        }.unwrap();
         assert!(resp.id_token.is_some(), "rotate openid → id_token");
     }
 
@@ -349,10 +366,14 @@ mod id_token_tests {
             rate_limit_threshold:   0,
             rate_limit_window_secs: 60,
         };
-        let resp = rotate_refresh(
-            &StubClients(client_map), &families, &StubRates, &StubUsers(user_map),
-            &test_signer(), 3600, 86400, &input, "https://t.test",
-        ).await.unwrap();
+        let resp = {
+            let clients_s = StubClients(client_map);
+            let users_s   = StubUsers(user_map);
+            let codes_s   = StubCodes(RefCell::new(HashMap::new()));
+            let deps = TokenDeps { clients: &clients_s, codes: &codes_s, families: &families, grants: &StubGrants, users: &users_s, rates: &StubRates };
+            let tok_cfg = TokenConfig { access_ttl_secs: 3600, refresh_ttl_secs: 86400, iss: "https://t.test" };
+            rotate_refresh(&deps, &test_signer(), &tok_cfg, &input).await
+        }.unwrap();
         let c = decode_id_claims(resp.id_token.as_deref().unwrap());
         assert_eq!(c.auth_time, orig_auth_time,
             "auth_time must be ORIGINAL auth time, not rotation time");
@@ -384,10 +405,14 @@ mod id_token_tests {
             rate_limit_threshold:   0,
             rate_limit_window_secs: 60,
         };
-        let resp = rotate_refresh(
-            &StubClients(client_map), &families, &StubRates, &StubUsers(user_map),
-            &test_signer(), 3600, 86400, &input, "https://t.test",
-        ).await.unwrap();
+        let resp = {
+            let clients_s = StubClients(client_map);
+            let users_s   = StubUsers(user_map);
+            let codes_s   = StubCodes(RefCell::new(HashMap::new()));
+            let deps = TokenDeps { clients: &clients_s, codes: &codes_s, families: &families, grants: &StubGrants, users: &users_s, rates: &StubRates };
+            let tok_cfg = TokenConfig { access_ttl_secs: 3600, refresh_ttl_secs: 86400, iss: "https://t.test" };
+            rotate_refresh(&deps, &test_signer(), &tok_cfg, &input).await
+        }.unwrap();
         assert!(resp.id_token.is_none(), "no openid → no id_token on refresh");
     }
 
@@ -426,10 +451,10 @@ mod id_token_tests {
             code_verifier: verifier,
             now_unix:      1_700_000_000,
         };
-        let resp = exchange_code(
-            &clients, &codes, &families, &grants, &users, &signer,
-            3600, 86400, &input, "https://t.test",
-        ).await.unwrap();
+        let resp = {
+            let (deps, tok_cfg) = make_deps_cfg(&clients, &codes, &families, &grants, &users, &StubRates, "https://t.test");
+            exchange_code(&deps, &signer, &tok_cfg, &input).await.unwrap()
+        };
 
         let c = decode_id_claims(resp.id_token.as_deref().unwrap());
         assert_eq!(c.nonce.as_deref(), Some(nonce_val),
