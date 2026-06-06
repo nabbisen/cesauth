@@ -116,6 +116,11 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         SecurityTotpEnableLink |
         SecuritySessionsHeading | SecuritySessionsIntro |
         SecuritySessionsLink | SecurityBackLink | SecurityPageTitleHtml |
+        // RFC 106 — Security Center TOTP enabled + recovery banners
+        SecurityTotpEnabledBadge | SecurityTotpDisableLink |
+        SecurityRecoveryZeroTitle | SecurityRecoveryZeroDetail |
+        SecurityRecoveryOneTitle  | SecurityRecoveryOneDetail  |
+        SecurityRecoveryRemaining |
         // v0.45.0 — bulk revoke
         SessionsRevokeOthersButton | SessionsRevokeOthersConfirm |
         FlashOtherSessionsRevoked | FlashOtherSessionsRevokeFailed |
@@ -198,6 +203,11 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         SecurityTotpEnableLink,
         SecuritySessionsHeading, SecuritySessionsIntro,
         SecuritySessionsLink, SecurityBackLink, SecurityPageTitleHtml,
+        // RFC 106
+        SecurityTotpEnabledBadge, SecurityTotpDisableLink,
+        SecurityRecoveryZeroTitle, SecurityRecoveryZeroDetail,
+        SecurityRecoveryOneTitle,  SecurityRecoveryOneDetail,
+        SecurityRecoveryRemaining,
         SessionsRevokeOthersButton, SessionsRevokeOthersConfirm,
         FlashOtherSessionsRevoked, FlashOtherSessionsRevokeFailed,
         FlashNoOtherSessions,

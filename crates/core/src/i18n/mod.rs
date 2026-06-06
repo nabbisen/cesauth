@@ -210,6 +210,33 @@ pub enum MessageKey {
     SecurityBackLink,
     SecurityPageTitleHtml,
 
+    // ---- RFC 106 (v0.67.0): Security Center TOTP enabled-state + recovery banners ----
+    /// Badge text for the TOTP-enabled state on `/me/security`
+    /// ("有効" / "Enabled"). Distinct from `SecurityTotpDisabledBadge`
+    /// because the two states share the heading but never the badge.
+    SecurityTotpEnabledBadge,
+    /// Link copy ("TOTP を無効化する" / "Disable TOTP") shown beneath
+    /// the enabled badge. Points the user at `/me/security/totp/disable`.
+    SecurityTotpDisableLink,
+    /// Strong title for the N=0 recovery banner ("リカバリーコード残なし。"
+    /// / "No recovery codes remaining."). Paired with
+    /// [`SecurityRecoveryZeroDetail`].
+    SecurityRecoveryZeroTitle,
+    /// Detail copy for the N=0 recovery banner.
+    SecurityRecoveryZeroDetail,
+    /// Strong title for the N=1 recovery banner ("リカバリーコード: 残り 1 個。"
+    /// / "Recovery codes: 1 remaining."). Paired with
+    /// [`SecurityRecoveryOneDetail`].
+    SecurityRecoveryOneTitle,
+    /// Detail copy for the N=1 recovery banner — explains the
+    /// re-enroll path back to a full set of codes.
+    SecurityRecoveryOneDetail,
+    /// Template for the N≥2 recovery status badge
+    /// ("リカバリーコード: {n} 個有効" / "Recovery codes: {n} valid").
+    /// Caller substitutes `{n}` with the count via `.replace("{n}", ...)`.
+    /// True plural-form handling is deferred to RFC 107 (ADR-013 §Q4).
+    SecurityRecoveryRemaining,
+
     // ---- RFC 075: Security Center mobile state summary card ----
     SecuritySummaryHeading,           // screen-reader heading for the card (visually hidden)
     SecuritySummaryPasskeyOk,         // "パスキー設定済み" / "Passkey OK"
@@ -682,6 +709,38 @@ fn lookup_security(key: &MessageKey, locale: Locale) -> Option<&'static str> {
             Locale::En => "Security - cesauth",
         },
 
+        // ----- RFC 106 (v0.67.0): TOTP enabled-state + recovery banners -----
+        SecurityTotpEnabledBadge => match locale {
+            Locale::Ja => "有効",
+            Locale::En => "Enabled",
+        },
+        SecurityTotpDisableLink => match locale {
+            Locale::Ja => "TOTP を無効化する",
+            Locale::En => "Disable TOTP",
+        },
+        SecurityRecoveryZeroTitle => match locale {
+            Locale::Ja => "リカバリーコード残なし。",
+            Locale::En => "No recovery codes remaining.",
+        },
+        SecurityRecoveryZeroDetail => match locale {
+            Locale::Ja => "authenticator を失うと管理者連絡が必要です。",
+            Locale::En => "Losing your authenticator will require operator contact.",
+        },
+        SecurityRecoveryOneTitle => match locale {
+            Locale::Ja => "リカバリーコード: 残り 1 個。",
+            Locale::En => "Recovery codes: 1 remaining.",
+        },
+        SecurityRecoveryOneDetail => match locale {
+            Locale::Ja => "次に authenticator を失うと管理者連絡が必要になります。TOTP を一度無効化して再 enroll すると 10 個に戻せます。",
+            Locale::En => "If you lose your authenticator next, operator contact is required. Disable TOTP and re-enroll to refresh to 10 codes.",
+        },
+        // Caller substitutes "{n}" placeholder with the count. Plural-form
+        // handling is deferred to RFC 107 (ADR-013 §Q4 closure).
+        SecurityRecoveryRemaining => match locale {
+            Locale::Ja => "リカバリーコード: {n} 個有効",
+            Locale::En => "Recovery codes: {n} valid",
+        },
+
         // ----- RFC 075: summary card -----
         SecuritySummaryHeading => match locale {
             Locale::Ja => "状態サマリ",
@@ -916,7 +975,6 @@ fn lookup_magic_link_totp_pages(key: &MessageKey, locale: Locale) -> Option<&'st
     })
 }
 
-#[inline]
 #[inline]
 fn lookup_admin(key: &MessageKey, locale: Locale) -> Option<&'static str> {
     use MessageKey::*;

@@ -155,3 +155,40 @@ mod token_mint_tests {
         assert!(html.contains("&lt;script&gt;"));
     }
 }
+
+// =====================================================================
+// RFC 105 — design-token unification
+// =====================================================================
+
+/// Helper: render the tenancy console frame directly with minimal args.
+fn tenancy_console_frame_html() -> String {
+    let p = AdminPrincipal { id: "x".into(), name: None, role: Role::Operations, user_id: None };
+    tenancy_console_frame("Test", p.role, p.name.as_deref(), TenancyConsoleTab::Overview, "<p>body</p>")
+}
+
+#[test]
+fn tenancy_console_frame_embeds_shared_semantic_tokens() {
+    let out = tenancy_console_frame_html();
+    for var in ["--success:", "--success-bg:", "--warning:", "--warning-bg:",
+                "--danger:", "--danger-bg:", "--info:", "--info-bg:",
+                "--ok:", "--warn:", "--critical:"] {
+        assert!(out.contains(var),
+            "tenancy_console frame must embed shared semantic token {var}");
+    }
+}
+
+#[test]
+fn tenancy_console_frame_embeds_shared_scope_tokens() {
+    let out = tenancy_console_frame_html();
+    for var in ["--scope-system:", "--scope-tenancy:", "--scope-tenant:"] {
+        assert!(out.contains(var),
+            "tenancy_console frame must embed shared scope token {var}");
+    }
+}
+
+#[test]
+fn tenancy_console_frame_carries_dark_mode_override() {
+    let out = tenancy_console_frame_html();
+    assert!(out.contains("@media (prefers-color-scheme: dark)"),
+        "tenancy_console frame must carry the dark-mode override block");
+}

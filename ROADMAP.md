@@ -86,6 +86,7 @@ full narrative is in the [archive](docs/changelog-archive/README.md).
 | `/introspect` hot path, rustfmt removal (RFC 026/029) | v0.53.0 | [CHANGELOG](CHANGELOG.md) |
 | CHANGELOG/ROADMAP volume, audit request traceability (RFC 015/028) | v0.53.0 | [CHANGELOG](CHANGELOG.md) |
 | Admin scope badge, OIDC audience editor, preview-and-apply (RFC 016/017/018) | v0.53.0 | [CHANGELOG](CHANGELOG.md) |
+| Admin frame design tokens + Security Center i18n closure (RFC 105/106) | v0.67.0 | [CHANGELOG](CHANGELOG.md) |
 
 ---
 
@@ -101,6 +102,41 @@ started.
 > ADRs in `docs/src/expert/adr/` track the design decisions.
 
 ### Next minor releases
+
+- ✅ **v0.67.0 — RFC 105 + 106 (UI/UX finishing — design tokens + Security Center i18n).**
+  RFC 105: admin / tenant_admin / tenancy_console frame design-token unification —
+  `DESIGN_TOKENS_FMT` is now the single source of truth; `SCOPE_TOKENS_FMT` added
+  for admin-only scope colors; raw `DESIGN_TOKENS` deleted. RFC 106: Security
+  Center i18n closure — 7 new MessageKey variants (EN + JA) close the JA-hardcode
+  hole that v0.39.0 deferred for the TOTP enabled badge, the disable link, and
+  the N=0 / N=1 / N≥2 recovery banners. Also clears 7 non-deprecated warnings
+  that predated v0.66.0 (RFC 098/099 import residue + a duplicate `#[inline]`
+  attribute the new Rust 1.91 compiler flagged). 1,219 tests (+15). 0 warnings.
+  MessageKey catalogue: 145 → 152.
+
+- 📅 **v0.68.0 — RFC 108 + 112 (Drift prevention — route catalog + auth macro batch).**
+  RFC 108: replace 202 hardcoded URL string literals in `crates/ui/src/...` with
+  `cesauth_core::routes::*` references + drift-scan rule. RFC 112: complete RFC 100
+  macro migration across remaining 124 admin handlers (~800 LOC reduction).
+  Source: HANDOFF v0.66.0 residuals #1, #2.
+
+- 📅 **v0.69.0 — RFC 109 (Audit log viewer UI surface).** New `/admin/console/audit`
+  interactive viewer with actor / event / tenant / date filtering and pagination.
+  Inherits filter state into existing `POST /admin/console/audit/export` (RFC 080).
+  System-admin scoped, JA-only per ADR-013. Source: v0.50.1 deck page 9.
+
+- 📅 **v0.70.0 — RFC 110 + 113 (Acceptance alignment).** RFC 110: verify and fill
+  Safety controls dashboard alignment with deck page 9 (rate-limit status,
+  Turnstile, refresh reuse, TOTP key, runbook link). RFC 113: UI rendering
+  acceptance harness — CI gate asserting scope badge / flash region / skip-link /
+  footer version / `<html lang>` across all browser-facing routes. Source: deck
+  pages 9, 12, 14.
+
+- 📅 **v0.71.0 — RFC 107 + 111 (ADR-013 §Q4 closure).** RFC 107: plural-aware
+  catalog lookup using CLDR-minimal `Plural::{One, Other}` enum (no `icu` dep —
+  WASM size budget). RFC 111: confirm UTC ISO-8601 as the canonical date rendering
+  policy and document per-user timezone as separate future work. Both close
+  ADR-013 §Q4 ("date / plural deferred"). Source: ADR-013 §Q4 + deck page 12.
 
 - ✅ **v0.66.0 — RFC 096-103 (codebase audit remediation).**
   Zero non-deprecated warnings. Shared util.rs (5 constant_time_eq → 1, 3 ISO-8601 → 1).

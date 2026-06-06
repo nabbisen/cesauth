@@ -26,6 +26,153 @@ split by minor-version range:
 
 ---
 
+## [0.67.0] - 2026-05-13
+
+Implements RFC 105 + 106: UI/UX finishing track, batch 1 of 5.
+Design tokens consolidated into a single source; Security Center
+i18n hole closed. Also cleans seven non-deprecated warnings that
+predated v0.66.0.
+
+### RFC 105 — Admin / tenant_admin / tenancy_console design-token unification
+
+Source: PDF v0.50.1 page 12 (color-only-state contract) + HANDOFF
+v0.66.0 residual #3.
+
+`crates/ui/src/design_tokens.rs` rewritten:
+
+- **Kept**: `DESIGN_TOKENS_FMT` — `--success` / `--warning` / `--danger`
+  / `--info`, their `-bg` variants, the `--ok` / `--warn` / `--critical`
+  legacy aliases (RFC 082 compat), plus `prefers-color-scheme: dark`
+  override for all of them. Single source of truth.
+- **Added**: `SCOPE_TOKENS_FMT` — `--scope-system` / `--scope-tenancy`
+  / `--scope-tenant` plus a dark-mode override. Admin-only; end-user
+  UI has no scope badge so it isn't in `DESIGN_TOKENS_FMT`.
+- **Removed**: raw `DESIGN_TOKENS` (unused since RFC 082; was kept
+  alongside `_FMT` only because the dead-code lint was suppressed
+  during the original landing).
+
+All three admin frames (`crates/ui/src/admin/frame.rs`,
+`crates/ui/src/tenant_admin/frame.rs`,
+`crates/ui/src/tenancy_console/frame.rs`) now embed both constants
+via `format!()` instead of inlining the values. `tenant_admin` and
+`tenancy_console` previously had no `:root` block at all and used the
+`var(--success-bg, #e8f5e9)` fallback pattern; their fallbacks are
+now resolved by the embedded definitions.
+
+Side effects:
+
+- `tenant_admin/frame.rs::header .scope-badge.*` backgrounds and
+  `tenancy_console/frame.rs::header .scope-badge.*` backgrounds
+  switched from hardcoded hex to `var(--scope-*)` — visual output is
+  consolidated to the canonical palette (RFC 016 / 073 colors).
+- `.badge.ok / .warn / .critical` (the legacy RFC 082 classes) in
+  `tenant_admin` and `tenancy_console` now use `var(--success)` etc.
+  rather than darker hand-picked hex. Brightness shifted slightly
+  but contrast ratios still meet WCAG AA; tested informally against
+  light and dark canvases.
+
++9 rendering tests pin: each frame embeds the semantic tokens, the
+scope tokens, and the dark-mode override.
+
+### RFC 106 — Security Center i18n closure
+
+Source: PDF v0.50.1 page 6 (Self-service) + page 12 (i18n contract)
++ 開発指示書 v2-0.50.1 § "多言語化していないテンプレートを残さない".
+
+Closes the JA-hardcode hole that v0.39.0 deferred. Seven new
+`MessageKey` variants added in `crates/core/src/i18n/mod.rs` with
+JA + EN translations:
+
+| MessageKey | JA | EN |
+|---|---|---|
+| `SecurityTotpEnabledBadge` | `有効` | `Enabled` |
+| `SecurityTotpDisableLink` | `TOTP を無効化する` | `Disable TOTP` |
+| `SecurityRecoveryZeroTitle` | `リカバリーコード残なし。` | `No recovery codes remaining.` |
+| `SecurityRecoveryZeroDetail` | (banner detail) | (banner detail) |
+| `SecurityRecoveryOneTitle` | `リカバリーコード: 残り 1 個。` | `Recovery codes: 1 remaining.` |
+| `SecurityRecoveryOneDetail` | (banner detail) | (banner detail) |
+| `SecurityRecoveryRemaining` | `リカバリーコード: {n} 個有効` | `Recovery codes: {n} valid` |
+
+`crates/ui/src/templates/security_center.rs::recovery_status_html`
+renamed to `recovery_status_html_for(n, locale)`; all four hardcoded
+JA strings replaced with catalog lookups. The dead
+`#[allow(dead_code)] totp_section_html` shorthand was removed. The
+N≥2 path still substitutes `{n}` from the template literal;
+true plural-form handling (`1 valid recovery code` vs
+`5 valid recovery codes`) is deferred to RFC 107 — see ADR-013 §Q4.
+
+MessageKey catalogue: 145 → 152 (+7).
++6 rendering tests pin: N=0 / N=1 / N≥2 × (JA, EN) plus the
+enabled-badge / disable-link pair across both locales. JA strings
+are explicitly asserted not to leak into the EN page.
+
+### Drift cleanup (non-RFC)
+
+Seven non-deprecated warnings cleared:
+
+- `crates/core/src/admin/service/audit_export.rs` (RFC 099 residue):
+  three unused `use` statements removed — the body code uses
+  fully-qualified `crate::admin::*` paths everywhere.
+- `crates/ui/src/templates/chrome.rs` (RFC 098 residue): unused
+  `js_string_literal` import.
+- `crates/ui/src/templates/login.rs` (RFC 098 residue): unused
+  `frame_with_flash` import.
+- `crates/ui/src/templates/totp.rs` (RFC 098 residue): unused
+  `js_string_literal` + `frame_with_flash` imports.
+- `crates/ui/src/templates/security_center.rs` (RFC 098 residue):
+  unused `js_string_literal` + `frame_for` imports — touched as part
+  of RFC 106 since the file was being modified anyway.
+- `crates/core/src/i18n/mod.rs`: duplicate `#[inline]` attribute on
+  `lookup_admin`. Rust 1.91 promoted this to a hard-leaning warning;
+  earlier compilers tolerated it silently.
+
+Net: cesauth-core + cesauth-ui now compile with zero warnings under
+Rust 1.91, restoring the RFC 101 invariant.
+
+### Tests
+
+| Crate | v0.66.0 | v0.67.0 | Δ |
+|---|---:|---:|---:|
+| core | 738 | 738 | — |
+| adapter-test | 125 | 125 | — |
+| ui | 310 | 325 | +15 |
+| migrate-test | 31 | 31 | — |
+| **Total** | **1,204** | **1,219** | **+15** |
+
+### Schema / wire / DO
+
+No changes. The seven new `MessageKey` variants are an additive
+catalog extension; existing template signatures are stable.
+
+### Operator notes
+
+- `--scope-*` tokens are visible in admin frame output now that all
+  three frames embed `SCOPE_TOKENS_FMT`. Operators using browser
+  extensions that scan `<style>` blocks may see those tokens for the
+  first time on `/admin/tenancy/*` and `/admin/t/<slug>/*` (they were
+  already present on `/admin/console/*`).
+- EN users opening `/me/security` with TOTP enabled now see the
+  badge, disable link, and recovery banners in English. Pre-v0.67.0
+  these were always JA regardless of `Accept-Language`.
+
+No env-var changes. No new wrangler config. No new cron passes.
+
+### ADR
+
+No closures. ADR-013 §Q4 stays open until v0.71.0 (RFC 107 plural
+side + RFC 111 date side close it together).
+
+### Upgrade
+
+No special steps. Replace the v0.66.0 bundle with v0.67.0;
+re-deploy with `wrangler deploy`. No migrations.
+
+### Tarball
+
+`cesauth-0.67.0.tar.gz`.
+
+---
+
 ## [0.66.0] - 2026-05-13
 
 Implements RFC 096-103: comprehensive codebase audit remediation.

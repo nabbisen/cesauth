@@ -850,3 +850,46 @@ fn deletion_requests_page_no_hardcoded_english() {
     assert!(!del_html.contains("Execute now"),
         "deletion page must not have hardcoded English");
 }
+
+// =====================================================================
+// RFC 105 — design-token unification
+// =====================================================================
+
+/// Helper: render the tenant-admin overview with a minimal fixture
+/// (reuses the existing `tenant()` and `principal()` helpers).
+fn tenant_admin_overview_html() -> String {
+    let counts = TenantOverviewCounts {
+        users:         0,
+        organizations: 0,
+        groups:        0,
+        current_plan:  None,
+    };
+    overview_page(&principal(), &tenant(), &counts, &Affordances::all_allowed())
+}
+
+#[test]
+fn tenant_admin_frame_embeds_shared_semantic_tokens() {
+    let out = tenant_admin_overview_html();
+    for var in ["--success:", "--success-bg:", "--warning:", "--warning-bg:",
+                "--danger:", "--danger-bg:", "--info:", "--info-bg:",
+                "--ok:", "--warn:", "--critical:"] {
+        assert!(out.contains(var),
+            "tenant_admin frame must embed shared semantic token {var}");
+    }
+}
+
+#[test]
+fn tenant_admin_frame_embeds_shared_scope_tokens() {
+    let out = tenant_admin_overview_html();
+    for var in ["--scope-system:", "--scope-tenancy:", "--scope-tenant:"] {
+        assert!(out.contains(var),
+            "tenant_admin frame must embed shared scope token {var}");
+    }
+}
+
+#[test]
+fn tenant_admin_frame_carries_dark_mode_override() {
+    let out = tenant_admin_overview_html();
+    assert!(out.contains("@media (prefers-color-scheme: dark)"),
+        "tenant_admin frame must carry the dark-mode override block");
+}

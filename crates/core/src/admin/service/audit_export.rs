@@ -2,10 +2,11 @@
 //!
 //! Extracted from `admin/service.rs` by RFC 099. All items remain
 //! publicly accessible via `admin::service::*` re-exports.
+//!
+//! The code below uses fully-qualified `crate::admin::*` paths in every
+//! signature; the file-scope `use` statements that RFC 099 carried over
+//! were left unreferenced and removed in v0.67.0 hygiene cleanup.
 
-use crate::admin::ports::AuditQuerySource;
-use crate::admin::types::{AdminAuditEntry, AuditQuery};
-use crate::ports::PortResult;
 use crate::admin::service::search_audit;
 
 // -------------------------------------------------------------------------

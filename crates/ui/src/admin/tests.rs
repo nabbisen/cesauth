@@ -197,3 +197,42 @@ fn admin_frame_footer_has_no_version_caption() {
     assert!(!out.contains("v0.50."),
         "admin frame footer must not contain v0.50.x");
 }
+
+// =====================================================================
+// RFC 105 — design-token unification
+// =====================================================================
+
+/// Admin frame must embed the shared semantic tokens from
+/// `design_tokens::DESIGN_TOKENS_FMT`. We assert by sampling the named
+/// CSS variables that the constant defines; if the constant ever stops
+/// being embedded, every state-aware component on the page loses its
+/// color treatment and these assertions catch it.
+#[test]
+fn admin_frame_embeds_shared_semantic_tokens() {
+    let out = overview_page(&empty_summary(Role::Super));
+    for var in ["--success:", "--success-bg:", "--warning:", "--warning-bg:",
+                "--danger:", "--danger-bg:", "--info:", "--info-bg:",
+                "--ok:", "--warn:", "--critical:"] {
+        assert!(out.contains(var),
+            "admin frame must embed shared semantic token {var}");
+    }
+}
+
+#[test]
+fn admin_frame_embeds_shared_scope_tokens() {
+    let out = overview_page(&empty_summary(Role::Super));
+    for var in ["--scope-system:", "--scope-tenancy:", "--scope-tenant:"] {
+        assert!(out.contains(var),
+            "admin frame must embed shared scope token {var}");
+    }
+}
+
+#[test]
+fn admin_frame_carries_dark_mode_override() {
+    let out = overview_page(&empty_summary(Role::Super));
+    // Both the semantic-tokens dark override and the scope-tokens dark
+    // override land in the same rendered CSS; we only need a single
+    // assertion to confirm `prefers-color-scheme: dark` is present.
+    assert!(out.contains("@media (prefers-color-scheme: dark)"),
+        "admin frame must carry the dark-mode override block");
+}

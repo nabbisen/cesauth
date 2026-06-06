@@ -1365,6 +1365,127 @@ fn security_center_page_for_en_anonymous_notice_translated() {
     // is a separable thread (it touches the admin console too).
 }
 
+// ---------------------------------------------------------------------
+// RFC 106 (v0.67.0) — Security Center TOTP enabled + recovery banners
+//
+// Closes the JA-hardcode hole that v0.39.0 deferred for the
+// totp-enabled badge, the disable link, and the N=0 / N=1 / N≥2
+// recovery banner copy.
+// ---------------------------------------------------------------------
+
+#[test]
+fn security_center_recovery_zero_renders_catalog_ja() {
+    let state = SecurityCenterState {
+        primary_method: PrimaryAuthMethod::Passkey,
+        totp_enabled: true,
+        recovery_codes_remaining: 0,
+        active_sessions_count: None,
+    };
+    let html = security_center_page_for(&state, "", Locale::Ja);
+    assert!(html.contains("リカバリーコード残なし。"),
+        "JA recovery N=0 banner title must come from catalog: {html}");
+    assert!(html.contains("flash--danger"),
+        "N=0 must surface as a danger banner");
+}
+
+#[test]
+fn security_center_recovery_zero_renders_catalog_en() {
+    let state = SecurityCenterState {
+        primary_method: PrimaryAuthMethod::Passkey,
+        totp_enabled: true,
+        recovery_codes_remaining: 0,
+        active_sessions_count: None,
+    };
+    let html = security_center_page_for(&state, "", Locale::En);
+    assert!(html.contains("No recovery codes remaining."),
+        "EN recovery N=0 banner title must come from catalog: {html}");
+    // Recovery banner JA strings must not leak into the EN page.
+    assert!(!html.contains("リカバリーコード残なし"),
+        "JA recovery banner must not leak into EN page");
+}
+
+#[test]
+fn security_center_recovery_one_renders_catalog_ja() {
+    let state = SecurityCenterState {
+        primary_method: PrimaryAuthMethod::Passkey,
+        totp_enabled: true,
+        recovery_codes_remaining: 1,
+        active_sessions_count: None,
+    };
+    let html = security_center_page_for(&state, "", Locale::Ja);
+    assert!(html.contains("リカバリーコード: 残り 1 個。"),
+        "JA recovery N=1 banner title must come from catalog: {html}");
+    assert!(html.contains("flash--warning"),
+        "N=1 must surface as a warning banner");
+}
+
+#[test]
+fn security_center_recovery_one_renders_catalog_en() {
+    let state = SecurityCenterState {
+        primary_method: PrimaryAuthMethod::Passkey,
+        totp_enabled: true,
+        recovery_codes_remaining: 1,
+        active_sessions_count: None,
+    };
+    let html = security_center_page_for(&state, "", Locale::En);
+    assert!(html.contains("Recovery codes: 1 remaining."),
+        "EN recovery N=1 banner title must come from catalog: {html}");
+    assert!(!html.contains("リカバリーコード"),
+        "JA recovery banner must not leak into EN page");
+}
+
+#[test]
+fn security_center_recovery_many_renders_catalog_with_substitution() {
+    // N >= 2 path: the catalog template carries `{n}` and the
+    // template fn replaces it with the actual count.
+    let state_ja = SecurityCenterState {
+        primary_method: PrimaryAuthMethod::Passkey,
+        totp_enabled: true,
+        recovery_codes_remaining: 5,
+        active_sessions_count: None,
+    };
+    let html_ja = security_center_page_for(&state_ja, "", Locale::Ja);
+    assert!(html_ja.contains("リカバリーコード: 5 個有効"),
+        "JA N>=2 path must substitute the count: {html_ja}");
+    // The `{n}` placeholder itself must not leak into the rendered
+    // output — that would mean the substitution never ran.
+    assert!(!html_ja.contains("{n}"),
+        "{{n}} placeholder must be replaced before rendering");
+
+    let html_en = security_center_page_for(&state_ja, "", Locale::En);
+    assert!(html_en.contains("Recovery codes: 5 valid"),
+        "EN N>=2 path must substitute the count: {html_en}");
+    assert!(!html_en.contains("{n}"),
+        "{{n}} placeholder must be replaced before rendering (EN)");
+}
+
+#[test]
+fn security_center_totp_enabled_badge_uses_catalog() {
+    let state = SecurityCenterState {
+        primary_method: PrimaryAuthMethod::Passkey,
+        totp_enabled: true,
+        recovery_codes_remaining: 8,
+        active_sessions_count: None,
+    };
+    let html_ja = security_center_page_for(&state, "", Locale::Ja);
+    let html_en = security_center_page_for(&state, "", Locale::En);
+    // Both locales surface the catalog-localized badge + disable link.
+    // JA: "有効" / "TOTP を無効化する"  EN: "Enabled" / "Disable TOTP"
+    assert!(html_ja.contains(">有効<"),
+        "JA enabled badge must come from catalog: {html_ja}");
+    assert!(html_ja.contains("TOTP を無効化する"),
+        "JA disable link must come from catalog: {html_ja}");
+    assert!(html_en.contains(">Enabled<"),
+        "EN enabled badge must come from catalog: {html_en}");
+    assert!(html_en.contains("Disable TOTP"),
+        "EN disable link must come from catalog: {html_en}");
+    // No JA bleed in EN
+    assert!(!html_en.contains(">有効<"),
+        "JA enabled badge must not leak into EN page: {html_en}");
+    assert!(!html_en.contains("TOTP を無効化する"),
+        "JA disable link must not leak into EN page: {html_en}");
+}
+
 // =====================================================================
 // v0.47.0 — i18n-2 continuation: magic link / recovery codes /
 // disable / error pages + PrimaryAuthMethod::label_for

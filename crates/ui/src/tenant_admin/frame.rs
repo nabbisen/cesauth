@@ -155,6 +155,10 @@ pub fn tenant_admin_frame_for(
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{title_esc} — {tenant_name_esc} — cesauth tenant admin</title>
   <style nonce="{nonce}">
+    /* RFC 105: semantic + scope tokens injected from crates/ui/src/design_tokens.rs.
+       Single source of truth — do not duplicate values here. */
+    {tokens}
+    {scope_tokens}
     body {{ font-family: system-ui, -apple-system, sans-serif; margin: 0; color: #222; }}
     header {{ background: #1e3a5f; color: #fff; padding: 12px 24px; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }}
     header h1 {{ margin: 0; font-size: 1.2em; }}
@@ -165,13 +169,14 @@ pub fn tenant_admin_frame_for(
     header .badge.security   {{ background: #d35400; }}
     header .badge.operations {{ background: #2980b9; }}
     header .badge.super      {{ background: #c0392b; }}
-    /* RFC 016 scope badge — green for tenant scope; mirrors admin frame token values */
+    /* RFC 016 / 073 scope badge (tenant-admin dark-header variant): white text on
+       scope-tinted bg so the badge remains legible against the dark blue chrome.
+       Reuses --scope-* tokens for hue consistency with system/tenancy badges. */
     header .scope-badge {{ font-size: 0.75em; padding: 2px 8px; border-radius: 10px; font-weight: 500;
                            border: 1px solid rgba(255,255,255,0.5); color: #fff; }}
-    /* RFC 073: tenant-scoped badge uses green to distinguish from system (purple) and tenancy (blue) */
-    header .scope-badge.scope-tenant  {{ background: #1f7a40; }}
-    header .scope-badge.scope-system  {{ background: #6b3aa0; }}
-    header .scope-badge.scope-tenancy {{ background: #1864ab; }}
+    header .scope-badge.scope-tenant  {{ background: var(--scope-tenant); }}
+    header .scope-badge.scope-system  {{ background: var(--scope-system); }}
+    header .scope-badge.scope-tenancy {{ background: var(--scope-tenancy); }}
     nav {{ background: #e3eaf2; padding: 0 24px; }}
     nav ul {{ list-style: none; margin: 0; padding: 0; display: flex; gap: 0; flex-wrap: wrap; }}
     nav li a {{ display: block; padding: 10px 16px; color: #1e3a5f; text-decoration: none; border-bottom: 2px solid transparent; }}
@@ -185,14 +190,16 @@ pub fn tenant_admin_frame_for(
     .muted {{ color: #777; }}
     .empty {{ text-align: center; color: #999; padding: 24px; }}
     .badge {{ font-size: 0.8em; padding: 2px 8px; border-radius: 3px; background: #ecf0f1; }}
-    .badge.ok       {{ background: #d4edda; color: #155724; }}
-    .badge.warn     {{ background: #fff3cd; color: #856404; }}
-    .badge.critical {{ background: #f8d7da; color: #721c24; }}
+    /* Legacy .badge.ok/.warn/.critical (RFC 082): now point to shared semantic tokens
+       so all three admin frames share the same state palette (RFC 105). */
+    .badge.ok       {{ background: var(--success-bg); color: var(--success); }}
+    .badge.warn     {{ background: var(--warning-bg); color: var(--warning); }}
+    .badge.critical {{ background: var(--danger-bg);  color: var(--danger);  }}
     /* RFC 082: CSS-variable-based badge aliases matching end-user tokens */
-    .badge--success {{ background: var(--success-bg, #e8f5e9); color: var(--success, #1f9d55); }}
-    .badge--warning {{ background: var(--warning-bg, #fff7e6); color: var(--warning, #b76e00); }}
-    .badge--danger  {{ background: var(--danger-bg,  #fdecea); color: var(--danger,  #c92a2a); }}
-    .badge--info    {{ background: var(--info-bg,    #e7f5ff); color: var(--info,    #1864ab); }}
+    .badge--success {{ background: var(--success-bg); color: var(--success); }}
+    .badge--warning {{ background: var(--warning-bg); color: var(--warning); }}
+    .badge--danger  {{ background: var(--danger-bg);  color: var(--danger);  }}
+    .badge--info    {{ background: var(--info-bg);    color: var(--info);    }}
     code {{ font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9em; background: #f5f5f5; padding: 1px 4px; border-radius: 2px; }}
     footer {{ text-align: center; color: #999; font-size: 0.8em; padding: 24px; }}
   /* RFC 077: skip-to-content link */
@@ -227,5 +234,7 @@ pub fn tenant_admin_frame_for(
         } else {
             format!(r#"<span class="muted">{name_esc}</span>"#)
         },
+        tokens       = crate::design_tokens::DESIGN_TOKENS_FMT,
+        scope_tokens = crate::design_tokens::SCOPE_TOKENS_FMT,
     )
 }

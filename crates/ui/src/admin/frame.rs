@@ -135,36 +135,17 @@ pub fn admin_frame_for(
 <title>{title_esc} — cesauth admin</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style nonce="{nonce}">
+  /* RFC 105: semantic + scope tokens injected from crates/ui/src/design_tokens.rs.
+     Single source of truth — do not duplicate values here. */
+  {tokens}
+  {scope_tokens}
   :root {{
+    /* Admin-frame-specific layout colors (not shared with other frames) */
     --bg:       #fafafa;
     --fg:       #111;
     --muted:    #666;
     --border:   #ddd;
     --accent:   #1d4ed8;
-    /* RFC 101: semantic tokens injected from design_tokens::DESIGN_TOKENS_FMT.
-     * Values maintained in crates/ui/src/design_tokens.rs — do not duplicate. */
-    --success:    #1f9d55;
-    --success-bg: #e8f5e9;
-    --warning:    #b76e00;
-    --warning-bg: #fff7e6;
-    --danger:     #c92a2a;
-    --danger-bg:  #fdecea;
-    --info:       #1864ab;
-    --info-bg:    #e7f5ff;
-    --ok:       var(--success);
-    --warn:     var(--warning);
-    --critical: var(--danger);
-    /* RFC 016 scope tokens — intentionally distinct from semantic ok/warn/danger/info */
-    --scope-system:  #6b3aa0;
-    --scope-tenancy: #1864ab;
-    --scope-tenant:  #1f9d55;
-  }}
-  @media (prefers-color-scheme: dark) {{
-    :root {{
-      --scope-system:  #c084fc;
-      --scope-tenancy: #60a5fa;
-      --scope-tenant:  #4ade80;
-    }}
   }}
   * {{ box-sizing: border-box; }}
   body {{ margin: 0; font: 14px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); }}
@@ -258,5 +239,7 @@ pub fn admin_frame_for(
         name_suffix = if name_esc.is_empty() { String::new() } else { format!(" · {name_esc}") },
         nav         = nav,
         body        = body,
+        tokens       = crate::design_tokens::DESIGN_TOKENS_FMT,
+        scope_tokens = crate::design_tokens::SCOPE_TOKENS_FMT,
     )
 }
