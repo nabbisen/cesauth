@@ -6,6 +6,7 @@
 
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
+use cesauth_core::routes::tenant_admin as routes;
 use cesauth_core::tenancy::types::Tenant;
 
 use super::super::frame::{tenant_admin_frame, TenantAdminTab};
@@ -19,10 +20,10 @@ pub fn organization_create_form(
 ) -> String {
     let title = format!("New organization in: {}", tenant.slug);
     let body = format!(
-        r##"<p><a href="/admin/t/{tslug}/organizations">← Back to organizations</a></p>
+        r##"<p><a href="{back_url}">← Back to organizations</a></p>
 {error}
 <section aria-label="New organization form">
-  <form method="post" action="/admin/t/{tslug}/organizations/new">
+  <form method="post" action="{action_url}">
     <table>
       <tbody>
         <tr>
@@ -48,7 +49,9 @@ pub fn organization_create_form(
         If you hit the limit, the create returns 409.</li>
   </ul>
 </section>"##,
-        tslug = escape(&tenant.slug),
+        // RFC 108 escape contract.
+        back_url   = escape(&routes::organizations(&tenant.slug)),
+        action_url = escape(&routes::organizations_new(&tenant.slug)),
         error = match error {
             None => String::new(),
             Some(msg) => format!(

@@ -4,6 +4,7 @@
 
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
+use cesauth_core::routes::tenant_admin as routes;
 use cesauth_core::tenancy::types::{Organization, Tenant};
 
 use super::super::frame::{tenant_admin_frame, TenantAdminTab};
@@ -18,10 +19,10 @@ pub fn group_create_form(
 ) -> String {
     let title = format!("New group in: {}", org.slug);
     let body = format!(
-        r##"<p><a href="/admin/t/{tslug}/organizations/{oid}">← Back to organization</a></p>
+        r##"<p><a href="{back_url}">← Back to organization</a></p>
 {error}
 <section aria-label="New group form">
-  <form method="post" action="/admin/t/{tslug}/organizations/{oid}/groups/new">
+  <form method="post" action="{action_url}">
     <table>
       <tbody>
         <tr><th scope="row">Organization</th><td><code>{oslug}</code></td></tr>
@@ -46,8 +47,9 @@ pub fn group_create_form(
         Permissions assigned at group scope override broader scopes.</li>
   </ul>
 </section>"##,
-        tslug = escape(&tenant.slug),
-        oid   = escape(&org.id),
+        // RFC 108 escape contract.
+        back_url   = escape(&routes::org_detail(&tenant.slug, &org.id)),
+        action_url = escape(&routes::org_groups_new(&tenant.slug, &org.id)),
         oslug = escape(&org.slug),
         error = match error {
             None => String::new(),

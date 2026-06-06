@@ -5,6 +5,7 @@
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
 use cesauth_core::authz::types::{RoleAssignment, Scope};
+use cesauth_core::routes::tenant_admin as routes;
 use cesauth_core::tenancy::types::Tenant;
 use cesauth_core::types::User;
 
@@ -36,9 +37,9 @@ pub fn role_assignments_page(
     let title = format!("Role assignments — {}", user_label);
     let actions = if aff.can_assign_role {
         format!(
-            r#"<p><a href="/admin/t/{slug}/users/{uid}/role_assignments/new" class="button">+ Grant role</a></p>"#,
-            slug = escape(&tenant.slug),
-            uid  = escape(&input.subject_user.id),
+            r#"<p><a href="{url}" class="button">+ Grant role</a></p>"#,
+            // RFC 108 escape contract.
+            url = escape(&routes::user_role_assignments_new(&tenant.slug, &input.subject_user.id)),
         )
     } else { String::new() };
     let body = format!("{actions}\n{}", render_table(tenant, input, aff));
@@ -66,11 +67,16 @@ fn render_table(
         let role_html  = render_role_label(input.role_labels, &a.role_id);
         let scope_html = render_scope(&a.scope);
         let action = if show_actions {
+            // Catalog returns the path; we append the user_id query string
+            // for the redirect-back and escape the whole URL at the boundary.
+            let revoke_url = format!(
+                "{}?user_id={}",
+                routes::role_assignment_delete(&tenant.slug, &a.id),
+                input.subject_user.id,
+            );
             format!(
-                r#"<td><a href="/admin/t/{slug}/role_assignments/{aid}/delete?user_id={uid}">revoke</a></td>"#,
-                slug = escape(&tenant.slug),
-                aid  = escape(&a.id),
-                uid  = escape(&input.subject_user.id),
+                r#"<td><a href="{url}">revoke</a></td>"#,
+                url = escape(&revoke_url),
             )
         } else { String::new() };
         format!(

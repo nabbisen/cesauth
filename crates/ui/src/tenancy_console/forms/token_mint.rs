@@ -16,6 +16,7 @@
 
 use crate::escape;
 use cesauth_core::admin::types::{AdminPrincipal, Role as AdminRole};
+use cesauth_core::routes::tenancy_console as routes;
 use cesauth_core::types::User;
 
 use super::super::frame::{tenancy_console_frame, TenancyConsoleTab};
@@ -39,7 +40,7 @@ pub fn form_page(
         .unwrap_or(&input.subject_user.id);
     let title = format!("Mint user-bound admin token: {}", user_label);
     let body = format!(
-        r##"<p><a href="/admin/tenancy/users/{uid}/role_assignments">← Back to user's role assignments</a></p>
+        r##"<p><a href="{back_url}">← Back to user's role assignments</a></p>
 {error}
 <section aria-label="Subject">
   <table><tbody>
@@ -48,7 +49,7 @@ pub fn form_page(
   </tbody></table>
 </section>
 <section aria-label="Mint form">
-  <form method="post" action="/admin/tenancy/users/{uid}/tokens/new">
+  <form method="post" action="{action_url}">
     <fieldset>
       <legend>Admin role for the resulting token</legend>
       <p class="muted">The role applies to the token itself (operator
@@ -67,6 +68,9 @@ pub fn form_page(
     <p><button type="submit">Preview mint</button></p>
   </form>
 </section>"##,
+        // RFC 108 escape contract.
+        back_url   = escape(&routes::user_role_assignments(&input.subject_user.id)),
+        action_url = escape(&routes::user_tokens_new(&input.subject_user.id)),
         uid   = escape(&input.subject_user.id),
         uname = escape(user_label),
         tid   = escape(&input.subject_user.tenant_id),
@@ -96,7 +100,7 @@ pub fn preview_page(
         .unwrap_or(&input.subject_user.id);
     let title = format!("Confirm mint: {}", user_label);
     let body = format!(
-        r##"<p><a href="/admin/tenancy/users/{uid}/tokens/new">← Back to form</a></p>
+        r##"<p><a href="{back_url}">← Back to form</a></p>
 <section aria-label="Diff">
   <h3>Proposed mint</h3>
   <table><tbody>
@@ -111,16 +115,20 @@ pub fn preview_page(
      it before clicking Apply.</p>
 </section>
 <section aria-label="Apply or cancel">
-  <form method="post" action="/admin/tenancy/users/{uid}/tokens/new">
+  <form method="post" action="{action_url}">
     <input type="hidden" name="role" value="{role_value}">
     <input type="hidden" name="name" value="{name}">
     <input type="hidden" name="confirm" value="yes">
     <p>
       <button type="submit" class="critical">Apply mint</button>
-      <a href="/admin/tenancy/users/{uid}/role_assignments">Cancel</a>
+      <a href="{cancel_url}">Cancel</a>
     </p>
   </form>
 </section>"##,
+        // RFC 108 escape contract.
+        back_url   = escape(&routes::user_tokens_new(&input.subject_user.id)),
+        action_url = escape(&routes::user_tokens_new(&input.subject_user.id)),
+        cancel_url = escape(&routes::user_role_assignments(&input.subject_user.id)),
         uid        = escape(&input.subject_user.id),
         uname      = escape(user_label),
         tid        = escape(&input.subject_user.tenant_id),
@@ -159,13 +167,14 @@ pub fn applied_page(
      They present it as <code>Authorization: Bearer &lt;token&gt;</code>
      at <code>/admin/t/{tslug}/...</code>.</p>
   <p>
-    <a href="/admin/tenancy/users/{uid}/role_assignments">Done — back to user's role assignments</a>
+    <a href="{done_url}">Done — back to user's role assignments</a>
   </p>
 </section>"##,
         token  = escape(plaintext),
         role   = role_label(role),
-        uid    = escape(&subject_user.id),
         tslug  = escape(tenant_slug),
+        // RFC 108 escape contract.
+        done_url = escape(&routes::user_role_assignments(&subject_user.id)),
     );
     tenancy_console_frame(&title, principal.role, principal.name.as_deref(),
                           TenancyConsoleTab::UserRoleAssignments, &body)

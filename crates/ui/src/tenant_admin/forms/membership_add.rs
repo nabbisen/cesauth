@@ -12,6 +12,7 @@
 
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
+use cesauth_core::routes::tenant_admin as routes;
 use cesauth_core::tenancy::types::Tenant;
 
 use super::super::frame::{tenant_admin_frame, TenantAdminTab};
@@ -28,8 +29,9 @@ pub fn for_tenant(
     let title = format!("Add tenant member: {}", tenant.slug);
     render(
         principal, tenant, &title,
-        &format!("/admin/t/{}", escape(&tenant.slug)),
-        &format!("/admin/t/{}/memberships", escape(&tenant.slug)),
+        // RFC 108 escape contract.
+        &escape(&routes::overview(&tenant.slug)),
+        &escape(&routes::memberships(&tenant.slug)),
         &format!("tenant <code>{}</code>", escape(&tenant.slug)),
         TenantAdminTab::Overview,
         user_id,
@@ -55,8 +57,8 @@ pub fn for_organization(
     let title = format!("Add organization member: {org_slug}");
     render(
         principal, tenant, &title,
-        &format!("/admin/t/{}/organizations/{}", escape(&tenant.slug), escape(org_id)),
-        &format!("/admin/t/{}/organizations/{}/memberships", escape(&tenant.slug), escape(org_id)),
+        &escape(&routes::org_detail(&tenant.slug, org_id)),
+        &escape(&routes::org_memberships(&tenant.slug, org_id)),
         &format!("organization <code>{}</code>", escape(org_slug)),
         TenantAdminTab::OrganizationDetail,
         user_id,
@@ -81,14 +83,14 @@ pub fn for_group(
 ) -> String {
     let title = format!("Add group member: {group_slug}");
     let back = if org_id.is_empty() {
-        format!("/admin/t/{}/organizations", escape(&tenant.slug))
+        escape(&routes::organizations(&tenant.slug))
     } else {
-        format!("/admin/t/{}/organizations/{}", escape(&tenant.slug), escape(org_id))
+        escape(&routes::org_detail(&tenant.slug, org_id))
     };
     render(
         principal, tenant, &title,
         &back,
-        &format!("/admin/t/{}/groups/{}/memberships", escape(&tenant.slug), escape(group_id)),
+        &escape(&routes::group_memberships(&tenant.slug, group_id)),
         &format!("group <code>{}</code>", escape(group_slug)),
         TenantAdminTab::OrganizationDetail,
         user_id,

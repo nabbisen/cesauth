@@ -4,6 +4,7 @@
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
 use cesauth_core::authz::types::{RoleAssignment, Scope};
+use cesauth_core::routes::tenancy_console as routes;
 
 use super::frame::{tenancy_console_frame, TenancyConsoleTab};
 
@@ -38,10 +39,11 @@ fn render_actions(principal: &AdminPrincipal, user_id: &str) -> String {
     format!(
         r##"<section aria-label="Actions">
   <div class="action-row">
-    <a class="action" href="/admin/tenancy/users/{uid}/role_assignments/new">+ Grant role</a>
+    <a class="action" href="{grant_url}">+ Grant role</a>
   </div>
 </section>"##,
-        uid = escape(user_id),
+        // RFC 108 escape contract.
+        grant_url = escape(&routes::user_role_assignments_new(user_id)),
     )
 }
 
@@ -65,10 +67,17 @@ fn render_table(principal: &AdminPrincipal, input: &UserRoleAssignmentsInput<'_>
                 None    => r#"<span class="muted">none</span>"#.to_owned(),
             };
             let action_cell = if manage {
+                // RFC 108 escape contract: catalog returns the path; we
+                // append the user_id query string for the redirect-back
+                // and then escape the whole resulting URL.
+                let revoke_url = format!(
+                    "{}?user_id={}",
+                    routes::role_assignment_delete(&a.id),
+                    input.user_id,
+                );
                 format!(
-                    r##"<td><a class="action danger" href="/admin/tenancy/role_assignments/{aid}/delete?user_id={uid}" style="font-size: 0.85em; padding: 4px 10px;">Revoke</a></td>"##,
-                    aid = escape(&a.id),
-                    uid = escape(&input.user_id),
+                    r##"<td><a class="action danger" href="{revoke_url}" style="font-size: 0.85em; padding: 4px 10px;">Revoke</a></td>"##,
+                    revoke_url = escape(&revoke_url),
                 )
             } else {
                 String::new()
@@ -93,7 +102,7 @@ fn render_table(principal: &AdminPrincipal, input: &UserRoleAssignmentsInput<'_>
     let action_th = if manage { r#"<th scope="col"></th>"# } else { "" };
     format!(
         r##"<section aria-label="Assignments">
-  <p class="muted"><a href="/admin/tenancy/tenants">← Back to tenants</a></p>
+  <p class="muted"><a href="{tenants_url}">← Back to tenants</a></p>
   <table><thead>
     <tr>
       <th scope="col">Role</th>
@@ -106,7 +115,10 @@ fn render_table(principal: &AdminPrincipal, input: &UserRoleAssignmentsInput<'_>
   </thead><tbody>
 {body}
   </tbody></table>
-</section>"##
+</section>"##,
+        tenants_url = routes::TENANTS,
+        action_th = action_th,
+        body = body,
     )
 }
 
@@ -114,12 +126,14 @@ fn render_scope(s: &Scope) -> String {
     match s {
         Scope::System => r#"<span class="badge critical">system</span>"#.to_owned(),
         Scope::Tenant { tenant_id } => format!(
-            r#"<span class="badge">tenant</span> <a href="/admin/tenancy/tenants/{id}"><code>{id_short}</code></a>"#,
-            id = escape(tenant_id), id_short = escape(tenant_id),
+            r#"<span class="badge">tenant</span> <a href="{tenant_url}"><code>{id_short}</code></a>"#,
+            tenant_url = escape(&routes::tenant(tenant_id)),
+            id_short   = escape(tenant_id),
         ),
         Scope::Organization { organization_id } => format!(
-            r#"<span class="badge">organization</span> <a href="/admin/tenancy/organizations/{id}"><code>{id_short}</code></a>"#,
-            id = escape(organization_id), id_short = escape(organization_id),
+            r#"<span class="badge">organization</span> <a href="{org_url}"><code>{id_short}</code></a>"#,
+            org_url  = escape(&routes::organization(organization_id)),
+            id_short = escape(organization_id),
         ),
         Scope::Group { group_id } => format!(
             r#"<span class="badge">group</span> <code>{id}</code>"#, id = escape(group_id),

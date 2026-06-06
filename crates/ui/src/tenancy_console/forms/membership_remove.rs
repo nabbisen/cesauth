@@ -7,6 +7,7 @@
 
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
+use cesauth_core::routes::tenancy_console as routes;
 
 use super::super::frame::{tenancy_console_frame, TenancyConsoleTab};
 
@@ -20,8 +21,9 @@ pub fn for_tenant(
 ) -> String {
     let title = format!("Remove tenant member: {user_id}");
     let body = render_body(
-        &format!("/admin/tenancy/tenants/{}", escape(tenant_id)),
-        &format!("/admin/tenancy/tenants/{}/memberships/{}/delete", escape(tenant_id), escape(user_id)),
+        // RFC 108 escape contract.
+        &escape(&routes::tenant(tenant_id)),
+        &escape(&routes::tenant_membership_delete(tenant_id, user_id)),
         &format!("Remove user <code>{}</code> from tenant <code>{}</code>?",
             escape(user_id), escape(tenant_slug)),
         Some(("Role being removed", role)),
@@ -40,8 +42,8 @@ pub fn for_organization(
 ) -> String {
     let title = format!("Remove org member: {user_id}");
     let body = render_body(
-        &format!("/admin/tenancy/organizations/{}", escape(org_id)),
-        &format!("/admin/tenancy/organizations/{}/memberships/{}/delete", escape(org_id), escape(user_id)),
+        &escape(&routes::organization(org_id)),
+        &escape(&routes::organization_membership_delete(org_id, user_id)),
         &format!("Remove user <code>{}</code> from organization <code>{}</code>?",
             escape(user_id), escape(org_slug)),
         Some(("Role being removed", role)),
@@ -60,8 +62,8 @@ pub fn for_group(
 ) -> String {
     let title = format!("Remove group member: {user_id}");
     let body = render_body(
-        &format!("/admin/tenancy/tenants/{}", escape(tenant_id)),
-        &format!("/admin/tenancy/groups/{}/memberships/{}/delete", escape(group_id), escape(user_id)),
+        &escape(&routes::tenant(tenant_id)),
+        &escape(&routes::group_membership_delete(group_id, user_id)),
         &format!("Remove user <code>{}</code> from group <code>{}</code>?",
             escape(user_id), escape(group_slug)),
         None,

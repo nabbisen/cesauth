@@ -8,6 +8,7 @@
 
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
+use cesauth_core::routes::tenancy_console as routes;
 
 use super::super::frame::{tenancy_console_frame, TenancyConsoleTab};
 
@@ -22,8 +23,11 @@ pub fn for_tenant(
 ) -> String {
     render(principal,
         &format!("New group in tenant: {tenant_slug}"),
-        &format!("/admin/tenancy/tenants/{}", escape(tenant_id)),
-        &format!("/admin/tenancy/tenants/{}/groups/new", escape(tenant_id)),
+        // RFC 108 escape contract: catalog builders return raw URLs;
+        // `render` embeds them verbatim in href/action attrs, so we
+        // escape here at the construction site.
+        &escape(&routes::tenant(tenant_id)),
+        &escape(&routes::tenant_groups_new(tenant_id)),
         "tenant", &format!("tenant <code>{}</code>", escape(tenant_slug)),
         slug, display_name, error,
     )
@@ -40,8 +44,8 @@ pub fn for_organization(
 ) -> String {
     render(principal,
         &format!("New group in organization: {org_slug}"),
-        &format!("/admin/tenancy/organizations/{}", escape(org_id)),
-        &format!("/admin/tenancy/organizations/{}/groups/new", escape(org_id)),
+        &escape(&routes::organization(org_id)),
+        &escape(&routes::organization_groups_new(org_id)),
         "organization", &format!("organization <code>{}</code>", escape(org_slug)),
         slug, display_name, error,
     )

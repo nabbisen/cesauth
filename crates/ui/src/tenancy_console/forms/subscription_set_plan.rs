@@ -4,6 +4,7 @@
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
 use cesauth_core::billing::types::{Plan, Subscription};
+use cesauth_core::routes::tenancy_console as routes;
 
 use super::super::frame::{tenancy_console_frame, TenancyConsoleTab};
 
@@ -31,7 +32,7 @@ pub fn form_page(
         )
     }).collect();
     let body = format!(
-        r##"<p><a href="/admin/tenancy/tenants/{tid}">← Back to tenant</a></p>
+        r##"<p><a href="{back_url}">← Back to tenant</a></p>
 {error}
 <section aria-label="Current">
   <table><tbody>
@@ -40,7 +41,7 @@ pub fn form_page(
   </tbody></table>
 </section>
 <section aria-label="Plan picker">
-  <form method="post" action="/admin/tenancy/tenants/{tid}/subscription/plan">
+  <form method="post" action="{action_url}">
     <p>
       <label for="plan_id">Target plan</label>
       <select id="plan_id" name="plan_id" required>
@@ -50,9 +51,12 @@ pub fn form_page(
     <p><button type="submit">Preview change</button></p>
   </form>
 </section>"##,
-        tid     = escape(tenant_id),
+        // RFC 108 escape contract.
+        back_url   = escape(&routes::tenant(tenant_id)),
+        action_url = escape(&routes::tenant_subscription_plan(tenant_id)),
         slug    = escape(tenant_slug),
         current = current_label,
+        options = options,
         error   = match error {
             None    => String::new(),
             Some(m) => format!(
@@ -87,7 +91,7 @@ pub fn confirm_page(
         }
     };
     let body = format!(
-        r##"<p><a href="/admin/tenancy/tenants/{tid}">← Back to tenant</a></p>
+        r##"<p><a href="{back_url}">← Back to tenant</a></p>
 <section aria-label="Diff">
   <h2>Change to apply</h2>
   <table><tbody>
@@ -98,17 +102,20 @@ pub fn confirm_page(
   {warning}
 </section>
 <section aria-label="Apply">
-  <form class="danger" method="post" action="/admin/tenancy/tenants/{tid}/subscription/plan">
+  <form class="danger" method="post" action="{action_url}">
     <input type="hidden" name="plan_id" value="{plan_id}">
     <input type="hidden" name="confirm" value="yes">
     <p><button type="submit">Apply plan change</button></p>
   </form>
 </section>"##,
-        tid     = escape(tenant_id),
+        // RFC 108 escape contract.
+        back_url   = escape(&routes::tenant(tenant_id)),
+        action_url = escape(&routes::tenant_subscription_plan(tenant_id)),
         slug    = escape(tenant_slug),
         cur     = current_plan.map(|p| format!("{} (<code>{}</code>)", escape(&p.display_name), escape(&p.slug))).unwrap_or_else(|| "<em class=\"muted\">none</em>".to_owned()),
         tgt     = format!("{} (<code>{}</code>)", escape(&target_plan.display_name), escape(&target_plan.slug)),
         plan_id = escape(&target_plan.id),
+        warning = warning,
     );
     tenancy_console_frame(&title, principal.role, principal.name.as_deref(), TenancyConsoleTab::Tenants, &body)
 }

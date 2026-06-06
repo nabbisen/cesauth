@@ -2,6 +2,7 @@
 
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
+use cesauth_core::routes::tenancy_console as routes;
 use cesauth_core::tenancy::types::{
     Group, Organization, OrganizationMembership, OrganizationRole, OrganizationStatus,
 };
@@ -35,16 +36,22 @@ fn render_actions(principal: &AdminPrincipal, org_id: &str) -> String {
     if !principal.role.can_manage_tenancy() {
         return String::new();
     }
-    let oid = escape(org_id);
+    // RFC 108 escape contract.
+    let groups_new_url = escape(&routes::organization_groups_new(org_id));
+    let mem_new_url    = escape(&routes::organization_memberships_new(org_id));
+    let status_url     = escape(&routes::organization_status(org_id));
     format!(
         r##"<section aria-label="Actions">
   <p class="muted">Mutations available to your role:</p>
   <div class="action-row">
-    <a class="action" href="/admin/tenancy/organizations/{oid}/groups/new">+ New group</a>
-    <a class="action" href="/admin/tenancy/organizations/{oid}/memberships/new">+ Add organization member</a>
-    <a class="action danger" href="/admin/tenancy/organizations/{oid}/status">Change organization status</a>
+    <a class="action" href="{groups_new_url}">+ New group</a>
+    <a class="action" href="{mem_new_url}">+ Add organization member</a>
+    <a class="action danger" href="{status_url}">Change organization status</a>
   </div>
 </section>"##,
+        groups_new_url = groups_new_url,
+        mem_new_url    = mem_new_url,
+        status_url     = status_url,
     )
 }
 
@@ -56,8 +63,8 @@ fn render_groups_section(principal: &AdminPrincipal, _org_id: &str, groups: &[Gr
         groups.iter().map(|g| {
             let delete_link = if principal.role.can_manage_tenancy() {
                 format!(
-                    r##"<a class="action danger" href="/admin/tenancy/groups/{id}/delete" style="font-size: 0.85em; padding: 4px 10px;">Delete</a>"##,
-                    id = escape(&g.id),
+                    r##"<a class="action danger" href="{del_url}" style="font-size: 0.85em; padding: 4px 10px;">Delete</a>"##,
+                    del_url = escape(&routes::group_delete(&g.id)),
                 )
             } else {
                 String::new()
@@ -104,7 +111,7 @@ fn render_summary(o: &Organization) -> String {
   <table>
     <tbody>
       <tr><th scope="row">Id</th>          <td><code>{id}</code></td></tr>
-      <tr><th scope="row">Tenant</th>      <td><a href="/admin/tenancy/tenants/{tid}"><code>{tid_short}</code></a></td></tr>
+      <tr><th scope="row">Tenant</th>      <td><a href="{tenant_url}"><code>{tid_short}</code></a></td></tr>
       <tr><th scope="row">Slug</th>        <td><code>{slug}</code></td></tr>
       <tr><th scope="row">Display name</th><td>{name}</td></tr>
       <tr><th scope="row">Status</th>      <td>{status}</td></tr>
@@ -113,7 +120,7 @@ fn render_summary(o: &Organization) -> String {
   </table>
 </section>"##,
         id        = escape(&o.id),
-        tid       = escape(&o.tenant_id),
+        tenant_url = escape(&routes::tenant(&o.tenant_id)),
         tid_short = escape(&o.tenant_id),
         slug      = escape(&o.slug),
         name      = escape(&o.display_name),
@@ -139,23 +146,24 @@ fn render_members_with_actions(
             };
             let action_cell = if manage {
                 format!(
-                    r##"<td><a class="action danger" href="/admin/tenancy/organizations/{oid}/memberships/{uid}/delete" style="font-size: 0.85em; padding: 4px 10px;">Remove</a></td>"##,
-                    oid = escape(org_id),
-                    uid = escape(&m.user_id),
+                    r##"<td><a class="action danger" href="{del_url}" style="font-size: 0.85em; padding: 4px 10px;">Remove</a></td>"##,
+                    del_url = escape(&routes::organization_membership_delete(org_id, &m.user_id)),
                 )
             } else {
                 String::new()
             };
             format!(
                 r##"<tr>
-  <td><a href="/admin/tenancy/users/{uid}/role_assignments"><code>{uid}</code></a></td>
+  <td><a href="{ra_url}"><code>{uid}</code></a></td>
   <td>{badge}</td>
   <td class="muted">{joined}</td>
   {action_cell}
 </tr>"##,
-                uid    = escape(&m.user_id),
-                badge  = badge,
-                joined = m.joined_at,
+                ra_url    = escape(&routes::user_role_assignments(&m.user_id)),
+                uid       = escape(&m.user_id),
+                badge     = badge,
+                joined    = m.joined_at,
+                action_cell = action_cell,
             )
         }).collect::<Vec<_>>().join("\n")
     };

@@ -3,6 +3,7 @@
 
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
+use cesauth_core::routes::tenant_admin as routes;
 use cesauth_core::tenancy::types::{Group, Organization, OrganizationStatus, Tenant};
 
 use super::affordances::Affordances;
@@ -16,8 +17,9 @@ pub fn organizations_page(
 ) -> String {
     let create_button = if aff.can_create_organization {
         format!(
-            r#"<p><a href="/admin/t/{slug}/organizations/new" class="button">+ New organization</a></p>"#,
-            slug = escape(&tenant.slug),
+            r#"<p><a href="{url}" class="button">+ New organization</a></p>"#,
+            // RFC 108 escape contract.
+            url = escape(&routes::organizations_new(&tenant.slug)),
         )
     } else { String::new() };
     let table = if orgs.is_empty() {
@@ -67,20 +69,21 @@ fn render_org_actions(tenant: &Tenant, org: &Organization, aff: &Affordances) ->
     let mut buttons: Vec<String> = Vec::new();
     if aff.can_update_organization {
         buttons.push(format!(
-            r#"<a href="/admin/t/{slug}/organizations/{oid}/status" class="button">Change status</a>"#,
-            slug = escape(&tenant.slug), oid = escape(&org.id),
+            r#"<a href="{url}" class="button">Change status</a>"#,
+            // RFC 108 escape contract.
+            url = escape(&routes::org_status(&tenant.slug, &org.id)),
         ));
     }
     if aff.can_create_group {
         buttons.push(format!(
-            r#"<a href="/admin/t/{slug}/organizations/{oid}/groups/new" class="button">+ New group</a>"#,
-            slug = escape(&tenant.slug), oid = escape(&org.id),
+            r#"<a href="{url}" class="button">+ New group</a>"#,
+            url = escape(&routes::org_groups_new(&tenant.slug, &org.id)),
         ));
     }
     if aff.can_add_org_member {
         buttons.push(format!(
-            r#"<a href="/admin/t/{slug}/organizations/{oid}/memberships/new" class="button">+ Add member</a>"#,
-            slug = escape(&tenant.slug), oid = escape(&org.id),
+            r#"<a href="{url}" class="button">+ Add member</a>"#,
+            url = escape(&routes::org_memberships_new(&tenant.slug, &org.id)),
         ));
     }
     if buttons.is_empty() {
@@ -93,12 +96,11 @@ fn render_org_table(tenant: &Tenant, orgs: &[Organization], _aff: &Affordances) 
     let rows: String = orgs.iter().map(|o| {
         format!(
             r#"<tr>
-  <td><a href="/admin/t/{slug}/organizations/{oid}">{name}</a></td>
+  <td><a href="{url}">{name}</a></td>
   <td><code>{org_slug}</code></td>
   <td>{status}</td>
 </tr>"#,
-            slug     = escape(&tenant.slug),
-            oid      = escape(&o.id),
+            url      = escape(&routes::org_detail(&tenant.slug, &o.id)),
             name     = escape(&o.display_name),
             org_slug = escape(&o.slug),
             status   = render_org_status_badge(o.status),
@@ -142,14 +144,14 @@ fn render_groups_section(
         let mut actions: Vec<String> = Vec::new();
         if aff.can_delete_group {
             actions.push(format!(
-                r#"<a href="/admin/t/{slug}/groups/{gid}/delete">delete</a>"#,
-                slug = escape(&tenant.slug), gid = escape(&g.id),
+                r#"<a href="{url}">delete</a>"#,
+                url = escape(&routes::group_delete(&tenant.slug, &g.id)),
             ));
         }
         if aff.can_add_group_member {
             actions.push(format!(
-                r#"<a href="/admin/t/{slug}/groups/{gid}/memberships/new">+ member</a>"#,
-                slug = escape(&tenant.slug), gid = escape(&g.id),
+                r#"<a href="{url}">+ member</a>"#,
+                url = escape(&routes::group_memberships_new(&tenant.slug, &g.id)),
             ));
         }
         let actions_html = if actions.is_empty() {

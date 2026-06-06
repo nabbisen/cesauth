@@ -6,6 +6,7 @@
 
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
+use cesauth_core::routes::tenant_admin as routes;
 use cesauth_core::tenancy::types::Tenant;
 
 use super::super::frame::{tenant_admin_frame, TenantAdminTab};
@@ -18,8 +19,9 @@ pub fn for_tenant(
 ) -> String {
     let title = format!("Remove tenant member: {user_id}");
     let body = render_body(
-        &format!("/admin/t/{}", escape(&tenant.slug)),
-        &format!("/admin/t/{}/memberships/{}/delete", escape(&tenant.slug), escape(user_id)),
+        // RFC 108 escape contract.
+        &escape(&routes::overview(&tenant.slug)),
+        &escape(&routes::membership_delete(&tenant.slug, user_id)),
         &format!("Remove user <code>{}</code> from tenant <code>{}</code>?",
             escape(user_id), escape(&tenant.slug)),
         Some(("Role being removed", role)),
@@ -42,9 +44,8 @@ pub fn for_organization(
 ) -> String {
     let title = format!("Remove org member: {user_id}");
     let body = render_body(
-        &format!("/admin/t/{}/organizations/{}", escape(&tenant.slug), escape(org_id)),
-        &format!("/admin/t/{}/organizations/{}/memberships/{}/delete",
-            escape(&tenant.slug), escape(org_id), escape(user_id)),
+        &escape(&routes::org_detail(&tenant.slug, org_id)),
+        &escape(&routes::org_membership_delete(&tenant.slug, org_id, user_id)),
         &format!("Remove user <code>{}</code> from organization <code>{}</code>?",
             escape(user_id), escape(org_slug)),
         Some(("Role being removed", role)),
@@ -67,14 +68,13 @@ pub fn for_group(
 ) -> String {
     let title = format!("Remove group member: {user_id}");
     let back = if org_id.is_empty() {
-        format!("/admin/t/{}/organizations", escape(&tenant.slug))
+        escape(&routes::organizations(&tenant.slug))
     } else {
-        format!("/admin/t/{}/organizations/{}", escape(&tenant.slug), escape(org_id))
+        escape(&routes::org_detail(&tenant.slug, org_id))
     };
     let body = render_body(
         &back,
-        &format!("/admin/t/{}/groups/{}/memberships/{}/delete",
-            escape(&tenant.slug), escape(group_id), escape(user_id)),
+        &escape(&routes::group_membership_delete(&tenant.slug, group_id, user_id)),
         &format!("Remove user <code>{}</code> from group <code>{}</code>?",
             escape(user_id), escape(group_slug)),
         None,

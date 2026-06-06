@@ -1,6 +1,6 @@
 # RFC 108 — UI template route-catalog migration
 
-**Status**: Implemented (v0.68.0 — partial; admin nav + admin/console/* templates added v0.69.0; tenant_admin/* and tenancy_console/* migration still deferred)  
+**Status**: Implemented (v0.68.0 partial → v0.69.0 catalog + admin/console → v0.70.0 closure; two pre-existing orphan UIs intentionally left out of scope, see "Known orphan UI")  
 **Tier**: P1  
 **Size**: Large  
 **Target**: v0.68.0  
@@ -56,35 +56,58 @@
   ~20 URLs migrated, including all parameterized routes via builder
   fns + the HTML-escape contract.
 
-### Still deferred (v0.70.0+)
+### v0.70.0 (closure)
 
-- **Admin / tenant_admin / tenancy_console template migration
-  (RFC PR 2 + PR 3, remainder).** ~150 hardcoded URLs across 32
-  production template files in `crates/ui/src/tenant_admin/` and
-  `crates/ui/src/tenancy_console/`. The catalog now has all the
-  necessary builders so this is mechanical follow-up work. Highest-volume
-  files: `tenancy_console/tenant_detail.rs` (18 URLs),
-  `tenancy_console/role_assignments.rs` (8), several form files
-  with 5–7 URLs each.
-- **Drift-scan rule (RFC PR 4).** Deferred alongside the admin
-  migration so that turning the rule on doesn't immediately fail CI.
-  Once the migration completes, `scripts/drift-scan.sh` gains the
-  URL-hardcode pattern with explicit exemptions for tests and any
-  unavoidable inline cases.
-- **One known catalog gap (intentional).** `tenant_admin/oidc_clients.rs`
-  template renders a form pointing at `/admin/t/{slug}/oidc-clients/{cid}/audience`
-  but the worker does **not** register that route — RFC 017 introduced
-  the UI but apparently never wired the worker handler. Pre-existing
-  bug. Not catalogued because the catalog mirrors worker registrations,
-  not aspirational paths. Template left with its hardcoded URL pending
-  a separate fix (either wire the worker route or remove the template).
+- **`tenant_admin/*` template migration.** All 6 production top-level
+  pages (`organizations.rs`, `role_assignments.rs`, `overview.rs`,
+  `invitations.rs`, `deletions.rs`, `users.rs`) plus all 8 forms
+  (`group_create`, `group_delete`, `organization_create`,
+  `organization_set_status`, `membership_add`, `membership_remove`,
+  `role_assignment_grant`, `role_assignment_revoke`) migrated to
+  `cesauth_core::routes::tenant_admin::*`.
+- **`tenancy_console/*` template migration.** All 5 remaining top-level
+  pages (`tenant_detail.rs`, `role_assignments.rs`, `organizations.rs`,
+  `tenants.rs`, `subscription.rs`) plus 11 forms migrated to
+  `cesauth_core::routes::tenancy_console::*`. (1 form — `membership_add.rs`
+  — left hardcoded as an orphan; see below.)
+- **Drift-scan rule landed (RFC PR 4).** `scripts/drift-scan.sh` now
+  runs a per-file scan of `crates/ui/src/` for URL literals matching
+  `"/(admin|me|oidc|auth|login|logout|magic-link|\.well-known)/`. Stops
+  per-file at the first `#[cfg(test)]` or `mod tests` marker (test
+  assertions on URLs by string are deliberately exempt — they exist to
+  fail loudly on catalog drift). Standalone `tests.rs` files exempt
+  for the same reason. Currently clean.
+- **~150 URLs migrated this release**, ~190 total across v0.68.0 +
+  v0.69.0 + v0.70.0.
+
+### Known orphan UI (not in RFC 108 scope)
+
+Two templates render forms or links to URLs the worker does not
+register. These are **pre-existing bugs**, surfaced by — but outside
+the scope of — RFC 108. The catalog policy is "mirror worker reality,
+not aspirations," so these stay hardcoded with a module-docstring
+`# RFC 108 orphan UI exemption` note and an entry in the drift-scan
+exemption list. Resolution belongs to follow-up work.
+
+1. **`crates/ui/src/tenant_admin/oidc_clients.rs`** — submits to
+   `/admin/t/{slug}/oidc-clients/{cid}/audience`. RFC 017 added the UI
+   but never wired the worker handler. Either wire the worker route or
+   remove the template.
+
+2. **`crates/ui/src/tenancy_console/forms/membership_add.rs`** — all
+   three `for_tenant` / `for_organization` / `for_group` variants POST
+   to `.../memberships` (no `/new` suffix). The worker only handles
+   `.../memberships/new` — these submissions return 404. The
+   `tenant_admin/forms/membership_add.rs` equivalent maps cleanly,
+   suggesting the `tenancy_console` variant was authored before the
+   routes were finalised.
 
 Rationale for multi-release implementation: the lifecycle policy
 (RFC 019 / `rfcs/done/019-rfc-lifecycle-policy.md` §Granularity of
 transitions) allows partial implementation when the partial work
-captures the RFC's main design decision. By v0.69.0 the pattern is
-fully established across the system-admin surface; the remaining
-tenant_admin/tenancy_console work is volume, not novelty.
+captures the RFC's main design decision. The pattern was fully
+established by v0.68.0 (escape contract + catalog-builder shape); the
+v0.69.0 + v0.70.0 work is volume, not novelty.
 
 ## Problem
 

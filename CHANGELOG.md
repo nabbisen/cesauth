@@ -26,6 +26,129 @@ split by minor-version range:
 
 ---
 
+## [0.70.0] - 2026-05-13
+
+Closes RFC 108 (UI template route-catalog migration): completes the
+remaining admin-side templates (`tenant_admin` and `tenancy_console`
+end-user surfaces) and adds a drift-scan rule that prevents new URL
+hardcodes from regressing the catalog discipline. RFC 112 (worker auth
+macro batch) remains environment-blocked and is not in this release.
+
+### RFC 108 — UI template route-catalog migration (closure)
+
+Source: HANDOFF v0.66.0 residual #2.
+
+v0.68.0 migrated end-user templates and corrected the WebAuthn drift.
+v0.69.0 expanded the catalog to mirror every worker-registered route
+and migrated `admin/console/*`. v0.70.0 finishes the job: every
+production template in `tenant_admin/` and `tenancy_console/` now
+constructs URLs via `cesauth_core::routes::*` builders and constants.
+
+#### Templates migrated this release
+
+`tenancy_console/`:
+
+- `tenant_detail.rs`, `role_assignments.rs`, `organizations.rs`,
+  `tenants.rs`, `subscription.rs` — 5 top-level pages.
+- `forms/`: `group_create.rs`, `group_delete.rs`, `organization_create.rs`,
+  `organization_set_status.rs`, `role_assignment_create.rs`,
+  `role_assignment_delete.rs`, `subscription_set_plan.rs`,
+  `subscription_set_status.rs`, `tenant_create.rs`, `tenant_set_status.rs`,
+  `token_mint.rs`, `membership_remove.rs` — 12 forms migrated.
+  (1 form skipped: `membership_add.rs`, orphan — see below.)
+
+`tenant_admin/`:
+
+- `organizations.rs`, `role_assignments.rs`, `overview.rs`,
+  `invitations.rs`, `deletions.rs`, `users.rs` — 6 top-level pages.
+  (1 page skipped: `oidc_clients.rs`, orphan — see below.)
+- `forms/`: `group_create.rs`, `group_delete.rs`, `organization_create.rs`,
+  `organization_set_status.rs`, `membership_add.rs`, `membership_remove.rs`,
+  `role_assignment_grant.rs`, `role_assignment_revoke.rs` — 8 forms migrated.
+
+Total v0.70.0 production migration: ~150 hardcoded URL literals replaced
+with catalog builder calls. Combined v0.68.0 + v0.69.0 + v0.70.0 closes
+the entire admin and end-user template surface against the catalog.
+
+#### Drift-scan rule (`scripts/drift-scan.sh`)
+
+A new pass at the end of the script greps `crates/ui/src/` for URL
+literals matching `"/(admin|me|oidc|auth|login|logout|magic-link|\.well-known)/`,
+with explicit exemptions for:
+
+- Standalone `tests.rs` files — tests assert on rendered URLs by
+  string and must keep hardcoded literals (their job is to fail loudly
+  on catalog drift).
+- Inline `#[cfg(test)]` / `mod tests` blocks in production .rs files —
+  same reasoning. Detected per-file by stopping the scan at the first
+  marker line; relies on the codebase convention that test blocks are
+  last in the file.
+- The two orphan-UI files (see "Known orphan UI" below).
+
+Currently `bash scripts/drift-scan.sh` exits 0 (clean). Any new
+hardcode in a production template fails the script and the release.
+
+#### Known orphan UI (deferred outside RFC 108)
+
+Two templates are deliberately exempt from migration. Both have inline
+`# RFC 108 orphan UI exemption` notes in their module docstrings.
+
+1. **`crates/ui/src/tenant_admin/oidc_clients.rs`** — posts to
+   `/admin/t/{slug}/oidc-clients/{cid}/audience`. The worker does not
+   register this route (RFC 017 introduced the UI but never wired the
+   worker handler). Pre-existing bug; outside RFC 108 scope, which is
+   "catalog mirrors worker reality, not aspirations." Resolution
+   requires either wiring the worker handler or removing the template.
+
+2. **`crates/ui/src/tenancy_console/forms/membership_add.rs`** — all
+   three variants (tenant / organization / group) POST to
+   `.../memberships` with no `/new` suffix. The worker only registers
+   `.../memberships/new`, so these forms return 404 in production. The
+   `tenant_admin/forms/membership_add.rs` equivalent maps cleanly to
+   worker routes — this `tenancy_console` variant was apparently
+   authored before the routes were finalised.
+
+Both are tracked but out of scope. The catalog will not add the
+unregistered routes; the templates will not migrate against them.
+
+### RFC 112 — Worker auth macro batch (remains environment-blocked)
+
+Unchanged from v0.69.0. The sandbox where this release was prepared
+does not provide rustup + the wasm32 target needed to verify
+`crates/worker` and `crates/adapter-cloudflare` edits. RFC 112 is
+mechanical batch work but cannot be sanity-checked here. Pushed to
+v0.71.0 contingent on a rustup-enabled environment. RFC document at
+`rfcs/proposed/112-...md` carries the environment-blocker annotation.
+
+### Tests
+
+1,219 / 1,219 pass (125 core + 738 adapter-test + 325 ui + 31
+migrate-test). Unchanged from the v0.69.0 baseline — RFC 108 closure is
+a refactor, not a feature.
+
+### Warnings
+
+0 production lib warnings on `cargo-1.91 check -p cesauth-core -p
+cesauth-ui -p cesauth-adapter-test`.
+
+### Contract invariants reaffirmed
+
+- **Escape contract:** catalog builders return raw URL strings; every
+  template `escape()`s at the HTML attribute boundary. Verified by
+  the `sessions_page_session_id_is_html_escaped` test (added v0.68.0)
+  and by every new escape site landing this release adopting the same
+  `escape(&routes::*(...))` pattern.
+- **Catalog mirrors worker reality:** every entry in
+  `cesauth_core::routes` corresponds to a route the worker registers.
+  Orphan template URLs stay hardcoded with the module-docstring
+  annotation; they do not pollute the catalog.
+- **Tests-as-drift-detectors:** `tests.rs` files keep hardcoded URLs
+  by policy. The drift-scan rule exempts them explicitly. A catalog
+  builder change that changes a rendered URL must update the test in
+  the same commit — that's the signal.
+
+---
+
 ## [0.69.0] - 2026-05-13
 
 Continues RFC 108: catalog completion + admin-console template

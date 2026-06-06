@@ -7,6 +7,7 @@
 
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
+use cesauth_core::routes::tenant_admin as routes;
 use cesauth_core::tenancy::types::{Group, Tenant};
 
 use super::super::frame::{tenant_admin_frame, TenantAdminTab};
@@ -22,7 +23,7 @@ pub fn form_page(
 ) -> String {
     let title = format!("Delete group: {}", group.slug);
     let body = format!(
-        r##"<p><a href="/admin/t/{tslug}/organizations/{oid}">← Back to organization</a></p>
+        r##"<p><a href="{back_url}">← Back to organization</a></p>
 {error}
 <section aria-label="Group">
   <table><tbody>
@@ -32,7 +33,7 @@ pub fn form_page(
   </tbody></table>
 </section>
 <section aria-label="Delete form">
-  <form method="post" action="/admin/t/{tslug}/groups/{gid}/delete">
+  <form method="post" action="{action_url}">
     <p class="critical"><strong>Warning.</strong> Group delete is a soft delete (the row remains)
        but role assignments scoped to this group become orphaned and stop granting access.
        Memberships of users in this group are also removed.</p>
@@ -43,9 +44,9 @@ pub fn form_page(
     <p><button type="submit">Preview delete</button></p>
   </form>
 </section>"##,
-        tslug    = escape(&tenant.slug),
-        oid      = escape(org_id),
-        gid      = escape(&group.id),
+        // RFC 108 escape contract.
+        back_url   = escape(&routes::org_detail(&tenant.slug, org_id)),
+        action_url = escape(&routes::group_delete(&tenant.slug, &group.id)),
         gslug    = escape(&group.slug),
         gname    = escape(&group.display_name),
         org_slug = escape(org_slug),
@@ -74,7 +75,7 @@ pub fn preview_page(
 ) -> String {
     let title = format!("Confirm delete: {}", group.slug);
     let body = format!(
-        r##"<p><a href="/admin/t/{tslug}/groups/{gid}/delete">← Back to form</a></p>
+        r##"<p><a href="{back_url}">← Back to form</a></p>
 <section aria-label="Diff">
   <h3>What will be deleted</h3>
   <table><tbody>
@@ -88,17 +89,19 @@ pub fn preview_page(
      lose any access that depended on it.</p>
 </section>
 <section aria-label="Apply or cancel">
-  <form method="post" action="/admin/t/{tslug}/groups/{gid}/delete">
+  <form method="post" action="{action_url}">
     <input type="hidden" name="reason" value="{reason}">
     <input type="hidden" name="confirm" value="yes">
     <p>
       <button type="submit" class="critical">Apply delete</button>
-      <a href="/admin/t/{tslug}/organizations/{oid}">Cancel</a>
+      <a href="{cancel_url}">Cancel</a>
     </p>
   </form>
 </section>"##,
-        tslug         = escape(&tenant.slug),
-        oid           = escape(org_id),
+        // RFC 108 escape contract.
+        back_url   = escape(&routes::group_delete(&tenant.slug, &group.id)),
+        action_url = escape(&routes::group_delete(&tenant.slug, &group.id)),
+        cancel_url = escape(&routes::org_detail(&tenant.slug, org_id)),
         gid           = escape(&group.id),
         gslug         = escape(&group.slug),
         n_assignments = affected_assignments,

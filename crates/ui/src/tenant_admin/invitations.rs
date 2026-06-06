@@ -6,6 +6,7 @@ use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
 use cesauth_core::i18n::{lookup, Locale, MessageKey};
 use cesauth_core::invitation::Invitation;
+use cesauth_core::routes::tenant_admin as routes;
 use cesauth_core::tenancy::types::Tenant;
 
 use super::frame::{tenant_admin_frame, TenantAdminTab};
@@ -23,7 +24,7 @@ pub fn invitations_page(
     let issue_form = format!(
         "<section class=\"card mb-4\">\n\
   <h2 class=\"card-title\">{section_title}</h2>\n\
-  <form method=\"POST\" action=\"/admin/t/{slug}/invitations\">\n\
+  <form method=\"POST\" action=\"{action_url}\">\n\
     <input type=\"hidden\" name=\"csrf_token\" value=\"{csrf}\">\n\
     <div class=\"form-row\">\n\
       <label for=\"email\">{email_label}</label>\n\
@@ -39,7 +40,8 @@ pub fn invitations_page(
     <button type=\"submit\" class=\"btn-primary\">{submit_btn}</button>\n\
   </form>\n\
 </section>",
-        slug          = escape(&tenant.slug),
+        // RFC 108 escape contract.
+        action_url    = escape(&routes::invitations(&tenant.slug)),
         csrf          = escape(csrf),
         section_title = escape(lookup(MessageKey::TenantInviteSectionTitle, l)),
         email_label   = escape(lookup(MessageKey::TenantInviteEmailLabel,   l)),
@@ -76,7 +78,7 @@ pub fn invitations_page(
             format!(
                 "<tr>\n  <td>{email}</td>\n  <td>{role}</td>\n  <td>{status}</td>\n\
   <td>{expires}</td>\n  <td>\n\
-    <form method=\"POST\" action=\"/admin/t/{slug}/invitations/{id}/revoke\" style=\"display:inline\">\n\
+    <form method=\"POST\" action=\"{revoke_url}\" style=\"display:inline\">\n\
       <input type=\"hidden\" name=\"csrf_token\" value=\"{csrf}\">\n\
       <button type=\"submit\" class=\"btn-sm btn-danger\"\n\
               onclick=\"return confirm('{confirm}')\">{revoke}</button>\n\
@@ -85,8 +87,8 @@ pub fn invitations_page(
                 role    = escape(&inv.role),
                 status  = status,
                 expires = escape(&expires_label),
-                slug    = escape(&tenant.slug),
-                id      = escape(&inv.id),
+                // RFC 108 escape contract.
+                revoke_url = escape(&routes::invitation_revoke(&tenant.slug, &inv.id)),
                 csrf    = escape(csrf),
                 confirm = confirm_msg,
                 revoke  = revoke_btn,

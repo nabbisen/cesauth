@@ -3,6 +3,19 @@
 //! Renders the audience editor form and a read-only client detail page.
 //! The form enables tenant admins to set `oidc_clients.audience` without
 //! running raw D1 SQL.
+//!
+//! # RFC 108 orphan UI exemption
+//!
+//! The URLs in this template (`/admin/t/{slug}/oidc-clients` and
+//! `/admin/t/{slug}/oidc-clients/{cid}/audience`) are **not** registered
+//! by `crates/worker/src/lib.rs`. RFC 017 introduced the UI but never
+//! wired the worker handler — pre-existing tracking issue.
+//!
+//! Policy (RFC 108): the catalog in `cesauth_core::routes` mirrors
+//! worker reality, not aspirations. This template is therefore left
+//! hardcoded until the worker route is wired (or the template is
+//! removed). See `rfcs/done/108-...md` "Known orphan UI" for the
+//! deferred-work entry.
 
 use crate::escape;
 use cesauth_core::oidc::audience::AudienceTarget;

@@ -2,6 +2,7 @@
 
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
+use cesauth_core::routes::tenancy_console as routes;
 use cesauth_core::tenancy::types::{Organization, OrganizationStatus};
 
 use super::super::frame::{tenancy_console_frame, TenancyConsoleTab};
@@ -15,8 +16,11 @@ pub fn form_page(
 ) -> String {
     let s = selected.unwrap_or(org.status);
     let title = format!("Organization status: {}", org.slug);
+    // RFC 108 escape contract.
+    let back_url   = escape(&routes::organization(&org.id));
+    let action_url = escape(&routes::organization_status(&org.id));
     let body = format!(
-        r##"<p><a href="/admin/tenancy/organizations/{oid}">← Back to organization</a></p>
+        r##"<p><a href="{back_url}">← Back to organization</a></p>
 {error}
 <section aria-label="Organization">
   <table><tbody>
@@ -26,7 +30,7 @@ pub fn form_page(
   </tbody></table>
 </section>
 <section aria-label="Status change form">
-  <form method="post" action="/admin/tenancy/organizations/{oid}/status">
+  <form method="post" action="{action_url}">
     <fieldset>
       <legend>Target status</legend>
       <p><input type="radio" id="s_active"    name="status" value="active"   {ca}> <label for="s_active">    <code>active</code></label></p>
@@ -40,7 +44,8 @@ pub fn form_page(
     <p><button type="submit">Preview change</button></p>
   </form>
 </section>"##,
-        oid    = escape(&org.id),
+        back_url   = back_url,
+        action_url = action_url,
         slug   = escape(&org.slug),
         tid    = escape(&org.tenant_id),
         cur    = render_status_badge(org.status),
@@ -78,7 +83,7 @@ pub fn confirm_page(
         OrganizationStatus::Deleted   => "deleted",
     };
     let body = format!(
-        r##"<p><a href="/admin/tenancy/organizations/{oid}">← Back to organization</a></p>
+        r##"<p><a href="{back_url}">← Back to organization</a></p>
 <section aria-label="Diff">
   <h2>Change to apply</h2>
   <table><tbody>
@@ -90,19 +95,22 @@ pub fn confirm_page(
   {warning}
 </section>
 <section aria-label="Apply">
-  <form class="danger" method="post" action="/admin/tenancy/organizations/{oid}/status">
+  <form class="danger" method="post" action="{action_url}">
     <input type="hidden" name="status"  value="{target}">
     <input type="hidden" name="reason"  value="{reason}">
     <input type="hidden" name="confirm" value="yes">
     <p><button type="submit">Apply change</button></p>
   </form>
 </section>"##,
-        oid    = escape(&org.id),
+        // RFC 108 escape contract.
+        back_url   = escape(&routes::organization(&org.id)),
+        action_url = escape(&routes::organization_status(&org.id)),
         slug   = escape(&org.slug),
         from   = render_status_badge(org.status),
         to     = render_status_badge(target),
         reason = escape(reason),
         target = target_str,
+        warning = warning,
     );
     tenancy_console_frame(&title, principal.role, principal.name.as_deref(), TenancyConsoleTab::Tenants, &body)
 }

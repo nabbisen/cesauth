@@ -2,17 +2,21 @@
 
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
+use cesauth_core::routes::tenancy_console as routes;
 use cesauth_core::tenancy::types::{Tenant, TenantStatus};
 
 use super::frame::{tenancy_console_frame, TenancyConsoleTab};
 
 pub fn tenants_page(principal: &AdminPrincipal, rows: &[Tenant]) -> String {
     let actions = if principal.role.can_manage_tenancy() {
-        r##"<p><a class="action" href="/admin/tenancy/tenants/new">+ New tenant</a></p>"##
+        format!(
+            r##"<p><a class="action" href="{new_url}">+ New tenant</a></p>"##,
+            new_url = routes::TENANTS_NEW,
+        )
     } else {
-        ""
+        String::new()
     };
-    let body = format!("{actions}\n{table}", table = render_table(rows));
+    let body = format!("{actions}\n{table}", actions = actions, table = render_table(rows));
     tenancy_console_frame("Tenants", principal.role, principal.name.as_deref(), TenancyConsoleTab::Tenants, &body)
 }
 
@@ -23,13 +27,13 @@ fn render_table(rows: &[Tenant]) -> String {
     } else {
         rows.iter().map(|t| format!(
             r##"<tr>
-  <td><a href="/admin/tenancy/tenants/{id}"><code>{slug}</code></a></td>
+  <td><a href="{tenant_url}"><code>{slug}</code></a></td>
   <td>{name}</td>
   <td>{status_badge}</td>
   <td class="muted">{created}</td>
   <td class="muted">{id_short}</td>
 </tr>"##,
-            id    = escape(&t.id),
+            tenant_url = escape(&routes::tenant(&t.id)),
             slug  = escape(&t.slug),
             name  = escape(&t.display_name),
             status_badge = render_status_badge(t.status),

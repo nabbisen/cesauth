@@ -19,6 +19,7 @@
 
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
+use cesauth_core::routes::tenancy_console as routes;
 use cesauth_core::tenancy::types::{Tenant, TenantStatus};
 
 use super::super::frame::{tenancy_console_frame, TenancyConsoleTab};
@@ -67,8 +68,9 @@ pub fn confirm_page(
 
 fn back_link(tenant_id: &str) -> String {
     format!(
-        r#"<p><a href="/admin/tenancy/tenants/{id}">← Back to tenant detail</a></p>"#,
-        id = escape(tenant_id),
+        r#"<p><a href="{url}">← Back to tenant detail</a></p>"#,
+        // RFC 108 escape contract.
+        url = escape(&routes::tenant(tenant_id)),
     )
 }
 
@@ -103,7 +105,7 @@ fn render_form(t: &Tenant, selected: Option<TenantStatus>, reason: &str) -> Stri
     let s = selected.unwrap_or(t.status);
     format!(
         r##"<section aria-label="Status change form">
-  <form method="post" action="/admin/tenancy/tenants/{tid}/status">
+  <form method="post" action="{action_url}">
     <fieldset>
       <legend>Target status</legend>
       <p>{ra} <label for="s_active">    <code>active</code> — visible and usable</label></p>
@@ -117,7 +119,8 @@ fn render_form(t: &Tenant, selected: Option<TenantStatus>, reason: &str) -> Stri
     <p><button type="submit">Preview change</button></p>
   </form>
 </section>"##,
-        tid    = escape(&t.id),
+        // RFC 108 escape contract.
+        action_url = escape(&routes::tenant_status(&t.id)),
         reason = escape(reason),
         ra = radio("status", "active",    s == TenantStatus::Active,    "s_active"),
         rs = radio("status", "suspended", s == TenantStatus::Suspended, "s_suspended"),
@@ -173,14 +176,15 @@ fn render_apply_form(tenant_id: &str, target: TenantStatus, reason: &str) -> Str
     };
     format!(
         r##"<section aria-label="Apply">
-  <form class="danger" method="post" action="/admin/tenancy/tenants/{tid}/status">
+  <form class="danger" method="post" action="{action_url}">
     <input type="hidden" name="status" value="{target}">
     <input type="hidden" name="reason" value="{reason}">
     <input type="hidden" name="confirm" value="yes">
     <p><button type="submit">Apply change</button></p>
   </form>
 </section>"##,
-        tid    = escape(tenant_id),
+        // RFC 108 escape contract.
+        action_url = escape(&routes::tenant_status(tenant_id)),
         target = target_str,
         reason = escape(reason),
     )

@@ -7,6 +7,7 @@
 
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
+use cesauth_core::routes::tenancy_console as routes;
 use cesauth_core::tenancy::types::Group;
 
 use super::super::frame::{tenancy_console_frame, TenancyConsoleTab};
@@ -29,7 +30,7 @@ pub fn confirm_page(principal: &AdminPrincipal, group: &Group) -> String {
   </p>
 </section>
 <section aria-label="Apply">
-  <form class="danger" method="post" action="/admin/tenancy/groups/{id}/delete">
+  <form class="danger" method="post" action="{delete_url}">
     <input type="hidden" name="confirm" value="yes">
     <p><button type="submit">Delete group</button></p>
   </form>
@@ -38,6 +39,8 @@ pub fn confirm_page(principal: &AdminPrincipal, group: &Group) -> String {
         name = escape(&group.display_name),
         tid  = escape(&group.tenant_id),
         id   = escape(&group.id),
+        // RFC 108 escape contract.
+        delete_url = escape(&routes::group_delete(&group.id)),
     );
     tenancy_console_frame(&title, principal.role, principal.name.as_deref(), TenancyConsoleTab::Tenants, &body)
 }

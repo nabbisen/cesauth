@@ -89,6 +89,7 @@ full narrative is in the [archive](docs/changelog-archive/README.md).
 | Admin frame design tokens + Security Center i18n closure (RFC 105/106) | v0.67.0 | [CHANGELOG](CHANGELOG.md) |
 | Route-catalog correction + end-user template migration (RFC 108 partial) | v0.68.0 | [CHANGELOG](CHANGELOG.md) |
 | Route-catalog completion + admin/console template migration (RFC 108 continued) | v0.69.0 | [CHANGELOG](CHANGELOG.md) |
+| RFC 108 closure (tenant_admin + tenancy_console migration + drift-scan rule) | v0.70.0 | [CHANGELOG](CHANGELOG.md) |
 
 ---
 
@@ -146,19 +147,29 @@ started.
   edits; see `rfcs/proposed/112-...md` "Implementation environment". 1,219
   tests (no change — pure refactor). 0 warnings.
 
-- 📅 **v0.70.0 — RFC 108 completion + RFC 112 (drift prevention finishing).**
-  Migrate the remaining ~150 hardcoded URLs in `crates/ui/src/{tenant_admin,
-  tenancy_console}/` to catalog references. Add the `scripts/drift-scan.sh`
-  URL-hardcode rule (turned on only after migration completes). RFC 112:
-  complete RFC 100 macro migration across the remaining 124 admin handlers
-  (~800 LOC reduction). **Environment requirement**: RFC 112 needs rustup
-  + wasm32 target installed.
+- ✅ **v0.70.0 — RFC 108 closure (tenant_admin + tenancy_console + drift-scan).**
+  Closes the route-catalog migration begun in v0.68.0. All production
+  templates in `crates/ui/src/tenant_admin/` (6 top-level + 8 forms) and
+  `crates/ui/src/tenancy_console/` (5 top-level + 11 forms) now construct
+  URLs via `cesauth_core::routes::*` builders — ~150 URL literals replaced
+  this release; ~190 across the three-release migration. `scripts/drift-scan.sh`
+  gains a per-file URL-hardcode rule that stops at `#[cfg(test)]` / `mod tests`
+  markers and skips dedicated `tests.rs` files (those exist to fail on
+  catalog drift). Two pre-existing orphan UIs surfaced and are intentionally
+  left out of scope with module-docstring `# RFC 108 orphan UI exemption`
+  notes: `tenant_admin/oidc_clients.rs` (RFC 017 wired the form but never
+  the worker handler) and `tenancy_console/forms/membership_add.rs` (form
+  actions POST to `.../memberships`, worker only registers `.../memberships/new`).
+  **RFC 112 (worker auth macro batch) remains environment-blocked** — the
+  sandbox where this release was prepared cannot install rustup / wasm32
+  and so cannot verify worker edits. Pushed to v0.71.0+ contingent on
+  environment. 1,219 tests (no change — pure refactor). 0 warnings.
 
 - 📅 **v0.71.0 — RFC 109 (Audit log viewer UI surface).** New `/admin/console/audit`
   interactive viewer with actor / event / tenant / date filtering and pagination.
   Inherits filter state into existing `POST /admin/console/audit/export` (RFC 080).
   System-admin scoped, JA-only per ADR-013. Source: v0.50.1 deck page 9.
-  (Originally planned for v0.69.0; pushed by the v0.68.0 + v0.69.0 partial splits.)
+  (Originally planned for v0.69.0; pushed by the v0.68.0–v0.70.0 partial splits.)
 
 - 📅 **v0.72.0 — RFC 110 + 113 (Acceptance alignment).** RFC 110: verify and fill
   Safety controls dashboard alignment with deck page 9 (rate-limit status,

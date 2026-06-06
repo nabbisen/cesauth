@@ -3,6 +3,7 @@
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
 use cesauth_core::billing::types::{Subscription, SubscriptionStatus};
+use cesauth_core::routes::tenancy_console as routes;
 
 use super::super::frame::{tenancy_console_frame, TenancyConsoleTab};
 
@@ -17,7 +18,7 @@ pub fn form_page(
     let s = selected.unwrap_or(current.status);
     let title = format!("Subscription status: {tenant_slug}");
     let body = format!(
-        r##"<p><a href="/admin/tenancy/tenants/{tid}">← Back to tenant</a></p>
+        r##"<p><a href="{back_url}">← Back to tenant</a></p>
 {error}
 <section aria-label="Current">
   <table><tbody>
@@ -26,7 +27,7 @@ pub fn form_page(
   </tbody></table>
 </section>
 <section aria-label="Status change form">
-  <form method="post" action="/admin/tenancy/tenants/{tid}/subscription/status">
+  <form method="post" action="{action_url}">
     <fieldset>
       <legend>Target status</legend>
       <p><input type="radio" id="s_active"    name="status" value="active"    {ca}> <label for="s_active">    <code>active</code></label></p>
@@ -37,7 +38,9 @@ pub fn form_page(
     <p><button type="submit">Preview change</button></p>
   </form>
 </section>"##,
-        tid   = escape(tenant_id),
+        // RFC 108 escape contract.
+        back_url   = escape(&routes::tenant(tenant_id)),
+        action_url = escape(&routes::tenant_subscription_status(tenant_id)),
         slug  = escape(tenant_slug),
         cur   = render_status_badge(current.status),
         ca    = if s == SubscriptionStatus::Active    { "checked" } else { "" },
@@ -76,7 +79,7 @@ pub fn confirm_page(
         SubscriptionStatus::Expired   => "expired",
     };
     let body = format!(
-        r##"<p><a href="/admin/tenancy/tenants/{tid}">← Back to tenant</a></p>
+        r##"<p><a href="{back_url}">← Back to tenant</a></p>
 <section aria-label="Diff">
   <h2>Change to apply</h2>
   <table><tbody>
@@ -87,17 +90,20 @@ pub fn confirm_page(
   {warning}
 </section>
 <section aria-label="Apply">
-  <form class="danger" method="post" action="/admin/tenancy/tenants/{tid}/subscription/status">
+  <form class="danger" method="post" action="{action_url}">
     <input type="hidden" name="status"  value="{target}">
     <input type="hidden" name="confirm" value="yes">
     <p><button type="submit">Apply status change</button></p>
   </form>
 </section>"##,
-        tid    = escape(tenant_id),
+        // RFC 108 escape contract.
+        back_url   = escape(&routes::tenant(tenant_id)),
+        action_url = escape(&routes::tenant_subscription_status(tenant_id)),
         slug   = escape(tenant_slug),
         from   = render_status_badge(current.status),
         to     = render_status_badge(target),
         target = target_str,
+        warning = warning,
     );
     tenancy_console_frame(&title, principal.role, principal.name.as_deref(), TenancyConsoleTab::Tenants, &body)
 }

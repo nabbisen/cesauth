@@ -6,6 +6,7 @@ use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
 use cesauth_core::deletion::{DeletionRequest, DeletionStatus};
 use cesauth_core::i18n::{lookup, Locale, MessageKey};
+use cesauth_core::routes::tenant_admin as routes;
 use cesauth_core::tenancy::types::Tenant;
 
 use super::frame::{tenant_admin_frame, TenantAdminTab};
@@ -52,17 +53,18 @@ pub fn deletion_requests_page(
                 let execute_btn     = escape(lookup(MessageKey::TenantDeletionExecuteButton, l));
                 let execute_confirm = escape(lookup(MessageKey::TenantDeletionExecuteConfirm, l));
                 format!(
-                    "<form method=\"POST\" action=\"/admin/t/{slug}/deletion-requests/{id}/cancel\" style=\"display:inline\">\n\
+                    "<form method=\"POST\" action=\"{cancel_url}\" style=\"display:inline\">\n\
   <input type=\"hidden\" name=\"csrf_token\" value=\"{csrf}\">\n\
   <button type=\"submit\" class=\"btn-sm btn-secondary\">{cancel}</button>\n\
 </form>\n\
-<form method=\"POST\" action=\"/admin/t/{slug}/deletion-requests/{id}/execute\" style=\"display:inline; margin-left:4px\">\n\
+<form method=\"POST\" action=\"{execute_url}\" style=\"display:inline; margin-left:4px\">\n\
   <input type=\"hidden\" name=\"csrf_token\" value=\"{csrf}\">\n\
   <button type=\"submit\" class=\"btn-sm btn-danger\"\n\
           onclick=\"return confirm('{confirm}')\">{execute}</button>\n\
 </form>",
-                    slug    = escape(&tenant.slug),
-                    id      = escape(&req.id),
+                    // RFC 108 escape contract.
+                    cancel_url  = escape(&routes::deletion_cancel(&tenant.slug, &req.id)),
+                    execute_url = escape(&routes::deletion_execute(&tenant.slug, &req.id)),
                     csrf    = escape(csrf),
                     cancel  = cancel_btn,
                     execute = execute_btn,

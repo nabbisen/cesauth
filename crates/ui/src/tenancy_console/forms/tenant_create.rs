@@ -6,6 +6,7 @@
 
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
+use cesauth_core::routes::tenancy_console as routes;
 
 use super::super::frame::{tenancy_console_frame, TenancyConsoleTab};
 
@@ -25,7 +26,10 @@ pub fn tenant_create_form(
 ) -> String {
     let body = format!(
         "{back}\n{error}\n{form}\n{help}",
-        back  = r##"<p><a href="/admin/tenancy/tenants">← Back to tenants list</a></p>"##,
+        back  = format!(
+            r##"<p><a href="{url}">← Back to tenants list</a></p>"##,
+            url = routes::TENANTS,
+        ),
         error = render_error(error),
         form  = render_form(slug, display_name, owner_user_id),
         help  = render_help(),
@@ -48,7 +52,7 @@ fn render_error(error: Option<&str>) -> String {
 fn render_form(slug: &str, display_name: &str, owner_user_id: &str) -> String {
     format!(
         r##"<section aria-label="New tenant form">
-  <form method="post" action="/admin/tenancy/tenants/new">
+  <form method="post" action="{action_url}">
     <table>
       <tbody>
         <tr>
@@ -71,6 +75,7 @@ fn render_form(slug: &str, display_name: &str, owner_user_id: &str) -> String {
         slug  = escape(slug),
         name  = escape(display_name),
         owner = escape(owner_user_id),
+        action_url = routes::TENANTS_NEW,
     )
 }
 

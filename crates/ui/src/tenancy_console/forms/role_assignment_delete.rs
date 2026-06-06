@@ -6,6 +6,7 @@
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
 use cesauth_core::authz::types::{RoleAssignment, Scope};
+use cesauth_core::routes::tenancy_console as routes;
 
 use super::super::frame::{tenancy_console_frame, TenancyConsoleTab};
 
@@ -18,7 +19,7 @@ pub fn confirm_page(
     let title = "Revoke role assignment".to_owned();
     let scope_html = render_scope(&assignment.scope);
     let body = format!(
-        r##"<p><a href="/admin/tenancy/users/{uid}/role_assignments">← Back to user's role assignments</a></p>
+        r##"<p><a href="{back_url}">← Back to user's role assignments</a></p>
 <section aria-label="Revoke confirmation">
   <h2>Revoke this role assignment?</h2>
   <table><tbody>
@@ -35,12 +36,15 @@ pub fn confirm_page(
   </p>
 </section>
 <section aria-label="Apply">
-  <form class="danger" method="post" action="/admin/tenancy/role_assignments/{aid}/delete">
+  <form class="danger" method="post" action="{action_url}">
     <input type="hidden" name="user_id" value="{uid}">
     <input type="hidden" name="confirm" value="yes">
     <p><button type="submit">Revoke role assignment</button></p>
   </form>
 </section>"##,
+        // RFC 108 escape contract.
+        back_url   = escape(&routes::user_role_assignments(user_id)),
+        action_url = escape(&routes::role_assignment_delete(&assignment.id)),
         uid        = escape(user_id),
         role_label = role_label,           // already escaped by caller
         scope      = scope_html,

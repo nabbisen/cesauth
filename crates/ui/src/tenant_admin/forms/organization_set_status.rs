@@ -5,6 +5,7 @@
 
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
+use cesauth_core::routes::tenant_admin as routes;
 use cesauth_core::tenancy::types::{Organization, OrganizationStatus, Tenant};
 
 use super::super::frame::{tenant_admin_frame, TenantAdminTab};
@@ -20,8 +21,11 @@ pub fn form_page(
 ) -> String {
     let s = selected.unwrap_or(org.status);
     let title = format!("Organization status: {}", org.slug);
+    // RFC 108 escape contract.
+    let back_url   = escape(&routes::org_detail(&tenant.slug, &org.id));
+    let action_url = escape(&routes::org_status(&tenant.slug, &org.id));
     let body = format!(
-        r##"<p><a href="/admin/t/{tslug}/organizations/{oid}">← Back to organization</a></p>
+        r##"<p><a href="{back_url}">← Back to organization</a></p>
 {error}
 <section aria-label="Organization">
   <table><tbody>
@@ -31,7 +35,7 @@ pub fn form_page(
   </tbody></table>
 </section>
 <section aria-label="Status change form">
-  <form method="post" action="/admin/t/{tslug}/organizations/{oid}/status">
+  <form method="post" action="{action_url}">
     <fieldset>
       <legend>Target status</legend>
       <p><input type="radio" id="s_active"    name="status" value="active"   {ca}> <label for="s_active">    <code>active</code></label></p>
@@ -45,8 +49,9 @@ pub fn form_page(
     <p><button type="submit">Preview change</button></p>
   </form>
 </section>"##,
+        back_url   = back_url,
+        action_url = action_url,
         tslug  = escape(&tenant.slug),
-        oid    = escape(&org.id),
         oslug  = escape(&org.slug),
         cur    = render_status_badge(org.status),
         ca     = if s == OrganizationStatus::Active    { "checked" } else { "" },
@@ -76,8 +81,12 @@ pub fn preview_page(
     reason:    &str,
 ) -> String {
     let title = format!("Confirm status change: {}", org.slug);
+    // RFC 108 escape contract.
+    let back_url   = escape(&routes::org_status(&tenant.slug, &org.id));
+    let action_url = escape(&routes::org_status(&tenant.slug, &org.id));
+    let cancel_url = escape(&routes::org_detail(&tenant.slug, &org.id));
     let body = format!(
-        r##"<p><a href="/admin/t/{tslug}/organizations/{oid}/status">← Back to form</a></p>
+        r##"<p><a href="{back_url}">← Back to form</a></p>
 <section aria-label="Diff">
   <h3>Proposed change</h3>
   <table><tbody>
@@ -87,17 +96,19 @@ pub fn preview_page(
   </tbody></table>
 </section>
 <section aria-label="Apply or cancel">
-  <form method="post" action="/admin/t/{tslug}/organizations/{oid}/status">
+  <form method="post" action="{action_url}">
     <input type="hidden" name="status" value="{tgt_value}">
     <input type="hidden" name="reason" value="{reason}">
     <input type="hidden" name="confirm" value="yes">
     <p>
       <button type="submit" class="critical">Apply</button>
-      <a href="/admin/t/{tslug}/organizations/{oid}">Cancel</a>
+      <a href="{cancel_url}">Cancel</a>
     </p>
   </form>
 </section>"##,
-        tslug     = escape(&tenant.slug),
+        back_url   = back_url,
+        action_url = action_url,
+        cancel_url = cancel_url,
         oid       = escape(&org.id),
         oslug     = escape(&org.slug),
         cur       = render_status_badge(org.status),

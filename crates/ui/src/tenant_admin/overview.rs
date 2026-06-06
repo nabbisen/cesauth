@@ -7,6 +7,7 @@
 
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
+use cesauth_core::routes::tenant_admin as routes;
 use cesauth_core::tenancy::types::{Tenant, TenantStatus};
 
 use super::affordances::Affordances;
@@ -54,14 +55,15 @@ fn render_quick_actions(tenant: &Tenant, aff: &Affordances) -> String {
     let mut buttons: Vec<String> = Vec::new();
     if aff.can_create_organization {
         buttons.push(format!(
-            r#"<a href="/admin/t/{slug}/organizations/new" class="button">+ New organization</a>"#,
-            slug = escape(&tenant.slug),
+            r#"<a href="{url}" class="button">+ New organization</a>"#,
+            // RFC 108 escape contract.
+            url = escape(&routes::organizations_new(&tenant.slug)),
         ));
     }
     if aff.can_add_tenant_member {
         buttons.push(format!(
-            r#"<a href="/admin/t/{slug}/memberships/new" class="button">+ Add tenant member</a>"#,
-            slug = escape(&tenant.slug),
+            r#"<a href="{url}" class="button">+ Add tenant member</a>"#,
+            url = escape(&routes::memberships_new(&tenant.slug)),
         ));
     }
     if buttons.is_empty() {

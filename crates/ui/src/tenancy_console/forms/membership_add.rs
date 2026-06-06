@@ -9,6 +9,25 @@
 //! grant any permission by itself; permissions are conferred by
 //! `role_assignments`, which is its own form. So we don't put a
 //! preview/confirm step in the membership flow.
+//!
+//! # RFC 108 orphan UI exemption
+//!
+//! The three `form action=` URLs above (the bare `.../memberships`
+//! collection POSTs) are **not** registered by
+//! `crates/worker/src/lib.rs`. The worker only handles the
+//! `.../memberships/new` and `.../memberships/:uid/delete` variants.
+//! The form submission goes to a route that returns 404 in production.
+//!
+//! Pre-existing bug (not introduced by RFC 108). The
+//! `tenant_admin/forms/membership_add.rs` equivalent maps cleanly to
+//! worker routes — this `tenancy_console` variant was apparently
+//! authored before the routes were finalised.
+//!
+//! Policy (RFC 108): catalog mirrors worker reality, not aspirations.
+//! This template is left hardcoded until the worker route is wired
+//! (or the template is updated to post to `.../memberships/new`).
+//! See `rfcs/done/108-...md` "Known orphan UI" for the deferred-work
+//! entry.
 
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;

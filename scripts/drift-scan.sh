@@ -91,4 +91,61 @@ if [[ $found -gt 0 ]]; then
     exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# RFC 108: hardcoded URL paths in production UI templates.
+#
+# Catalog at `crates/core/src/routes.rs` is the single source of truth. UI
+# templates must reference `cesauth_core::routes::*` constants and builders
+# rather than embed URL string literals. The catalog mirrors what the worker
+# actually registers; drift between catalog and worker is caught at the
+# worker side (route registration referencing the catalog).
+#
+# **Exemptions** (intentional — do NOT migrate these):
+#   - Any standalone `tests.rs` file: tests assert on rendered URLs by
+#     string. If a catalog entry drifts, these tests should fail loudly
+#     — that's their job.
+#   - Any line at or below a `#[cfg(test)]` or `mod tests` marker in a
+#     production .rs file: same reasoning. We assume the convention that
+#     `mod tests` is the last item in the file, which holds across the
+#     codebase.
+#   - `tenant_admin/oidc_clients.rs`: pre-existing orphan UI (RFC 017),
+#     worker route not registered. See file's module docstring.
+#   - `tenancy_console/forms/membership_add.rs`: pre-existing orphan UI,
+#     form action URLs not registered by the worker. See file's module
+#     docstring.
+# ---------------------------------------------------------------------------
+
+ui_url_matches=()
+while IFS= read -r -d '' file; do
+    case "$file" in
+        */tests.rs)                                continue ;;
+        */tenant_admin/oidc_clients.rs)            continue ;;
+        */tenancy_console/forms/membership_add.rs) continue ;;
+    esac
+    while IFS= read -r hit; do
+        [[ -n "$hit" ]] && ui_url_matches+=("$hit")
+    done < <(awk -v fname="$file" '
+        /^#\[cfg\(test\)\]/ { exit }
+        /^mod tests/         { exit }
+        { print fname ":" NR ":" $0 }
+    ' "$file" | grep -E '"/(admin|me|oidc|auth|login|logout|magic-link|\.well-known)/' || true)
+done < <(find "${REPO_ROOT}/crates/ui/src" -name '*.rs' -print0)
+
+if [[ ${#ui_url_matches[@]} -gt 0 ]]; then
+    echo "RFC 108: hardcoded URL paths in production UI templates"
+    echo "  (use cesauth_core::routes::* instead; see crates/core/src/routes.rs)"
+    if [[ $VERBOSE -eq 1 ]]; then
+        for m in "${ui_url_matches[@]}"; do
+            echo "  $m"
+        done
+    else
+        echo "  ${#ui_url_matches[@]} hits — re-run with --verbose to list"
+    fi
+    echo ""
+    echo "RFC 108 violations detected (see above)."
+    echo "Migrate to cesauth_core::routes::* or add to the exemption list"
+    echo "in scripts/drift-scan.sh with a rationale comment."
+    exit 1
+fi
+
 echo "drift-scan: clean — no stale phrases detected."

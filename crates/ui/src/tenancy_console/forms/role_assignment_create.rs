@@ -17,6 +17,7 @@
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
 use cesauth_core::authz::types::Role;
+use cesauth_core::routes::tenancy_console as routes;
 
 use super::super::frame::{tenancy_console_frame, TenancyConsoleTab};
 
@@ -45,10 +46,10 @@ pub fn role_assignment_create_form(
 ) -> String {
     let title = format!("Grant role to user: {}", input.user_id);
     let body = format!(
-        r##"<p><a href="/admin/tenancy/users/{uid}/role_assignments">← Back to user's role assignments</a></p>
+        r##"<p><a href="{back_url}">← Back to user's role assignments</a></p>
 {error}
 <section aria-label="Grant role form">
-  <form method="post" action="/admin/tenancy/users/{uid}/role_assignments/new">
+  <form method="post" action="{action_url}">
     <table><tbody>
       <tr>
         <th scope="row"><label for="role_id">Role</label></th>
@@ -95,7 +96,9 @@ pub fn role_assignment_create_form(
         <code>check_permission</code>.</li>
   </ul>
 </section>"##,
-        uid          = escape(input.user_id),
+        // RFC 108 escape contract.
+        back_url     = escape(&routes::user_role_assignments(input.user_id)),
+        action_url   = escape(&routes::user_role_assignments_new(input.user_id)),
         scope_id     = escape(input.scope_id),
         expires      = escape(input.expires_at),
         role_options = render_role_options(input.available_roles, input.role_id),

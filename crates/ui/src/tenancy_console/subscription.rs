@@ -4,6 +4,7 @@
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
 use cesauth_core::billing::types::{SubscriptionHistoryEntry, SubscriptionStatus};
+use cesauth_core::routes::tenancy_console as routes;
 
 use super::frame::{tenancy_console_frame, TenancyConsoleTab};
 
@@ -15,9 +16,9 @@ pub fn subscription_history_page(
 ) -> String {
     let title = format!("Subscription history: {tenant_slug}");
     let body = format!(
-        r##"<p class="muted"><a href="/admin/tenancy/tenants/{tid}">← Back to tenant</a></p>
+        r##"<p class="muted"><a href="{tenant_url}">← Back to tenant</a></p>
 {table}"##,
-        tid   = escape(tenant_id),
+        tenant_url = escape(&routes::tenant(tenant_id)),
         table = render_table(entries),
     );
     tenancy_console_frame(&title, principal.role, principal.name.as_deref(), TenancyConsoleTab::Tenants, &body)

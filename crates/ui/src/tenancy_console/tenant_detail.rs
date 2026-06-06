@@ -3,6 +3,7 @@
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
 use cesauth_core::billing::types::{Plan, Subscription, SubscriptionStatus};
+use cesauth_core::routes::tenancy_console as routes;
 use cesauth_core::tenancy::types::{
     Organization, Tenant, TenantMembership, TenantMembershipRole,
 };
@@ -41,12 +42,21 @@ fn render_actions(principal: &AdminPrincipal, tenant_id: &str, has_subscription:
     if !principal.role.can_manage_tenancy() {
         return String::new();
     }
-    let tid = escape(tenant_id);
+    // RFC 108 escape contract: catalog builders return raw URLs; HTML-escape
+    // each at the template boundary before embedding in href= attributes.
+    let plan_url    = escape(&routes::tenant_subscription_plan(tenant_id));
+    let status_url  = escape(&routes::tenant_subscription_status(tenant_id));
+    let orgs_url    = escape(&routes::tenant_orgs_new(tenant_id));
+    let groups_url  = escape(&routes::tenant_groups_new(tenant_id));
+    let mem_url     = escape(&routes::tenant_memberships_new(tenant_id));
+    let tstatus_url = escape(&routes::tenant_status(tenant_id));
     let sub_actions = if has_subscription {
         format!(
             r##"
-  <a class="action" href="/admin/tenancy/tenants/{tid}/subscription/plan">Change plan</a>
-  <a class="action" href="/admin/tenancy/tenants/{tid}/subscription/status">Change subscription status</a>"##,
+  <a class="action" href="{plan_url}">Change plan</a>
+  <a class="action" href="{status_url}">Change subscription status</a>"##,
+            plan_url = plan_url,
+            status_url = status_url,
         )
     } else {
         String::new()
@@ -55,12 +65,17 @@ fn render_actions(principal: &AdminPrincipal, tenant_id: &str, has_subscription:
         r##"<section aria-label="Actions">
   <p class="muted">Mutations available to your role:</p>
   <div class="action-row">
-    <a class="action" href="/admin/tenancy/tenants/{tid}/organizations/new">+ New organization</a>
-    <a class="action" href="/admin/tenancy/tenants/{tid}/groups/new">+ New tenant-scoped group</a>
-    <a class="action" href="/admin/tenancy/tenants/{tid}/memberships/new">+ Add tenant member</a>
-    <a class="action danger" href="/admin/tenancy/tenants/{tid}/status">Change tenant status</a>{sub_actions}
+    <a class="action" href="{orgs_url}">+ New organization</a>
+    <a class="action" href="{groups_url}">+ New tenant-scoped group</a>
+    <a class="action" href="{mem_url}">+ Add tenant member</a>
+    <a class="action danger" href="{tstatus_url}">Change tenant status</a>{sub_actions}
   </div>
 </section>"##,
+        orgs_url    = orgs_url,
+        groups_url  = groups_url,
+        mem_url     = mem_url,
+        tstatus_url = tstatus_url,
+        sub_actions = sub_actions,
     )
 }
 
@@ -128,7 +143,7 @@ fn render_subscription(s: Option<&Subscription>, p: Option<&Plan>, tenant_id: &s
       {trial_row}
     </tbody>
   </table>
-  <p class="muted"><a href="/admin/tenancy/tenants/{tid}/subscription/history">View change history →</a></p>
+  <p class="muted"><a href="{history_url}">View change history →</a></p>
 </section>"##,
                 lifecycle = match s.lifecycle {
                     cesauth_core::billing::types::SubscriptionLifecycle::Trial => "trial",
@@ -136,7 +151,7 @@ fn render_subscription(s: Option<&Subscription>, p: Option<&Plan>, tenant_id: &s
                     cesauth_core::billing::types::SubscriptionLifecycle::Grace => "grace",
                 },
                 started = s.started_at,
-                tid     = escape(tenant_id),
+                history_url = escape(&routes::tenant_subscription_history(tenant_id)),
             )
         }
     }
@@ -155,11 +170,11 @@ fn render_organizations(orgs: &[Organization]) -> String {
     } else {
         orgs.iter().map(|o| format!(
             r##"<tr>
-  <td><a href="/admin/tenancy/organizations/{id}"><code>{slug}</code></a></td>
+  <td><a href="{org_url}"><code>{slug}</code></a></td>
   <td>{name}</td>
   <td>{status}</td>
 </tr>"##,
-            id   = escape(&o.id),
+            org_url = escape(&routes::organization(&o.id)),
             slug = escape(&o.slug),
             name = escape(&o.display_name),
             status = format!("{:?}", o.status).to_lowercase(),
@@ -195,24 +210,24 @@ fn render_members_with_actions(
             };
             let action_cell = if manage {
                 format!(
-                    r##"<td><a class="action danger" href="/admin/tenancy/tenants/{tid}/memberships/{uid}/delete" style="font-size: 0.85em; padding: 4px 10px;">Remove</a></td>"##,
-                    tid = escape(tenant_id),
-                    uid = escape(&m.user_id),
+                    r##"<td><a class="action danger" href="{delete_url}" style="font-size: 0.85em; padding: 4px 10px;">Remove</a></td>"##,
+                    delete_url = escape(&routes::tenant_membership_delete(tenant_id, &m.user_id)),
                 )
             } else {
                 String::new()
             };
             format!(
                 r##"<tr>
-  <td><a href="/admin/tenancy/users/{uid}/role_assignments"><code>{uid_short}</code></a></td>
+  <td><a href="{ra_url}"><code>{uid_short}</code></a></td>
   <td>{badge}</td>
   <td class="muted">{joined}</td>
   {action_cell}
 </tr>"##,
-                uid       = escape(&m.user_id),
+                ra_url    = escape(&routes::user_role_assignments(&m.user_id)),
                 uid_short = escape(&m.user_id),
                 badge     = role_badge,
                 joined    = m.joined_at,
+                action_cell = action_cell,
             )
         }).collect::<Vec<_>>().join("\n")
     };

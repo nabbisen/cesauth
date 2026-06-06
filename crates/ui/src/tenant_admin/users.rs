@@ -2,6 +2,7 @@
 
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
+use cesauth_core::routes::tenant_admin as routes;
 use cesauth_core::tenancy::types::Tenant;
 use cesauth_core::tenancy::AccountType;
 use cesauth_core::types::{User, UserStatus};
@@ -35,13 +36,13 @@ fn render_user_table(tenant: &Tenant, users: &[User]) -> String {
         let email   = u.email.as_deref().unwrap_or("—");
         format!(
             r#"<tr>
-  <td><a href="/admin/t/{slug}/users/{uid}/role_assignments">{name}</a></td>
+  <td><a href="{url}">{name}</a></td>
   <td>{email}</td>
   <td>{kind}</td>
   <td>{status}</td>
 </tr>"#,
-            slug   = escape(&tenant.slug),
-            uid    = escape(&u.id),
+            // RFC 108 escape contract.
+            url    = escape(&routes::user_role_assignments(&tenant.slug, &u.id)),
             name   = escape(display),
             email  = escape(email),
             kind   = render_account_type(u.account_type),

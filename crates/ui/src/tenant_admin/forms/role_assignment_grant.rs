@@ -16,6 +16,7 @@
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
 use cesauth_core::authz::types::Role;
+use cesauth_core::routes::tenant_admin as routes;
 use cesauth_core::tenancy::types::Tenant;
 use cesauth_core::types::User;
 
@@ -43,10 +44,10 @@ pub fn grant_form(
     let title = format!("Grant role to user: {}", user_label);
     let role_options = render_role_options(input.available_roles, input.role_id);
     let body = format!(
-        r##"<p><a href="/admin/t/{tslug}/users/{uid}/role_assignments">← Back to user's role assignments</a></p>
+        r##"<p><a href="{back_url}">← Back to user's role assignments</a></p>
 {error}
 <section aria-label="Grant role form">
-  <form method="post" action="/admin/t/{tslug}/users/{uid}/role_assignments/new">
+  <form method="post" action="{action_url}">
     <table>
       <tbody>
         <tr><th scope="row">User</th><td>{uname} <code>{uid}</code></td></tr>
@@ -86,10 +87,13 @@ pub fn grant_form(
     <p><button type="submit">Preview grant</button></p>
   </form>
 </section>"##,
-        tslug    = escape(&tenant.slug),
+        // RFC 108 escape contract.
+        back_url     = escape(&routes::user_role_assignments(&tenant.slug, &input.subject_user.id)),
+        action_url   = escape(&routes::user_role_assignments_new(&tenant.slug, &input.subject_user.id)),
         tid      = escape(&tenant.id),
         uid      = escape(&input.subject_user.id),
         uname    = escape(user_label),
+        role_options = role_options,
         ct = if input.scope_type == "tenant"       { "checked" } else { "" },
         co = if input.scope_type == "organization" { "checked" } else { "" },
         cg = if input.scope_type == "group"        { "checked" } else { "" },
@@ -130,7 +134,7 @@ pub fn preview_page(
         .unwrap_or(&input.subject_user.id);
     let title = format!("Confirm grant: {}", user_label);
     let body = format!(
-        r##"<p><a href="/admin/t/{tslug}/users/{uid}/role_assignments/new">← Back to form</a></p>
+        r##"<p><a href="{back_url}">← Back to form</a></p>
 <section aria-label="Diff">
   <h3>Proposed grant</h3>
   <table><tbody>
@@ -141,7 +145,7 @@ pub fn preview_page(
   </tbody></table>
 </section>
 <section aria-label="Apply or cancel">
-  <form method="post" action="/admin/t/{tslug}/users/{uid}/role_assignments/new">
+  <form method="post" action="{action_url}">
     <input type="hidden" name="role_id" value="{role_id}">
     <input type="hidden" name="scope_type" value="{scope_type}">
     <input type="hidden" name="scope_id" value="{scope_id}">
@@ -149,11 +153,14 @@ pub fn preview_page(
     <input type="hidden" name="confirm" value="yes">
     <p>
       <button type="submit" class="critical">Apply grant</button>
-      <a href="/admin/t/{tslug}/users/{uid}/role_assignments">Cancel</a>
+      <a href="{cancel_url}">Cancel</a>
     </p>
   </form>
 </section>"##,
-        tslug      = escape(&tenant.slug),
+        // RFC 108 escape contract.
+        back_url   = escape(&routes::user_role_assignments_new(&tenant.slug, &input.subject_user.id)),
+        action_url = escape(&routes::user_role_assignments_new(&tenant.slug, &input.subject_user.id)),
+        cancel_url = escape(&routes::user_role_assignments(&tenant.slug, &input.subject_user.id)),
         uid        = escape(&input.subject_user.id),
         uname      = escape(user_label),
         role       = escape(input.role_label),
