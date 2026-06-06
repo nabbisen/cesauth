@@ -74,7 +74,7 @@ pub fn login_page_for(
     // with an informational notice. No provider details are revealed.
     let mail_section = if magic_link_available {
         format!(
-            "<form method=\"POST\" action=\"/magic-link/request\" aria-labelledby=\"mail-heading\">\n\
+            "<form method=\"POST\" action=\"{magic_link_request_url}\" aria-labelledby=\"mail-heading\">\n\
   <h2 id=\"mail-heading\" class=\"muted\">{email_heading}</h2>\n\
   <input type=\"hidden\" name=\"csrf\" value=\"{csrf}\">\n\
   <label for=\"email\">{email_label}</label>\n\
@@ -88,6 +88,7 @@ pub fn login_page_for(
             email_button   = escape(lookup(MessageKey::LoginEmailButton,  locale)),
             csrf           = escape(csrf_token),
             turnstile_widget = &turnstile_widget,
+            magic_link_request_url = cesauth_core::routes::auth::MAGIC_LINK_REQUEST,
         )
     } else {
         format!(
@@ -133,12 +134,12 @@ pub fn login_page_for(
   btn.addEventListener("click", async () => {{
     err.hidden = true;
     try {{
-      const r = await fetch("/webauthn/authenticate/start", {{ method: "POST" }});
+      const r = await fetch({webauthn_start_url}, {{ method: "POST" }});
       if (!r.ok) throw new Error("could not start");
       const opts = await r.json();
       // navigator.credentials.get() expects ArrayBuffer values; convert.
       const cred = await navigator.credentials.get({{ publicKey: decode(opts.publicKey) }});
-      const f = await fetch("/webauthn/authenticate/finish", {{
+      const f = await fetch({webauthn_finish_url}, {{
         method: "POST",
         headers: {{ "content-type": "application/json" }},
         body: JSON.stringify(encode(cred)),
@@ -200,6 +201,8 @@ pub fn login_page_for(
         err_region         = err_region,
         turnstile_script   = turnstile_script,
         nonce              = nonce,
+        webauthn_start_url  = js_string_literal(cesauth_core::routes::auth::PASSKEY_AUTH_START),
+        webauthn_finish_url = js_string_literal(cesauth_core::routes::auth::PASSKEY_AUTH_FINISH),
     );
 
     frame_for(lookup(MessageKey::LoginPageTitleHtml, locale), &body, locale)
@@ -248,7 +251,7 @@ pub fn magic_link_sent_page_for(
 <h1>{heading}</h1>
 <p>{intro}</p>
 
-<form method="POST" action="/magic-link/verify" aria-labelledby="otp-heading">
+<form method="POST" action="{verify_url}" aria-labelledby="otp-heading">
   <h2 id="otp-heading" class="muted">{otp_heading}</h2>
   <input type="hidden" name="handle" value="{handle}">
   <input type="hidden" name="csrf"   value="{csrf}">
@@ -265,6 +268,7 @@ pub fn magic_link_sent_page_for(
         submit      = escape(lookup(MessageKey::TotpVerifyContinueButton, locale)),
         handle      = escape(handle),
         csrf        = escape(csrf_token),
+        verify_url  = cesauth_core::routes::auth::MAGIC_LINK_VERIFY_FORM,
     );
     frame_for(lookup(MessageKey::MagicLinkSentPageTitle, locale), &body, locale)
 }

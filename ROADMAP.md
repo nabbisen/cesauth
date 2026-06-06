@@ -87,6 +87,7 @@ full narrative is in the [archive](docs/changelog-archive/README.md).
 | CHANGELOG/ROADMAP volume, audit request traceability (RFC 015/028) | v0.53.0 | [CHANGELOG](CHANGELOG.md) |
 | Admin scope badge, OIDC audience editor, preview-and-apply (RFC 016/017/018) | v0.53.0 | [CHANGELOG](CHANGELOG.md) |
 | Admin frame design tokens + Security Center i18n closure (RFC 105/106) | v0.67.0 | [CHANGELOG](CHANGELOG.md) |
+| Route-catalog correction + end-user template migration (RFC 108 partial) | v0.68.0 | [CHANGELOG](CHANGELOG.md) |
 
 ---
 
@@ -114,25 +115,43 @@ started.
   attribute the new Rust 1.91 compiler flagged). 1,219 tests (+15). 0 warnings.
   MessageKey catalogue: 145 → 152.
 
-- 📅 **v0.68.0 — RFC 108 + 112 (Drift prevention — route catalog + auth macro batch).**
-  RFC 108: replace 202 hardcoded URL string literals in `crates/ui/src/...` with
-  `cesauth_core::routes::*` references + drift-scan rule. RFC 112: complete RFC 100
-  macro migration across remaining 124 admin handlers (~800 LOC reduction).
-  Source: HANDOFF v0.66.0 residuals #1, #2.
+- ✅ **v0.68.0 — RFC 108 partial (route-catalog correction + end-user migration).**
+  Catalog corrected: four WebAuthn paths (`PASSKEY_REGISTER_START`,
+  `PASSKEY_REGISTER_FINISH`, `PASSKEY_AUTH_START`, `PASSKEY_AUTH_FINISH`)
+  that never matched the worker's registered routes — silently wrong since
+  v0.66.0 — now match `/webauthn/register/*` and `/webauthn/authenticate/*`.
+  Added `MAGIC_LINK_VERIFY_FORM` and `TOTP_ENROLL_CONFIRM` static paths.
+  End-user template migration: 15 hardcoded URLs in
+  `templates/{security_center,login,totp}.rs` flow through
+  `cesauth_core::routes::{me,auth}::*`. HTML-escape contract for catalog
+  builder fns established (caught and fixed a regression where
+  `session_revoke(id)` dropped escaping). Admin/tenant_admin/tenancy_console
+  migration (~189 URLs across 44 files) + RFC 112 deferred to v0.69.0.
+  1,219 tests (no change — pure refactor). 0 warnings.
 
-- 📅 **v0.69.0 — RFC 109 (Audit log viewer UI surface).** New `/admin/console/audit`
+- 📅 **v0.69.0 — RFC 108 completion + RFC 112 (drift prevention finishing).**
+  Catalog expansion to cover all 124 worker-registered routes (today only
+  ~30 statics live in the catalog; the missing routes are admin and
+  tenant-admin dynamic paths). Migration of remaining ~189 hardcoded URLs
+  in `crates/ui/src/{admin,tenant_admin,tenancy_console}/`. Add the
+  `scripts/drift-scan.sh` URL-hardcode rule (turned on only after
+  migration completes). RFC 112: complete RFC 100 macro migration across
+  the remaining 124 admin handlers (~800 LOC reduction).
+
+- 📅 **v0.70.0 — RFC 109 (Audit log viewer UI surface).** New `/admin/console/audit`
   interactive viewer with actor / event / tenant / date filtering and pagination.
   Inherits filter state into existing `POST /admin/console/audit/export` (RFC 080).
   System-admin scoped, JA-only per ADR-013. Source: v0.50.1 deck page 9.
+  (Originally planned for v0.69.0; pushed by the v0.68.0 partial split.)
 
-- 📅 **v0.70.0 — RFC 110 + 113 (Acceptance alignment).** RFC 110: verify and fill
+- 📅 **v0.71.0 — RFC 110 + 113 (Acceptance alignment).** RFC 110: verify and fill
   Safety controls dashboard alignment with deck page 9 (rate-limit status,
   Turnstile, refresh reuse, TOTP key, runbook link). RFC 113: UI rendering
   acceptance harness — CI gate asserting scope badge / flash region / skip-link /
   footer version / `<html lang>` across all browser-facing routes. Source: deck
   pages 9, 12, 14.
 
-- 📅 **v0.71.0 — RFC 107 + 111 (ADR-013 §Q4 closure).** RFC 107: plural-aware
+- 📅 **v0.72.0 — RFC 107 + 111 (ADR-013 §Q4 closure).** RFC 107: plural-aware
   catalog lookup using CLDR-minimal `Plural::{One, Other}` enum (no `icu` dep —
   WASM size budget). RFC 111: confirm UTC ISO-8601 as the canonical date rendering
   policy and document per-user timezone as separate future work. Both close

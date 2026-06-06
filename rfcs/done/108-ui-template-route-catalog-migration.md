@@ -1,11 +1,58 @@
 # RFC 108 — UI template route-catalog migration
 
-**Status**: Proposed  
+**Status**: Implemented (v0.68.0 — partial; admin/tenant_admin/tenancy_console migration deferred to v0.68.1+)  
 **Tier**: P1  
 **Size**: Large  
 **Target**: v0.68.0  
 **Phase**: Drift prevention (finishing track)  
 **Refs**: HANDOFF v0.66.0 残課題 §2 ("RFC 102 routes.rs の UI 移行") / PDF v0.50.1 page 13 "Form contracts" / RFC 102 / RFC 027
+
+## Deferred-work note (v0.68.0 partial implementation)
+
+Shipped in v0.68.0:
+
+- **Catalog audit and correction.** `crates/core/src/routes.rs::auth::*`
+  had four WebAuthn paths that never matched the worker registration:
+  `/me/webauthn/register*` and `/auth/webauthn/*` aspirational constants
+  vs the worker's `/webauthn/register/*` and `/webauthn/authenticate/*`
+  actual routes. Corrected to match reality. Renamed `PASSKEY_REGISTER`
+  → `PASSKEY_REGISTER_START` for symmetry with `_FINISH`. Added
+  `MAGIC_LINK_VERIFY_FORM` (no-handle form-action variant) and
+  `TOTP_ENROLL_CONFIRM` (POST target for enrollment confirm step).
+- **End-user template migration (RFC PR 1).** 15 hardcoded URLs across
+  `crates/ui/src/templates/{security_center,login,totp}.rs` migrated
+  to `cesauth_core::routes::{me,auth}::*` references.
+- **Escape contract documented.** Catalog builder fns (e.g.
+  `session_revoke(id) -> String`) return raw URL strings; HTML-escape
+  at the template boundary. A failing test
+  (`sessions_page_session_id_is_html_escaped`) caught a missed escape
+  during the migration; the fix and inline comment in
+  `security_center.rs::render_session_row_for` pin the contract.
+
+Deferred to a later release:
+
+- **Admin / tenant_admin / tenancy_console template migration
+  (RFC PR 2 + PR 3).** ~189 hardcoded URLs across 44 production
+  template files in `crates/ui/src/admin/`, `crates/ui/src/tenant_admin/`,
+  `crates/ui/src/tenancy_console/`. Blocked on a larger catalog
+  expansion: the worker registers 124 actual routes; the catalog only
+  has ~30 static constants and a handful of builder fns. The admin
+  URL families (esp. `/admin/t/{slug}/groups/{gid}/memberships/{uid}/delete`-shaped
+  paths) require many new builder fns. Tracked for v0.68.1+ as
+  follow-up work; the audit-and-add cycle is mechanical but high-volume.
+- **Drift-scan rule (RFC PR 4).** Deferred alongside the admin
+  migration so that turning the rule on doesn't immediately fail CI.
+  Once the admin migration completes, `scripts/drift-scan.sh` gains
+  the URL-hardcode pattern with explicit exemptions for tests and any
+  unavoidable inline cases.
+
+Rationale for partial implementation: the lifecycle policy
+(RFC 019 / `rfcs/done/019-rfc-lifecycle-policy.md` §Granularity of
+transitions) allows partial implementation when the partial work
+captures the RFC's main design decision. The catalog correction and
+end-user migration establish the pattern (catalog as single source of
+truth; HTML-escape contract; per-domain migration shape) that the
+admin migration follows mechanically.
 
 ## Problem
 

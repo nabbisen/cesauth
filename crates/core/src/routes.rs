@@ -65,6 +65,9 @@ pub mod me {
     pub const SESSIONS_REVOKE_OTHERS: &str = "/me/security/sessions/revoke-others";
     pub fn session_revoke(id: &str) -> String { format!("/me/security/sessions/{id}/revoke") }
     pub const TOTP_ENROLL:    &str = "/me/security/totp/enroll";
+    /// POST target for the TOTP enrollment confirm step (verifies the
+    /// first 6-digit code and commits the authenticator).
+    pub const TOTP_ENROLL_CONFIRM: &str = "/me/security/totp/enroll/confirm";
     pub const TOTP_VERIFY:    &str = "/me/security/totp/verify";
     pub const TOTP_DISABLE:   &str = "/me/security/totp/disable";
     pub const TOTP_RECOVER:   &str = "/me/security/totp/recover";
@@ -77,10 +80,22 @@ pub mod auth {
     pub const LOGOUT:                &str = "/logout";
     pub const MAGIC_LINK_REQUEST:    &str = "/magic-link/request";
     pub fn magic_link_verify(handle: &str) -> String { format!("/magic-link/verify/{handle}") }
-    pub const PASSKEY_REGISTER:      &str = "/me/webauthn/register";
-    pub const PASSKEY_REGISTER_FINISH: &str = "/me/webauthn/register/finish";
-    pub const PASSKEY_AUTH_START:    &str = "/auth/webauthn/start";
-    pub const PASSKEY_AUTH_FINISH:   &str = "/auth/webauthn/finish";
+    /// Form action for the OTP-entry magic-link form (no handle in URL —
+    /// the handle is carried inside the form body).
+    pub const MAGIC_LINK_VERIFY_FORM: &str = "/magic-link/verify";
+    /// WebAuthn registration ceremony (`/webauthn/register/*`).
+    ///
+    /// Note: these paths are NOT under `/me/` even though they're
+    /// authenticated. v0.67.0 audit (RFC 108 prep) found the original
+    /// catalog values `/me/webauthn/register*` were aspirational —
+    /// the worker has always registered `/webauthn/register/*` and
+    /// `/webauthn/authenticate/*`.
+    pub const PASSKEY_REGISTER_START:  &str = "/webauthn/register/start";
+    pub const PASSKEY_REGISTER_FINISH: &str = "/webauthn/register/finish";
+    /// WebAuthn authentication ceremony — invoked from inline JS on
+    /// the login page. See `templates/login.rs::login_page_for`.
+    pub const PASSKEY_AUTH_START:    &str = "/webauthn/authenticate/start";
+    pub const PASSKEY_AUTH_FINISH:   &str = "/webauthn/authenticate/finish";
 }
 
 /// OIDC / OAuth2 endpoints.

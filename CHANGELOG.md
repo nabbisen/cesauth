@@ -26,6 +26,133 @@ split by minor-version range:
 
 ---
 
+## [0.68.0] - 2026-05-13
+
+Implements RFC 108 (partial): route-catalog correction + end-user template
+migration. UI/UX finishing track, batch 2 of 5. RFC 112 (originally
+planned for this release) is deferred to v0.69.0 alongside the
+remaining RFC 108 admin migration.
+
+### RFC 108 — UI template route-catalog migration (partial)
+
+Source: HANDOFF v0.66.0 residual #2 ("RFC 102 routes.rs の UI 移行").
+
+The original RFC 102 (v0.66.0) introduced `crates/core/src/routes.rs` as a
+catalog of HTTP path constants but never migrated consumers. v0.68.0
+makes the catalog the source of truth for end-user templates and
+corrects four wrong values that shipped silently in v0.66.0.
+
+#### Catalog corrections (`crates/core/src/routes.rs`)
+
+| Constant | v0.66.0–v0.67.0 (wrong) | v0.68.0 (matches worker) |
+|---|---|---|
+| `auth::PASSKEY_REGISTER_START` | `/me/webauthn/register` (was `PASSKEY_REGISTER`) | `/webauthn/register/start` |
+| `auth::PASSKEY_REGISTER_FINISH` | `/me/webauthn/register/finish` | `/webauthn/register/finish` |
+| `auth::PASSKEY_AUTH_START` | `/auth/webauthn/start` | `/webauthn/authenticate/start` |
+| `auth::PASSKEY_AUTH_FINISH` | `/auth/webauthn/finish` | `/webauthn/authenticate/finish` |
+
+No consumers existed when the wrong values shipped, so nothing was broken
+on the wire — but any v0.66.0-pinned doc generator or downstream consumer
+relying on the catalog would have produced dead links.
+
+New constants added:
+
+| Constant | Path |
+|---|---|
+| `auth::MAGIC_LINK_VERIFY_FORM` | `/magic-link/verify` (no-handle form action) |
+| `me::TOTP_ENROLL_CONFIRM` | `/me/security/totp/enroll/confirm` |
+
+#### End-user template migration
+
+15 hardcoded URLs across three end-user templates now flow through the
+catalog:
+
+| File | URLs migrated |
+|---|---|
+| `crates/ui/src/templates/security_center.rs` | `/me/security/sessions`, `/me/security/totp/enroll`, `/me/security/totp/disable`, `/me/security/sessions/revoke-others`, `/me/security`, `/me/security/sessions/{sid}/revoke` (builder) |
+| `crates/ui/src/templates/login.rs` | `/magic-link/request`, JS fetch `/webauthn/authenticate/start`, JS fetch `/webauthn/authenticate/finish`, `/magic-link/verify` form |
+| `crates/ui/src/templates/totp.rs` | `/me/security/totp/enroll/confirm`, `/me/security/totp/recover/confirm`, `/me/security/totp/verify`, `/me/security/totp/recover`, `/me/security/totp/disable` |
+
+#### Escape contract (security regression caught + fixed)
+
+A failing test (`sessions_page_session_id_is_html_escaped`) flagged that
+migrating from `format!("/.../{sid}/revoke", sid = escape(&id), ...)` to
+`routes::me::session_revoke(id)` dropped the HTML escape. Fix:
+**catalog builder fns return raw URL strings; the template HTML-escapes
+at the boundary.** The contract is pinned by an inline comment in
+`security_center.rs::render_session_row_for` and by the regression test
+itself; future migration of admin templates must follow the same rule
+for any `:slug` / `:id` interpolation.
+
+#### Deferred to v0.68.1+ / v0.69.0
+
+- **Admin / tenant_admin / tenancy_console template migration.** ~189
+  hardcoded URLs across 44 production template files. Blocked on a
+  larger catalog expansion (worker has 124 registered routes; catalog
+  has ~30 statics). Mechanical follow-up work.
+- **`scripts/drift-scan.sh` URL-hardcode rule.** Deferred so that
+  turning the rule on doesn't immediately fail CI before the admin
+  migration completes.
+
+See `rfcs/done/108-ui-template-route-catalog-migration.md`
+"Deferred-work note" for the full scope split. Per RFC 019
+§"Granularity of transitions", partial implementation is allowed when
+the partial work establishes the pattern subsequent batches will
+follow.
+
+### RFC 112 deferred
+
+Originally planned for v0.68.0; pushed to v0.69.0 to keep this release
+focused on the catalog correction and end-user migration. RFC 112 stays
+in `rfcs/proposed/` with no scope changes.
+
+### Tests
+
+| Crate | v0.67.0 | v0.68.0 | Δ |
+|---|---:|---:|---:|
+| core | 738 | 738 | — |
+| adapter-test | 125 | 125 | — |
+| ui | 325 | 325 | — |
+| migrate-test | 31 | 31 | — |
+| **Total** | **1,219** | **1,219** | **0** |
+
+RFC 108 is a pure refactor (no new behavior, no new MessageKey), so no
+new tests were added; the existing rendering tests pin that the
+migrated templates still emit the correct URLs.
+
+### Schema / wire / DO
+
+No changes. Worker route registration is untouched; only the catalog
+constants that mirror those routes were corrected.
+
+### Operator notes
+
+End-user surfaces are unaffected — the same paths are rendered as
+before. Admin / tenant admin / tenancy console surfaces are also
+unaffected: their templates were not touched in this release (the
+catalog correction has no consumer there yet). Operators using
+`/me/security/sessions`, `/me/security/totp/*`, `/login`,
+`/magic-link/*`, or `/webauthn/*` will see no change in behavior.
+
+The four corrected catalog constants (`PASSKEY_REGISTER_START` etc.)
+are only relevant to downstream consumers of `cesauth_core::routes`;
+none exist in tree.
+
+### ADR
+
+No closures.
+
+### Upgrade
+
+No special steps. Replace v0.67.0 bundle with v0.68.0; redeploy with
+`wrangler deploy`. No migrations.
+
+### Tarball
+
+`cesauth-0.68.0.tar.gz`.
+
+---
+
 ## [0.67.0] - 2026-05-13
 
 Implements RFC 105 + 106: UI/UX finishing track, batch 1 of 5.

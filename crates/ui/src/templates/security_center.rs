@@ -212,7 +212,7 @@ pub fn security_center_page_for(
 <section class="security-row" aria-labelledby="sessions-heading">
   <h2 id="sessions-heading">{sessions_heading}</h2>
   <p>{sessions_intro}</p>
-  <p><a href="/me/security/sessions">{sessions_link}</a></p>
+  <p><a href="{sessions_url}">{sessions_link}</a></p>
 </section>
 
 <p class="muted"><a href="/">{back}</a></p>"#,
@@ -222,6 +222,7 @@ pub fn security_center_page_for(
         sessions_intro   = escape(lookup(MessageKey::SecuritySessionsIntro,    locale)),
         sessions_link    = escape(lookup(MessageKey::SecuritySessionsLink,     locale)),
         back             = escape(lookup(MessageKey::SecurityBackLink,         locale)),
+        sessions_url     = cesauth_core::routes::me::SESSIONS,
         summary_card     = summary_card,
         primary_row      = primary_row,
         totp_section     = totp_section,
@@ -256,12 +257,13 @@ fn totp_section_html_for(
     </span>
   </p>
   <p>{intro}</p>
-  <p><a href="/me/security/totp/enroll">{enable_link}</a></p>
+  <p><a href="{enable_url}">{enable_link}</a></p>
 </section>"#,
             heading     = escape(lookup(MessageKey::SecurityTotpHeading,         locale)),
             badge       = escape(lookup(MessageKey::SecurityTotpDisabledBadge,   locale)),
             intro       = escape(lookup(MessageKey::SecurityTotpDisabledIntro,   locale)),
             enable_link = escape(lookup(MessageKey::SecurityTotpEnableLink,      locale)),
+            enable_url  = cesauth_core::routes::me::TOTP_ENROLL,
         );
     }
 
@@ -278,7 +280,7 @@ fn totp_section_html_for(
     </span>
   </p>
   {recovery_row}
-  <p><a href="/me/security/totp/disable">{disable_link}</a></p>
+  <p><a href="{disable_url}">{disable_link}</a></p>
 </section>"#,
         heading       = escape(cesauth_core::i18n::lookup(
             cesauth_core::i18n::MessageKey::SecurityTotpHeading,       locale)),
@@ -286,6 +288,7 @@ fn totp_section_html_for(
             cesauth_core::i18n::MessageKey::SecurityTotpEnabledBadge,  locale)),
         disable_link  = escape(cesauth_core::i18n::lookup(
             cesauth_core::i18n::MessageKey::SecurityTotpDisableLink,   locale)),
+        disable_url   = cesauth_core::routes::me::TOTP_DISABLE,
         recovery_row  = recovery_row,
     )
 }
@@ -430,7 +433,7 @@ pub fn sessions_page_for(
         format!(
             r##"<section class="security-section bulk-revoke" aria-label="Bulk revoke other sessions">
   <p class="muted">{confirm}</p>
-  <form method="post" action="/me/security/sessions/revoke-others" class="inline-form">
+  <form method="post" action="{revoke_others_url}" class="inline-form">
     <input type="hidden" name="csrf" value="{csrf}">
     <button type="submit" class="warning">{label}</button>
   </form>
@@ -438,6 +441,7 @@ pub fn sessions_page_for(
             confirm = escape(lookup(MessageKey::SessionsRevokeOthersConfirm, locale)),
             csrf    = escape(csrf_token),
             label   = escape(lookup(MessageKey::SessionsRevokeOthersButton, locale)),
+            revoke_others_url = cesauth_core::routes::me::SESSIONS_REVOKE_OTHERS,
         )
     } else {
         String::new()
@@ -454,13 +458,14 @@ pub fn sessions_page_for(
 {bulk_button}
 
 <p class="muted">
-  <a href="/me/security">{back}</a>
+  <a href="{security_url}">{back}</a>
 </p>
 <p class="muted" role="note" style="font-size:0.8em;margin-top:1rem">{drift_note}</p>"##,
         title      = escape(lookup(MessageKey::SessionsPageTitle,  locale)),
         intro      = escape(lookup(MessageKey::SessionsPageIntro,  locale)),
         back       = escape(lookup(MessageKey::SessionsBackLink,   locale)),
         drift_note = escape(lookup(MessageKey::SessionsDriftNote,  locale)),
+        security_url = cesauth_core::routes::me::SECURITY,
         rows       = rows,
         bulk_button = bulk_button,
     );
@@ -515,11 +520,14 @@ fn render_session_row_for(
         )
     } else {
         format!(
-            r##"<form method="post" action="/me/security/sessions/{sid}/revoke" class="inline-form">
+            r##"<form method="post" action="{revoke_url}" class="inline-form">
   <input type="hidden" name="csrf" value="{csrf}">
   <button type="submit" class="warning">{revoke}</button>
 </form>"##,
-            sid    = escape(&s.session_id),
+            // The catalog builder returns a URL with the session_id
+            // interpolated verbatim; HTML-escape at the boundary so a
+            // pathological session_id can't break out of the attribute.
+            revoke_url = escape(&cesauth_core::routes::me::session_revoke(&s.session_id)),
             csrf   = escape(csrf_token),
             revoke = escape(lookup(MessageKey::SessionsRevokeButton, locale)),
         )

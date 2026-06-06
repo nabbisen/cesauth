@@ -80,7 +80,7 @@ pub fn totp_enroll_page_for(
 
 {err_block}
 
-<form method="POST" action="/me/security/totp/enroll/confirm" aria-labelledby="confirm-heading">
+<form method="POST" action="{enroll_confirm_url}" aria-labelledby="confirm-heading">
   <h2 id="confirm-heading">{confirm_heading}</h2>
   <p>{confirm_intro}</p>
   <input type="hidden" name="csrf" value="{csrf}">
@@ -106,6 +106,7 @@ pub fn totp_enroll_page_for(
         secret    = escape(secret_b32),
         err_block = err_block,
         csrf      = escape(csrf_token),
+        enroll_confirm_url = cesauth_core::routes::me::TOTP_ENROLL_CONFIRM,
     );
     frame_for(lookup(MessageKey::TotpEnrollPageTitleHtml, locale), &body, locale)
 }
@@ -159,7 +160,7 @@ pub fn totp_recovery_codes_page_for(
 
 <p>{body_text}</p>
 
-<form method="POST" action="/me/security/totp/recover/confirm">
+<form method="POST" action="{recover_confirm_url}">
   <input type="hidden" name="csrf"         value="{csrf}">
   <fieldset class="save-gate">
     <legend class="visually-hidden">{gate_legend}</legend>
@@ -193,6 +194,7 @@ pub fn totp_recovery_codes_page_for(
         codes        = codes_html,
         csrf         = escape(csrf_token),
         nonce        = nonce,
+        recover_confirm_url = cesauth_core::routes::me::TOTP_RECOVER_CONFIRM,
     );
     frame_for(lookup(MessageKey::TotpRecoveryCodesPageTitle, locale), &body, locale)
 }
@@ -239,7 +241,7 @@ pub fn totp_verify_page_for(
 
 {error_block}
 
-<form method="POST" action="/me/security/totp/verify" aria-labelledby="verify-heading">
+<form method="POST" action="{verify_url}" aria-labelledby="verify-heading">
   <h2 id="verify-heading" class="muted">{heading}</h2>
   <input type="hidden" name="csrf" value="{csrf}">
   <label for="code">{code_label}</label>
@@ -252,7 +254,7 @@ pub fn totp_verify_page_for(
 <details class="muted">
   <summary>{lost_summary}</summary>
   <p>{recover_intro}</p>
-  <form method="POST" action="/me/security/totp/recover" aria-labelledby="recover-heading">
+  <form method="POST" action="{recover_url}" aria-labelledby="recover-heading">
     <span id="recover-heading" class="visually-hidden">{recover_aria}</span>
     <input type="hidden" name="csrf" value="{csrf}">
     <label for="recovery-code">{recover_code_label}</label>
@@ -276,6 +278,8 @@ pub fn totp_verify_page_for(
         recover_button     = escape(lookup(MessageKey::TotpVerifyRecoverButton,     locale)),
         error_block        = error_block,
         csrf               = escape(csrf_token),
+        verify_url   = cesauth_core::routes::me::TOTP_VERIFY,
+        recover_url  = cesauth_core::routes::me::TOTP_RECOVER,
     );
     frame_for(lookup(MessageKey::TotpVerifyPageTitleHtml, locale), &body, locale)
 }
@@ -320,7 +324,7 @@ pub fn totp_disable_confirm_page_for(
 
 <p>{recovery_hint}</p>
 
-<form method="POST" action="/me/security/totp/disable" aria-labelledby="disable-heading">
+<form method="POST" action="{disable_url}" aria-labelledby="disable-heading">
   <h2 id="disable-heading" class="muted">{confirm_heading}</h2>
   <input type="hidden" name="csrf" value="{csrf}">
   <button type="submit" class="danger">{submit}</button>
@@ -335,6 +339,7 @@ pub fn totp_disable_confirm_page_for(
         submit          = escape(lookup(MessageKey::TotpDisableSubmit,         locale)),
         cancel          = escape(lookup(MessageKey::TotpEnrollCancelLink,      locale)),
         csrf            = escape(csrf_token),
+        disable_url     = cesauth_core::routes::me::TOTP_DISABLE,
     );
     frame_for(lookup(MessageKey::TotpDisablePageTitle, locale), &body, locale)
 }
