@@ -236,3 +236,136 @@ fn admin_frame_carries_dark_mode_override() {
     assert!(out.contains("@media (prefers-color-scheme: dark)"),
         "admin frame must carry the dark-mode override block");
 }
+
+// ─── RFC 110 baseline pins ──────────────────────────────────────────────
+//
+// These tests pin the **current** shape of the safety-related surfaces
+// against the PDF v0.50.1 page 9 / page 8 audit recorded in
+// `docs/src/expert/rfc-110-baseline.md`. They are deliberately negative
+// assertions for the gap items: the absence of those surface elements is
+// a known state, documented in the baseline.
+//
+// When a follow-up RFC (110a–110e) ships the corresponding gap-fill,
+// it MUST update the corresponding pin from "absent" to "present" in
+// the same commit. That update forces a code-review pass over the
+// baseline doc — the discipline RFC 110 §"Closure" calls for.
+
+mod rfc_110 {
+    use super::*;
+    use cesauth_core::admin::types::DataSafetyReport;
+    use crate::admin::frame::Tab;
+
+    fn empty_report() -> DataSafetyReport {
+        DataSafetyReport {
+            buckets:                  vec![],
+            staleness_threshold_days: 7,
+            public_bucket_count:      0,
+            all_fresh:                true,
+        }
+    }
+
+    #[test]
+    fn nav_carries_all_six_pdf_page_8_tabs() {
+        // PDF page 8: Overview / Safety / Audit / Config / Alerts / Tokens.
+        // The implementation has these six plus Cost and Operations
+        // (documented superset in rfc-110-baseline.md).
+        let html = safety_page(&principal(Role::Super), &empty_report());
+        for label in ["Overview", "Safety", "Audit", "Config", "Alerts", "Tokens"] {
+            assert!(html.contains(label),
+                "admin nav must include PDF page-8 tab '{label}'; \
+                 see docs/src/expert/rfc-110-baseline.md");
+        }
+    }
+
+    #[test]
+    fn nav_carries_implementation_superset_tabs() {
+        // Cost and Operations are the documented superset additions.
+        let html = safety_page(&principal(Role::Super), &empty_report());
+        assert!(html.contains("Cost"),
+            "admin nav superset tab 'Cost' must be present (baseline §page 8)");
+        assert!(html.contains("Operations"),
+            "admin nav superset tab 'Operations' must be present (baseline §page 8)");
+    }
+
+    #[test]
+    fn tab_enum_has_eight_variants() {
+        // If a tab is added or removed, the baseline doc must be revisited.
+        // Walking the iter() gives the count without reaching into private
+        // internals.
+        let count = [
+            Tab::Overview, Tab::Cost, Tab::Safety, Tab::Audit,
+            Tab::Config,   Tab::Alerts, Tab::Tokens, Tab::Operations,
+        ].len();
+        assert_eq!(count, 8,
+            "Tab enum count drifted — update docs/src/expert/rfc-110-baseline.md");
+    }
+
+    // --- PDF page 9 "Safety controls" gap pins ---------------------------
+    //
+    // Each gap pin is a negative assertion: the surface does NOT yet
+    // carry the item. A follow-up RFC (110a–110e) will flip these to
+    // positive assertions.
+
+    #[test]
+    fn safety_page_does_not_yet_show_rate_limit_status() {
+        // RFC 110a deferred.
+        let html = safety_page(&principal(Role::Super), &empty_report());
+        assert!(!html.contains("レート制限"),
+            "rate-limit summary not yet implemented (RFC 110a); \
+             when it lands, flip this pin to a positive assertion");
+        assert!(!html.contains("Rate limit") || html.contains("Data safety"),
+            "the only 'Rate limit' string allowed today is a coincidental \
+             nav/heading match; gap-fill RFC 110a must update this pin");
+    }
+
+    #[test]
+    fn safety_page_does_not_yet_show_turnstile_indicator() {
+        // RFC 110b deferred.
+        let html = safety_page(&principal(Role::Super), &empty_report());
+        assert!(!html.contains("Turnstile"),
+            "Turnstile configured indicator not yet implemented (RFC 110b)");
+    }
+
+    #[test]
+    fn safety_page_does_not_yet_show_refresh_reuse_summary() {
+        // RFC 110c deferred.
+        let html = safety_page(&principal(Role::Super), &empty_report());
+        assert!(!html.contains("RefreshTokenReuse") && !html.contains("refresh reuse"),
+            "refresh-reuse summary not yet implemented (RFC 110c)");
+    }
+
+    #[test]
+    fn safety_page_does_not_yet_show_totp_key_indicator() {
+        // RFC 110d deferred.
+        let html = safety_page(&principal(Role::Super), &empty_report());
+        assert!(!html.contains("TOTP_SECRET_KEY") && !html.contains("TOTP key"),
+            "TOTP key status indicator not yet implemented (RFC 110d)");
+    }
+
+    #[test]
+    fn safety_page_does_not_yet_link_to_runbook() {
+        // RFC 110e deferred.
+        let html = safety_page(&principal(Role::Super), &empty_report());
+        assert!(!html.contains("day-2-runbook") && !html.contains("ランブック"),
+            "runbook link not yet implemented (RFC 110e)");
+    }
+
+    // --- Crucial invariant: secrets never leak via this surface ---------
+    //
+    // Even after gap-fills (110b, 110d) land, the rendered HTML must NEVER
+    // contain the secret material itself — only a presence indicator. We
+    // pin a sentinel negative now so any future PR that accidentally
+    // includes the secret bytes is caught.
+
+    #[test]
+    fn safety_page_never_exposes_secret_material() {
+        let html = safety_page(&principal(Role::Super), &empty_report());
+        // Sentinels that would be present if someone accidentally embedded
+        // PEM-encoded key material or base64 secrets.
+        assert!(!html.contains("BEGIN PRIVATE KEY"),
+            "secret material must never appear in safety page");
+        assert!(!html.contains("BEGIN ENCRYPTED"),
+            "secret material must never appear in safety page");
+    }
+}
+

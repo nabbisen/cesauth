@@ -1,11 +1,34 @@
 # RFC 110 — Safety controls dashboard alignment audit
 
-**Status**: Proposed  
+**Status**: Implemented (v0.72.0 — verification + baseline doc + pin tests; gap-fill deferred to follow-up RFCs 110a–110e per the §"Open questions" Q1 closure)  
 **Tier**: P2  
-**Size**: Small-Medium  
-**Target**: v0.70.0  
+**Size**: Small (verification only); gap-fills are separate Small-Medium RFCs  
+**Target**: v0.70.0 (originally) → shipped v0.72.0 after v0.68.0–v0.71.0 batch shifts  
 **Phase**: Surface alignment audit (finishing track)  
-**Refs**: PDF v0.50.1 page 9 "Operations UX: Safety controls" / `crates/ui/src/admin/safety.rs` / RFC 081 (cron pass status)
+**Refs**: PDF v0.50.1 page 9 "Operations UX: Safety controls" / `crates/ui/src/admin/safety.rs` / RFC 081 (cron pass status) / `docs/src/expert/rfc-110-baseline.md` (audit findings)
+
+## Implementation outcome (v0.72.0)
+
+Per the §"Open questions" Q1 resolution, this RFC closes with
+verification-only deliverables; the five PDF page-9 gaps are deferred
+to RFCs 110a–110e. The full audit is in
+`docs/src/expert/rfc-110-baseline.md`. Briefly:
+
+- **Console nav (PDF page 8)**: implementation is a **clean superset**
+  — all six required tabs present (`Overview / Safety / Audit / Config /
+  Alerts / Tokens`), plus two implementation-driven additions (`Cost`,
+  `Operations`).
+- **Safety controls panel (PDF page 9, 4 items + runbook link)**: all
+  five items are **gaps**. The existing `/admin/console/safety` is the
+  Data Safety Dashboard (RFC 047), a different surface that happens to
+  share the name.
+
+Pin tests in `crates/ui/src/admin/tests.rs::rfc_110` assert the current
+state (nav presence; gap items absent; secret material never leaks)
+so any follow-up RFC PR must update them in the same commit. The
+secret-leakage pin in particular is a forward-looking guardrail for
+when 110b (Turnstile) and 110d (TOTP key) land — both must surface a
+boolean indicator, never the secret bytes.
 
 ## Problem
 

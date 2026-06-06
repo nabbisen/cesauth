@@ -41,17 +41,15 @@ the residual gaps. See ROADMAP.md "UI/UX finishing track" for grouping.
 
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
-| [107](./proposed/107-recovery-code-pluralization.md) | Recovery code pluralization (ADR-013 §Q4 closure / plural side) | P2 | v0.71.0 |
-| [110](./proposed/110-safety-controls-alignment.md) | Safety controls dashboard alignment audit | P2 | v0.70.0 |
-| [111](./proposed/111-date-rendering-policy.md) | Date rendering policy (ADR-013 §Q4 closure / date side) | P2 | v0.71.0 |
-| [112](./proposed/112-worker-auth-macro-batch-migration.md) | Worker auth macro batch migration (RFC 100 全面適用) | P2 | v0.69.0 |
-| [113](./proposed/113-ui-rendering-acceptance-harness.md) | UI rendering acceptance harness (横串 CI gate) | P2 | v0.70.0 |
+| [107](./proposed/107-recovery-code-pluralization.md) | Recovery code pluralization (ADR-013 §Q4 closure / plural side) | P2 | v0.73.0 |
+| [111](./proposed/111-date-rendering-policy.md) | Date rendering policy (ADR-013 §Q4 closure / date side) | P2 | v0.73.0 |
+| [112](./proposed/112-worker-auth-macro-batch-migration.md) | Worker auth macro batch migration (RFC 100 全面適用) | P2 | env-blocked |
 
 ---
 
 ## Done
 
-106 RFCs (001–106, 108, 109) shipped between v0.50.3 and v0.71.0. Full
+108 RFCs (001–106, 108–110, 113) shipped between v0.50.3 and v0.72.0. Full
 list with shipped-in versions: see ROADMAP.md "Shipped" section and
 CHANGELOG.md release entries. Selected highlights only listed here; the
 canonical catalogue is the filesystem at `done/`.
@@ -71,6 +69,8 @@ canonical catalogue is the filesystem at `done/`.
 | [106](./done/106-security-center-i18n-closure.md) | Security Center i18n closure (TOTP/recovery banners) | v0.67.0 |
 | [108](./done/108-ui-template-route-catalog-migration.md) | UI template route-catalog migration (closed v0.70.0) | v0.68.0–v0.70.0 |
 | [109](./done/109-audit-log-viewer-ui.md) | Audit log viewer UI surface | v0.71.0 |
+| [110](./done/110-safety-controls-alignment.md) | Safety controls dashboard alignment audit (verification + pin tests; gap-fills 110a–110e deferred) | v0.72.0 |
+| [113](./done/113-ui-rendering-acceptance-harness.md) | UI rendering acceptance harness | v0.72.0 |
 
 For the full mapping (every shipped RFC with its release tag), the
 authoritative record is each file's own `**Status**: Implemented (vX.Y.Z)`
@@ -113,22 +113,27 @@ Sources:
 - **HANDOFF residual #1** (RFC 100 macro partial migration) → RFC **112**.
 - **PDF v0.50.1 page 14** (Acceptance criteria checklist) → RFC **113**.
 
-Recommended grouping (one batch per minor release):
+Actual shipping order:
 
 | Release | RFCs | Theme |
 |---------|------|-------|
 | v0.67.0 | 105, 106 | Design tokens + Security Center i18n |
-| v0.68.0 | 108, 112 | Catalog migration + macro batch |
-| v0.69.0 | 109 | Audit log viewer (new surface) |
-| v0.70.0 | 110, 113 | Safety alignment audit + acceptance harness |
-| v0.71.0 | 107, 111 | ADR-013 §Q4 closure |
+| v0.68.0 | 108 (partial) | Catalog correction + end-user template migration |
+| v0.69.0 | 108 (continued) | Catalog completion + admin/console migration |
+| v0.70.0 | 108 (closure) | tenant_admin + tenancy_console migration + drift-scan |
+| v0.71.0 | 109 | Audit log viewer (new surface) |
+| v0.72.0 | 110, 113 | Safety alignment audit + acceptance harness |
+| v0.73.0 (planned) | 107, 111 | ADR-013 §Q4 closure |
+| Pending env | 112 | Worker auth macro batch (rustup/wasm32 required) |
 
 Dependencies between RFCs are minimal:
 
-- 108 should land before 109 so the viewer references catalog paths.
+- 108 should land before 109 so the viewer references catalog paths. (Done.)
 - 113 is more useful after 105 (token consistency easier to assert).
 - 107 and 111 are independent of each other but logically pair for the
   ADR-013 §Q4 closure release note.
+- 112 is environment-blocked (sandbox lacks rustup/wasm32) and ships on
+  its own once an environment with worker compile-verify is available.
 
 ---
 

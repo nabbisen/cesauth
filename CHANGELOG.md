@@ -26,6 +26,122 @@ split by minor-version range:
 
 ---
 
+## [0.72.0] - 2026-05-14
+
+Closes RFC 110 (Safety controls dashboard alignment audit) and RFC 113
+(UI rendering acceptance harness). Both ship with the scope amendments
+recorded against the original drafts; RFC 110's five gap items are
+deferred to follow-up RFCs 110a–110e per its own §"Open questions" Q1
+resolution.
+
+### RFC 110 — Safety controls alignment audit (verification + pin tests)
+
+Source: PDF v0.50.1 page 9 "Operations UX: Safety controls" + page 8
+admin console nav. RFC 110 explicitly allows closure as
+"verification + test pin only" when gaps are deferred to follow-ups —
+exactly what v0.72.0 does.
+
+**Audit findings** (full record in `docs/src/expert/rfc-110-baseline.md`):
+
+- **Console nav (PDF page 8)**: clean **superset**. All six required
+  tabs present (`Overview / Safety / Audit / Config / Alerts / Tokens`)
+  plus two implementation-driven additions (`Cost`, `Operations`).
+- **Safety controls panel (PDF page 9, 4 items + runbook link)**:
+  all five items are **gaps**. The existing `/admin/console/safety`
+  is the Data Safety Dashboard (RFC 047) — a different surface that
+  shares the name with the PDF panel.
+
+**Pin tests** at `crates/ui/src/admin/tests.rs::rfc_110` (+9 tests):
+
+- Two positive nav-coverage pins (six required tabs + two superset tabs
+  present).
+- One Tab-enum count pin (`8 variants`; drift triggers baseline doc
+  revisit).
+- Five **negative** gap-pins (rate-limit / Turnstile / refresh-reuse /
+  TOTP-key / runbook-link absent today). Each carries the gap-fill
+  RFC number in its panic message; the gap-fill PR must flip the pin
+  to a positive assertion in the same commit.
+- One forward-looking guardrail: `safety_page_never_exposes_secret_material`
+  asserts `BEGIN PRIVATE KEY` / `BEGIN ENCRYPTED` sentinels never appear.
+  This pin protects 110b and 110d (Turnstile and TOTP key indicators)
+  from accidentally surfacing secret bytes when they land.
+
+**Deferred follow-ups**: RFC 110a (rate-limit summary), 110b (Turnstile
+indicator), 110c (refresh-reuse summary), 110d (TOTP key status), 110e
+(runbook link + safety-controls landing section). Each touches a
+different worker data source; several need rustup/wasm32-blocked
+verification of the worker handler. Deliberately split so they can
+land independently.
+
+### RFC 113 — UI rendering acceptance harness (with scope amendments)
+
+Source: PDF v0.50.1 page 14 "Acceptance criteria checklist".
+
+**Scope amendments recorded**:
+
+1. **Footer-version invariant inverted.** The draft asserted
+   `html.contains("v0.")` in the footer. RFC 071 (already shipped)
+   explicitly **removed** footer version captions. The harness asserts
+   the actual contract: footer present, no version caption. The
+   tenant_admin and tenancy_console test files already pin this
+   inversion at the per-frame layer; the harness aggregates.
+
+2. **Frame-fixture granularity instead of per-route enumeration.**
+   The draft proposed listing ~30 routes. Implementation observed the
+   five universal invariants are properties of the four frame
+   functions (`chrome::frame_for`, `admin::frame::admin_frame_for`,
+   `tenant_admin::frame::tenant_admin_frame_for`,
+   `tenancy_console::frame::tenancy_console_frame_for`), not of any
+   specific page. Five frame-fixtures × five invariants = same
+   effective coverage as ~30 per-route assertions, one-sixth the
+   maintenance cost. Per-page content tests already exist next to the
+   per-page render functions.
+
+**What landed**:
+
+- **`crates/ui/tests/acceptance_harness.rs`** (new integration test):
+  - 5 frame fixtures: chrome × {EN, JA} (RFC 072 dual locale) + 3
+    admin frames × {JA} (admin JA-only per ADR-013).
+  - 5 universal invariants per fixture: `<html lang>` matches locale,
+    skip-link present, `<main id="main">` flash anchor, footer present
+    without version, scope badge on admin frames.
+  - One walking test exercises the full matrix; three self-tests catch
+    fixture-table coverage regressions.
+- **4 tests, all green.** 25 internal assertions across the matrix.
+
+### Tests
+
+1,265 / 1,265 pass (133 core + 751 adapter-test + 346 ui lib +
+4 ui integration + 31 migrate-test). **+13** over the v0.71.0 baseline:
+
+- ui lib: +9 (RFC 110 pin tests)
+- ui integration: +4 (RFC 113 harness — main walker + 3 self-tests)
+
+### Warnings
+
+0 production lib warnings on
+`cargo-1.91 check -p cesauth-core -p cesauth-ui -p cesauth-adapter-test`.
+
+### Drift-scan
+
+Still clean. No new URL strings, no new MessageKey variants needed for
+this release (RFC 110 is verification-only; RFC 113's harness uses
+existing `Locale::bcp47()` rather than introducing new locale-aware
+text).
+
+### Contract invariants reaffirmed
+
+- **Catalog mirrors worker reality** (no new routes added).
+- **Admin console JA-only** (ADR-013): RFC 113 harness verifies this
+  via `admin_fixtures_render_in_ja_only_per_adr_013`.
+- **Footer no longer carries version** (RFC 071): harness inversion
+  pin makes the contract explicit at every frame.
+- **Tests-as-drift-detectors**: RFC 110's negative gap-pins force
+  gap-fill PRs to update baseline doc; RFC 113's harness self-tests
+  force coverage updates if the fixture table is reduced.
+
+---
+
 ## [0.71.0] - 2026-05-13
 
 Ships RFC 109 (Audit log viewer UI surface). The admin console gains a

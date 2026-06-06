@@ -1,11 +1,47 @@
 # RFC 113 — UI rendering acceptance harness
 
-**Status**: Proposed  
+**Status**: Implemented (v0.72.0 — with the documented amendments below: frame-fixture granularity instead of per-route enumeration; footer-version invariant inverted to reflect the actual RFC 071 contract)  
 **Tier**: P2  
 **Size**: Medium  
-**Target**: v0.70.0  
+**Target**: v0.70.0 (originally) → shipped v0.72.0  
 **Phase**: Acceptance gate (finishing track)  
-**Refs**: PDF v0.50.1 page 12 "ABDD check" / page 14 "Acceptance criteria" / RFC 027 / RFC 016 (scope badge)
+**Refs**: PDF v0.50.1 page 12 "ABDD check" / page 14 "Acceptance criteria" / RFC 027 / RFC 016 (scope badge) / RFC 071 (footer version hygiene) / RFC 072 (`<html lang>`) / RFC 077 (skip-link)
+
+## Scope amendments at implementation time (v0.72.0)
+
+Two amendments to the original RFC 113 draft were recorded:
+
+### Footer version invariant inverted
+
+The draft listed `has_footer_ver: bool → assert!(html.contains("v0."))`.
+RFC 071 (already shipped) **removed** version captions from footers —
+operators identify build from wrangler/deploy logs. The correct
+invariant is the inverse: footer must be present but MUST NOT carry a
+version string. The harness asserts that contract.
+
+If a future RFC re-introduces footer version captions, the assertion in
+`assert_footer_present_no_version` must be updated in the same commit;
+that update surfaces the RFC 071 reversal for review.
+
+### Frame-fixture granularity instead of per-route enumeration
+
+The draft proposed enumerating every browser-facing route (~30 entries)
+with a `RouteSpec` table and per-route dispatch. Implementation observed
+that the five universal invariants are properties of the **frame layer**
+(`templates::chrome::frame_for`, `admin::frame::admin_frame_for`,
+`tenant_admin::frame::tenant_admin_frame_for`,
+`tenancy_console::frame::tenancy_console_frame_for`), not of any
+specific page. Walking the four frame functions × applicable locales
+gives 5 fixtures total with the same effective coverage as ~30
+per-route assertions, at one-sixth the maintenance cost.
+
+Trade-off: a new page that bypasses the frame layer (none exist today;
+the lint would catch it) escapes the harness. The trade is acceptable
+because (a) the frame functions are the only public chrome entry
+points in the crate, and (b) per-page content tests already exist next
+to the per-page render functions and catch content-level regressions.
+A per-route coverage registry can be layered on later if the codebase
+adds free-form pages outside the frame contract.
 
 ## Problem
 

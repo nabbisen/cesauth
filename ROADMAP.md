@@ -91,6 +91,7 @@ full narrative is in the [archive](docs/changelog-archive/README.md).
 | Route-catalog completion + admin/console template migration (RFC 108 continued) | v0.69.0 | [CHANGELOG](CHANGELOG.md) |
 | RFC 108 closure (tenant_admin + tenancy_console migration + drift-scan rule) | v0.70.0 | [CHANGELOG](CHANGELOG.md) |
 | RFC 109 — Audit log viewer UI surface (with scope amendments) | v0.71.0 | [CHANGELOG](CHANGELOG.md) |
+| RFC 110 + 113 — Safety controls audit + UI rendering acceptance harness | v0.72.0 | [CHANGELOG](CHANGELOG.md) |
 
 ---
 
@@ -181,12 +182,21 @@ started.
   implementation time (v0.71.0)". 1,252 tests (+33 vs v0.70.0
   baseline). 0 warnings.
 
-- 📅 **v0.72.0 — RFC 110 + 113 (Acceptance alignment).** RFC 110: verify and fill
-  Safety controls dashboard alignment with deck page 9 (rate-limit status,
-  Turnstile, refresh reuse, TOTP key, runbook link). RFC 113: UI rendering
-  acceptance harness — CI gate asserting scope badge / flash region / skip-link /
-  footer version / `<html lang>` across all browser-facing routes. Source: deck
-  pages 9, 12, 14.
+- ✅ **v0.72.0 — RFC 110 + 113 (Acceptance alignment).** RFC 110 closed as
+  **verification + baseline doc + pin tests** per its own §"Open questions"
+  Q1 resolution: console nav alignment confirmed a clean superset of PDF
+  page 8; the four PDF page 9 "Safety controls" items plus the runbook
+  link are documented gaps deferred to RFCs 110a–110e (each touches a
+  different worker data source). RFC 113 ships the **UI rendering
+  acceptance harness** at `crates/ui/tests/acceptance_harness.rs` —
+  five frame fixtures (end-user EN + JA, three admin frames JA-only)
+  × five universal invariants (`<html lang>` matches locale, skip-link,
+  flash anchor, footer without version, scope badge on admin). Two
+  scope amendments recorded against the original RFC 113 draft:
+  footer-version invariant inverted (RFC 071 removed version captions;
+  draft assumed they were still there) and frame-fixture granularity
+  in place of per-route enumeration (same coverage at one-sixth the
+  maintenance cost). 1,265 tests (+13 vs v0.71.0 baseline). 0 warnings.
 
 - 📅 **v0.73.0 — RFC 107 + 111 (ADR-013 §Q4 closure).** RFC 107: plural-aware
   catalog lookup using CLDR-minimal `Plural::{One, Other}` enum (no `icu` dep —
