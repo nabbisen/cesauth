@@ -1,8 +1,5 @@
-use serde::{Deserialize, Serialize};
-use sha2::Digest as _;
-use super::error::{MigrateError, MigrateResult};
-use super::types::PayloadLine;
 
+#[derive(Debug)]
 pub struct RedactionProfile {
     /// Operator-facing name, used at the CLI as
     /// `--profile <name>`. Recorded in the manifest so the

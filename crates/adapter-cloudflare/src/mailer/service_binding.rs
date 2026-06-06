@@ -31,7 +31,7 @@
 //! worker returns HTTP 2xx. 4xx → `Permanent`; 5xx / timeout → `Transient`.
 
 use cesauth_core::magic_link::{DeliveryReceipt, MailerError, MagicLinkMailer, MagicLinkPayload};
-use worker::{Env, Fetch, Headers, Method, Request, RequestInit};
+use worker::{Env, Headers, Method, Request, RequestInit};
 
 /// Mailer adapter backed by a Cloudflare service binding.
 pub struct ServiceBindingMailer<'a> {

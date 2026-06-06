@@ -1,6 +1,4 @@
 use serde::{Deserialize, Serialize};
-use sha2::Digest as _;
-use super::error::{MigrateError, MigrateResult};
 use super::redaction::base64_url_decode;
 
 pub const FORMAT_VERSION: u32 = 1;

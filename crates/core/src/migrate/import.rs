@@ -1,5 +1,3 @@
-use serde::{Deserialize, Serialize};
-use sha2::Digest as _;
 
 pub trait ImportSink {
     /// Buffer one row for the named table. Caller invokes once

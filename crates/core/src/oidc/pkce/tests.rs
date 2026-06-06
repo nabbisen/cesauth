@@ -98,10 +98,10 @@ fn challenge_method_parse_rejects_unknown() {
 #[test]
 fn constant_time_eq_handles_different_lengths() {
     // Different-length slices must return false immediately (no index panic).
-    assert!(!constant_time_eq(b"abc", b"ab"));
-    assert!(!constant_time_eq(b"ab", b"abc"));
-    assert!(!constant_time_eq(b"", b"a"));
-    assert!(constant_time_eq(b"", b""));
+    assert!(!crate::util::constant_time_eq_bytes(b"abc", b"ab"));
+    assert!(!crate::util::constant_time_eq_bytes(b"ab", b"abc"));
+    assert!(!crate::util::constant_time_eq_bytes(b"", b"a"));
+    assert!(crate::util::constant_time_eq_bytes(b"", b""));
 }
 
 #[test]

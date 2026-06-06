@@ -338,7 +338,7 @@ pub fn verify_with_replay_protection(
         }
 
         let candidate_code = compute_code(secret, candidate_step);
-        if constant_time_eq_u32(candidate_code, submitted_code) {
+        if crate::util::constant_time_eq_u32(candidate_code, submitted_code) {
             matched = Some(candidate_step);
             // Don't break: continue to find the latest matching
             // step (defensive — collision in window of 3 is
@@ -354,10 +354,7 @@ pub fn verify_with_replay_protection(
 /// optimize this to a CMOV that's already constant-time, but we
 /// pin the behavior with a branchless XOR-and-fold rather than
 /// trusting compiler-level analysis for a security-relevant path.
-fn constant_time_eq_u32(a: u32, b: u32) -> bool {
-    let diff = a ^ b;
-    diff == 0
-}
+// RFC 096: constant_time_eq_u32 moved to crate::util
 
 // =====================================================================
 // otpauth:// URI construction
@@ -543,6 +540,11 @@ pub fn hash_recovery_code(code: &str) -> String {
 /// requires nonce uniqueness per key per encryption; with random
 /// 96-bit nonces and ≤ 2^32 encryptions per key the collision
 /// probability is negligible.
+// RFC 101: `Key::from_slice` and `Nonce::from_slice` internally call
+// `GenericArray::from_slice` which is deprecated in generic-array 0.14.x
+// pending upstream migration of aes-gcm to generic-array 1.x.
+// Suppressed here; revisit when aes-gcm bumps its dependency.
+#[allow(deprecated)]
 pub fn encrypt_secret(
     secret:    &Secret,
     key:       &[u8],
@@ -574,6 +576,7 @@ pub fn encrypt_secret(
 /// Caller looks up the row, retrieves `secret_ciphertext`,
 /// `secret_nonce`, `secret_key_id`, finds the matching key (the
 /// active one or an older one for rotation), and calls this.
+#[allow(deprecated)] // see encrypt_secret note (generic-array 0.14 → 1.x migration)
 pub fn decrypt_secret(
     ciphertext: &[u8],
     nonce:      &[u8],

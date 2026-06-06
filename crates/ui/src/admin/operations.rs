@@ -5,6 +5,7 @@ use cesauth_core::admin::types::AdminPrincipal;
 use super::frame::{admin_frame, Tab};
 
 /// One cron pass display record.
+#[derive(Debug)]
 pub struct CronPassDisplay {
     pub name:      &'static str,
     pub label:     &'static str,

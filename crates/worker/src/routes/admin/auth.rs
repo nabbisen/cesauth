@@ -117,3 +117,66 @@ pub async fn resolve_or_respond(req: &Request, env: &Env) -> Result<std::result:
         Err(f) => Ok(Err(forbidden_response(f))),
     }
 }
+
+// ─── RFC 100: Auth boilerplate macros ────────────────────────────────────
+
+/// Resolve the system-admin principal and enforce a required `AdminAction`.
+///
+/// Expands to two statements that early-return on failure:
+/// 1. Bearer-token resolution via `auth::resolve_or_respond`
+/// 2. Role-level gate via `auth::ensure_role_allows`
+///
+/// On success, binds the resolved `AdminPrincipal` to `$principal`.
+///
+/// # Example
+/// ```ignore
+/// pub async fn list_tokens<D>(req: Request, ctx: RouteContext<D>) -> worker::Result<Response> {
+///     require_system_admin!(req, ctx, principal, AdminAction::ViewConsole);
+///     // use `principal` here
+/// }
+/// ```
+#[macro_export]
+macro_rules! require_system_admin {
+    ($req:expr, $ctx:expr, $principal:ident, $action:expr) => {
+        let $principal = match $crate::routes::admin::auth::resolve_or_respond(&$req, &$ctx.env).await? {
+            Ok(p)  => p,
+            Err(r) => return Ok(r),
+        };
+        if let Err(r) = $crate::routes::admin::auth::ensure_role_allows(&$principal, $action) {
+            return Ok(r);
+        }
+    };
+}
+
+/// Resolve a tenant-admin context and enforce a read permission.
+///
+/// Expands to three statements that early-return on failure:
+/// 1. Bearer-token resolution
+/// 2. Tenant-gate resolution (`resolve_tenant_admin`)
+/// 3. Permission check (`check_read`)
+///
+/// On success, binds the `TenantAdminContext` to `$ctx_ta`.
+///
+/// # Example
+/// ```ignore
+/// pub async fn overview<D>(req: Request, ctx: RouteContext<D>) -> worker::Result<Response> {
+///     require_tenant_admin_read!(req, ctx, ctx_ta, PermissionCatalog::TENANT_READ);
+///     // use `ctx_ta` here
+/// }
+/// ```
+#[macro_export]
+macro_rules! require_tenant_admin_read {
+    ($req:expr, $ctx:expr, $ctx_ta:ident, $permission:expr) => {
+        let _principal_ta = match $crate::routes::admin::auth::resolve_or_respond(&$req, &$ctx.env).await? {
+            Ok(p)  => p,
+            Err(r) => return Ok(r),
+        };
+        let $ctx_ta = match $crate::routes::admin::tenant_admin::gate::resolve_or_respond(_principal_ta, &$ctx).await? {
+            Ok(c)  => c,
+            Err(r) => return Ok(r),
+        };
+        if let Err(r) = $crate::routes::admin::tenant_admin::gate::check_read(&$ctx_ta, $permission, &$ctx).await? {
+            return Ok(r);
+        }
+    };
+}

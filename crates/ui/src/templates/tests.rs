@@ -2,6 +2,7 @@
 //! parent file focused on production code.
 
 use super::*;
+use super::chrome::frame;
 
 /// Strip the inline `<style>...</style>` block from a rendered
 /// page. Used by leak-detection tests that want to inspect the

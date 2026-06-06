@@ -188,7 +188,7 @@ pub fn verify_preview_token(
     let expected_sig = hmac_sign(json_b64.as_bytes(), hmac_key);
     let presented_sig = URL_SAFE_NO_PAD.decode(sig_b64)
         .map_err(|_| CoreError::InvalidRequest("preview token sig decode failed"))?;
-    if !constant_time_eq(&expected_sig, &presented_sig) {
+    if !crate::util::constant_time_eq_bytes(&expected_sig, &presented_sig) {
         return Err(CoreError::InvalidRequest("preview token HMAC mismatch"));
     }
 
@@ -268,12 +268,7 @@ fn hmac_sign(data: &[u8], key: &[u8]) -> Vec<u8> {
     mac.finalize().into_bytes().to_vec()
 }
 
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() { return false; }
-    let mut diff: u8 = 0;
-    for (x, y) in a.iter().zip(b.iter()) { diff |= x ^ y; }
-    diff == 0
-}
+// RFC 096: constant_time_eq_bytes moved to crate::util
 
 // ---------------------------------------------------------------------------
 // Tests

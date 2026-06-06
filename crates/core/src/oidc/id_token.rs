@@ -157,7 +157,7 @@ mod tests {
     }
 
     const NOW: i64 = 1_700_000_000;
-    const TTL: i64 = 3600;
+    const TTL: i64 = crate::timing::ID_TOKEN_TTL_SECS;
 
     #[test]
     fn build_claims_required_only() {

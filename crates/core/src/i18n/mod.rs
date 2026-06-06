@@ -326,9 +326,32 @@ pub enum MessageKey {
 /// `Locale` is exhaustive, and the outer match against
 /// `MessageKey` is exhaustive, so the compiler enforces full
 /// coverage of both axes.
+
+/// Resolve `(key, locale) -> &'static str`. Zero allocation.
+///
+/// Dispatches to one of ten grouped sub-functions (RFC 097) to keep
+/// each group ≤ 150 lines. Every `MessageKey` variant is covered by
+/// exactly one sub-function; the compiler enforces exhaustiveness via
+/// the top-level match in the `inline_tests` module.
 pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
+        if let Some(s) = lookup_flash(&key, locale) { return s; }
+        if let Some(s) = lookup_sessions(&key, locale) { return s; }
+        if let Some(s) = lookup_login(&key, locale) { return s; }
+        if let Some(s) = lookup_totp_flow(&key, locale) { return s; }
+        if let Some(s) = lookup_security(&key, locale) { return s; }
+        if let Some(s) = lookup_sessions_bulk(&key, locale) { return s; }
+        if let Some(s) = lookup_magic_link_totp_pages(&key, locale) { return s; }
+        if let Some(s) = lookup_admin(&key, locale) { return s; }
+    // Fallback: panic with the key name so missing translations fail loudly
+    // during development. In production this path is unreachable if the
+    // exhaustive-match test in i18n/tests.rs passes.
+    panic!("i18n: no translation for {key:?} in locale {locale:?}")
+}
+
+#[inline]
+fn lookup_flash(key: &MessageKey, locale: Locale) -> Option<&'static str> {
     use MessageKey::*;
-    match key {
+    Some(match key {
         // ----- flash banners -----
         FlashTotpEnabled => match locale {
             Locale::Ja => "TOTP を有効にしました。",
@@ -357,6 +380,14 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
             Locale::En => "That code didn't match. Enter the latest 6-digit code from your authenticator app.",
         },
 
+        _ => return None,
+    })
+}
+
+#[inline]
+fn lookup_sessions(key: &MessageKey, locale: Locale) -> Option<&'static str> {
+    use MessageKey::*;
+    Some(match key {
         // ----- /me/security/sessions page chrome -----
         SessionsPageTitle => match locale {
             Locale::Ja => "アクティブなセッション",
@@ -423,6 +454,14 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
             Locale::En => "Session ID",
         },
 
+        _ => return None,
+    })
+}
+
+#[inline]
+fn lookup_login(key: &MessageKey, locale: Locale) -> Option<&'static str> {
+    use MessageKey::*;
+    Some(match key {
         // ----- v0.39.0: login page -----
         LoginTitle => match locale {
             // JA: action-verb form to distinguish from
@@ -477,6 +516,14 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
             Locale::En => "Magic Link is currently unavailable. Please sign in with a passkey.",
         },
 
+        _ => return None,
+    })
+}
+
+#[inline]
+fn lookup_totp_flow(key: &MessageKey, locale: Locale) -> Option<&'static str> {
+    use MessageKey::*;
+    Some(match key {
         // ----- v0.39.0: TOTP enroll -----
         TotpEnrollTitle => match locale {
             Locale::Ja => "Authenticator を設定する",
@@ -573,6 +620,14 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
             Locale::En => "That code didn't match. Try again.",
         },
 
+        _ => return None,
+    })
+}
+
+#[inline]
+fn lookup_security(key: &MessageKey, locale: Locale) -> Option<&'static str> {
+    use MessageKey::*;
+    Some(match key {
         // ----- v0.39.0: Security Center index -----
         SecurityTitle => match locale {
             Locale::Ja => "セキュリティ",
@@ -662,6 +717,14 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
             Locale::En => "Sessions: {n}",
         },
 
+        _ => return None,
+    })
+}
+
+#[inline]
+fn lookup_sessions_bulk(key: &MessageKey, locale: Locale) -> Option<&'static str> {
+    use MessageKey::*;
+    Some(match key {
         // ----- v0.45.0: bulk "revoke all other sessions" -----
         SessionsRevokeOthersButton => match locale {
             // Action label on the button. Verb form so it
@@ -737,6 +800,14 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
             Locale::En => "Anonymous trial",
         },
 
+        _ => return None,
+    })
+}
+
+#[inline]
+fn lookup_magic_link_totp_pages(key: &MessageKey, locale: Locale) -> Option<&'static str> {
+    use MessageKey::*;
+    Some(match key {
         // ----- Magic Link "Check your inbox" page -----
         MagicLinkSentPageTitle => match locale {
             Locale::Ja => "メールを確認 - cesauth",
@@ -841,6 +912,15 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
             Locale::En => "Yes, disable TOTP",
         },
 
+        _ => return None,
+    })
+}
+
+#[inline]
+#[inline]
+fn lookup_admin(key: &MessageKey, locale: Locale) -> Option<&'static str> {
+    use MessageKey::*;
+    Some(match key {
         // ----- Error page -----
         ErrorPageBackLink => match locale {
             Locale::Ja => "サインインに戻る",
@@ -1008,7 +1088,8 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
             Locale::Ja => "この削除を即時実行しますか? 取り消せません",
             Locale::En => "Execute this deletion immediately? This is irreversible.",
         },
-    }
+        _ => return None,
+    })
 }
 
 // =====================================================================

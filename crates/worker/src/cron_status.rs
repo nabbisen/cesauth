@@ -53,8 +53,8 @@ impl CronPassRecord {
     ) -> Self {
         Self {
             pass_name:       pass_name.into(),
-            started_at:      fmt_unix(started_unix),
-            finished_at:     fmt_unix(finished_unix),
+            started_at:      cesauth_core::util::format_unix_as_iso8601(started_unix),
+            finished_at:     cesauth_core::util::format_unix_as_iso8601(finished_unix),
             success,
             processed_count,
             mode:            mode.into(),
@@ -67,27 +67,4 @@ impl CronPassRecord {
     }
 }
 
-fn fmt_unix(unix: i64) -> String {
-    // Minimal ISO-8601 UTC (no external dep) — same logic as admin/service.rs
-    let secs = unix.max(0) as u64;
-    let (h, m, s) = {
-        let t = secs % 86400;
-        (t / 3600, (t % 3600) / 60, t % 60)
-    };
-    let days = secs / 86400;
-    let (y, mo, d) = days_to_ymd(days);
-    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}Z")
-}
-
-fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
-    let y400 = days / 146097; days %= 146097;
-    let y100 = (days / 36524).min(3); days -= y100 * 36524;
-    let y4   = days / 1461;           days %= 1461;
-    let y1   = (days / 365).min(3);   days -= y1 * 365;
-    let year = y400 * 400 + y100 * 100 + y4 * 4 + y1 + 1970;
-    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
-    let md: [u64; 12] = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let mut mo = 0u64;
-    for &m in &md { if days < m { break; } days -= m; mo += 1; }
-    (year, mo + 1, days + 1)
-}
+// RFC 096: fmt_unix and days_to_ymd replaced by cesauth_core::util

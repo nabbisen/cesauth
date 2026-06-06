@@ -1,8 +1,6 @@
-use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
 use super::error::{MigrateError, MigrateResult};
 use super::types::{FORMAT_VERSION, Manifest, PayloadLine};
-use super::redaction::RedactionProfile;
 
 #[derive(Debug, Clone)]
 pub struct VerifyReport {

@@ -1,7 +1,5 @@
-use serde::{Deserialize, Serialize};
-use sha2::Digest as _;
 use super::error::{MigrateError, MigrateResult};
-use super::types::{FORMAT_VERSION, Manifest, PayloadLine, SCHEMA_VERSION};
+use super::types::{PayloadLine};
 use super::import::ImportSink;
 use super::verify::verify as verify_dump;
 

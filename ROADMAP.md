@@ -102,6 +102,12 @@ started.
 
 ### Next minor releases
 
+- ✅ **v0.66.0 — RFC 096-103 (codebase audit remediation).**
+  Zero non-deprecated warnings. Shared util.rs (5 constant_time_eq → 1, 3 ISO-8601 → 1).
+  timing.rs (7 TTL constants). routes.rs (165 paths). i18n/mod.rs split (lookup 684 lines → 8 groups).
+  templates/ split (1537 lines → 4 files). admin/service/ split. Auth boilerplate macros.
+  1,204 tests (+12 util).
+
 - ✅ **v0.65.0 — RFC 092-095 (SaaS acceptance criteria + docs).** ER diagram,
   acceptance report, feature flag verification. 1,192 tests.
 
@@ -115,6 +121,12 @@ started.
   surface (/admin/console/operations, KV-backed). RFC 082: design token unification
   (--success/--warning/--danger aliases). RFC 083: rollback hint (already existed).
   RFC 084: sessions drift note. 1,156 tests. Routes: 165.
+
+- ✅ **v0.66.0 — RFC 096-103 (codebase audit remediation).**
+  Zero non-deprecated warnings. Shared util.rs (5 constant_time_eq → 1, 3 ISO-8601 → 1).
+  timing.rs (7 TTL constants). routes.rs (165 paths). i18n/mod.rs split (lookup 684 lines → 8 groups).
+  templates/ split (1537 lines → 4 files). admin/service/ split. Auth boilerplate macros.
+  1,204 tests (+12 util).
 
 - ✅ **v0.65.0 — RFC 092-095 (SaaS acceptance criteria + docs).** ER diagram,
   acceptance report, feature flag verification. 1,192 tests.

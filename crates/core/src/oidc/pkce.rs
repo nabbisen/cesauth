@@ -55,7 +55,7 @@ pub fn verify(verifier: &str, challenge: &str, method: ChallengeMethod) -> CoreR
             let computed = URL_SAFE_NO_PAD.encode(digest);
             // Constant-time compare. Sha256 output plus its base64
             // encoding is not secret, but habits matter.
-            if constant_time_eq(computed.as_bytes(), challenge.as_bytes()) {
+            if crate::util::constant_time_eq_bytes(computed.as_bytes(), challenge.as_bytes()) {
                 Ok(())
             } else {
                 Err(CoreError::PkceMismatch)
@@ -64,16 +64,7 @@ pub fn verify(verifier: &str, challenge: &str, method: ChallengeMethod) -> CoreR
     }
 }
 
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
-    }
-    diff == 0
-}
+// RFC 096: constant_time_eq_bytes moved to crate::util
 
 #[cfg(test)]
 mod tests;

@@ -1,9 +1,9 @@
-use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
 use super::error::{MigrateError, MigrateResult};
 use super::types::{FORMAT_VERSION, Manifest, PayloadLine, TableSummary};
 use super::redaction::{RedactionProfile, apply_redaction};
 
+#[derive(Debug)]
 pub struct ExportSpec<'a> {
     pub cesauth_version:       &'a str,
     pub schema_version:        u32,

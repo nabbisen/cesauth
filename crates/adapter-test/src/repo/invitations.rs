@@ -1,6 +1,5 @@
 //! In-memory `InvitationRepository` implementation for tests.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 

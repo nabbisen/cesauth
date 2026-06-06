@@ -48,7 +48,7 @@ use crate::config::{Config, load_session_cookie_key};
 /// otherwise they fall back to the default landing.
 pub const LOGIN_NEXT_COOKIE: &str = "__Host-cesauth_login_next";
 /// 5 minutes. Same shape as the OAuth pending cookie's TTL.
-pub const LOGIN_NEXT_TTL_SECS: i64 = 300;
+pub const LOGIN_NEXT_TTL_SECS: i64 = cesauth_core::timing::LOGIN_NEXT_TTL_SECS;
 
 
 /// Build a 302 response redirecting to `/login` with no `next`

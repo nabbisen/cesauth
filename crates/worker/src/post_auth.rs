@@ -114,7 +114,7 @@ pub fn extract_totp_handle(cookie_header: &str) -> Option<&str> {
 /// AR state forever. 5 minutes matches the typical TOTP step
 /// tolerance window of a few minutes plus generous user-fumble
 /// time.
-pub const TOTP_GATE_TTL_SECS: i64 = 300;
+pub const TOTP_GATE_TTL_SECS: i64 = cesauth_core::timing::TOTP_GATE_TTL_SECS;
 
 // =====================================================================
 // TOTP enrollment cookie (__Host-cesauth_totp_enroll). v0.29.0+.
@@ -160,7 +160,7 @@ pub fn extract_totp_enroll_id(cookie_header: &str) -> Option<&str> {
 /// enrollment is a one-time interactive flow where the user
 /// switches to their authenticator app, scans, and returns —
 /// app-switch context cost can be substantial.
-pub const TOTP_ENROLL_TTL_SECS: i64 = 900;
+pub const TOTP_ENROLL_TTL_SECS: i64 = cesauth_core::timing::TOTP_ENROLL_TTL_SECS;
 
 /// Finalize authentication. Issues the session cookie and, if there is
 /// a parked `PendingAuthorize`, mints an AuthCode and redirects to the

@@ -37,7 +37,7 @@ use crate::types::UnixSeconds;
 // ---------------------------------------------------------------------------
 
 /// Default invitation TTL: 72 hours.
-pub const DEFAULT_INVITE_TTL_SECS: i64 = 72 * 3600;
+pub const DEFAULT_INVITE_TTL_SECS: i64 = crate::timing::INVITATION_TTL_SECS;
 
 // ---------------------------------------------------------------------------
 // Domain types

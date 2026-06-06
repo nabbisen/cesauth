@@ -2,21 +2,13 @@
 
 use worker::{Request, Response, RouteContext};
 
+use cesauth_core::admin::types::AdminAction;
 use cesauth_ui::admin::operations::{operations_page, CronPassDisplay};
 
-use super::super::auth;
+use crate::require_system_admin;
 
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> worker::Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
-        Ok(p)  => p,
-        Err(r) => return Ok(r),
-    };
-    if let Err(r) = auth::ensure_role_allows(
-        &principal,
-        cesauth_core::admin::types::AdminAction::ViewConsole,
-    ) {
-        return Ok(r);
-    }
+    require_system_admin!(req, ctx, principal, AdminAction::ViewConsole);
 
     // Load cron pass records from KV (best-effort — None if KV unavailable).
     let kv = ctx.env.kv("CESAUTH_KV").ok();

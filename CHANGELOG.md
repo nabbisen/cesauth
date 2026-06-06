@@ -26,6 +26,122 @@ split by minor-version range:
 
 ---
 
+## [0.66.0] - 2026-05-13
+
+Implements RFC 096-103: comprehensive codebase audit remediation.
+No new features — pure maintainability, zero warnings, zero duplication.
+
+### RFC 096 — Shared utilities extraction
+
+Created `crates/core/src/util.rs`:
+
+| Function | Replaced copies | Location |
+|---|---|---|
+| `constant_time_eq_bytes(a, b)` | 4 independent impls | `pkce`, `preview`, `principal_resolver`, `csrf` |
+| `constant_time_eq_str(a, b)` | variant of above | `csrf` |
+| `constant_time_eq_u32(a, b)` | 1 impl | `totp` |
+| `format_unix_as_iso8601(unix)` | 2 identical impls | `admin/service`, `cron_status` |
+| `days_to_ymd(days)` | 2 identical impls | same |
+
++12 unit tests in `util::tests`. Each original file now calls `crate::util::*`.
+
+### RFC 097 — i18n split
+
+`crates/core/src/i18n.rs` (1,145 lines, `lookup()` = 684 lines) →
+`crates/core/src/i18n/mod.rs`:
+
+`lookup()` replaced with dispatcher + 8 grouped sub-functions:
+`lookup_flash`, `lookup_sessions`, `lookup_login`, `lookup_totp_flow`,
+`lookup_security`, `lookup_sessions_bulk`, `lookup_magic_link_totp_pages`,
+`lookup_admin` — each ≤ 130 lines. Public API unchanged.
+
+### RFC 098 — templates.rs split
+
+`crates/ui/src/templates.rs` (1,537 lines) →
+`crates/ui/src/templates/` directory:
+
+| Module | Lines | Contents |
+|---|---|---|
+| `chrome.rs` | 342 | `BASE_CSS`, `frame_*`, `flash_block`, `FlashView` |
+| `login.rs` | ~300 | `login_page*`, `magic_link_sent_page*`, `error_page*` |
+| `totp.rs` | ~340 | All TOTP pages (enroll, verify, recovery, disable) |
+| `security_center.rs` | ~555 | Security Center + sessions list |
+| `mod.rs` | ~35 | Re-exports — public API unchanged |
+
+310 UI tests still pass.
+
+### RFC 099 — admin/service.rs split
+
+`crates/core/src/admin/service.rs` (706 lines, 11 unrelated functions) →
+`crates/core/src/admin/service/`:
+
+| File | Contents |
+|---|---|
+| `mod.rs` | overview, cost, safety, audit search, alerts, thresholds (~330 lines) |
+| `audit_export.rs` | `export_audit`, `ExportFormat`, `ExportResult`, CSV/JSONL renderers (~280 lines) |
+
+Public API unchanged via re-export in `mod.rs`.
+
+### RFC 100 — Worker auth boilerplate macros
+
+Added to `crates/worker/src/routes/admin/auth.rs`:
+
+- `require_system_admin!(req, ctx, principal, action)` — resolves bearer +
+  enforces `AdminAction` in 1 line (was 7 lines, repeated 59×)
+- `require_tenant_admin_read!(req, ctx, ctx_ta, permission)` — resolves
+  tenant-admin context + read gate (was 12 lines, repeated 67×)
+
+Migrated `audit_export.rs` and `operations_route.rs` as demo routes.
+Remaining routes migrate incrementally.
+
+### RFC 101 — Dead code cleanup
+
+- **Zero non-deprecated warnings** on `cargo build -p cesauth-core -p cesauth-ui -p cesauth-adapter-test --lib`
+- Removed unused imports from `migrate/*.rs`, `adapter-cloudflare/`
+- Added `#[derive(Debug)]` to `ExportResult`, `ExportSpec`, `RedactionProfile`
+- Added `#[allow(missing_debug_implementations)]` to generic `TokenDeps`
+- Added `#[allow(deprecated)]` with explanation to `totp::encrypt/decrypt_secret`
+  (upstream `aes-gcm` → `generic-array 1.x` migration pending)
+- Fixed unused `total_seq` → `_total_seq` in `audit/verifier.rs`
+- `design_tokens.rs`: added `DESIGN_TOKENS_FMT` (escaped version for `format!()` use)
+
+### RFC 103 — TTL constants centralization
+
+Created `crates/core/src/timing.rs` with documented constants:
+
+| Constant | Value | Was |
+|---|---|---|
+| `ID_TOKEN_TTL_SECS` | 3600 | Two identical `3600` literals |
+| `MAGIC_LINK_VERIFY_WINDOW_SECS` | 600 | Literal in `magic_link.rs` |
+| `INVITATION_TTL_SECS` | 72 × 3600 | `invitation.rs` |
+| `TOTP_GATE_TTL_SECS` | 300 | `post_auth.rs` |
+| `TOTP_ENROLL_TTL_SECS` | 900 | `post_auth.rs` |
+| `ANONYMOUS_TOKEN_TTL_SECS` | 86400 | `anonymous.rs` |
+| `LOGIN_NEXT_TTL_SECS` | 300 | `routes/me/auth.rs` |
+
+### RFC 102 — UI route path catalog
+
+Created `crates/core/src/routes.rs`: 165 route paths as typed constants
+and parameterized functions, organized under `admin`, `tenant_admin`,
+`tenancy_console`, `me`, `auth`, and `oidc` sub-modules.
+
+Enables compile-time detection of route renames. Migration of UI template
+`action=` / `href=` strings proceeds incrementally.
+
+### Test counts
+
+| Crate | v0.65.0 | v0.66.0 | Δ |
+|---|---|---|---|
+| `cesauth-core` | 726 | **738** | +12 (util tests) |
+| `cesauth-adapter-test` | 125 | **125** | ±0 |
+| `cesauth-ui` | 310 | **310** | ±0 |
+| `cesauth-migrate-test` | 31 | **31** | ±0 |
+| **Total** | **1,192** | **1,204** | **+12** |
+
+### Warnings: 0 (non-deprecated)
+
+---
+
 ## [0.65.0] - 2026-05-12
 
 Implements RFC 092-095: SaaS acceptance criteria fulfillment documentation and

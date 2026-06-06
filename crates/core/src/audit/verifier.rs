@@ -97,7 +97,7 @@ where
     };
 
     let outcome = walk_and_verify(repo, resume_from, &prior).await?;
-    let total_seq = match &outcome.last_good {
+    let _total_seq = match &outcome.last_good {
         Some(seq) => *seq,
         None => match &prior {
             Some(cp) => cp.last_verified_seq,

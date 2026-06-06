@@ -25,7 +25,7 @@ use crate::ports::store::{
 use crate::types::Scopes;
 
 /// Default id_token TTL: 1 hour (same as access token in the reference deployment).
-const ID_TOKEN_TTL_SECS: i64 = 3600;
+// RFC 103: crate::timing::ID_TOKEN_TTL_SECS now in crate::timing
 
 // ---------------------------------------------------------------------------
 // Dependency + config structs (RFC 041)
@@ -36,6 +36,7 @@ const ID_TOKEN_TTL_SECS: i64 = 3600;
 /// Construct once per request and pass by reference to `exchange_code` /
 /// `rotate_refresh`. This replaces the previous 4-5 generic type parameters
 /// per function, making call sites readable and error messages tractable.
+#[allow(missing_debug_implementations)]
 pub struct TokenDeps<'r, CR, AS, FS, GR, UR, RL>
 where
     CR: ClientRepository,
@@ -210,7 +211,7 @@ where
             challenge_nonce.as_deref(),
             challenge_auth_time,
             input.now_unix,
-            ID_TOKEN_TTL_SECS,
+            crate::timing::ID_TOKEN_TTL_SECS,
         );
         Some(sign_id_token(&claims, signer)?)
     } else {
@@ -367,7 +368,7 @@ where
                     None, // no nonce on refresh (already consumed at authorization)
                     fam.auth_time,         // original auth event time
                     input.now_unix,        // iat for this id_token
-                    ID_TOKEN_TTL_SECS,
+                    crate::timing::ID_TOKEN_TTL_SECS,
                 );
                 Some(sign_id_token(&claims_id, signer)?)
             } else {

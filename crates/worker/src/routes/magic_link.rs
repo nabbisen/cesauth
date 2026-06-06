@@ -51,7 +51,7 @@ const MAIL_REQUEST_WINDOW_SECS: i64 = 300;
 const MAIL_REQUEST_LIMIT:       u32 = 5;
 const MAIL_REQUEST_ESCALATE:    u32 = 3;
 
-const MAIL_VERIFY_WINDOW_SECS:  i64 = 600;
+const MAIL_VERIFY_WINDOW_SECS: i64 = cesauth_core::timing::MAGIC_LINK_VERIFY_WINDOW_SECS;
 const MAIL_VERIFY_LIMIT:        u32 = 5;
 const MAIL_VERIFY_ESCALATE:     u32 = 3;
 

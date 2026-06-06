@@ -141,7 +141,8 @@ pub fn admin_frame_for(
     --muted:    #666;
     --border:   #ddd;
     --accent:   #1d4ed8;
-    /* RFC 082: shared semantic status tokens (mirrors templates.rs BASE_CSS) */
+    /* RFC 101: semantic tokens injected from design_tokens::DESIGN_TOKENS_FMT.
+     * Values maintained in crates/ui/src/design_tokens.rs — do not duplicate. */
     --success:    #1f9d55;
     --success-bg: #e8f5e9;
     --warning:    #b76e00;
@@ -150,7 +151,6 @@ pub fn admin_frame_for(
     --danger-bg:  #fdecea;
     --info:       #1864ab;
     --info-bg:    #e7f5ff;
-    /* backward-compat aliases for existing admin CSS uses */
     --ok:       var(--success);
     --warn:     var(--warning);
     --critical: var(--danger);

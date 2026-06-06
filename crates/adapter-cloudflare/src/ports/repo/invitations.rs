@@ -4,7 +4,6 @@ use cesauth_core::invitation::{Invitation, InvitationRepository};
 use cesauth_core::ports::{PortError, PortResult};
 use cesauth_core::types::UnixSeconds;
 use serde::Deserialize;
-use worker::wasm_bindgen::JsValue;
 use worker::Env;
 
 use super::{d1_int, db, run_err};
