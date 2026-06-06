@@ -166,6 +166,25 @@ button:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
 .badge--danger  { color: var(--danger);  }
 .badge--info    { color: var(--info);    }
 
+/* RFC 077: skip-to-content link (WCAG 2.4.1 Bypass Blocks).
+ * Visually hidden until focused; slides in from above on focus. */
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 0;
+  padding: 0.5rem 1rem;
+  background: var(--bg);
+  color: var(--accent);
+  text-decoration: underline;
+  z-index: 1000;
+  transition: top 0.15s ease-in-out;
+}
+.skip-link:focus {
+  top: 0;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .muted { color: var(--muted); font-size: 0.9em; }
 footer { margin-top: 3rem; color: var(--muted); font-size: 0.8em; text-align: center; }
 
@@ -183,6 +202,19 @@ footer { margin-top: 3rem; color: var(--muted); font-size: 0.8em; text-align: ce
   white-space: nowrap;
   border: 0;
 }
+
+/* RFC 075: Security Center mobile state summary card.
+ * Flex-wrapped badge list so badges reflow on narrow viewports. */
+.security-summary__badges {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.security-summary__badges .badge__icon { flex-shrink: 0; }
+.security-summary__badges .badge__text { white-space: nowrap; }
 "#;
 
 /// View model for [`flash_block`]. Carries the level + display
@@ -265,17 +297,26 @@ pub fn flash_block(view: Option<FlashView>) -> String {
 }
 
 fn frame(title: &str, body: &str) -> String {
-    frame_with_flash(title, "", body)
+    frame_with_flash(title, "", body, cesauth_core::i18n::Locale::default())
+}
+
+fn frame_for(title: &str, body: &str, locale: cesauth_core::i18n::Locale) -> String {
+    frame_with_flash(title, "", body, locale)
 }
 
 /// Like [`frame`] but allows the caller to splice a flash banner
 /// at the top of `<main>`. `flash_html` should typically come from
 /// [`flash_block`]; an empty string yields a flash-less page.
-fn frame_with_flash(title: &str, flash_html: &str, body: &str) -> String {
-    let nonce = crate::render_nonce();
+///
+/// `locale` controls the `<html lang>` attribute (RFC 072).
+fn frame_with_flash(title: &str, flash_html: &str, body: &str, locale: cesauth_core::i18n::Locale) -> String {
+    use cesauth_core::i18n::{lookup, MessageKey};
+    let nonce    = crate::render_nonce();
+    let lang     = locale.bcp47();
+    let skip_txt = escape(lookup(MessageKey::SkipToMainContent, locale));
     format!(
-        r#"<!doctype html>
-<html lang="en">
+        r##"<!doctype html>
+<html lang="{lang}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -283,17 +324,20 @@ fn frame_with_flash(title: &str, flash_html: &str, body: &str) -> String {
   <style nonce="{nonce}">{css}</style>
 </head>
 <body>
-<main>
+<a href="#main" class="skip-link">{skip}</a>
+<main id="main">
 {flash}
 {body}
 </main>
 <footer>cesauth</footer>
 </body>
 </html>
-"#,
+"##,
+        lang  = lang,
         title = escape(title),
         css   = BASE_CSS,
         nonce = nonce,
+        skip  = skip_txt,
         flash = flash_html,
         body  = body,
     )
@@ -482,7 +526,7 @@ pub fn login_page_for(
         nonce              = nonce,
     );
 
-    frame(lookup(MessageKey::LoginPageTitleHtml, locale), &body)
+    frame_for(lookup(MessageKey::LoginPageTitleHtml, locale), &body, locale)
 }
 
 /// Page shown after a Magic Link has been sent. Does not reveal whether
@@ -546,7 +590,7 @@ pub fn magic_link_sent_page_for(
         handle      = escape(handle),
         csrf        = escape(csrf_token),
     );
-    frame(lookup(MessageKey::MagicLinkSentPageTitle, locale), &body)
+    frame_for(lookup(MessageKey::MagicLinkSentPageTitle, locale), &body, locale)
 }
 
 /// Generic error page. The worker layer maps specific errors to strings
@@ -574,7 +618,7 @@ pub fn error_page_for(
         detail = escape(detail),
         back   = escape(lookup(MessageKey::ErrorPageBackLink, locale)),
     );
-    frame(title, &body)
+    frame_for(title, &body, locale)
 }
 
 // =====================================================================
@@ -682,7 +726,7 @@ pub fn totp_enroll_page_for(
         err_block = err_block,
         csrf      = escape(csrf_token),
     );
-    frame(lookup(MessageKey::TotpEnrollPageTitleHtml, locale), &body)
+    frame_for(lookup(MessageKey::TotpEnrollPageTitleHtml, locale), &body, locale)
 }
 
 /// Recovery-codes display page. Shown ONCE after successful
@@ -696,7 +740,7 @@ pub fn totp_enroll_page_for(
 /// before saving, they have to disable TOTP and re-enroll to
 /// get fresh codes.
 pub fn totp_recovery_codes_page(codes: &[String]) -> String {
-    totp_recovery_codes_page_for(codes, cesauth_core::i18n::Locale::default())
+    totp_recovery_codes_page_for(codes, "", cesauth_core::i18n::Locale::default())
 }
 
 /// **v0.47.0** — Locale-aware variant of
@@ -705,15 +749,22 @@ pub fn totp_recovery_codes_page(codes: &[String]) -> String {
 /// alphanumeric strings, locale-invariant); only the
 /// surrounding chrome and warning copy do.
 pub fn totp_recovery_codes_page_for(
-    codes: &[String],
-    locale: cesauth_core::i18n::Locale,
+    codes:       &[String],
+    csrf_token:  &str,
+    locale:      cesauth_core::i18n::Locale,
 ) -> String {
     use cesauth_core::i18n::{lookup, MessageKey};
+    let nonce = crate::render_nonce();
     let codes_html: String = codes.iter()
         .map(|c| format!("<li><code>{}</code></li>", escape(c)))
         .collect::<Vec<_>>()
         .join("\n");
 
+    // RFC 076: save-confirmation gate.
+    // The proceed button starts disabled; JS enables it when the
+    // checkbox is checked. Without JS, `required` on the checkbox
+    // enforces native browser validation. Server-side validation
+    // checks `saved_confirm=on` in the POST body (in the worker handler).
     let body = format!(
         r#"<h1>{heading}</h1>
 <div class="warning" role="alert" aria-live="assertive">
@@ -727,15 +778,42 @@ pub fn totp_recovery_codes_page_for(
 
 <p>{body_text}</p>
 
-<p><a href="/me/security">{cont}</a></p>"#,
-        heading      = escape(lookup(MessageKey::TotpRecoveryCodesHeading,      locale)),
+<form method="POST" action="/me/security/totp/recover/confirm">
+  <input type="hidden" name="csrf"         value="{csrf}">
+  <fieldset class="save-gate">
+    <legend class="visually-hidden">{gate_legend}</legend>
+    <label class="save-gate__label">
+      <input id="saved-confirm"
+             name="saved_confirm"
+             type="checkbox"
+             required>
+      <span>{confirm_label}</span>
+    </label>
+  </fieldset>
+  <button id="proceed-btn" type="submit" class="secondary" disabled>{proceed_btn}</button>
+</form>
+
+<script defer nonce="{nonce}">
+(function() {{
+  var cb  = document.getElementById('saved-confirm');
+  var btn = document.getElementById('proceed-btn');
+  if (cb && btn) {{
+    cb.addEventListener('change', function() {{ btn.disabled = !cb.checked; }});
+  }}
+}})();
+</script>"#,
+        heading      = escape(lookup(MessageKey::TotpRecoveryCodesHeading,     locale)),
         alert_strong = escape(lookup(MessageKey::TotpRecoveryCodesAlertStrong, locale)),
         alert_body   = escape(lookup(MessageKey::TotpRecoveryCodesAlertBody,   locale)),
         body_text    = escape(lookup(MessageKey::TotpRecoveryCodesBody,        locale)),
-        cont         = escape(lookup(MessageKey::TotpRecoveryCodesContinue,    locale)),
+        gate_legend  = "保存確認",  // admin-side is JA; end-user route is also fine with short literal
+        confirm_label= escape(lookup(MessageKey::TotpRecoverySavedConfirmLabel, locale)),
+        proceed_btn  = escape(lookup(MessageKey::TotpRecoveryProceedButton,    locale)),
         codes        = codes_html,
+        csrf         = escape(csrf_token),
+        nonce        = nonce,
     );
-    frame(lookup(MessageKey::TotpRecoveryCodesPageTitle, locale), &body)
+    frame_for(lookup(MessageKey::TotpRecoveryCodesPageTitle, locale), &body, locale)
 }
 
 /// TOTP verify page. Shown by `GET /me/security/totp/verify`
@@ -818,7 +896,7 @@ pub fn totp_verify_page_for(
         error_block        = error_block,
         csrf               = escape(csrf_token),
     );
-    frame(lookup(MessageKey::TotpVerifyPageTitleHtml, locale), &body)
+    frame_for(lookup(MessageKey::TotpVerifyPageTitleHtml, locale), &body, locale)
 }
 
 /// TOTP disable confirmation page. Shown by `GET /me/security/totp/disable`
@@ -877,7 +955,7 @@ pub fn totp_disable_confirm_page_for(
         cancel          = escape(lookup(MessageKey::TotpEnrollCancelLink,      locale)),
         csrf            = escape(csrf_token),
     );
-    frame(lookup(MessageKey::TotpDisablePageTitle, locale), &body)
+    frame_for(lookup(MessageKey::TotpDisablePageTitle, locale), &body, locale)
 }
 
 // =====================================================================
@@ -939,6 +1017,10 @@ pub struct SecurityCenterState {
     pub primary_method:           PrimaryAuthMethod,
     pub totp_enabled:             bool,
     pub recovery_codes_remaining: u32,
+    /// **RFC 075** — Active session count for the current user.
+    /// Populated by the worker handler via the session-index store.
+    /// `None` if the count is unavailable (e.g. DO temporarily unreachable).
+    pub active_sessions_count:    Option<u32>,
 }
 
 /// Render the Security Center index page.
@@ -984,6 +1066,67 @@ pub fn security_center_page_for(
 ) -> String {
     use cesauth_core::i18n::{lookup, MessageKey};
 
+    // ── RFC 075: mobile state summary card ────────────────────────────────
+    // Badge tokens: passkey state, TOTP state, recovery count, sessions count.
+    // Each badge carries icon + text (WCAG 1.4.1 — no color-only status).
+
+    let passkey_badge = {
+        let (token, icon, label) = match state.primary_method {
+            PrimaryAuthMethod::Passkey    => ("success", "✓", lookup(MessageKey::SecuritySummaryPasskeyOk,       locale)),
+            PrimaryAuthMethod::Anonymous  => ("info",    "·", lookup(MessageKey::SecuritySummaryPasskeyAnonymous, locale)),
+            PrimaryAuthMethod::MagicLink  => ("warning", "◇", lookup(MessageKey::SecuritySummaryPasskeyMagicLink, locale)),
+        };
+        format!(r#"<li><span class="badge badge--{token}"><span class="badge__icon" aria-hidden="true">{icon}</span><span class="badge__text">{label}</span></span></li>"#,
+            token = token, icon = icon, label = escape(label))
+    };
+
+    let totp_badge = if !matches!(state.primary_method, PrimaryAuthMethod::Anonymous) {
+        let (token, icon, label) = if state.totp_enabled {
+            ("success", "✓", lookup(MessageKey::SecuritySummaryTotpEnabled, locale))
+        } else {
+            ("warning", "△", lookup(MessageKey::SecuritySummaryTotpDisabled, locale))
+        };
+        format!(r#"<li><span class="badge badge--{token}"><span class="badge__icon" aria-hidden="true">{icon}</span><span class="badge__text">{label}</span></span></li>"#,
+            token = token, icon = icon, label = escape(label))
+    } else {
+        String::new()
+    };
+
+    let recovery_badge = if state.totp_enabled {
+        let n = state.recovery_codes_remaining;
+        let (token, icon) = if n == 0 { ("danger", "✗") }
+                            else if n <= 2 { ("warning", "△") }
+                            else { ("success", "✓") };
+        let template = lookup(MessageKey::SecuritySummaryRecovery, locale);
+        let label = template.replace("{n}", &n.to_string());
+        format!(r#"<li><span class="badge badge--{token}"><span class="badge__icon" aria-hidden="true">{icon}</span><span class="badge__text">{label}</span></span></li>"#,
+            token = token, icon = icon, label = escape(&label))
+    } else {
+        String::new()
+    };
+
+    let sessions_badge = match state.active_sessions_count {
+        Some(n) => {
+            let template = lookup(MessageKey::SecuritySummarySessions, locale);
+            let label = template.replace("{n}", &n.to_string());
+            format!(r#"<li><span class="badge badge--info"><span class="badge__icon" aria-hidden="true">▣</span><span class="badge__text">{label}</span></span></li>"#,
+                label = escape(&label))
+        }
+        None => String::new(),
+    };
+
+    let summary_card = format!(
+        r#"<section class="security-summary" aria-labelledby="summary-heading">
+  <h2 id="summary-heading" class="visually-hidden">{heading}</h2>
+  <ul class="security-summary__badges">{passkey}{totp}{recovery}{sessions}</ul>
+</section>"#,
+        heading  = escape(lookup(MessageKey::SecuritySummaryHeading, locale)),
+        passkey  = passkey_badge,
+        totp     = totp_badge,
+        recovery = recovery_badge,
+        sessions = sessions_badge,
+    );
+
     let primary_row = format!(
         r#"<section class="security-row" aria-labelledby="primary-heading">
   <h2 id="primary-heading">{heading}</h2>
@@ -1009,6 +1152,8 @@ pub fn security_center_page_for(
         r#"<h1>{title}</h1>
 <p class="muted">{intro}</p>
 
+{summary_card}
+
 {primary_row}
 
 {totp_section}
@@ -1026,10 +1171,11 @@ pub fn security_center_page_for(
         sessions_intro   = escape(lookup(MessageKey::SecuritySessionsIntro,    locale)),
         sessions_link    = escape(lookup(MessageKey::SecuritySessionsLink,     locale)),
         back             = escape(lookup(MessageKey::SecurityBackLink,         locale)),
+        summary_card     = summary_card,
         primary_row      = primary_row,
         totp_section     = totp_section,
     );
-    frame_with_flash(lookup(MessageKey::SecurityPageTitleHtml, locale), flash_html, &body)
+    frame_with_flash(lookup(MessageKey::SecurityPageTitleHtml, locale), flash_html, &body, locale)
 }
 
 /// TOTP subsection of the Security Center. Branches on
@@ -1254,7 +1400,7 @@ pub fn sessions_page_for(
         "{} - cesauth",
         lookup(MessageKey::SessionsPageTitle, locale),
     );
-    frame_with_flash(&page_title, flash_html, &body)
+    frame_with_flash(&page_title, flash_html, &body, locale)
 }
 
 fn render_session_row(s: &SessionListItem, csrf_token: &str) -> String {

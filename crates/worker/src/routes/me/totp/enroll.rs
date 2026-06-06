@@ -525,7 +525,10 @@ pub async fn post_confirm_handler(
             // **v0.47.0** — negotiate locale for the
             // recovery-codes page render.
             let locale = crate::i18n::resolve_locale(&req);
-            let html = templates::totp_recovery_codes_page_for(&plaintext_codes, locale);
+            let csrf = crate::csrf::extract_from_cookie_header(
+                &req.headers().get("cookie").unwrap_or_default().unwrap_or_default(),
+            ).unwrap_or_default().to_owned();
+            let html = templates::totp_recovery_codes_page_for(&plaintext_codes, &csrf, locale);
             let mut resp = Response::from_html(html)?;
             let h = resp.headers_mut();
             h.append("set-cookie", &post_auth::clear_totp_enroll_cookie_header()).ok();

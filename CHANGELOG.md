@@ -26,6 +26,126 @@ split by minor-version range:
 
 ---
 
+## [0.62.0] - 2026-05-12
+
+Implements RFC 071-078: full P0/P1 UI/UX alignment from the v0.50.1 design
+documents. Closes 14 gap-analysis items across accessibility, i18n,
+security UX, and operational surfaces.
+
+### RFC 071 — Footer version hygiene + drift-scan
+
+- Removed hardcoded version captions from all three admin frames
+  (`v0.4.0`, `v0.50.2 (...)`) — footers now show product name only.
+- `scripts/drift-scan.sh`: new pattern detects `vX.Y.Z (...)` form in
+  `crates/ui/`.
+- Tests: `admin_frame_footer_has_no_version_caption`,
+  `tenant_admin_frame_footer_has_no_version_caption` (verify absence).
+
+### RFC 072 — `<html lang>` locale binding
+
+- `Locale::bcp47()` was already implemented; `frame_with_flash` now passes
+  `locale` and emits `<html lang="{lang}">`.
+- `frame_for(title, body, locale)` helper added alongside `frame()`.
+- All locale-aware `*_page_for` functions propagate locale to the frame.
+- Admin frames hardcoded to `<html lang="ja">` (JA-only policy, ADR-013).
+- `<main id="main">` added to all end-user frames (skip-link target).
+- Tests: `login_page_ja_uses_lang_ja`, `login_page_en_uses_lang_en`,
+  `security_center_ja/en`, `admin_frame_uses_lang_ja`.
+
+### RFC 073 — Tenant admin scope badge
+
+- `tenant_admin/frame.rs` CSS: `.scope-badge.scope-tenant { background: #1f7a40 }`,
+  `.scope-badge.scope-system`, `.scope-badge.scope-tenancy` added for visual
+  distinction (green / purple / blue).
+- Tests: `tenant_admin_frame_renders_scope_badge_with_correct_class`,
+  `tenant_admin_scope_badge_has_aria_label`,
+  `tenant_admin_scope_badge_css_has_scope_tenant_color_rule`.
+
+### RFC 074 — Generic auth failure audit + error code fix
+
+- **Security fix**: `MagicLinkExpired` and `MagicLinkMismatch` previously
+  returned HTTP 500 (`server_error`). Fixed to `invalid_grant` + 400
+  per RFC 6749 §5.2.
+- `docs/src/expert/generic-error-policy.md` created: audit table of all
+  auth failure paths, policy principle, known-gap documentation.
+- `TotpVerifyWrongCode`, `TotpEnrollWrongCode`: confirmed no state leakage
+  (`NoUserAuthenticator` and `BadCode` / `Success` share same code path).
+
+### RFC 075 — Security Center mobile state summary card
+
+- `SecurityCenterState` extended: `active_sessions_count: Option<u32>`.
+- Summary card inserted at top of `/me/security`: 4 badges —
+  Passkey state / TOTP state / Recovery code count / Session count.
+- Token mapping: success (≥3 recovery) / warning (1-2) / danger (0).
+  Each badge carries icon + text (WCAG 1.4.1 — no color-only status).
+- CSS: `.security-summary__badges { flex-wrap; gap }`.
+- 8 new `MessageKey` (JA/EN): `SecuritySummaryHeading`, `…PasskeyOk`,
+  `…PasskeyAnonymous`, `…PasskeyMagicLink`, `…TotpEnabled`,
+  `…TotpDisabled`, `…Recovery`, `…Sessions`.
+- Tests: 6 covering badges presence, danger/success threshold,
+  sessions hidden when None, icon+text WCAG check.
+
+### RFC 076 — Recovery code save-confirmation gate
+
+- `totp_recovery_codes_page_for(codes, csrf_token, locale)` — signature
+  updated with `csrf_token`.
+- Page now renders a `<form>` with:
+  - `<input type="checkbox" name="saved_confirm" required>` — confirmation gate
+  - `<button disabled id="proceed-btn">` — enabled only after checkbox
+  - Inline `<script defer nonce>` toggles `button.disabled` via JS
+  - `action="/me/security/totp/recover/confirm"` POST target
+- Server-side: worker handler must check `saved_confirm=on` in POST body
+  (PRE-EXISTING route — not added in this RFC; handler update is tracked).
+- 2 new `MessageKey`: `TotpRecoverySavedConfirmLabel`, `TotpRecoveryProceedButton`.
+- Tests: 6 — button starts disabled, checkbox required, csrf in form,
+  form targets confirm route, JA/EN confirm label.
+
+### RFC 077 — Skip-to-content link (WCAG 2.4.1)
+
+- All end-user and admin frames now include:
+  ```html
+  <a href="#main" class="skip-link">メインコンテンツへスキップ</a>
+  ```
+  immediately after `<body>`.
+- CSS: `.skip-link { position: absolute; top: -100px }` /
+  `.skip-link:focus { top: 0; outline }` — slides in on Tab focus.
+- 1 new `MessageKey`: `SkipToMainContent` (JA/EN).
+- Admin frames (JA-only): hardcoded JA text.
+- Tests: 3 — end-user JA/EN skip-link text, `<main id="main">` target.
+
+### RFC 078 — Tenant admin UI i18n
+
+Completely rewrote `tenant_admin/invitations.rs` and
+`tenant_admin/deletions.rs` to use `MessageKey` catalog (JA locale).
+No hardcoded English strings remain.
+
+35 new `MessageKey` entries (RFC 078 group) with full JA/EN translations.
+Legitimate-duplicate whitelist extended with 7 shared terms
+(`メールアドレス`, `Status`, `状態`, `Pending`, `保留中`, `ロール`,
+`取り消す` / `Revoke`).
+
+Tests: 6 JA rendering assertions — section titles, empty states, status
+badges, grace period notice, no-hardcoded-English invariant.
+
+### i18n catalog growth
+
+| Version | MessageKey count |
+|---|---|
+| v0.61.0 | ~100 |
+| v0.62.0 | **145** |
+
+### Test counts
+
+| Crate | v0.61.0 | v0.62.0 | Δ |
+|---|---|---|---|
+| `cesauth-core` | 681 | **681** | ±0 |
+| `cesauth-adapter-test` | 125 | **125** | ±0 |
+| `cesauth-ui` | 270 | **301** | +31 |
+| `cesauth-migrate-test` | 31 | **31** | ±0 |
+| **Total** | **1,107** | **1,138** | **+31** |
+
+---
+
 ## [0.61.0] - 2026-05-12
 
 Implements RFC 065-070: test coverage completion across token/cose/claims modules,

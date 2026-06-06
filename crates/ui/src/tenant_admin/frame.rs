@@ -149,7 +149,7 @@ pub fn tenant_admin_frame_for(
 
     format!(
         r##"<!doctype html>
-<html lang="en">
+<html lang="ja">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -165,9 +165,13 @@ pub fn tenant_admin_frame_for(
     header .badge.security   {{ background: #d35400; }}
     header .badge.operations {{ background: #2980b9; }}
     header .badge.super      {{ background: #c0392b; }}
-    /* RFC 016 scope badge — green for tenant scope */
+    /* RFC 016 scope badge — green for tenant scope; mirrors admin frame token values */
     header .scope-badge {{ font-size: 0.75em; padding: 2px 8px; border-radius: 10px; font-weight: 500;
                            border: 1px solid rgba(255,255,255,0.5); color: #fff; }}
+    /* RFC 073: tenant-scoped badge uses green to distinguish from system (purple) and tenancy (blue) */
+    header .scope-badge.scope-tenant  {{ background: #1f7a40; }}
+    header .scope-badge.scope-system  {{ background: #6b3aa0; }}
+    header .scope-badge.scope-tenancy {{ background: #1864ab; }}
     nav {{ background: #e3eaf2; padding: 0 24px; }}
     nav ul {{ list-style: none; margin: 0; padding: 0; display: flex; gap: 0; flex-wrap: wrap; }}
     nav li a {{ display: block; padding: 10px 16px; color: #1e3a5f; text-decoration: none; border-bottom: 2px solid transparent; }}
@@ -186,9 +190,14 @@ pub fn tenant_admin_frame_for(
     .badge.critical {{ background: #f8d7da; color: #721c24; }}
     code {{ font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9em; background: #f5f5f5; padding: 1px 4px; border-radius: 2px; }}
     footer {{ text-align: center; color: #999; font-size: 0.8em; padding: 24px; }}
+  /* RFC 077: skip-to-content link */
+  .skip-link {{ position: absolute; top: -100px; left: 0; padding: 4px 12px;
+               background: #fff; color: var(--accent, #2753c8); text-decoration: underline; z-index: 1000; }}
+  .skip-link:focus {{ top: 0; outline: 2px solid #2753c8; }}
   </style>
 </head>
 <body>
+<a href="#main" class="skip-link">メインコンテンツへスキップ</a>
   <header>
     <h1>cesauth tenant admin</h1>
     <span class="tenant-name">{tenant_name_esc}</span>
@@ -198,11 +207,11 @@ pub fn tenant_admin_frame_for(
     {name_html}
   </header>
   <nav><ul>{nav}</ul></nav>
-  <main>
+  <main id="main">
     <h2>{title_esc}</h2>
 {body}
   </main>
-  <footer>cesauth tenant admin — v0.50.2 (mutations + affordance gating)</footer>
+  <footer>cesauth tenant admin</footer>
 </body>
 </html>"##,
         scope_class  = scope_class,

@@ -132,7 +132,29 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         TotpDisableConfirmHeading | TotpDisableSubmit |
         ErrorPageBackLink |
         // RFC 016 — admin scope badge
-        AdminScopeSystem | AdminScopeTenancy | AdminScopeTenant
+        AdminScopeSystem | AdminScopeTenancy | AdminScopeTenant |
+        // RFC 075 — Security Center summary card
+        SecuritySummaryHeading | SecuritySummaryPasskeyOk | SecuritySummaryPasskeyAnonymous |
+        SecuritySummaryPasskeyMagicLink | SecuritySummaryTotpEnabled | SecuritySummaryTotpDisabled |
+        SecuritySummaryRecovery | SecuritySummarySessions |
+        // RFC 076 — recovery code save gate
+        TotpRecoverySavedConfirmLabel | TotpRecoveryProceedButton |
+        // RFC 077 — skip-to-content
+        SkipToMainContent |
+        // RFC 078 — tenant admin invitation/deletion i18n
+        TenantInvitePageTitle | TenantInviteSectionTitle | TenantInviteEmailLabel |
+        TenantInviteRoleLabel | TenantInviteRoleMember | TenantInviteRoleAdmin |
+        TenantInviteSubmitButton | TenantInvitePendingHeading | TenantInviteEmpty |
+        TenantInviteColEmail | TenantInviteColRole | TenantInviteColStatus |
+        TenantInviteColExpires | TenantInviteStatusPending | TenantInviteStatusExpired |
+        TenantInviteStatusRevoked | TenantInviteExpiresInHours |
+        TenantInviteRevokeButton | TenantInviteRevokeConfirm |
+        TenantDeletionPageTitle | TenantDeletionGracePeriodNotice | TenantDeletionTableHeading |
+        TenantDeletionEmpty | TenantDeletionColUserId | TenantDeletionColStatus |
+        TenantDeletionColScheduled | TenantDeletionColActions |
+        TenantDeletionStatusPending | TenantDeletionStatusExecuted | TenantDeletionStatusCancelled |
+        TenantDeletionScheduledInDays | TenantDeletionCancelButton |
+        TenantDeletionExecuteButton | TenantDeletionExecuteConfirm
             => {}  // exhaustiveness pin — body is irrelevant
     }
     // Now actually iterate. The list below mirrors the match
@@ -188,6 +210,25 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         ErrorPageBackLink,
         // RFC 016
         AdminScopeSystem, AdminScopeTenancy, AdminScopeTenant,
+        // RFC 075-078
+        SecuritySummaryHeading, SecuritySummaryPasskeyOk, SecuritySummaryPasskeyAnonymous,
+        SecuritySummaryPasskeyMagicLink, SecuritySummaryTotpEnabled, SecuritySummaryTotpDisabled,
+        SecuritySummaryRecovery, SecuritySummarySessions,
+        TotpRecoverySavedConfirmLabel, TotpRecoveryProceedButton,
+        SkipToMainContent,
+        TenantInvitePageTitle, TenantInviteSectionTitle, TenantInviteEmailLabel,
+        TenantInviteRoleLabel, TenantInviteRoleMember, TenantInviteRoleAdmin,
+        TenantInviteSubmitButton, TenantInvitePendingHeading, TenantInviteEmpty,
+        TenantInviteColEmail, TenantInviteColRole, TenantInviteColStatus,
+        TenantInviteColExpires, TenantInviteStatusPending, TenantInviteStatusExpired,
+        TenantInviteStatusRevoked, TenantInviteExpiresInHours,
+        TenantInviteRevokeButton, TenantInviteRevokeConfirm,
+        TenantDeletionPageTitle, TenantDeletionGracePeriodNotice, TenantDeletionTableHeading,
+        TenantDeletionEmpty, TenantDeletionColUserId, TenantDeletionColStatus,
+        TenantDeletionColScheduled, TenantDeletionColActions,
+        TenantDeletionStatusPending, TenantDeletionStatusExecuted, TenantDeletionStatusCancelled,
+        TenantDeletionScheduledInDays, TenantDeletionCancelButton,
+        TenantDeletionExecuteButton, TenantDeletionExecuteConfirm,
     ];
     for k in all { f(k); }
 }
@@ -231,6 +272,22 @@ fn no_two_keys_share_text_within_a_locale() {
             // correct.
             "Active sessions",
             "アクティブなセッション",
+            // RFC 078: "メールアドレス" is legitimately shared between
+            // the login form (LoginEmailLabel) and the invitation form
+            // (TenantInviteEmailLabel) — both refer to the same field.
+            "メールアドレス",
+            "Email address",
+            // "状態" / "Status" used in both invitation and deletion tables
+            "状態",
+            "Status",
+            // "保留中" / "Pending" shared across invitation and deletion status
+            "保留中",
+            "Pending",
+            // "ロール" / "Role" — generic term used across multiple surfaces
+            "ロール",
+            // "取り消す" / "Revoke" — used for both session revoke and invitation revoke
+            "取り消す",
+            "Revoke",
         ];
         SHARED.contains(&text)
     }

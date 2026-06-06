@@ -98,7 +98,7 @@ pub fn tenancy_console_frame_for(
 
     format!(
         r##"<!doctype html>
-<html lang="en">
+<html lang="ja">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -141,9 +141,14 @@ pub fn tenancy_console_frame_for(
     input[type="text"], select {{ padding: 6px 10px; border: 1px solid #ccc; border-radius: 3px; font-size: 1em; }}
     fieldset {{ border: 1px solid #ddd; padding: 12px 16px; }}
     footer {{ text-align: center; color: #999; font-size: 0.8em; padding: 24px; }}
+  /* RFC 077: skip-to-content link */
+  .skip-link {{ position: absolute; top: -100px; left: 0; padding: 4px 12px;
+               background: #fff; color: var(--accent, #2753c8); text-decoration: underline; z-index: 1000; }}
+  .skip-link:focus {{ top: 0; outline: 2px solid #2753c8; }}
   </style>
 </head>
 <body>
+<a href="#main" class="skip-link">メインコンテンツへスキップ</a>
   <header>
     <h1>cesauth tenancy console</h1>
     <span class="{scope_class}" aria-label="{scope_aria}">{scope_label}</span>
@@ -151,11 +156,11 @@ pub fn tenancy_console_frame_for(
     {name_html}
   </header>
   <nav><ul>{nav}</ul></nav>
-  <main>
+  <main id="main">
     <h2>{title_esc}</h2>
 {body}
   </main>
-  <footer>cesauth tenancy console — v0.50.2 (full mutation surface for Operations+)</footer>
+  <footer>cesauth tenancy console</footer>
 </body>
 </html>"##,
         scope_class = scope_class,

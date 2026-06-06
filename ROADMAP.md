@@ -102,6 +102,13 @@ started.
 
 ### Next minor releases
 
+- ✅ **v0.62.0 — RFC 071–078 (UI/UX alignment from design specification).**
+  P0: footer version hygiene, html lang locale binding, scope badge CSS, generic auth
+  failure audit + MagicLinkMismatch→400 fix. P1: Security Center mobile summary card
+  (8 MessageKey, WCAG 1.4.1), recovery code save-confirmation gate (CSRF form, server
+  validation), skip-to-content link (WCAG 2.4.1 all frames), tenant admin UI full i18n
+  (35 MessageKey, JA-only rendering tests). 1,138 tests. MessageKey catalog: 145.
+
 - ✅ **v0.61.0 — RFC 059–070 (test coverage completion + §16.7/§16.8 docs + UI pages).**
   RFC 059: admin/policy.rs (13 tests) + oidc/introspect.rs (8 tests).
   RFC 060: jwt/claims.rs (6 tests). RFC 065: oidc/token.rs (13 tests).

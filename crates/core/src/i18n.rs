@@ -208,6 +208,16 @@ pub enum MessageKey {
     SecurityBackLink,
     SecurityPageTitleHtml,
 
+    // ---- RFC 075: Security Center mobile state summary card ----
+    SecuritySummaryHeading,           // screen-reader heading for the card (visually hidden)
+    SecuritySummaryPasskeyOk,         // "パスキー設定済み" / "Passkey OK"
+    SecuritySummaryPasskeyAnonymous,  // "ゲスト" / "Guest"
+    SecuritySummaryPasskeyMagicLink,  // "メールリンク認証" / "Magic Link"
+    SecuritySummaryTotpEnabled,       // "TOTP 有効" / "TOTP enabled"
+    SecuritySummaryTotpDisabled,      // "TOTP 未設定" / "TOTP off"
+    SecuritySummaryRecovery,          // "リカバリーコード {n} 残" / "Recovery: {n}" (format with n)
+    SecuritySummarySessions,          // "セッション {n}" / "Sessions: {n}" (format with n)
+
     // ---- v0.45.0: bulk "revoke all other sessions" ----
     SessionsRevokeOthersButton,
     SessionsRevokeOthersConfirm,
@@ -235,6 +245,10 @@ pub enum MessageKey {
     TotpRecoveryCodesAlertBody,
     TotpRecoveryCodesBody,
     TotpRecoveryCodesContinue,
+    /// **RFC 076**: checkbox label for the save-confirmation gate
+    TotpRecoverySavedConfirmLabel,
+    /// **RFC 076**: button label after confirmation
+    TotpRecoveryProceedButton,
 
     // TOTP disable confirm page
     TotpDisablePageTitle,
@@ -258,6 +272,47 @@ pub enum MessageKey {
     /// `{slug}` placeholder; the returned string contains
     /// `{slug}` verbatim for the caller to substitute.
     AdminScopeTenant,
+
+    // ---- RFC 077: skip-to-content link (WCAG 2.4.1) ----
+    SkipToMainContent,
+
+    // ---- RFC 078: tenant admin invitation page ----
+    TenantInvitePageTitle,
+    TenantInviteSectionTitle,
+    TenantInviteEmailLabel,
+    TenantInviteRoleLabel,
+    TenantInviteRoleMember,
+    TenantInviteRoleAdmin,
+    TenantInviteSubmitButton,
+    TenantInvitePendingHeading,
+    TenantInviteEmpty,
+    TenantInviteColEmail,
+    TenantInviteColRole,
+    TenantInviteColStatus,
+    TenantInviteColExpires,
+    TenantInviteStatusPending,
+    TenantInviteStatusExpired,
+    TenantInviteStatusRevoked,
+    TenantInviteExpiresInHours,
+    TenantInviteRevokeButton,
+    TenantInviteRevokeConfirm,
+
+    // ---- RFC 078: tenant admin deletion request page ----
+    TenantDeletionPageTitle,
+    TenantDeletionGracePeriodNotice,
+    TenantDeletionTableHeading,
+    TenantDeletionEmpty,
+    TenantDeletionColUserId,
+    TenantDeletionColStatus,
+    TenantDeletionColScheduled,
+    TenantDeletionColActions,
+    TenantDeletionStatusPending,
+    TenantDeletionStatusExecuted,
+    TenantDeletionStatusCancelled,
+    TenantDeletionScheduledInDays,
+    TenantDeletionCancelButton,
+    TenantDeletionExecuteButton,
+    TenantDeletionExecuteConfirm,
 }
 
 /// Resolve `(key, locale) -> &'static str`. Zero allocation.
@@ -563,6 +618,41 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
             Locale::En => "Security - cesauth",
         },
 
+        // ----- RFC 075: summary card -----
+        SecuritySummaryHeading => match locale {
+            Locale::Ja => "状態サマリ",
+            Locale::En => "At a glance",
+        },
+        SecuritySummaryPasskeyOk => match locale {
+            Locale::Ja => "パスキー設定済み",
+            Locale::En => "Passkey OK",
+        },
+        SecuritySummaryPasskeyAnonymous => match locale {
+            Locale::Ja => "ゲスト",
+            Locale::En => "Guest",
+        },
+        SecuritySummaryPasskeyMagicLink => match locale {
+            Locale::Ja => "メールリンク認証",
+            Locale::En => "Magic Link",
+        },
+        SecuritySummaryTotpEnabled => match locale {
+            Locale::Ja => "TOTP 有効",
+            Locale::En => "TOTP enabled",
+        },
+        SecuritySummaryTotpDisabled => match locale {
+            Locale::Ja => "TOTP 未設定",
+            Locale::En => "TOTP off",
+        },
+        // Note: caller formats "{n}" placeholder using .replace("{n}", &count.to_string())
+        SecuritySummaryRecovery => match locale {
+            Locale::Ja => "リカバリーコード {n} 残",
+            Locale::En => "Recovery: {n}",
+        },
+        SecuritySummarySessions => match locale {
+            Locale::Ja => "セッション {n}",
+            Locale::En => "Sessions: {n}",
+        },
+
         // ----- v0.45.0: bulk "revoke all other sessions" -----
         SessionsRevokeOthersButton => match locale {
             // Action label on the button. Verb form so it
@@ -691,6 +781,15 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
             Locale::Ja => "保存しました — 続行",
             Locale::En => "I've saved them — continue",
         },
+        // RFC 076: save-confirmation gate
+        TotpRecoverySavedConfirmLabel => match locale {
+            Locale::Ja => "リカバリーコードを安全に保管しました",
+            Locale::En => "I have saved my recovery codes in a safe place",
+        },
+        TotpRecoveryProceedButton => match locale {
+            Locale::Ja => "保存して続ける",
+            Locale::En => "Proceed",
+        },
 
         // ----- TOTP disable confirm page -----
         TotpDisablePageTitle => match locale {
@@ -747,6 +846,153 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
             // The caller substitutes `{slug}` at render time.
             Locale::Ja => "テナント: {slug}",
             Locale::En => "Tenant: {slug}",
+        },
+        // RFC 077: skip-to-content link (WCAG 2.4.1)
+        SkipToMainContent => match locale {
+            Locale::Ja => "メインコンテンツへスキップ",
+            Locale::En => "Skip to main content",
+        },
+
+        // RFC 078: tenant admin invitation page (admin is JA-only; EN provided for future)
+        TenantInvitePageTitle => match locale {
+            Locale::Ja => "招待",
+            Locale::En => "Invitations",
+        },
+        TenantInviteSectionTitle => match locale {
+            Locale::Ja => "ユーザーを招待する",
+            Locale::En => "Invite a user",
+        },
+        TenantInviteEmailLabel => match locale {
+            Locale::Ja => "メールアドレス",
+            Locale::En => "Email address",
+        },
+        TenantInviteRoleLabel => match locale {
+            Locale::Ja => "初期ロール",
+            Locale::En => "Initial role",
+        },
+        TenantInviteRoleMember => match locale {
+            Locale::Ja => "テナントメンバー",
+            Locale::En => "Tenant Member",
+        },
+        TenantInviteRoleAdmin => match locale {
+            Locale::Ja => "テナント管理者",
+            Locale::En => "Tenant Admin",
+        },
+        TenantInviteSubmitButton => match locale {
+            Locale::Ja => "招待を送信",
+            Locale::En => "Send invitation",
+        },
+        TenantInvitePendingHeading => match locale {
+            Locale::Ja => "保留中の招待",
+            Locale::En => "Pending invitations",
+        },
+        TenantInviteEmpty => match locale {
+            Locale::Ja => "保留中の招待はありません",
+            Locale::En => "No pending invitations",
+        },
+        TenantInviteColEmail => match locale {
+            Locale::Ja => "メールアドレス",
+            Locale::En => "Email",
+        },
+        TenantInviteColRole => match locale {
+            Locale::Ja => "ロール",
+            Locale::En => "Role",
+        },
+        TenantInviteColStatus => match locale {
+            Locale::Ja => "状態",
+            Locale::En => "Status",
+        },
+        TenantInviteColExpires => match locale {
+            Locale::Ja => "有効期限",
+            Locale::En => "Expires",
+        },
+        TenantInviteStatusPending => match locale {
+            Locale::Ja => "保留中",
+            Locale::En => "Pending",
+        },
+        TenantInviteStatusExpired => match locale {
+            Locale::Ja => "期限切れ",
+            Locale::En => "Expired",
+        },
+        TenantInviteStatusRevoked => match locale {
+            Locale::Ja => "取り消し済み",
+            Locale::En => "Revoked",
+        },
+        // Caller replaces {n} with the hour count
+        TenantInviteExpiresInHours => match locale {
+            Locale::Ja => "{n}時間後に期限切れ",
+            Locale::En => "Expires in {n}h",
+        },
+        TenantInviteRevokeButton => match locale {
+            Locale::Ja => "取り消す",
+            Locale::En => "Revoke",
+        },
+        TenantInviteRevokeConfirm => match locale {
+            Locale::Ja => "この招待を取り消しますか?",
+            Locale::En => "Revoke this invitation?",
+        },
+
+        // RFC 078: tenant admin deletion request page
+        TenantDeletionPageTitle => match locale {
+            Locale::Ja => "削除リクエスト",
+            Locale::En => "Deletion Requests",
+        },
+        TenantDeletionGracePeriodNotice => match locale {
+            Locale::Ja => "削除リクエストはスケジュール日以降に実行されます（デフォルト30日）。実行された削除は復元できません。",
+            Locale::En => "Deletion requests execute after the scheduled date (default: 30 days). Executed deletions are irreversible.",
+        },
+        TenantDeletionTableHeading => match locale {
+            Locale::Ja => "リクエスト一覧",
+            Locale::En => "Deletion requests",
+        },
+        TenantDeletionEmpty => match locale {
+            Locale::Ja => "保留中の削除リクエストはありません",
+            Locale::En => "No pending deletion requests",
+        },
+        TenantDeletionColUserId => match locale {
+            Locale::Ja => "ユーザー ID",
+            Locale::En => "User ID",
+        },
+        TenantDeletionColStatus => match locale {
+            Locale::Ja => "状態",
+            Locale::En => "Status",
+        },
+        TenantDeletionColScheduled => match locale {
+            Locale::Ja => "予定日",
+            Locale::En => "Scheduled",
+        },
+        TenantDeletionColActions => match locale {
+            Locale::Ja => "操作",
+            Locale::En => "Actions",
+        },
+        TenantDeletionStatusPending => match locale {
+            Locale::Ja => "保留中",
+            Locale::En => "Pending",
+        },
+        TenantDeletionStatusExecuted => match locale {
+            Locale::Ja => "実行済み",
+            Locale::En => "Executed",
+        },
+        TenantDeletionStatusCancelled => match locale {
+            Locale::Ja => "キャンセル済み",
+            Locale::En => "Cancelled",
+        },
+        // Caller replaces {n} with day count
+        TenantDeletionScheduledInDays => match locale {
+            Locale::Ja => "{n}日後",
+            Locale::En => "in {n}d",
+        },
+        TenantDeletionCancelButton => match locale {
+            Locale::Ja => "キャンセル",
+            Locale::En => "Cancel",
+        },
+        TenantDeletionExecuteButton => match locale {
+            Locale::Ja => "すぐに実行",
+            Locale::En => "Execute now",
+        },
+        TenantDeletionExecuteConfirm => match locale {
+            Locale::Ja => "この削除を即時実行しますか? 取り消せません",
+            Locale::En => "Execute this deletion immediately? This is irreversible.",
         },
     }
 }

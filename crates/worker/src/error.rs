@@ -46,11 +46,14 @@ pub(crate) fn oauth_error_code_status(err: &CoreError) -> (&'static str, u16) {
         UnsupportedGrantType(_) => ("unsupported_grant_type", 400),
         PkceMismatch            => ("invalid_grant",          400),
         LoginRequired           => ("login_required",         400),
+        // RFC 074: magic-link auth failures are client errors (invalid credentials),
+        // not server errors. RFC 6749 §5.2 `invalid_grant` + 400 is correct.
+        // Previously mapped to server_error 500 which was misleading.
+        MagicLinkExpired
+        | MagicLinkMismatch     => ("invalid_grant",          400),
         WebAuthn(_)
         | JwtValidation(_)
         | JwtSigning
-        | MagicLinkExpired
-        | MagicLinkMismatch
         | Serialization
         | Internal              => ("server_error",           500),
     }

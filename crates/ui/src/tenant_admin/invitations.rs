@@ -1,7 +1,10 @@
 //! `/admin/t/<slug>/invitations` — invitation management page (RFC 066).
+//!
+//! RFC 078: All visible strings use MessageKey / JA-only locale (admin policy).
 
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
+use cesauth_core::i18n::{lookup, Locale, MessageKey};
 use cesauth_core::invitation::Invitation;
 use cesauth_core::tenancy::types::Tenant;
 
@@ -14,89 +17,99 @@ pub fn invitations_page(
     invitations: &[Invitation],
     now_unix:    i64,
 ) -> String {
-    let csrf = ""; // CSRF token injected by the worker handler at render time
+    let l    = Locale::Ja; // admin is JA-only (ADR-013 / RFC 078)
+    let csrf = "";
 
     let issue_form = format!(
-        r#"<section class="card mb-4">
-  <h2 class="card-title">Invite a user</h2>
-  <form method="POST" action="/admin/t/{slug}/invitations">
-    <input type="hidden" name="csrf_token" value="{csrf}">
-    <div class="form-row">
-      <label for="email">Email address</label>
-      <input type="email" id="email" name="email" required placeholder="user@example.com">
-    </div>
-    <div class="form-row">
-      <label for="role">Initial role</label>
-      <select id="role" name="role">
-        <option value="tenant_member">Tenant Member</option>
-        <option value="tenant_admin">Tenant Admin</option>
-      </select>
-    </div>
-    <button type="submit" class="btn-primary">Send invitation</button>
-  </form>
-</section>"#,
-        slug = escape(&tenant.slug),
-        csrf = escape(csrf),
+        "<section class=\"card mb-4\">\n\
+  <h2 class=\"card-title\">{section_title}</h2>\n\
+  <form method=\"POST\" action=\"/admin/t/{slug}/invitations\">\n\
+    <input type=\"hidden\" name=\"csrf_token\" value=\"{csrf}\">\n\
+    <div class=\"form-row\">\n\
+      <label for=\"email\">{email_label}</label>\n\
+      <input type=\"email\" id=\"email\" name=\"email\" required placeholder=\"user@example.com\">\n\
+    </div>\n\
+    <div class=\"form-row\">\n\
+      <label for=\"role\">{role_label}</label>\n\
+      <select id=\"role\" name=\"role\">\n\
+        <option value=\"tenant_member\">{role_member}</option>\n\
+        <option value=\"tenant_admin\">{role_admin}</option>\n\
+      </select>\n\
+    </div>\n\
+    <button type=\"submit\" class=\"btn-primary\">{submit_btn}</button>\n\
+  </form>\n\
+</section>",
+        slug          = escape(&tenant.slug),
+        csrf          = escape(csrf),
+        section_title = escape(lookup(MessageKey::TenantInviteSectionTitle, l)),
+        email_label   = escape(lookup(MessageKey::TenantInviteEmailLabel,   l)),
+        role_label    = escape(lookup(MessageKey::TenantInviteRoleLabel,    l)),
+        role_member   = escape(lookup(MessageKey::TenantInviteRoleMember,   l)),
+        role_admin    = escape(lookup(MessageKey::TenantInviteRoleAdmin,    l)),
+        submit_btn    = escape(lookup(MessageKey::TenantInviteSubmitButton, l)),
     );
 
     let table = if invitations.is_empty() {
-        r#"<p class="empty">No pending invitations.</p>"#.to_owned()
+        format!("<p class=\"empty\">{}</p>",
+            escape(lookup(MessageKey::TenantInviteEmpty, l)))
     } else {
         let rows: String = invitations.iter().map(|inv| {
             let expires_in_h = (inv.expires_at - now_unix).max(0) / 3600;
             let status = if inv.revoked_at.is_some() {
-                "<span class=\"badge badge-error\">revoked</span>"
+                format!("<span class=\"badge badge-error\">{}</span>",
+                    escape(lookup(MessageKey::TenantInviteStatusRevoked, l)))
             } else if now_unix > inv.expires_at {
-                "<span class=\"badge badge-warn\">expired</span>"
+                format!("<span class=\"badge badge-warn\">{}</span>",
+                    escape(lookup(MessageKey::TenantInviteStatusExpired, l)))
             } else {
-                "<span class=\"badge badge-ok\">pending</span>"
+                format!("<span class=\"badge badge-ok\">{}</span>",
+                    escape(lookup(MessageKey::TenantInviteStatusPending, l)))
             };
+            let expires_label = if inv.revoked_at.is_none() && now_unix <= inv.expires_at {
+                lookup(MessageKey::TenantInviteExpiresInHours, l)
+                    .replace("{n}", &expires_in_h.to_string())
+            } else {
+                "\u{2014}".to_owned() // em dash
+            };
+            let confirm_msg = escape(lookup(MessageKey::TenantInviteRevokeConfirm, l));
+            let revoke_btn  = escape(lookup(MessageKey::TenantInviteRevokeButton,  l));
             format!(
-                r#"<tr>
-  <td>{email}</td>
-  <td>{role}</td>
-  <td>{status}</td>
-  <td>{expires}</td>
-  <td>
-    <form method="POST" action="/admin/t/{slug}/invitations/{id}/revoke" style="display:inline">
-      <input type="hidden" name="csrf_token" value="{csrf}">
-      <button type="submit" class="btn-sm btn-danger"
-              onclick="return confirm('Revoke this invitation?')">Revoke</button>
-    </form>
-  </td>
-</tr>"#,
+                "<tr>\n  <td>{email}</td>\n  <td>{role}</td>\n  <td>{status}</td>\n\
+  <td>{expires}</td>\n  <td>\n\
+    <form method=\"POST\" action=\"/admin/t/{slug}/invitations/{id}/revoke\" style=\"display:inline\">\n\
+      <input type=\"hidden\" name=\"csrf_token\" value=\"{csrf}\">\n\
+      <button type=\"submit\" class=\"btn-sm btn-danger\"\n\
+              onclick=\"return confirm('{confirm}')\">{revoke}</button>\n\
+    </form>\n  </td>\n</tr>",
                 email   = escape(&inv.email),
                 role    = escape(&inv.role),
                 status  = status,
-                expires = if inv.revoked_at.is_none() && now_unix <= inv.expires_at {
-                    format!("{}h remaining", expires_in_h)
-                } else {
-                    "—".to_owned()
-                },
+                expires = escape(&expires_label),
                 slug    = escape(&tenant.slug),
                 id      = escape(&inv.id),
                 csrf    = escape(csrf),
+                confirm = confirm_msg,
+                revoke  = revoke_btn,
             )
         }).collect::<Vec<_>>().join("\n");
 
         format!(
-            r#"<table class="data-table">
-  <thead>
-    <tr>
-      <th>Email</th><th>Role</th><th>Status</th><th>Expires</th><th></th>
-    </tr>
-  </thead>
-  <tbody>
-{rows}
-  </tbody>
-</table>"#
+            "<table class=\"data-table\">\n  <thead>\n    <tr>\n\
+      <th>{email}</th><th>{role}</th><th>{status}</th><th>{expires}</th><th></th>\n\
+    </tr>\n  </thead>\n  <tbody>\n{rows}\n  </tbody>\n</table>",
+            email   = escape(lookup(MessageKey::TenantInviteColEmail,   l)),
+            role    = escape(lookup(MessageKey::TenantInviteColRole,    l)),
+            status  = escape(lookup(MessageKey::TenantInviteColStatus,  l)),
+            expires = escape(lookup(MessageKey::TenantInviteColExpires, l)),
+            rows    = rows,
         )
     };
 
-    let body = format!("{issue_form}\n<section class=\"card\">\n<h2 class=\"card-title\">Pending invitations</h2>\n{table}\n</section>");
+    let heading = escape(lookup(MessageKey::TenantInvitePendingHeading, l));
+    let body    = format!("{issue_form}\n<section class=\"card\">\n<h2 class=\"card-title\">{heading}</h2>\n{table}\n</section>");
 
     tenant_admin_frame(
-        "Invitations",
+        lookup(MessageKey::TenantInvitePageTitle, l),
         &tenant.slug,
         &tenant.display_name,
         principal.role,

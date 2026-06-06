@@ -50,6 +50,11 @@ declare -a PATTERNS=(
     # Catch new production usage; historical docs/comments that explain the change are exempt.
     # Use specific pattern: -> Box<dyn MagicLinkMailer> (return type, not in comments)
     "-> Box<dyn MagicLinkMailer>	Box<dyn MagicLinkMailer> return type; use CloudflareMagicLinkMailer enum (RFC 031)"
+    # RFC 071: hardcoded version-plus-caption strings in UI footers.
+    # Pattern: "vX.Y.Z (some phase descriptor)" — the parenthesised text is the giveaway.
+    # CHANGELOG, ROADMAP, and docs may reference bare version numbers without parens;
+    # those are historical records and are intentionally excluded by this narrow pattern.
+    "v0\.[0-9]\+\.[0-9]\+ (	Hardcoded version-with-caption in source (RFC 071) — remove the version string from footers"
 )
 
 found=0

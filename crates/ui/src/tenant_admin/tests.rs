@@ -134,9 +134,9 @@ fn frame_footer_carries_version_marker() {
         Role::Super, None,
         TenantAdminTab::Overview, "",
     );
-    assert!(html.contains("v0.50.2"),
-        "frame footer must mark the current release; \
-         operators reading the page need a version anchor");
+    // RFC 071: version captions removed from footers
+    assert!(!html.contains("v0.50.2"),
+        "frame footer must NOT contain hardcoded version after RFC 071");
 }
 
 #[test]
@@ -699,4 +699,154 @@ fn membership_remove_carries_confirm_yes() {
     assert!(html.contains(r#"name="confirm" value="yes""#),
         "confirm page must include confirm=yes hidden field");
     assert!(html.contains(r#"action="/admin/t/acme/memberships/u-bob/delete""#));
+}
+
+// ── RFC 071 — footer version hygiene ─────────────────────────────────────
+
+#[test]
+fn tenant_admin_frame_footer_has_no_version_caption() {
+    let out = tenant_admin_frame(
+        "Test", "test-slug", "Test Corp",
+        cesauth_core::admin::types::Role::ReadOnly,
+        None,
+        TenantAdminTab::Overview,
+        "",
+    );
+    // should not contain version captions like "v0.50.2 (mutations...)"
+    assert!(!out.contains("v0.50"), "tenant_admin footer must not contain v0.50.x");
+    assert!(!out.contains("v0.4."),  "tenant_admin footer must not contain v0.4.x");
+}
+
+// ── RFC 073 — scope badge standardization ────────────────────────────────
+
+#[test]
+fn tenant_admin_frame_renders_scope_badge_with_correct_class() {
+    use cesauth_core::admin::types::Role;
+    use super::frame::TenantAdminTab;
+    let out = super::frame::tenant_admin_frame(
+        "Users", "acme", "Acme Corp",
+        Role::Operations, None,
+        TenantAdminTab::Users, "",
+    );
+    assert!(out.contains("scope-badge scope-tenant"),
+        "tenant admin frame must carry scope-badge scope-tenant class");
+}
+
+#[test]
+fn tenant_admin_scope_badge_has_aria_label() {
+    use cesauth_core::admin::types::Role;
+    use super::frame::TenantAdminTab;
+    let out = super::frame::tenant_admin_frame(
+        "Users", "acme", "Acme Corp",
+        Role::ReadOnly, None,
+        TenantAdminTab::Overview, "",
+    );
+    assert!(out.contains("aria-label="),
+        "scope badge must have aria-label for screen reader");
+}
+
+#[test]
+fn tenant_admin_scope_badge_css_has_scope_tenant_color_rule() {
+    use cesauth_core::admin::types::Role;
+    use super::frame::TenantAdminTab;
+    let out = super::frame::tenant_admin_frame(
+        "Test", "slug", "Name",
+        Role::ReadOnly, None,
+        TenantAdminTab::Overview, "",
+    );
+    assert!(out.contains("scope-tenant"),
+        "frame CSS must define scope-tenant color rule");
+}
+
+// ── RFC 078 — Tenant admin UI i18n tests ─────────────────────────────────
+
+#[test]
+fn invitations_page_renders_ja_section_title() {
+    use super::invitations::invitations_page;
+    let p = principal();
+    let t = tenant();
+    let html = invitations_page(&p, &t, &[], 1_700_000_000);
+    assert!(html.contains("ユーザーを招待する"),
+        "invite section title must be in JA");
+    assert!(html.contains("招待を送信"),
+        "submit button must be in JA");
+}
+
+#[test]
+fn invitations_page_empty_state_ja() {
+    use super::invitations::invitations_page;
+    let p = principal();
+    let t = tenant();
+    let html = invitations_page(&p, &t, &[], 1_700_000_000);
+    assert!(html.contains("保留中の招待はありません"),
+        "empty state must be in JA");
+}
+
+#[test]
+fn invitations_page_pending_badge_ja() {
+    use super::invitations::invitations_page;
+    use cesauth_core::invitation::Invitation;
+    let p = principal();
+    let t = tenant();
+    let inv = Invitation {
+        id:          "inv-1".into(),
+        tenant_id:   "t-acme".into(),
+        email:       "user@example.com".into(),
+        role:        "tenant_member".into(),
+        issued_by:   "admin".into(),
+        issued_at:   1_700_000_000,
+        expires_at:  1_700_100_000,
+        accepted_at: None,
+        accepted_by: None,
+        revoked_at:  None,
+        revoked_by:  None,
+    };
+    let html = invitations_page(&p, &t, &[inv], 1_700_000_000);
+    assert!(html.contains("user@example.com"),
+        "email must appear in row");
+    assert!(html.contains("保留中"),
+        "pending status must be in JA");
+    assert!(html.contains("取り消す"),
+        "revoke button must be in JA");
+}
+
+#[test]
+fn deletion_requests_page_empty_state_ja() {
+    use super::deletions::deletion_requests_page;
+    let p = principal();
+    let t = tenant();
+    let html = deletion_requests_page(&p, &t, &[], 1_700_000_000);
+    assert!(html.contains("保留中の削除リクエストはありません"),
+        "empty state must be in JA");
+    assert!(html.contains("削除リクエスト"),
+        "page title must be in JA");
+}
+
+#[test]
+fn deletion_requests_page_grace_period_notice_ja() {
+    use super::deletions::deletion_requests_page;
+    let p = principal();
+    let t = tenant();
+    let html = deletion_requests_page(&p, &t, &[], 1_700_000_000);
+    assert!(html.contains("削除リクエストはスケジュール日以降に実行されます"),
+        "grace period notice must be in JA");
+}
+
+#[test]
+fn deletion_requests_page_no_hardcoded_english() {
+    use super::invitations::invitations_page;
+    use super::deletions::deletion_requests_page;
+    let p = principal();
+    let t = tenant();
+    let inv_html = invitations_page(&p, &t, &[], 1_700_000_000);
+    let del_html = deletion_requests_page(&p, &t, &[], 1_700_000_000);
+    // Must not have old hardcoded English strings
+    assert!(!inv_html.contains("Invite a user"),
+        "invitations page must not have hardcoded English");
+    assert!(!inv_html.contains("No pending invitations"),
+        "invitations page must not have hardcoded English");
+    assert!(!del_html.contains("No pending deletion requests"),
+        "deletion page must not have hardcoded English");
+    assert!(!del_html.contains("Execute now"),
+        "deletion page must not have hardcoded English");
 }

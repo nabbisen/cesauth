@@ -125,7 +125,7 @@ pub fn admin_frame_for(
     }).collect::<Vec<_>>().join("");
 
     format!(r##"<!doctype html>
-<html lang="en">
+<html lang="ja">
 <head>
 <meta charset="utf-8">
 <title>{title_esc} — cesauth admin</title>
@@ -220,17 +220,18 @@ pub fn admin_frame_for(
 </style>
 </head>
 <body>
+<a href="#main" class="skip-link">メインコンテンツへスキップ</a>
 <header class="site">
   <span class="brand">cesauth admin</span>
   <span class="{scope_class}" aria-label="{scope_aria}">{scope_label}</span>
   <span class="role-badge {role_badge}" aria-label="Current admin role: {role_label}">{role_label}{name_suffix}</span>
 </header>
 <nav class="tabs" aria-label="Console sections"><ul>{nav}</ul></nav>
-<main>
+<main id="main">
 <h1>{title_esc}</h1>
 {body}
 </main>
-<footer>cesauth Cost &amp; Data Safety Admin Console — v0.4.0</footer>
+<footer>cesauth Cost &amp; Data Safety Admin Console</footer>
 </body>
 </html>
 "##,

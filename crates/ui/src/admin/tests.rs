@@ -185,3 +185,15 @@ fn admin_frame_scope_badge_aria_label_carries_full_prose() {
         "admin frame scope badge aria-label must contain 'Operating scope:'"
     );
 }
+
+// ── RFC 071 — footer version hygiene ─────────────────────────────────────
+
+#[test]
+fn admin_frame_footer_has_no_version_caption() {
+    // overview_page wraps admin_frame internally
+    let out = overview_page(&empty_summary(Role::ReadOnly));
+    assert!(!out.contains("v0.4.0"),
+        "admin frame footer must not contain v0.4.0");
+    assert!(!out.contains("v0.50."),
+        "admin frame footer must not contain v0.50.x");
+}
