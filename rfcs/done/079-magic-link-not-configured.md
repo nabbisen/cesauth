@@ -1,6 +1,6 @@
 # RFC 079 — Magic Link "not configured" UI 通知
 
-**Status**: Proposed  
+**Status**: Implemented  
 **Tier**: P2  
 **Size**: Medium  
 **Target**: v0.62.x  

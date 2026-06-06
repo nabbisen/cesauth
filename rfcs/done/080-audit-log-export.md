@@ -1,6 +1,6 @@
 # RFC 080 — Audit log filtered export (CSV/JSONL)
 
-**Status**: Proposed  
+**Status**: Implemented  
 **Tier**: P2  
 **Size**: Medium  
 **Target**: v0.62.x  

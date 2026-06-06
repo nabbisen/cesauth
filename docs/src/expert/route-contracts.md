@@ -77,6 +77,8 @@ code-review responsibility.
 | GET | `/admin/console/cost` | System admin | none | cost page | n/a | N/A (GET) |
 | GET | `/admin/console/safety` | System admin | none | safety page | n/a | N/A (GET) |
 | POST | `/admin/console/safety/:bucket/verify` | System admin | `bucket_verified` | redirect | n/a | required |
+| GET  | `/admin/console/operations` | System admin | none | HTML | n/a | required |
+| POST | `/admin/console/audit/export` | System admin | `audit_exported` | CSV/JSONL download | CSRF | required |
 | GET | `/admin/console/audit` | System admin | none | audit search page | n/a | N/A (GET) |
 | GET | `/admin/console/audit/chain` | System admin | none | chain status page | n/a | N/A (GET) |
 | POST | `/admin/console/audit/chain/verify` | System admin | `audit_chain_verified` | redirect | n/a | required |

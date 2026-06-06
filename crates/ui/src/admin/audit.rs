@@ -54,6 +54,13 @@ fn render_search_form(q: &AuditQuery) -> String {
       </tr>
     </table>
   </form>
+  <form method="post" action="/admin/console/audit/export" style="margin-top:8px">
+    <input type="hidden" name="kind"    value="{kind}">
+    <input type="hidden" name="subject" value="{subject}">
+    <input type="hidden" name="limit"   value="{limit}">
+    <button type="submit" name="format" value="csv"  class="secondary" style="margin-right:4px">Export CSV</button>
+    <button type="submit" name="format" value="jsonl" class="secondary">Export JSONL</button>
+  </form>
   <p class="note">Audit events live in the D1 <code>audit_events</code> table (v0.32.0+, ADR-010). The <em>Chain verification status</em> link above shows whether the SHA-256 chain over those rows is intact.</p>
 </section>"##
     )

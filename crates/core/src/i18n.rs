@@ -157,6 +157,8 @@ pub enum MessageKey {
     LoginEmailLabel,
     LoginEmailButton,
     LoginPageTitleHtml,
+    /// RFC 079: shown instead of the email form when MagicLinkMailer is unconfigured.
+    LoginMagicLinkUnavailableNotice,
 
     // ---- v0.39.0: TOTP enroll page (`/me/security/totp/enroll`) ----
     TotpEnrollTitle,
@@ -221,6 +223,8 @@ pub enum MessageKey {
     // ---- v0.45.0: bulk "revoke all other sessions" ----
     SessionsRevokeOthersButton,
     SessionsRevokeOthersConfirm,
+    /// RFC 084: subtle note about session index eventual consistency.
+    SessionsDriftNote,
     FlashOtherSessionsRevoked,
     FlashOtherSessionsRevokeFailed,
     FlashNoOtherSessions,
@@ -467,6 +471,11 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
             Locale::Ja => "サインイン - cesauth",
             Locale::En => "Sign in - cesauth",
         },
+        // RFC 079: shown when MagicLinkMailer is not configured
+        LoginMagicLinkUnavailableNotice => match locale {
+            Locale::Ja => "メールリンクは現在ご利用いただけません。パスキーでサインインしてください。",
+            Locale::En => "Magic Link is currently unavailable. Please sign in with a passkey.",
+        },
 
         // ----- v0.39.0: TOTP enroll -----
         TotpEnrollTitle => match locale {
@@ -666,6 +675,11 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
             // Renders as a `<p>` directly above the button.
             Locale::Ja => "現在のセッション以外のすべての端末でサインアウトします。元に戻すには各端末で再度サインインが必要です。",
             Locale::En => "All other devices will be signed out. To use them again you'll need to sign in on each one.",
+        },
+        // RFC 084: subtle footnote about session index eventual consistency
+        SessionsDriftNote => match locale {
+            Locale::Ja => "セッション情報は数分程度の遅延が生じる場合があります。",
+            Locale::En => "Session information may be delayed by a few minutes.",
         },
         FlashOtherSessionsRevoked => match locale {
             // Flash banner shown after a successful bulk

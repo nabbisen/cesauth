@@ -359,7 +359,7 @@ pub fn login_page(
     error:             Option<&str>,
     turnstile_sitekey: Option<&str>,
 ) -> String {
-    login_page_for(csrf_token, error, turnstile_sitekey, cesauth_core::i18n::Locale::default())
+    login_page_for(csrf_token, error, turnstile_sitekey, true, cesauth_core::i18n::Locale::default())
 }
 
 /// Locale-aware variant of [`login_page`] (v0.39.0). Every
@@ -371,11 +371,16 @@ pub fn login_page(
 /// retains the same Default = Ja semantics adopted in v0.36.0,
 /// and English consumers move to `login_page_for(.., Locale::En)`
 /// or rely on `Accept-Language` negotiation in the worker.
+///
+/// **RFC 079** — `magic_link_available`: when `false`, the Magic Link
+/// email form is replaced by an informational notice. The operator
+/// boundary is preserved — no delivery details are shown.
 pub fn login_page_for(
-    csrf_token:        &str,
-    error:             Option<&str>,
-    turnstile_sitekey: Option<&str>,
-    locale:            cesauth_core::i18n::Locale,
+    csrf_token:           &str,
+    error:                Option<&str>,
+    turnstile_sitekey:    Option<&str>,
+    magic_link_available: bool,
+    locale:               cesauth_core::i18n::Locale,
 ) -> String {
     use cesauth_core::i18n::{lookup, MessageKey};
     let nonce = crate::render_nonce();
@@ -415,6 +420,39 @@ pub fn login_page_for(
     // introduces double quotes / backslashes / newlines.
     let passkey_failed_js = js_string_literal(lookup(MessageKey::LoginPasskeyFailed, locale));
 
+    // RFC 079: when MagicLinkMailer is not configured, replace the email form
+    // with an informational notice. No provider details are revealed.
+    let mail_section = if magic_link_available {
+        format!(
+            "<form method=\"POST\" action=\"/magic-link/request\" aria-labelledby=\"mail-heading\">\n\
+  <h2 id=\"mail-heading\" class=\"muted\">{email_heading}</h2>\n\
+  <input type=\"hidden\" name=\"csrf\" value=\"{csrf}\">\n\
+  <label for=\"email\">{email_label}</label>\n\
+  <input id=\"email\" name=\"email\" type=\"email\" required autocomplete=\"email\"\n\
+         inputmode=\"email\" spellcheck=\"false\">\n\
+  {turnstile_widget}\n\
+  <button type=\"submit\" class=\"secondary\">{email_button}</button>\n\
+</form>",
+            email_heading  = escape(lookup(MessageKey::LoginEmailHeading, locale)),
+            email_label    = escape(lookup(MessageKey::LoginEmailLabel,   locale)),
+            email_button   = escape(lookup(MessageKey::LoginEmailButton,  locale)),
+            csrf           = escape(csrf_token),
+            turnstile_widget = &turnstile_widget,
+        )
+    } else {
+        format!(
+            "<section aria-labelledby=\"mail-heading\">\n\
+  <h2 id=\"mail-heading\" class=\"muted\">{email_heading}</h2>\n\
+  <p class=\"flash flash--info\" role=\"status\">\n\
+    <span class=\"flash__icon\" aria-hidden=\"true\">\u{00B7}</span>\n\
+    <span class=\"flash__text\">{notice}</span>\n\
+  </p>\n\
+</section>",
+            email_heading = escape(lookup(MessageKey::LoginEmailHeading, locale)),
+            notice = escape(lookup(MessageKey::LoginMagicLinkUnavailableNotice, locale)),
+        )
+    };
+
     let body = format!(r#"
 <h1>{title}</h1>
 <p>{intro}</p>
@@ -432,15 +470,7 @@ pub fn login_page_for(
   <button id="passkey-btn" type="button">{passkey_button}</button>
 </section>
 
-<form method="POST" action="/magic-link/request" aria-labelledby="mail-heading">
-  <h2 id="mail-heading" class="muted">{email_heading}</h2>
-  <input type="hidden" name="csrf" value="{csrf}">
-  <label for="email">{email_label}</label>
-  <input id="email" name="email" type="email" required autocomplete="email"
-         inputmode="email" spellcheck="false">
-  {turnstile_widget}
-  <button type="submit" class="secondary">{email_button}</button>
-</form>
+{mail_section}
 
 <script defer nonce="{nonce}">
 (async () => {{
@@ -515,14 +545,10 @@ pub fn login_page_for(
         js_required        = escape(lookup(MessageKey::LoginPasskeyJsRequired, locale)),
         passkey_heading    = escape(lookup(MessageKey::LoginPasskeyHeading,    locale)),
         passkey_button     = escape(lookup(MessageKey::LoginPasskeyButton,     locale)),
-        email_heading      = escape(lookup(MessageKey::LoginEmailHeading,      locale)),
-        email_label        = escape(lookup(MessageKey::LoginEmailLabel,        locale)),
-        email_button       = escape(lookup(MessageKey::LoginEmailButton,       locale)),
+        mail_section       = mail_section,
         passkey_failed_js  = passkey_failed_js,
         err_region         = err_region,
-        csrf               = escape(csrf_token),
         turnstile_script   = turnstile_script,
-        turnstile_widget   = turnstile_widget,
         nonce              = nonce,
     );
 
@@ -1388,11 +1414,13 @@ pub fn sessions_page_for(
 
 <p class="muted">
   <a href="/me/security">{back}</a>
-</p>"##,
-        title = escape(lookup(MessageKey::SessionsPageTitle,  locale)),
-        intro = escape(lookup(MessageKey::SessionsPageIntro,  locale)),
-        back  = escape(lookup(MessageKey::SessionsBackLink,   locale)),
-        rows  = rows,
+</p>
+<p class="muted" role="note" style="font-size:0.8em;margin-top:1rem">{drift_note}</p>"##,
+        title      = escape(lookup(MessageKey::SessionsPageTitle,  locale)),
+        intro      = escape(lookup(MessageKey::SessionsPageIntro,  locale)),
+        back       = escape(lookup(MessageKey::SessionsBackLink,   locale)),
+        drift_note = escape(lookup(MessageKey::SessionsDriftNote,  locale)),
+        rows       = rows,
         bulk_button = bulk_button,
     );
 

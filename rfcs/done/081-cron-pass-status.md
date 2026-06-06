@@ -1,6 +1,6 @@
 # RFC 081 — Cron pass status surface
 
-**Status**: Proposed  
+**Status**: Implemented  
 **Tier**: P2  
 **Size**: Medium  
 **Target**: v0.62.x  

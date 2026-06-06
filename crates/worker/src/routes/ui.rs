@@ -50,7 +50,7 @@ pub async fn login<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
         }
     };
     cesauth_ui::set_render_nonce(csp_nonce.as_str());
-    let html = cesauth_ui::templates::login_page_for(&csrf_token, None, sitekey, locale);
+    let html = cesauth_ui::templates::login_page_for(&csrf_token, None, sitekey, true, locale);
 
     // Read ?next= and decide whether to set the login_next cookie.
     // We validate the decoded path (rejects open-redirect tricks

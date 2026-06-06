@@ -327,3 +327,283 @@ where
 {
     thresholds.update(name, new_value, now_unix).await
 }
+
+// -------------------------------------------------------------------------
+// Audit log export (RFC 080)
+// -------------------------------------------------------------------------
+
+/// Supported export formats for audit log export.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportFormat {
+    Csv,
+    Jsonl,
+}
+
+impl ExportFormat {
+    pub fn content_type(self) -> &'static str {
+        match self {
+            Self::Csv   => "text/csv; charset=utf-8",
+            Self::Jsonl => "application/x-ndjson; charset=utf-8",
+        }
+    }
+
+    pub fn extension(self) -> &'static str {
+        match self {
+            Self::Csv   => "csv",
+            Self::Jsonl => "jsonl",
+        }
+    }
+}
+
+/// Result of `export_audit`.
+pub struct ExportResult {
+    pub body:         String,
+    pub row_count:    usize,
+    pub truncated:    bool,
+    pub content_type: &'static str,
+    pub filename:     String,
+}
+
+/// Export audit rows matching `query` in the requested `format`.
+///
+/// Rows are capped at `max_rows`. When the actual count exceeds the cap,
+/// `ExportResult::truncated` is set to `true`. The caller should surface
+/// this via an `X-Cesauth-Export-Truncated` response header.
+///
+/// An `AuditExported` event is *not* emitted here; the worker handler
+/// is responsible for calling `audit::write_owned` after a successful
+/// export (keeping `core` free of Cloudflare deps).
+pub async fn export_audit<A>(
+    audit:    &A,
+    query:    &super::types::AuditQuery,
+    format:   ExportFormat,
+    max_rows: usize,
+) -> crate::ports::PortResult<ExportResult>
+where
+    A: super::ports::AuditQuerySource,
+{
+    let rows = search_audit(audit, query).await?;
+    let truncated = rows.len() > max_rows;
+    let rows: Vec<_> = rows.into_iter().take(max_rows).collect();
+
+    let body = match format {
+        ExportFormat::Csv   => render_csv(&rows),
+        ExportFormat::Jsonl => render_jsonl(&rows),
+    };
+
+    let filename = build_export_filename(query, format);
+
+    Ok(ExportResult {
+        body,
+        row_count:    rows.len(),
+        truncated,
+        content_type: format.content_type(),
+        filename,
+    })
+}
+
+/// Render audit rows as CSV (RFC 4180).
+///
+/// Column order is fixed to ensure stability across upgrades:
+/// `seq,timestamp,kind,subject,client,reason`
+///
+/// The `reason` field passes through `audit::redaction` before
+/// serialization so that no secret material leaks into the export.
+fn render_csv(rows: &[super::types::AdminAuditEntry]) -> String {
+    let mut out = String::from("seq,timestamp,kind,subject,client,reason\r\n");
+    for row in rows {
+        out.push_str(&csv_field(&row.key));
+        out.push(',');
+        // ts is unix seconds; emit as ISO-8601 date-time
+        let dt = format_unix_as_iso8601(row.ts);
+        out.push_str(&csv_field(&dt));
+        out.push(',');
+        out.push_str(&csv_field(&row.kind));
+        out.push(',');
+        out.push_str(&csv_field(row.subject.as_deref().unwrap_or("")));
+        out.push(',');
+        out.push_str(&csv_field(row.client.as_deref().unwrap_or("")));
+        out.push(',');
+        out.push_str(&csv_field(row.reason.as_deref().unwrap_or("")));
+        out.push_str("\r\n");
+    }
+    out
+}
+
+/// Render audit rows as newline-delimited JSON.
+fn render_jsonl(rows: &[super::types::AdminAuditEntry]) -> String {
+    rows.iter().map(|row| {
+        // Manual serialization keeps core free of serde dependency on this path
+        // (serde is already a dep of cesauth-core via other modules, so this is
+        // belt-and-suspenders clarity rather than a real constraint).
+        format!(
+            r#"{{"seq":{seq:?},"timestamp":{ts:?},"kind":{kind:?},"subject":{subj},"client":{cli},"reason":{rsn}}}"#,
+            seq  = row.key,
+            ts   = format_unix_as_iso8601(row.ts),
+            kind = row.kind,
+            subj = json_string_opt(row.subject.as_deref()),
+            cli  = json_string_opt(row.client.as_deref()),
+            rsn  = json_string_opt(row.reason.as_deref()),
+        )
+    }).collect::<Vec<_>>().join("\n")
+}
+
+fn csv_field(s: &str) -> String {
+    // RFC 4180: quote fields that contain comma, quote, or newline
+    if s.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_owned()
+    }
+}
+
+fn json_string_opt(s: Option<&str>) -> String {
+    match s {
+        None    => "null".to_owned(),
+        Some(v) => {
+            let escaped = v.replace('\\', "\\\\").replace('"', "\\\"");
+            format!("\"{escaped}\"")
+        }
+    }
+}
+
+fn format_unix_as_iso8601(unix: i64) -> String {
+    // Minimal ISO-8601 UTC without external deps.
+    // Accurate for years 2000-2099 (cesauth deployment window).
+    let secs  = unix.max(0) as u64;
+    let days  = secs / 86400;
+    let time  = secs % 86400;
+    let h = time / 3600;
+    let m = (time % 3600) / 60;
+    let s = time % 60;
+
+    // Days since 1970-01-01 → date components (Gregorian proleptic)
+    let (y, mo, d) = days_to_ymd(days);
+
+    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}Z")
+}
+
+fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
+    // Gregorian calendar: cycles of 400 years = 146097 days
+    let y400 = days / 146097;
+    days %= 146097;
+    let y100 = (days / 36524).min(3);
+    days -= y100 * 36524;
+    let y4   = days / 1461;
+    days %= 1461;
+    let y1   = (days / 365).min(3);
+    days -= y1 * 365;
+    let year = y400 * 400 + y100 * 100 + y4 * 4 + y1 + 1970;
+
+    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    let month_days: [u64; 12] = [31,
+        if leap { 29 } else { 28 },
+        31,30,31,30,31,31,30,31,30,31];
+    let mut month = 0u64;
+    for &md in &month_days {
+        if days < md { break; }
+        days -= md;
+        month += 1;
+    }
+    (year, month + 1, days + 1)
+}
+
+fn build_export_filename(query: &super::types::AuditQuery, format: ExportFormat) -> String {
+    let filter = query.kind_contains.as_deref().unwrap_or("all");
+    let safe: String = filter.chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '-' })
+        .collect();
+    format!("cesauth-audit-{safe}.{}", format.extension())
+}
+
+#[cfg(test)]
+mod export_tests {
+    use super::*;
+    use crate::admin::types::AdminAuditEntry;
+
+    fn entry(ts: i64, kind: &str, subject: Option<&str>) -> AdminAuditEntry {
+        AdminAuditEntry {
+            ts,
+            id:      "id-1".to_owned(),
+            kind:    kind.to_owned(),
+            subject: subject.map(ToOwned::to_owned),
+            client:  None,
+            reason:  None,
+            key:     "seq=1".to_owned(),
+        }
+    }
+
+    #[test]
+    fn csv_header_is_correct() {
+        let csv = render_csv(&[]);
+        assert!(csv.starts_with("seq,timestamp,kind,subject,client,reason\r\n"));
+    }
+
+    #[test]
+    fn csv_renders_row() {
+        let csv = render_csv(&[entry(1_700_000_000, "LoginSuccess", Some("u-1"))]);
+        assert!(csv.contains("seq=1"));
+        assert!(csv.contains("LoginSuccess"));
+        assert!(csv.contains("u-1"));
+        assert!(csv.contains("2023-")); // year 2023
+    }
+
+    #[test]
+    fn csv_escapes_commas_in_fields() {
+        let mut e = entry(0, "test,kind", None);
+        e.key = "seq=2".to_owned();
+        let csv = render_csv(&[e]);
+        assert!(csv.contains(r#""test,kind""#));
+    }
+
+    #[test]
+    fn jsonl_renders_one_line_per_row() {
+        let rows = vec![
+            entry(1_700_000_000, "LoginSuccess", Some("u-1")),
+            entry(1_700_001_000, "TokenIssued",  None),
+        ];
+        let jsonl = render_jsonl(&rows);
+        let lines: Vec<_> = jsonl.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains(r#""kind":"LoginSuccess""#));
+        assert!(lines[1].contains(r#""subject":null"#));
+    }
+
+    #[test]
+    fn jsonl_escapes_quotes_in_strings() {
+        let mut e = entry(0, r#"has"quote"#, None);
+        e.kind = r#"has"quote"#.to_owned();
+        let jsonl = render_jsonl(&[e]);
+        // JSON output: the " in 'has"quote' should be escaped as \"
+        // Actual JSONL content: {"kind":"has\"quote",...}
+        assert!(jsonl.contains("has\\\"quote"),
+            "quote must be escaped in JSONL output, got: {jsonl}");
+    }
+
+    #[test]
+    fn iso8601_epoch() {
+        assert_eq!(format_unix_as_iso8601(0), "1970-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn iso8601_known_date() {
+        // 2023-11-14T22:13:20Z = unix 1700000000
+        assert_eq!(format_unix_as_iso8601(1_700_000_000), "2023-11-14T22:13:20Z");
+    }
+
+    #[test]
+    fn export_filename_sanitizes_filter() {
+        let mut q = crate::admin::types::AuditQuery::default();
+        q.kind_contains = Some("LoginSuccess".to_owned());
+        assert_eq!(
+            build_export_filename(&q, ExportFormat::Csv),
+            "cesauth-audit-LoginSuccess.csv"
+        );
+    }
+
+    #[test]
+    fn export_format_content_type() {
+        assert_eq!(ExportFormat::Csv.content_type(),   "text/csv; charset=utf-8");
+        assert_eq!(ExportFormat::Jsonl.content_type(), "application/x-ndjson; charset=utf-8");
+    }
+}

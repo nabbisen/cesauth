@@ -188,6 +188,11 @@ pub fn tenant_admin_frame_for(
     .badge.ok       {{ background: #d4edda; color: #155724; }}
     .badge.warn     {{ background: #fff3cd; color: #856404; }}
     .badge.critical {{ background: #f8d7da; color: #721c24; }}
+    /* RFC 082: CSS-variable-based badge aliases matching end-user tokens */
+    .badge--success {{ background: var(--success-bg, #e8f5e9); color: var(--success, #1f9d55); }}
+    .badge--warning {{ background: var(--warning-bg, #fff7e6); color: var(--warning, #b76e00); }}
+    .badge--danger  {{ background: var(--danger-bg,  #fdecea); color: var(--danger,  #c92a2a); }}
+    .badge--info    {{ background: var(--info-bg,    #e7f5ff); color: var(--info,    #1864ab); }}
     code {{ font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9em; background: #f5f5f5; padding: 1px 4px; border-radius: 2px; }}
     footer {{ text-align: center; color: #999; font-size: 0.8em; padding: 24px; }}
   /* RFC 077: skip-to-content link */

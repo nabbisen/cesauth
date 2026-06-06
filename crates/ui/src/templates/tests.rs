@@ -1193,7 +1193,7 @@ fn sessions_page_shows_bulk_button_when_current_session_not_listed() {
 
 #[test]
 fn login_page_for_en_renders_english_chrome() {
-    let html = login_page_for("csrf", None, None, Locale::En);
+    let html = login_page_for("csrf", None, None, true, Locale::En);
     assert!(html.contains("Sign in"),                  "missing EN title: {html}");
     assert!(html.contains("Sign in with a passkey"),    "missing EN passkey button");
     assert!(html.contains("Or email me a code"),        "missing EN email heading");
@@ -1205,7 +1205,7 @@ fn login_page_for_en_renders_english_chrome() {
 
 #[test]
 fn login_page_for_ja_renders_japanese_chrome() {
-    let html = login_page_for("csrf", None, None, Locale::Ja);
+    let html = login_page_for("csrf", None, None, true, Locale::Ja);
     assert!(html.contains("サインインする"),                "missing JA title");
     assert!(html.contains("パスキーでサインイン"),          "missing JA passkey button");
     assert!(html.contains("メールアドレス"),                 "missing JA email label");
@@ -1232,7 +1232,7 @@ fn login_page_for_en_passkey_failed_message_in_inline_js() {
     // that the EN string is present and that it sits
     // inside double quotes (i.e., is a string literal,
     // not raw text).
-    let html = login_page_for("csrf", None, None, Locale::En);
+    let html = login_page_for("csrf", None, None, true, Locale::En);
     assert!(html.contains(r#""Passkey sign-in didn't work. Try the email option.""#),
         "EN passkey-failed message must appear as a JS string literal: {html}");
 }
@@ -1242,7 +1242,7 @@ fn login_page_for_ja_passkey_failed_message_in_inline_js() {
     // The JA string contains multi-byte UTF-8; our
     // js_string_literal helper passes those through
     // verbatim. Pin that the JA string lands intact.
-    let html = login_page_for("csrf", None, None, Locale::Ja);
+    let html = login_page_for("csrf", None, None, true, Locale::Ja);
     assert!(html.contains("パスキーでサインインできませんでした"),
         "JA passkey-failed message must appear in script body: {html}");
 }
@@ -1476,7 +1476,7 @@ fn primary_auth_method_label_for_renders_each_locale() {
 #[test]
 fn login_page_for_emits_nonce_attribute_on_inline_style() {
     crate::set_render_nonce("test_nonce_abc");
-    let html = login_page_for("csrf", None, None, cesauth_core::i18n::Locale::default());
+    let html = login_page_for("csrf", None, None, true, cesauth_core::i18n::Locale::default());
     assert!(html.contains(r#"nonce="test_nonce_abc""#),
         "inline <style> must carry the per-request nonce attribute: {html}");
 }
@@ -1484,7 +1484,7 @@ fn login_page_for_emits_nonce_attribute_on_inline_style() {
 #[test]
 fn login_page_for_emits_nonce_attribute_on_inline_script() {
     crate::set_render_nonce("test_nonce_abc");
-    let html = login_page_for("csrf", None, None, cesauth_core::i18n::Locale::default());
+    let html = login_page_for("csrf", None, None, true, cesauth_core::i18n::Locale::default());
     assert!(html.contains(r#"<script defer nonce="test_nonce_abc""#),
         "inline <script> must carry the per-request nonce attribute: {html}");
 }
@@ -1492,7 +1492,7 @@ fn login_page_for_emits_nonce_attribute_on_inline_script() {
 #[test]
 fn login_page_for_does_not_emit_inline_event_handler() {
     crate::set_render_nonce("test_nonce_xyz");
-    let html = login_page_for("csrf", None, None, cesauth_core::i18n::Locale::default());
+    let html = login_page_for("csrf", None, None, true, cesauth_core::i18n::Locale::default());
     assert!(!html.contains("onclick="),
         "login page must not use inline event handlers (CSP audit): {html}");
     assert!(!html.contains("onload="),
@@ -1649,7 +1649,7 @@ fn flash_block_polite_uses_role_status_assertive_uses_role_alert() {
 #[test]
 fn login_page_ja_uses_lang_ja() {
     use cesauth_core::i18n::Locale;
-    let html = super::login_page_for("csrf", None, None, Locale::Ja);
+    let html = super::login_page_for("csrf", None, None, true, Locale::Ja);
     assert!(html.contains(r#"<html lang="ja""#),
         "JA locale must produce <html lang=\"ja\">");
 }
@@ -1657,7 +1657,7 @@ fn login_page_ja_uses_lang_ja() {
 #[test]
 fn login_page_en_uses_lang_en() {
     use cesauth_core::i18n::Locale;
-    let html = super::login_page_for("csrf", None, None, Locale::En);
+    let html = super::login_page_for("csrf", None, None, true, Locale::En);
     assert!(html.contains(r#"<html lang="en""#),
         "EN locale must produce <html lang=\"en\">");
 }
@@ -1846,7 +1846,7 @@ fn recovery_codes_page_en_confirm_label() {
 #[test]
 fn end_user_frame_has_skip_link_ja() {
     use cesauth_core::i18n::Locale;
-    let html = login_page_for("csrf", None, None, Locale::Ja);
+    let html = login_page_for("csrf", None, None, true, Locale::Ja);
     assert!(html.contains("href=\"#main\" class=\"skip-link\""),
         "JA login page must have skip-link");
     assert!(html.contains("メインコンテンツへスキップ"),
@@ -1856,7 +1856,7 @@ fn end_user_frame_has_skip_link_ja() {
 #[test]
 fn end_user_frame_has_skip_link_en() {
     use cesauth_core::i18n::Locale;
-    let html = login_page_for("csrf", None, None, Locale::En);
+    let html = login_page_for("csrf", None, None, true, Locale::En);
     assert!(html.contains("href=\"#main\" class=\"skip-link\""),
         "EN login page must have skip-link");
     assert!(html.contains("Skip to main content"),
@@ -1866,7 +1866,47 @@ fn end_user_frame_has_skip_link_en() {
 #[test]
 fn end_user_frame_main_has_id_main() {
     use cesauth_core::i18n::Locale;
-    let html = login_page_for("csrf", None, None, Locale::Ja);
+    let html = login_page_for("csrf", None, None, true, Locale::Ja);
     assert!(html.contains("<main id=\"main\""),
         "main element must have id=main for skip-link target");
+}
+
+// ── RFC 079 — Magic Link not configured notice ────────────────────────────
+
+#[test]
+fn login_page_magic_link_available_renders_form() {
+    use cesauth_core::i18n::Locale;
+    let html = login_page_for("csrf", None, None, true, Locale::Ja);
+    assert!(html.contains(r#"action="/magic-link/request""#),
+        "when available=true, magic link form must be present");
+}
+
+#[test]
+fn login_page_magic_link_unavailable_shows_notice_ja() {
+    use cesauth_core::i18n::Locale;
+    let html = login_page_for("csrf", None, None, false, Locale::Ja);
+    assert!(!html.contains(r#"action="/magic-link/request""#),
+        "when unavailable, magic link form must be absent");
+    assert!(html.contains("メールリンクは現在ご利用いただけません"),
+        "JA unavailable notice must appear");
+}
+
+#[test]
+fn login_page_magic_link_unavailable_shows_notice_en() {
+    use cesauth_core::i18n::Locale;
+    let html = login_page_for("csrf", None, None, false, Locale::En);
+    assert!(!html.contains(r#"action="/magic-link/request""#),
+        "when unavailable, form absent");
+    assert!(html.contains("Magic Link is currently unavailable"),
+        "EN unavailable notice must appear");
+}
+
+#[test]
+fn login_page_magic_link_unavailable_no_provider_details() {
+    use cesauth_core::i18n::Locale;
+    let html = login_page_for("csrf", None, None, false, Locale::Ja);
+    // Must not leak provider name, API key presence, or error code
+    assert!(!html.contains("SendGrid"),   "must not leak provider name");
+    assert!(!html.contains("NotConfigured"), "must not leak error type");
+    assert!(!html.contains("api_key"),    "must not leak config field");
 }

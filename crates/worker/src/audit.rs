@@ -310,6 +310,8 @@ pub enum EventKind {
     AnonymousCreated,
     AnonymousExpired,
     AnonymousPromoted,
+    // RFC 080: audit log export
+    AuditExported,
 }
 
 impl EventKind {
@@ -387,6 +389,7 @@ impl EventKind {
             Self::AnonymousCreated             => "anonymous_created",
             Self::AnonymousExpired             => "anonymous_expired",
             Self::AnonymousPromoted            => "anonymous_promoted",
+            Self::AuditExported                => "audit_exported",
         }
     }
 }

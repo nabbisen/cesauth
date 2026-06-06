@@ -141,6 +141,10 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         TotpRecoverySavedConfirmLabel | TotpRecoveryProceedButton |
         // RFC 077 — skip-to-content
         SkipToMainContent |
+        // RFC 079 — magic link unavailable notice
+        LoginMagicLinkUnavailableNotice |
+        // RFC 084 — sessions drift note
+        SessionsDriftNote |
         // RFC 078 — tenant admin invitation/deletion i18n
         TenantInvitePageTitle | TenantInviteSectionTitle | TenantInviteEmailLabel |
         TenantInviteRoleLabel | TenantInviteRoleMember | TenantInviteRoleAdmin |
@@ -210,7 +214,9 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         ErrorPageBackLink,
         // RFC 016
         AdminScopeSystem, AdminScopeTenancy, AdminScopeTenant,
-        // RFC 075-078
+        // RFC 075-079, 084
+        LoginMagicLinkUnavailableNotice,
+        SessionsDriftNote,
         SecuritySummaryHeading, SecuritySummaryPasskeyOk, SecuritySummaryPasskeyAnonymous,
         SecuritySummaryPasskeyMagicLink, SecuritySummaryTotpEnabled, SecuritySummaryTotpDisabled,
         SecuritySummaryRecovery, SecuritySummarySessions,

@@ -30,29 +30,33 @@ pub enum Tab {
     /// still accessible by direct URL (the route itself enforces the
     /// 403).
     Tokens,
+    /// RFC 081: cron pass status.
+    Operations,
 }
 
 impl Tab {
     fn href(self) -> &'static str {
         match self {
-            Tab::Overview => "/admin/console",
-            Tab::Cost     => "/admin/console/cost",
-            Tab::Safety   => "/admin/console/safety",
-            Tab::Audit    => "/admin/console/audit",
-            Tab::Config   => "/admin/console/config",
-            Tab::Alerts   => "/admin/console/alerts",
-            Tab::Tokens   => "/admin/console/tokens",
+            Tab::Overview    => "/admin/console",
+            Tab::Cost        => "/admin/console/cost",
+            Tab::Safety      => "/admin/console/safety",
+            Tab::Audit       => "/admin/console/audit",
+            Tab::Config      => "/admin/console/config",
+            Tab::Alerts      => "/admin/console/alerts",
+            Tab::Tokens      => "/admin/console/tokens",
+            Tab::Operations  => "/admin/console/operations",
         }
     }
     fn label(self) -> &'static str {
         match self {
-            Tab::Overview => "Overview",
-            Tab::Cost     => "Cost",
-            Tab::Safety   => "Safety",
-            Tab::Audit    => "Audit",
-            Tab::Config   => "Config",
-            Tab::Alerts   => "Alerts",
-            Tab::Tokens   => "Tokens",
+            Tab::Overview    => "Overview",
+            Tab::Cost        => "Cost",
+            Tab::Safety      => "Safety",
+            Tab::Audit       => "Audit",
+            Tab::Config      => "Config",
+            Tab::Alerts      => "Alerts",
+            Tab::Tokens      => "Tokens",
+            Tab::Operations  => "Operations",
         }
     }
     /// Visible in the nav for this role? Tokens is Super-only; the
@@ -65,8 +69,8 @@ impl Tab {
     }
 }
 
-const TABS_ORDER: [Tab; 7] = [
-    Tab::Overview, Tab::Cost, Tab::Safety, Tab::Audit, Tab::Config, Tab::Alerts, Tab::Tokens,
+const TABS_ORDER: [Tab; 8] = [
+    Tab::Overview, Tab::Cost, Tab::Safety, Tab::Audit, Tab::Config, Tab::Alerts, Tab::Tokens, Tab::Operations,
 ];
 
 /// Top-level admin page scaffold.
@@ -137,9 +141,19 @@ pub fn admin_frame_for(
     --muted:    #666;
     --border:   #ddd;
     --accent:   #1d4ed8;
-    --ok:       #0a8f4e;
-    --warn:     #c67a00;
-    --critical: #a6261d;
+    /* RFC 082: shared semantic status tokens (mirrors templates.rs BASE_CSS) */
+    --success:    #1f9d55;
+    --success-bg: #e8f5e9;
+    --warning:    #b76e00;
+    --warning-bg: #fff7e6;
+    --danger:     #c92a2a;
+    --danger-bg:  #fdecea;
+    --info:       #1864ab;
+    --info-bg:    #e7f5ff;
+    /* backward-compat aliases for existing admin CSS uses */
+    --ok:       var(--success);
+    --warn:     var(--warning);
+    --critical: var(--danger);
     /* RFC 016 scope tokens — intentionally distinct from semantic ok/warn/danger/info */
     --scope-system:  #6b3aa0;
     --scope-tenancy: #1864ab;

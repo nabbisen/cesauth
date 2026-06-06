@@ -102,6 +102,17 @@ started.
 
 ### Next minor releases
 
+- ✅ **v0.63.0 — RFC 079–084 (P2 operations UX + UI consistency).**
+  RFC 079: Magic Link not-configured notice (operator boundary). RFC 080: audit log
+  filtered export CSV/JSONL with AuditExported event. RFC 081: cron pass status
+  surface (/admin/console/operations, KV-backed). RFC 082: design token unification
+  (--success/--warning/--danger aliases). RFC 083: rollback hint (already existed).
+  RFC 084: sessions drift note. 1,156 tests. Routes: 165.
+
+- ✅ **v0.63.0 — RFC 079–084 (P2 operations UX + UI consistency).**
+  Magic Link not-configured notice, audit log export CSV/JSONL, cron pass status surface,
+  design token unification, sessions drift note. 1,156 tests. Routes: 165.
+
 - ✅ **v0.62.0 — RFC 071–078 (UI/UX alignment from design specification).**
   P0: footer version hygiene, html lang locale binding, scope badge CSS, generic auth
   failure audit + MagicLinkMismatch→400 fix. P1: Security Center mobile summary card

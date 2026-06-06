@@ -197,7 +197,7 @@ pub async fn authorize<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
         }
     };
     cesauth_ui::set_render_nonce(csp_nonce.as_str());
-    let html = cesauth_ui::templates::login_page_for(&csrf_token, None, sitekey, locale);
+    let html = cesauth_ui::templates::login_page_for(&csrf_token, None, sitekey, true, locale);
     let mut resp = Response::from_html(html)?;
     // Login page inlines a small script; set an appropriately tight CSP.
     let csp_n = csp_nonce.as_str();

@@ -31,6 +31,7 @@
 use std::cell::RefCell;
 
 pub mod admin;
+pub mod design_tokens;
 pub mod tenancy_console;
 pub mod tenant_admin;
 pub mod templates;

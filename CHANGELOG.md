@@ -26,6 +26,92 @@ split by minor-version range:
 
 ---
 
+## [0.63.0] - 2026-05-12
+
+Implements RFC 079-084: P2 operations UX and UI consistency — Magic Link
+operator boundary, audit log export, cron pass status surface, design
+token unification, rollback hint (already existed), sessions drift note.
+
+### RFC 079 — Magic Link "not configured" UI
+
+- `login_page_for` extended: `magic_link_available: bool` parameter.
+- When `false`: email form is replaced by a `flash--info` notice
+  ("Magic Link is currently unavailable. Please sign in with a passkey.").
+  No provider details or error codes are shown (trust boundary preserved).
+- 1 new `MessageKey`: `LoginMagicLinkUnavailableNotice` (JA/EN).
+- Tests: 4 — form present when available, form absent when not, JA/EN
+  notice text, no provider name leakage.
+
+### RFC 080 — Audit log filtered export
+
+- `admin/service.rs`: `export_audit(audit, query, format, max_rows)`
+  returns `ExportResult { body, row_count, truncated, content_type, filename }`.
+- `ExportFormat::Csv` / `ExportFormat::Jsonl` with fixed column ordering.
+- CSV: RFC 4180 compliant (comma/quote/newline escaping, CRLF termination).
+- JSONL: one JSON object per line, `null` for absent fields, quote escaping.
+- ISO-8601 UTC date formatting without external deps (`days_to_ymd`).
+- Worker route: `POST /admin/console/audit/export` (ViewConsole+).
+  Emits `AuditExported` event. Sets `Content-Disposition: attachment`.
+  `X-Cesauth-Export-Truncated: true` when capped.
+- UI: two export buttons in `/admin/console/audit` search form.
+- Tests: 9 — CSV header, row render, comma escaping, JSONL line count,
+  quote escaping, ISO-8601 epoch + known date, filename sanitization,
+  content_type.
+
+### RFC 081 — Cron pass status surface
+
+- `Tab::Operations` added to admin frame nav (→ `/admin/console/operations`).
+- `cesauth_ui::admin::operations` module:
+  - `CronPassDisplay` struct (name, label, last_run, success, processed, mode, error)
+  - `operations_page(principal, passes)` renders 5-pass status table
+  - `CronPassDisplay::placeholder()` for passes with no recent KV record
+- Worker route: `GET /admin/console/operations` reads KV keys
+  `cron:last-run:{name}` (JSON, TTL 8 days) and populates passes.
+- Tests: 5 — all 5 passes present, dry-run badge, no-recent-run state,
+  success badge with count, failure badge with error.
+
+### RFC 082 — Design token unification
+
+- `cesauth_ui::design_tokens::DESIGN_TOKENS` constant: shared CSS variables
+  `--success/--warning/--danger/--info` with `--ok/--warn/--critical` aliases.
+- `admin/frame.rs`: `:root` block updated with RFC 082 tokens.
+  `--ok`, `--warn`, `--critical` now map to `var(--success)` etc.
+- `tenant_admin/frame.rs`, `tenancy_console/frame.rs`: `.badge--success/
+  --warning/--danger/--info` CSS classes added (matching end-user tokens).
+- Dark-mode overrides aligned across all frames.
+
+### RFC 083 — Config preview rollback hint
+
+Already implemented in `admin/preview.rs` (`ImpactStatement.rollback` field,
+rendered as `<p class="preview-rollback"><strong>How to reverse:</strong> …`).
+RFC 083 closed as no-op; docs/src/expert/generic-error-policy.md references it.
+
+### RFC 084 — Sessions drift note
+
+- 1 new `MessageKey`: `SessionsDriftNote` (JA/EN):
+  - JA: "セッション情報は数分程度の遅延が生じる場合があります。"
+  - EN: "Session information may be delayed by a few minutes."
+- Added to `/me/security/sessions` as `<p role="note" class="muted">` footnote.
+
+### Route count: 165 (+2)
+
+| New route | Handler |
+|---|---|
+| `POST /admin/console/audit/export` | `audit_export::export` |
+| `GET  /admin/console/operations` | `operations_route::page` |
+
+### Test counts
+
+| Crate | v0.62.0 | v0.63.0 | Δ |
+|---|---|---|---|
+| `cesauth-core` | 681 | **690** | +9 |
+| `cesauth-adapter-test` | 125 | **125** | ±0 |
+| `cesauth-ui` | 301 | **310** | +9 |
+| `cesauth-migrate-test` | 31 | **31** | ±0 |
+| **Total** | **1,138** | **1,156** | **+18** |
+
+---
+
 ## [0.62.0] - 2026-05-12
 
 Implements RFC 071-078: full P0/P1 UI/UX alignment from the v0.50.1 design
