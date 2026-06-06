@@ -15,8 +15,19 @@
 //! The admin types (`AuditQuery`, `AdminAuditEntry`) keep their
 //! shape; this adapter is the only place that translates them
 //! to and from `AuditEventRow` plus the `AuditSearch` filter.
+//!
+//! v0.71.0 (RFC 109) added these `AuditQuery` fields:
+//!
+//! - `event_exact` — exact match on `kind`. Maps to `AuditSearch::kind`
+//!   directly (the underlying SQL is exact-match already).
+//! - `since` / `until` — Unix-second bounds. Map straight through.
+//! - `cursor` — opaque base64url over `seq`. Decoded here via
+//!   `audit_pagination::decode_cursor` to set `before_seq`. Malformed
+//!   cursors are dropped silently (filter not applied) rather than
+//!   returning an error — the page still renders.
 
 use cesauth_core::admin::ports::AuditQuerySource;
+use cesauth_core::admin::service::audit_pagination;
 use cesauth_core::admin::types::{AdminAuditEntry, AuditQuery};
 use cesauth_core::ports::audit::{AuditEventRepository, AuditSearch};
 use cesauth_core::ports::{PortError, PortResult};
@@ -47,23 +58,32 @@ impl AuditQuerySource for CloudflareAuditQuerySource<'_> {
         let repo = CloudflareAuditEventRepository::new(self.env);
 
         // Translate the admin query shape into the repository's
-        // filter. The admin types pre-date the v0.32.0 chain and
-        // use "kind_contains" / "subject_contains" (substring
-        // matches); the repository takes exact matches because
-        // SQL LIKE patterns invite injection edge cases. We
-        // approximate by passing exact matches when the input
-        // doesn't contain wildcards, and fall back to a broader
-        // fetch + in-memory filter when the inputs imply a
-        // partial match. For v0.32.0 we go with exact: the
-        // admin search box already accepted only narrow tokens
-        // in practice, and supporting LIKE means widening the
-        // attack surface for marginal benefit.
+        // filter. Precedence for the `kind` slot:
+        //
+        // 1. RFC 109 `event_exact` (set via the new viewer dropdown)
+        // 2. Legacy `kind_contains` (v0.31.x admin search box)
+        //
+        // The SQL underlying `AuditEventRepository::search` already
+        // does exact match on `kind`, so `event_exact` maps 1:1.
+        // `kind_contains` is best-effort exact-match for backward
+        // compatibility — operators who relied on partial matches in
+        // v0.31.x are using narrow tokens in practice.
+        let kind_slot = q.event_exact.clone()
+            .or_else(|| q.kind_contains.clone());
+
+        // RFC 109 cursor → before_seq. Malformed cursors drop to None
+        // so the page still renders even if the URL was hand-edited.
+        let before_seq = q.cursor
+            .as_deref()
+            .and_then(audit_pagination::decode_cursor);
+
         let search = AuditSearch {
-            kind:    q.kind_contains.clone(),
-            subject: q.subject_contains.clone(),
-            since:   None,
-            until:   None,
-            limit:   Some(q.limit.unwrap_or(DEFAULT_LIMIT)),
+            kind:       kind_slot,
+            subject:    q.subject_contains.clone(),
+            since:      q.since,
+            until:      q.until,
+            limit:      Some(q.limit.unwrap_or(DEFAULT_LIMIT)),
+            before_seq,
         };
 
         let rows = repo.search(&search).await

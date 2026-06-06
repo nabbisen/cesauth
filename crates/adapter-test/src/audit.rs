@@ -192,6 +192,11 @@ impl AuditEventRepository for InMemoryAuditEventRepository {
                 if let Some(until) = q.until {
                     if r.ts > until { return false; }
                 }
+                // RFC 109 (v0.71.0): keyset pagination — return rows
+                // strictly older than the cursor's seq.
+                if let Some(before) = q.before_seq {
+                    if r.seq >= before { return false; }
+                }
                 true
             })
             .cloned()

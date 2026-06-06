@@ -425,6 +425,15 @@ pub struct AdminAuditEntry {
 }
 
 /// Filter applied when searching audit events.
+///
+/// **v0.71.0 (RFC 109)** added `event_exact`, `since`, `until`, and
+/// `cursor` for the new audit log viewer. The pre-existing fields
+/// (`prefix`, `limit`, `kind_contains`, `subject_contains`) stay for
+/// backward-compatibility with the v0.31.x admin search form and with
+/// `POST /admin/console/audit/export` (RFC 080), which the viewer
+/// hands its current filter state off to.
+///
+/// New fields default to `None`; existing call sites need no change.
 #[derive(Debug, Clone, Default)]
 pub struct AuditQuery {
     /// Date prefix `audit/YYYY/MM/DD/`. Carried for backward
@@ -437,6 +446,22 @@ pub struct AuditQuery {
     /// Match events whose `kind` contains this substring.
     pub kind_contains:    Option<String>,
     pub subject_contains: Option<String>,
+    // RFC 109 (v0.71.0) additions ----------------------------------
+    /// Exact-match on event kind. Used by the audit-viewer dropdown
+    /// (RFC 109) when the operator picks a specific event kind. Distinct
+    /// from `kind_contains` (substring) so legacy callers keep working.
+    /// When both are set, `event_exact` wins (stricter).
+    pub event_exact: Option<String>,
+    /// Inclusive lower bound on the event's `ts` (Unix seconds, UTC).
+    pub since: Option<i64>,
+    /// Inclusive upper bound on the event's `ts` (Unix seconds, UTC).
+    pub until: Option<i64>,
+    /// Opaque pagination cursor — server-issued base64. Adapters that
+    /// support keyset pagination decode it via
+    /// `cesauth_core::admin::service::audit_pagination::decode_cursor`;
+    /// adapters that don't can ignore the field and return the
+    /// newest-first page as before.
+    pub cursor: Option<String>,
 }
 
 /// Read-only view of the audit chain's verification status,

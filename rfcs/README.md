@@ -42,7 +42,6 @@ the residual gaps. See ROADMAP.md "UI/UX finishing track" for grouping.
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
 | [107](./proposed/107-recovery-code-pluralization.md) | Recovery code pluralization (ADR-013 §Q4 closure / plural side) | P2 | v0.71.0 |
-| [109](./proposed/109-audit-log-viewer-ui.md) | Audit log viewer UI surface | P2 | v0.69.0 |
 | [110](./proposed/110-safety-controls-alignment.md) | Safety controls dashboard alignment audit | P2 | v0.70.0 |
 | [111](./proposed/111-date-rendering-policy.md) | Date rendering policy (ADR-013 §Q4 closure / date side) | P2 | v0.71.0 |
 | [112](./proposed/112-worker-auth-macro-batch-migration.md) | Worker auth macro batch migration (RFC 100 全面適用) | P2 | v0.69.0 |
@@ -52,10 +51,10 @@ the residual gaps. See ROADMAP.md "UI/UX finishing track" for grouping.
 
 ## Done
 
-105 RFCs (001–106, 108) shipped between v0.50.3 and v0.68.0. Full list with
-shipped-in versions: see ROADMAP.md "Shipped" section and CHANGELOG.md
-release entries. Selected highlights only listed here; the canonical
-catalogue is the filesystem at `done/`.
+106 RFCs (001–106, 108, 109) shipped between v0.50.3 and v0.71.0. Full
+list with shipped-in versions: see ROADMAP.md "Shipped" section and
+CHANGELOG.md release entries. Selected highlights only listed here; the
+canonical catalogue is the filesystem at `done/`.
 
 | ID | Title | Shipped |
 |----|-------|---------|
@@ -70,7 +69,8 @@ catalogue is the filesystem at `done/`.
 | [096–104](./done/) | Codebase audit remediation | v0.66.0 |
 | [105](./done/105-admin-frame-design-token-unification.md) | Admin frame design-token unification | v0.67.0 |
 | [106](./done/106-security-center-i18n-closure.md) | Security Center i18n closure (TOTP/recovery banners) | v0.67.0 |
-| [108](./done/108-ui-template-route-catalog-migration.md) | UI template route-catalog migration (partial — end-user) | v0.68.0 |
+| [108](./done/108-ui-template-route-catalog-migration.md) | UI template route-catalog migration (closed v0.70.0) | v0.68.0–v0.70.0 |
+| [109](./done/109-audit-log-viewer-ui.md) | Audit log viewer UI surface | v0.71.0 |
 
 For the full mapping (every shipped RFC with its release tag), the
 authoritative record is each file's own `**Status**: Implemented (vX.Y.Z)`

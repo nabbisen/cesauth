@@ -276,6 +276,14 @@ impl AuditEventRepository for CloudflareAuditEventRepository<'_> {
             params.push(d1_int(until));
             idx += 1;
         }
+        // RFC 109 (v0.71.0): keyset pagination — return rows strictly
+        // older than the supplied seq. The service layer decodes the
+        // opaque base64url cursor before populating `before_seq`.
+        if let Some(before) = q.before_seq {
+            where_clauses.push(format!("seq < ?{idx}"));
+            params.push(d1_int(before));
+            idx += 1;
+        }
         let where_sql = if where_clauses.is_empty() {
             String::new()
         } else {

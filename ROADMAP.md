@@ -90,6 +90,7 @@ full narrative is in the [archive](docs/changelog-archive/README.md).
 | Route-catalog correction + end-user template migration (RFC 108 partial) | v0.68.0 | [CHANGELOG](CHANGELOG.md) |
 | Route-catalog completion + admin/console template migration (RFC 108 continued) | v0.69.0 | [CHANGELOG](CHANGELOG.md) |
 | RFC 108 closure (tenant_admin + tenancy_console migration + drift-scan rule) | v0.70.0 | [CHANGELOG](CHANGELOG.md) |
+| RFC 109 — Audit log viewer UI surface (with scope amendments) | v0.71.0 | [CHANGELOG](CHANGELOG.md) |
 
 ---
 
@@ -165,11 +166,20 @@ started.
   and so cannot verify worker edits. Pushed to v0.71.0+ contingent on
   environment. 1,219 tests (no change — pure refactor). 0 warnings.
 
-- 📅 **v0.71.0 — RFC 109 (Audit log viewer UI surface).** New `/admin/console/audit`
-  interactive viewer with actor / event / tenant / date filtering and pagination.
-  Inherits filter state into existing `POST /admin/console/audit/export` (RFC 080).
-  System-admin scoped, JA-only per ADR-013. Source: v0.50.1 deck page 9.
-  (Originally planned for v0.69.0; pushed by the v0.68.0–v0.70.0 partial splits.)
+- ✅ **v0.71.0 — RFC 109 (Audit log viewer UI surface).** New
+  `/admin/console/audit` interactive viewer with actor / event /
+  date-range filtering and opaque-cursor pagination. The RFC 080
+  export endpoint inherits the same filter state via the viewer's
+  export form, closing the "browse → filter → export" flow from PDF
+  v0.50.1 page 9. Two scope amendments recorded at implementation
+  time: (1) the `tenant_id` filter is deferred — the `audit_events`
+  schema has no tenant_id column, adding one needs a separate
+  migration RFC; (2) worker handler edits (query-param parsing for
+  the new fields) are mechanical but env-blocked for compile
+  verification (same posture as RFC 112). The amendments are
+  documented in `rfcs/done/109-...md` §"Scope amendments at
+  implementation time (v0.71.0)". 1,252 tests (+33 vs v0.70.0
+  baseline). 0 warnings.
 
 - 📅 **v0.72.0 — RFC 110 + 113 (Acceptance alignment).** RFC 110: verify and fill
   Safety controls dashboard alignment with deck page 9 (rate-limit status,

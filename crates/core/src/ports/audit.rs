@@ -95,6 +95,13 @@ pub struct NewAuditEvent<'a> {
 /// `limit` rows across all kinds. Returning order is `seq`
 /// descending (newest first) — the chain ascends, the search
 /// reads the head.
+///
+/// **v0.71.0 (RFC 109)** added `before_seq`. When set, the adapter
+/// returns only rows whose `seq < before_seq`. This is the keyset
+/// half of the audit viewer's pagination: the service layer decodes
+/// the opaque cursor (`cesauth_core::admin::service::audit_pagination::decode_cursor`)
+/// to a seq value and passes it here. New field is optional; adapters
+/// that don't need keyset pagination ignore it.
 #[derive(Debug, Clone, Default)]
 pub struct AuditSearch {
     pub kind:    Option<String>,
@@ -102,6 +109,9 @@ pub struct AuditSearch {
     pub since:   Option<i64>,
     pub until:   Option<i64>,
     pub limit:   Option<u32>,
+    /// Return only rows strictly older than this `seq`. Used by the
+    /// audit viewer's `Older →` link (RFC 109, v0.71.0).
+    pub before_seq: Option<i64>,
 }
 
 pub trait AuditEventRepository {

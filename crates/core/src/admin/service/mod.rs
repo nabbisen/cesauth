@@ -333,3 +333,8 @@ where
 
 pub mod audit_export;
 pub use audit_export::{export_audit, ExportFormat, ExportResult};
+
+// ─── Audit viewer pagination + filter helpers (RFC 109) ────────────────────
+
+pub mod audit_pagination;
+pub use audit_pagination::{decode_cursor, encode_cursor, parse_rfc3339_to_unix};

@@ -163,7 +163,15 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         TenantDeletionColScheduled | TenantDeletionColActions |
         TenantDeletionStatusPending | TenantDeletionStatusExecuted | TenantDeletionStatusCancelled |
         TenantDeletionScheduledInDays | TenantDeletionCancelButton |
-        TenantDeletionExecuteButton | TenantDeletionExecuteConfirm
+        TenantDeletionExecuteButton | TenantDeletionExecuteConfirm |
+        // RFC 109 — audit log viewer
+        AuditViewerPageTitle | AuditViewerSectionTitle | AuditViewerActorLabel |
+        AuditViewerEventLabel | AuditViewerEventAny | AuditViewerPeriodLabel |
+        AuditViewerFromLabel | AuditViewerToLabel | AuditViewerSubmitButton |
+        AuditViewerExportButton | AuditViewerNewerLink | AuditViewerOlderLink |
+        AuditViewerEmptyState | AuditViewerColTime | AuditViewerColActor |
+        AuditViewerColEvent | AuditViewerColReason | AuditViewerColSeq |
+        AuditViewerNoteSchemaTenant
             => {}  // exhaustiveness pin — body is irrelevant
     }
     // Now actually iterate. The list below mirrors the match
@@ -245,6 +253,14 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         TenantDeletionStatusPending, TenantDeletionStatusExecuted, TenantDeletionStatusCancelled,
         TenantDeletionScheduledInDays, TenantDeletionCancelButton,
         TenantDeletionExecuteButton, TenantDeletionExecuteConfirm,
+        // RFC 109 — audit log viewer
+        AuditViewerPageTitle, AuditViewerSectionTitle, AuditViewerActorLabel,
+        AuditViewerEventLabel, AuditViewerEventAny, AuditViewerPeriodLabel,
+        AuditViewerFromLabel, AuditViewerToLabel, AuditViewerSubmitButton,
+        AuditViewerExportButton, AuditViewerNewerLink, AuditViewerOlderLink,
+        AuditViewerEmptyState, AuditViewerColTime, AuditViewerColActor,
+        AuditViewerColEvent, AuditViewerColReason, AuditViewerColSeq,
+        AuditViewerNoteSchemaTenant,
     ];
     for k in all { f(k); }
 }

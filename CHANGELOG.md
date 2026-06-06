@@ -26,6 +26,145 @@ split by minor-version range:
 
 ---
 
+## [0.71.0] - 2026-05-13
+
+Ships RFC 109 (Audit log viewer UI surface). The admin console gains a
+proper interactive viewer at `GET /admin/console/audit` with actor /
+event / date-range filtering and opaque-cursor pagination, replacing
+the v0.32.0 "kind contains / subject contains / limit" stub. The
+existing RFC 080 export endpoint inherits the same filter state via the
+viewer's export form, closing the "browse → filter → export" flow the
+PDF v0.50.1 deck page 9 calls for.
+
+### RFC 109 — Audit log viewer (with documented scope amendments)
+
+Source: PDF v0.50.1 page 9 "Operations UX: Audit log viewer".
+
+Two amendments to the original RFC 109 draft were recorded at
+implementation time:
+
+1. **`tenant` filter deferred.** The `audit_events` table (ADR-010) has
+   no top-level `tenant_id` column. Adding one would require a schema
+   migration + backfill, out of scope for a UI RFC. The remaining
+   filters (actor / event / date range) cover the common operator
+   flow. A future RFC can introduce the column when warranted. The
+   viewer carries a JA note inline:
+   `tenant_id 単位での絞り込みは現在のスキーマでは未提供 (RFC 109 §scope amendments)。`
+
+2. **Worker handler edits verified by env-blocked CI.** The handler
+   at `crates/worker/src/routes/admin/console/audit.rs` and the export
+   handler at `audit_export.rs` were updated mechanically (new
+   query-string parse arms, new POST-form-field arms). This sandbox
+   cannot install rustup + wasm32 to compile-verify. Same posture as
+   RFC 112: edits land here, CI on a rustup-enabled environment is
+   the verification gate.
+
+### What landed
+
+**Core (`cesauth-core`)**:
+
+- `AuditQuery` extended with `event_exact`, `since`, `until`, `cursor`.
+  All new fields are `Option`; the existing `kind_contains` /
+  `subject_contains` fields keep working for v0.31.x callers.
+- `AuditSearch` extended with `before_seq` for keyset pagination.
+- New service module `cesauth_core::admin::service::audit_pagination`:
+  - `encode_cursor(seq)` / `decode_cursor(&str)` — opaque base64url
+    codec. URL-safe alphabet, no padding, no whitespace. 16 unit
+    tests cover round-trips, malformed input, and edge cases.
+  - `parse_rfc3339_to_unix(&str)` — strict RFC 3339 parser handling
+    `Z` and `±HH:MM` offsets. Leap-year aware (rejects 2023-02-29,
+    accepts 2024-02-29). Pre-1970 rejected; fractional seconds
+    rejected. No `chrono` dependency.
+
+**i18n** (RFC 109 keys, JA + EN per usual exhaustiveness contract):
+
+19 new MessageKey variants for the audit viewer: page title, section
+title, filter labels (actor / event / period / from / to), buttons
+(submit / export / newer link / older link), empty state, 5 column
+headers, "any event" placeholder, and the deferred-tenant note.
+Admin console remains JA-only per ADR-013; EN strings exist for
+exhaustiveness but production never reaches them.
+
+**Adapter (`cesauth-adapter-test`)**:
+
+- `InMemoryAuditQuerySource::search` honors `event_exact`, `since`,
+  `until`, `cursor`. 8 new tests covering each filter independently
+  and in combination.
+- `InMemoryAuditEventRepository::search` honors `before_seq` directly
+  (keyset semantics matching what the D1 SQL adapter emits).
+
+**Adapter (`cesauth-adapter-cloudflare`, env-blocked verification)**:
+
+- `CloudflareAuditQuerySource::search` translates the new fields:
+  `event_exact` → SQL `kind = ?`, `since`/`until` → `ts >=`/`<=`,
+  `cursor` → `decode_cursor` → `AuditSearch::before_seq`.
+- D1 SQL `audit_events.search` adds a `seq < ?` clause when
+  `before_seq` is set. Other clauses untouched.
+
+**Worker (`cesauth-worker`, env-blocked verification)**:
+
+- `GET /admin/console/audit` handler parses the new `actor`, `event`,
+  `from`, `to`, `cursor` query params (in addition to the legacy
+  `kind` / `subject` / `prefix` / `limit`). Invalid timestamps drop
+  to `None` rather than 400 — the rest of the page still renders.
+- `POST /admin/console/audit/export` accepts `event`, `since`,
+  `until` form fields the new viewer sends. Filter description in
+  the emitted `AuditExported` audit row prefers the more specific
+  RFC 109 field when set.
+
+**UI (`cesauth-ui`)**:
+
+- `crates/ui/src/admin/audit.rs` rewritten end-to-end for RFC 109.
+  JA-only labels via `MessageKey`, filter form sticky across
+  re-renders, pagination via cursor (← より新しい / より古い →),
+  export form inheriting the current filter, schema-note explaining
+  the deferred `tenant` filter, scope badge intact.
+- Helper `unix_to_rfc3339_z` for sticky-form rendering; round-trips
+  with `parse_rfc3339_to_unix` (covered by a test).
+
+### Tests
+
+1,252 / 1,252 pass (133 core + 751 adapter-test + 337 ui + 31
+migrate-test). +33 over the v0.70.0 baseline of 1,219:
+
+- core: +8 (audit_pagination cursor + RFC 3339 parser)
+- adapter-test: +13 (InMemoryAuditQuerySource RFC 109 filters,
+  including cursor + event_exact combination)
+- ui: +12 (admin/audit JA labels, filter stickiness, pagination
+  links, schema note, format-helper round-trip)
+
+### Warnings
+
+0 production lib warnings on
+`cargo-1.91 check -p cesauth-core -p cesauth-ui -p cesauth-adapter-test`.
+Two `unreachable_pattern` warnings introduced briefly during the
+audit.rs URL-encoder rewrite (T and Z already covered by A-Z range)
+were caught by the check pass before commit and removed.
+
+### Drift-scan
+
+Still clean. The new admin audit URLs flow through
+`routes::admin::AUDIT` and `routes::admin::AUDIT_EXPORT` constants,
+already present in the catalog since RFC 102.
+
+### Contract invariants reaffirmed
+
+- **Catalog mirrors worker reality.** No new route paths added — the
+  viewer reuses `routes::admin::AUDIT` (which the worker already
+  registers). Filter additions are query-string only.
+- **Escape contract.** All catalog-returned URLs in the audit viewer
+  are HTML-escaped at the template boundary (see `build_filter_url`
+  and the `escape(&...)` calls around every `href=` attribute).
+- **JA-only admin console (ADR-013).** EN MessageKey translations
+  exist for exhaustiveness pinning; the viewer's `let l = Locale::Ja`
+  ensures production never reaches them. The schema-note explicitly
+  cites the JA RFC convention.
+- **Forward compatibility of the export endpoint.** v0.31.x callers
+  posting `kind` / `subject` / `limit` still get the same behaviour;
+  the new RFC 109 fields are additive.
+
+---
+
 ## [0.70.0] - 2026-05-13
 
 Closes RFC 108 (UI template route-catalog migration): completes the

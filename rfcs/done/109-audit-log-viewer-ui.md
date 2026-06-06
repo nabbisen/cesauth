@@ -1,9 +1,9 @@
 # RFC 109 — Audit log viewer UI surface
 
-**Status**: Proposed  
+**Status**: Implemented (v0.71.0 — with the documented scope amendments below: `tenant` filter deferred pending schema work, worker handler edits verified by env-blocked CI)  
 **Tier**: P2  
 **Size**: Large  
-**Target**: v0.69.0  
+**Target**: v0.69.0 (originally) → shipped v0.71.0 after v0.68.0–v0.70.0 RFC 108 split  
 **Phase**: New surface (finishing track)  
 **Refs**: PDF v0.50.1 page 9 "Operations UX: Audit log viewer" / RFC 080 (audit log export) / ADR-010 (hash chain) / ADR-013 (admin JA-only)
 
@@ -135,7 +135,50 @@ ADR-010 hash chain に依存しない開始位置を許す:
 WHERE clause は `actor` LIKE + `event_kind = ?` + `tenant_id = ?` +
 `created_at BETWEEN ?, ?`、ORDER BY `seq DESC`、LIMIT 100。
 
-## Implementation steps
+## Scope amendments at implementation time (v0.71.0)
+
+RFC 109 was drafted before re-checking the `audit_events` schema. Two
+amendments apply to the v0.71.0 implementation; both follow lifecycle
+policy (RFC 019) "narrow the scope rather than slip the release":
+
+### `tenant` filter — deferred (schema gap)
+
+The `audit_events` table (ADR-010 / v0.32.0) has no top-level
+`tenant_id` column. Indexed columns are `seq`, `id`, `ts`, `kind`,
+`subject`, `client_id`, `ip`, `user_agent`, `reason`, plus the chain
+metadata (`payload_hash`, `previous_hash`, `chain_hash`,
+`created_at`, `request_id`).
+
+The closest available signal is `subject` (user id). Mapping a user id
+to its tenant requires either:
+
+- A SQL JOIN against `users` per row — fine for a paged 100-row view
+  but problematic for unbounded exports (RFC 080 already streams).
+- A new `tenant_id` column with a migration + backfill — out of scope
+  for a UI RFC.
+- Parsing the `payload` JSON — slow, unindexable.
+
+Decision: **the `tenant` query parameter is dropped from v0.71.0.**
+The remaining filters (actor / event / date range) cover the common
+operator flow ("what did $user do, narrowed to last week"). A
+follow-up RFC can introduce the column + backfill when the cost is
+warranted by usage.
+
+### Worker handler edits — environment-blocked verification
+
+The handler at `crates/worker/src/routes/admin/console/audit.rs`
+needs query-param parsing for the new fields (`event`, `from`, `to`,
+`cursor`). Edits are mechanical (4 new arms in the `for (k, v) in
+url.query_pairs()` match block). The sandbox where v0.71.0 is being
+prepared cannot install rustup + the wasm32 target and so cannot
+compile-verify worker edits.
+
+The worker file is small and the change is local; the edit is
+included in this release. CI on a rustup-enabled environment will
+catch any breakage. Same rationale as RFC 112's environment-blocked
+status.
+
+
 
 1. `AuditFilter` 構造体 + `AuditEventRepository::list_paginated` 追加。
 2. `adapter-cloudflare` / `adapter-test` に実装。

@@ -344,6 +344,27 @@ pub enum MessageKey {
     TenantDeletionCancelButton,
     TenantDeletionExecuteButton,
     TenantDeletionExecuteConfirm,
+
+    // ---- RFC 109: audit log viewer (admin console, JA-only per ADR-013) ----
+    AuditViewerPageTitle,
+    AuditViewerSectionTitle,
+    AuditViewerActorLabel,
+    AuditViewerEventLabel,
+    AuditViewerPeriodLabel,
+    AuditViewerFromLabel,
+    AuditViewerToLabel,
+    AuditViewerSubmitButton,
+    AuditViewerExportButton,
+    AuditViewerNewerLink,
+    AuditViewerOlderLink,
+    AuditViewerEmptyState,
+    AuditViewerColTime,
+    AuditViewerColActor,
+    AuditViewerColEvent,
+    AuditViewerColReason,
+    AuditViewerColSeq,
+    AuditViewerNoteSchemaTenant,
+    AuditViewerEventAny,
 }
 
 /// Resolve `(key, locale) -> &'static str`. Zero allocation.
@@ -1146,6 +1167,88 @@ fn lookup_admin(key: &MessageKey, locale: Locale) -> Option<&'static str> {
             Locale::Ja => "この削除を即時実行しますか? 取り消せません",
             Locale::En => "Execute this deletion immediately? This is irreversible.",
         },
+
+        // ---- RFC 109: audit log viewer ----
+        // Admin console is JA-only per ADR-013; English strings are
+        // provided for completeness (exhaustiveness test) but production
+        // never reaches them.
+        AuditViewerPageTitle => match locale {
+            Locale::Ja => "監査ログ",
+            Locale::En => "Audit log",
+        },
+        AuditViewerSectionTitle => match locale {
+            Locale::Ja => "絞り込み",
+            Locale::En => "Filters",
+        },
+        AuditViewerActorLabel => match locale {
+            Locale::Ja => "Actor (部分一致)",
+            Locale::En => "Actor (substring)",
+        },
+        AuditViewerEventLabel => match locale {
+            Locale::Ja => "イベント種別",
+            Locale::En => "Event kind",
+        },
+        AuditViewerEventAny => match locale {
+            Locale::Ja => "(すべて)",
+            Locale::En => "(any)",
+        },
+        AuditViewerPeriodLabel => match locale {
+            Locale::Ja => "期間 (UTC)",
+            Locale::En => "Period (UTC)",
+        },
+        AuditViewerFromLabel => match locale {
+            Locale::Ja => "開始",
+            Locale::En => "From",
+        },
+        AuditViewerToLabel => match locale {
+            Locale::Ja => "終了",
+            Locale::En => "To",
+        },
+        AuditViewerSubmitButton => match locale {
+            Locale::Ja => "絞り込む",
+            Locale::En => "Apply filter",
+        },
+        AuditViewerExportButton => match locale {
+            Locale::Ja => "絞り込み条件で export",
+            Locale::En => "Export filtered",
+        },
+        AuditViewerNewerLink => match locale {
+            Locale::Ja => "← より新しい",
+            Locale::En => "← Newer",
+        },
+        AuditViewerOlderLink => match locale {
+            Locale::Ja => "より古い →",
+            Locale::En => "Older →",
+        },
+        AuditViewerEmptyState => match locale {
+            Locale::Ja => "条件に合致するイベントはありません。",
+            Locale::En => "No events match the current filter.",
+        },
+        AuditViewerColTime => match locale {
+            Locale::Ja => "時刻 (UTC)",
+            Locale::En => "Time (UTC)",
+        },
+        AuditViewerColActor => match locale {
+            Locale::Ja => "Actor",
+            Locale::En => "Actor",
+        },
+        AuditViewerColEvent => match locale {
+            Locale::Ja => "Event",
+            Locale::En => "Event",
+        },
+        AuditViewerColReason => match locale {
+            Locale::Ja => "Reason",
+            Locale::En => "Reason",
+        },
+        AuditViewerColSeq => match locale {
+            Locale::Ja => "seq",
+            Locale::En => "seq",
+        },
+        AuditViewerNoteSchemaTenant => match locale {
+            Locale::Ja => "tenant_id 単位での絞り込みは現在のスキーマでは未提供 (RFC 109 §scope amendments)。",
+            Locale::En => "Filtering by tenant_id is not yet supported by the schema (RFC 109 §scope amendments).",
+        },
+
         _ => return None,
     })
 }
