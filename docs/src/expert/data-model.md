@@ -1,151 +1,346 @@
 # Data Model
 
-cesauth's D1 (SQLite) schema as of **SCHEMA_VERSION 20**.
+This document describes the D1 relational schema and the Durable Objects
+state schema as of v0.64.0. It fulfills SaaS extension acceptance criterion §16.7.
 
-## Entity Relationships
+## Architecture: D1 vs Durable Objects
 
-```
-tenants (SCHEMA_VERSION 1+)
-│   id, slug, display_name, status, created_at, updated_at
-│
-├── users
-│   │   id, tenant_id, email (COLLATE NOCASE), email_verified
-│   │   account_type, status, display_name, created_at, updated_at
-│   │
-│   ├── authenticators (WebAuthn credentials)
-│   │       id, user_id, tenant_id *, credential_id (UNIQUE),
-│   │       public_key (BLOB), sign_count, transports, aaguid,
-│   │       backup_eligible, backup_state, name, created_at, last_used_at
-│   │       * tenant_id added in migration 0020
-│   │
-│   ├── totp_authenticators
-│   │       id, user_id, secret_ciphertext, secret_nonce,
-│   │       secret_key_id, last_used_step, confirmed_at, …
-│   │
-│   ├── totp_recovery_codes
-│   │       id, user_id, code_hash (SHA-256), redeemed_at
-│   │
-│   ├── user_sessions  (D1 index; authoritative state in DO)
-│   │       session_id, user_id, tenant_id, auth_time, …
-│   │
-│   ├── consent
-│   │       id, user_id, client_id, scopes, granted_at
-│   │
-│   └── grants
-│           id, user_id, client_id, scopes, issued_at, revoked_at
-│
-├── organizations
-│   │   id, tenant_id, slug, display_name, status, created_at, updated_at
-│   │
-│   └── groups
-│           id, tenant_id, parent (org_id or tenant_id), slug,
-│           display_name, status, created_at, updated_at
-│
-├── user_tenant_memberships
-│       tenant_id, user_id, role, joined_at
-│
-├── user_organization_memberships
-│       organization_id, user_id, role, joined_at
-│
-├── user_group_memberships
-│       group_id, user_id, joined_at
-│
-├── roles
-│       id, slug, tenant_id (NULL = system role), display_name, …
-│
-├── permissions          (seed: PermissionCatalog::ALL)
-│       id, slug, display_name, …
-│
-├── role_permissions
-│       role_id, permission_id
-│
-├── role_assignments
-│       id, user_id, role_id, scope_type, scope_id,
-│       granted_by, granted_at, expires_at
-│
-├── subscriptions        (one per tenant)
-│       id, tenant_id, plan_id, lifecycle (trial|paid|grace),
-│       status, started_at, current_period_end, trial_ends_at, …
-│
-├── subscription_history
-│       id, subscription_id, tenant_id, event,
-│       from_plan_id, to_plan_id, actor, occurred_at
-│
-├── invitation_tokens    (migration 0018)
-│       id, tenant_id, email, role, issued_by,
-│       issued_at, expires_at, accepted_at, accepted_by,
-│       revoked_at, revoked_by
-│
-└── deletion_requests    (migration 0019)
-        id, user_id, tenant_id, requested_at, requested_by,
-        reason, scheduled_at, executed_at, executed_by,
-        cancelled_at, cancelled_by, status (pending|executed|cancelled)
+cesauth splits state into two stores with different consistency properties:
 
-plans (global, not tenant-scoped)
-    id, slug, display_name, active,
-    features (comma-separated), quotas (name=value,…)
-
-oidc_clients (not tenant-scoped in schema; linked by audience)
-    id, client_secret_hash, redirect_uris, allowed_scopes,
-    client_type, require_pkce, audience, …
-
-jwt_signing_keys
-    kid, public_key, private_key_encrypted, created_at,
-    expires_at, retired_at
-
-audit_events (append-only, hash-chained)
-    id, kind, actor, subject, scope, detail,
-    timestamp, prev_hash, hash
-
-admin_tokens
-admin_thresholds
-bucket_safety_state
-cost_snapshots
-schema_meta
-```
-
-## Durable Objects (ephemeral / strong-consistency state)
-
-The following state lives in **Cloudflare Durable Objects**, not D1:
-
-| DO class | Purpose |
-|---|---|
-| `AuthChallengeStore` | Authorization code challenges (single-use, short TTL) |
-| `RefreshTokenFamilyStore` | Refresh token family state, rotation, reuse detection |
-| `SessionDO` | Active session state (touch, idle timeout, revocation) |
-| `RateLimitStore` | Per-family and per-client rate limit counters |
-
-## Scope types for role_assignments
-
-| `scope_type` | `scope_id` references |
-|---|---|
-| `system` | *(none — global scope)* |
-| `tenant` | `tenants.id` |
-| `organization` | `organizations.id` |
-| `group` | `groups.id` |
-| `user` | `users.id` |
-
-## Key invariants
-
-- `users.email` uses `COLLATE NOCASE` — case-insensitive uniqueness per tenant.
-- `invitation_tokens`: unique index on `(tenant_id, email)` where pending (accepted_at IS NULL AND revoked_at IS NULL).
-- `deletion_requests`: unique index on `user_id` where pending.
-- `authenticators.tenant_id` (migration 0020): backfilled from `users.tenant_id`.
-- `audit_events` is append-only; rows are never updated or deleted.
-- Physical deletion of a user triggers `ON DELETE CASCADE` on authenticators, totp, consent, grants, memberships, role_assignments.
-
-## Migration history
-
-| Migration | Version | Change |
+| Store | Contents | Consistency |
 |---|---|---|
-| 0001_initial.sql | 1 | Core tables: users, authenticators, consent, grants, oidc_clients |
-| 0003_tenancy.sql | 3 | tenants, orgs, groups, memberships, roles, subscriptions, plans |
-| 0007_totp.sql | 7 | totp_authenticators, totp_recovery_codes |
-| 0009_user_session_index.sql | 9 | user_sessions index table |
-| 0010_admin.sql | 10 | admin_tokens, admin_thresholds, bucket_safety_state, cost_snapshots |
-| 0011_schema_meta.sql | 11 | schema_meta table (required by migrate-test) |
-| 0012–0016 | 12–16 | Tenant boundary FKs, permission catalog, cascade fixes, audit hash chain |
-| 0017_csp_nonces.sql | 17 | CSP nonce infrastructure |
-| 0018_invitation_tokens.sql | 18 | Invitation token system (RFC 043) |
-| 0019_deletion_requests.sql | 19 | User deletion requests / GDPR Article 17 (RFC 044) |
-| 0020_authenticator_tenant_id.sql | 20 | `tenant_id` on authenticators (RFC 051) |
+| **D1 (SQLite)** | Long-lived relational truth: tenants, users, roles, audit events | Eventual (global), strongly consistent within a region |
+| **Durable Objects** | Sequential ephemeral state: auth challenges, sessions, refresh families, rate limits | Strongly consistent (single actor per key) |
+
+The boundary is intentional. D1 holds "what happened and who has permission";
+DOs hold "what is happening right now and how many times has it happened this second."
+
+---
+
+## D1 Entity-Relationship Diagram
+
+```mermaid
+erDiagram
+    tenants {
+        TEXT id PK
+        TEXT slug UK
+        TEXT display_name
+        TEXT status
+        INTEGER created_at
+        INTEGER updated_at
+    }
+
+    users {
+        TEXT id PK
+        TEXT tenant_id FK
+        TEXT email
+        TEXT account_type
+        INTEGER created_at
+        INTEGER updated_at
+    }
+
+    authenticators {
+        TEXT id PK
+        TEXT user_id FK
+        TEXT tenant_id FK
+        TEXT credential_id
+        TEXT cose_key
+        INTEGER sign_count
+        TEXT transports
+        INTEGER created_at
+        INTEGER last_used_at
+    }
+
+    user_tenant_memberships {
+        TEXT id PK
+        TEXT user_id FK
+        TEXT tenant_id FK
+        TEXT status
+        INTEGER joined_at
+    }
+
+    user_organization_memberships {
+        TEXT id PK
+        TEXT user_id FK
+        TEXT organization_id FK
+        INTEGER joined_at
+    }
+
+    user_group_memberships {
+        TEXT id PK
+        TEXT user_id FK
+        TEXT group_id FK
+        INTEGER joined_at
+    }
+
+    organizations {
+        TEXT id PK
+        TEXT tenant_id FK
+        TEXT slug
+        TEXT display_name
+        TEXT status
+        INTEGER created_at
+    }
+
+    groups {
+        TEXT id PK
+        TEXT tenant_id FK
+        TEXT organization_id FK
+        TEXT slug
+        TEXT display_name
+        INTEGER created_at
+    }
+
+    roles {
+        TEXT id PK
+        TEXT tenant_id FK
+        TEXT slug
+        TEXT display_name
+        TEXT permissions
+        INTEGER created_at
+        INTEGER updated_at
+    }
+
+    permissions {
+        TEXT id PK
+        TEXT slug UK
+        TEXT description
+        INTEGER created_at
+    }
+
+    role_assignments {
+        TEXT id PK
+        TEXT user_id FK
+        TEXT role_id FK
+        TEXT scope_type
+        TEXT scope_id
+        TEXT granted_by FK
+        INTEGER granted_at
+        INTEGER expires_at
+    }
+
+    plans {
+        TEXT id PK
+        TEXT slug UK
+        TEXT display_name
+        INTEGER active
+        TEXT features
+        TEXT quotas
+        TEXT price_description
+    }
+
+    subscriptions {
+        TEXT id PK
+        TEXT tenant_id FK
+        TEXT plan_id FK
+        TEXT status
+        INTEGER trial_ends_at
+        INTEGER current_period_start
+        INTEGER current_period_end
+        INTEGER created_at
+        INTEGER updated_at
+    }
+
+    subscription_history {
+        TEXT id PK
+        TEXT subscription_id FK
+        TEXT old_plan_id
+        TEXT new_plan_id
+        TEXT reason
+        INTEGER changed_at
+        TEXT changed_by
+    }
+
+    oidc_clients {
+        TEXT id PK
+        TEXT tenant_id FK
+        TEXT client_id UK
+        TEXT client_secret_hash
+        TEXT redirect_uris
+        TEXT grant_types
+        TEXT response_types
+        TEXT scopes
+        TEXT audience
+        INTEGER created_at
+        INTEGER updated_at
+    }
+
+    consent {
+        TEXT id PK
+        TEXT user_id FK
+        TEXT client_id FK
+        TEXT scope
+        INTEGER granted_at
+        INTEGER expires_at
+    }
+
+    grants {
+        TEXT id PK
+        TEXT user_id FK
+        TEXT client_id FK
+        TEXT scope
+        INTEGER granted_at
+    }
+
+    totp_credentials {
+        TEXT id PK
+        TEXT user_id FK
+        TEXT encrypted_secret
+        INTEGER created_at
+        TEXT recovery_codes
+    }
+
+    audit_events {
+        INTEGER seq PK
+        TEXT id
+        INTEGER ts
+        TEXT kind
+        TEXT actor_id
+        TEXT subject
+        TEXT client_id
+        TEXT reason
+        TEXT chain_hash
+        TEXT request_id
+    }
+
+    user_sessions {
+        TEXT id PK
+        TEXT user_id FK
+        TEXT tenant_id FK
+        INTEGER created_at
+        INTEGER last_seen_at
+    }
+
+    invitation_tokens {
+        TEXT id PK
+        TEXT tenant_id FK
+        TEXT email
+        TEXT role
+        TEXT issued_by FK
+        INTEGER issued_at
+        INTEGER expires_at
+        INTEGER accepted_at
+        TEXT accepted_by
+        INTEGER revoked_at
+        TEXT revoked_by
+    }
+
+    deletion_requests {
+        TEXT id PK
+        TEXT tenant_id FK
+        TEXT user_id FK
+        TEXT status
+        INTEGER scheduled_at
+        INTEGER executed_at
+        TEXT executed_by
+        INTEGER cancelled_at
+        TEXT cancelled_by
+    }
+
+    schema_meta {
+        TEXT key PK
+        TEXT value
+    }
+
+    tenants ||--o{ users : "has"
+    tenants ||--o{ organizations : "has"
+    tenants ||--o{ groups : "parent"
+    tenants ||--o{ oidc_clients : "owns"
+    tenants ||--o{ subscriptions : "has one active"
+    tenants ||--o{ invitation_tokens : "issues"
+    tenants ||--o{ deletion_requests : "manages"
+    users ||--o{ authenticators : "registers"
+    users ||--o{ user_tenant_memberships : "belongs via"
+    users ||--o{ user_organization_memberships : "belongs via"
+    users ||--o{ user_group_memberships : "belongs via"
+    users ||--o{ role_assignments : "assigned via"
+    users ||--o{ consent : "grants"
+    users ||--o{ grants : "holds"
+    users ||--o{ totp_credentials : "may have"
+    users ||--o{ user_sessions : "has"
+    organizations ||--o{ user_organization_memberships : "members via"
+    organizations ||--o{ groups : "sub-groups"
+    groups ||--o{ user_group_memberships : "members via"
+    roles ||--o{ role_assignments : "assigned via"
+    plans ||--o{ subscriptions : "defines"
+    subscriptions ||--o{ subscription_history : "history via"
+    oidc_clients ||--o{ consent : "subject of"
+    oidc_clients ||--o{ grants : "subject of"
+```
+
+---
+
+## Durable Object State
+
+| DO Class | Key | Contents | Retention |
+|---|---|---|---|
+| `AuthChallenge` | `challenge:{handle}` | PKCE code, CSRF token, session context | 10 min TTL |
+| `ActiveSession` | `session:{session_id}` | User ID, tenant ID, refresh token family ref, last-seen | Session lifetime |
+| `RefreshTokenFamily` | `family:{family_id}` | Token chain, reuse detection, rotation state | Refresh lifetime |
+| `MagicLinkChallenge` | `magic:{handle}` | Email, OTP hash, attempt count | 30 min TTL |
+| `UserSessionIndex` | `usi:{user_id}` | List of `session_id` for a user | Per-session entry TTL |
+| `RateLimit` | `rl:{key}` | Sliding window counters | 1 hr TTL |
+
+---
+
+## Tenant Isolation
+
+Every table that contains user or content data carries a `tenant_id` foreign key.
+The following invariants are enforced:
+
+1. **API layer**: all authenticated routes resolve `tenant_id` from the session token;
+   queries are always filtered to that tenant.
+2. **Service layer**: `authz::check_permission` evaluates the scope lattice, ensuring
+   system-scope grants cannot be used to access tenant data unless the caller is
+   actually system-scoped.
+3. **Migration layer**: composite unique indexes (`0013_tenant_composite_keys.sql`)
+   prevent slug collisions across tenants (e.g. two different tenants can both have
+   an org with slug `engineering`).
+4. **FK cascade**: `ON DELETE CASCADE` on user-owned data ensures that deleting a
+   user removes all their authenticators, sessions, consents, and grants within their
+   tenant. `0012_user_fk_cascades.sql` and `0016_repair_legacy_0004_fk_and_collation.sql`
+   corrected early-migration omissions.
+
+---
+
+## Plan and Subscription Separation
+
+`plans` is the static catalogue (feature flags, quotas, pricing description).
+`subscriptions` is the live contract (current plan, trial end, billing period).
+`subscription_history` records every plan change with actor and reason.
+
+This separation allows:
+- Plan definitions to change without touching existing subscriptions.
+- A tenant to be on Trial while the `plans.trial` row is updated for new sign-ups.
+- Retroactive reporting on "how many tenants were on plan X at time T".
+
+---
+
+## Migration History
+
+| Migration | Version | Purpose |
+|---|---|---|
+| 0001 | v0.4.0 | Initial schema: users, OIDC, consent, grants, audit |
+| 0002 | v0.4.0 | Admin console tables |
+| 0003 | v0.20.0 | Tenancy: tenant, org, group, membership, plan, subscription |
+| 0004 | v0.20.0 | User-tenancy backfill (data migration) |
+| 0005 | v0.25.0 | Admin token ↔ user link |
+| 0006 | v0.16.0 | Anonymous trial accounts |
+| 0007 | v0.28.0 | TOTP credentials |
+| 0008 | v0.32.0 | Audit event hash chain (ADR-010) |
+| 0009 | v0.35.0 | User session index for `/me/security/sessions` |
+| 0010 | v0.44.0 | Introspection audience column on OIDC clients |
+| 0011 | v0.46.0 | Permission catalog sync (tenant:member:add/remove) |
+| 0012 | v0.47.0 | User FK CASCADE corrections |
+| 0013 | v0.48.0 | Tenant composite unique keys |
+| 0014 | v0.50.0 | Index restoration after 0004 regression |
+| 0015 | v0.51.0 | Audit event request_id column |
+| 0016 | v0.52.0 | Repair legacy 0004 FK and COLLATE NOCASE |
+| 0017 | v0.54.0 | Groups FK RESTRICT on delete |
+| 0018 | v0.57.0 | Invitation tokens |
+| 0019 | v0.58.0 | Deletion requests |
+| 0020 | v0.61.0 | Authenticator tenant_id column |
+
+---
+
+*See also: [Architecture](architecture.md) · [ADR-010 Audit Chain](adrs/010-audit-chain.md)*

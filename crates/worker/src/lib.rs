@@ -18,6 +18,7 @@ pub mod adapter;
 pub mod audit;
 pub mod client_auth;
 pub mod config;
+pub mod cron_status;
 pub mod csrf;
 pub mod error;
 pub mod flash;
@@ -65,41 +66,62 @@ pub async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
         // they're independent tasks and a sweep failure must
         // not block the verification cron, and vice versa.
         "0 4 * * *" => {
-            if let Err(e) = sweep::run(&env).await {
-                console_error!("scheduled sweep failed: {e:?}");
-            }
-            if let Err(e) = audit_chain_cron::run(&env).await {
+            let t0 = worker::Date::now().as_millis() / 1000;
+            let sweep_result = sweep::run(&env).await;
+            let t1 = worker::Date::now().as_millis() / 1000;
+            let _ = cron_status::record_cron_pass(&env, &cron_status::CronPassRecord::new(
+                "sweep", t0 as i64, t1 as i64,
+                sweep_result.is_ok(),
+                sweep_result.as_ref().map(|n| *n as u64).unwrap_or(0),
+                "apply",
+                sweep_result.err().map(|e| format!("{e:?}")),
+            )).await;
+
+            let chain_result = audit_chain_cron::run(&env).await;
+            let t2 = worker::Date::now().as_millis() / 1000;
+            let _ = cron_status::record_cron_pass(&env, &cron_status::CronPassRecord::new(
+                "audit_chain", t1 as i64, t2 as i64,
+                chain_result.is_ok(), 0, "apply",
+                chain_result.err().map(|e| format!("{e:?}")),
+            )).await;
+            if let Err(e) = &chain_result {
                 console_error!("audit chain verification failed: {e:?}");
             }
-            // v0.40.0: session-index drift detection
-            // (ADR-012 §Q1). Detection-only — emits
-            // audit events for drifts, no D1 repair
-            // (deferred to §Q1.5).
-            if let Err(e) = session_index_audit::run(&env).await {
+
+            let sia_result = session_index_audit::run(&env).await;
+            let t3 = worker::Date::now().as_millis() / 1000;
+            let processed_sia = sia_result.as_ref().map(|s| (s.drift_count + s.ok_count) as u64).unwrap_or(0);
+            let _ = cron_status::record_cron_pass(&env, &cron_status::CronPassRecord::new(
+                "session_index_audit", t2 as i64, t3 as i64,
+                sia_result.is_ok(), processed_sia, "apply",
+                sia_result.err().map(|e| format!("{e:?}")),
+            )).await;
+            if let Err(e) = &sia_result {
                 console_error!("session index audit failed: {e:?}");
             }
-            // v0.48.0: audit retention pass (ADR-014
-            // §Q3 Resolved). Runs LAST in the cron
-            // chain because it depends on a freshly-
-            // written verifier checkpoint from the
-            // audit_chain_cron pass above. Even on a
-            // first run where the checkpoint cron
-            // hasn't run yet (or failed), the
-            // retention pass detects "no checkpoint"
-            // and exits as a safe no-op.
-            if let Err(e) = audit_retention_cron::run(&env).await {
+
+            let retention_result = audit_retention_cron::run(&env).await;
+            let t4 = worker::Date::now().as_millis() / 1000;
+            let _ = cron_status::record_cron_pass(&env, &cron_status::CronPassRecord::new(
+                "audit_retention", t3 as i64, t4 as i64,
+                retention_result.is_ok(), 0, "apply",
+                retention_result.err().map(|e| format!("{e:?}")),
+            )).await;
+            if let Err(e) = &retention_result {
                 console_error!("audit retention cron failed: {e:?}");
             }
-            // v0.49.0: session-index repair pass
-            // (ADR-012 §Q1.5 Resolved). Reads the same
-            // D1 mirror as session_index_audit, walks
-            // outward to the DOs, classifies drifts,
-            // and (when SESSION_INDEX_AUTO_REPAIR=true)
-            // mutates D1 to bring the mirror in line.
-            // Default off — operators opt in after
-            // watching the drift event stream from
-            // session_index_audit for some time.
-            if let Err(e) = session_index_repair_cron::run(&env).await {
+
+            let repair_mode = std::env::var("SESSION_INDEX_AUTO_REPAIR")
+                .map(|v| if v == "true" { "apply" } else { "dryrun" })
+                .unwrap_or("dryrun");
+            let repair_result = session_index_repair_cron::run(&env).await;
+            let t5 = worker::Date::now().as_millis() / 1000;
+            let _ = cron_status::record_cron_pass(&env, &cron_status::CronPassRecord::new(
+                "session_index_repair", t4 as i64, t5 as i64,
+                repair_result.is_ok(), 0, repair_mode,
+                repair_result.err().map(|e| format!("{e:?}")),
+            )).await;
+            if let Err(e) = &repair_result {
                 console_error!("session index repair cron failed: {e:?}");
             }
         }

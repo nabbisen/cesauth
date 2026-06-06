@@ -607,3 +607,100 @@ mod export_tests {
         assert_eq!(ExportFormat::Jsonl.content_type(), "application/x-ndjson; charset=utf-8");
     }
 }
+
+// ---------------------------------------------------------------------------
+// RFC 091 — admin/service.rs additional unit tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod service_tests {
+    use super::*;
+    use crate::admin::ports::AuditQuerySource;
+    use crate::admin::types::{AdminAuditEntry, AuditQuery};
+    use crate::ports::PortResult;
+
+    // ── InMemory audit stub ───────────────────────────────────────────────
+
+    struct MemAudit(Vec<AdminAuditEntry>);
+
+    impl AuditQuerySource for MemAudit {
+        async fn search(&self, _q: &AuditQuery) -> PortResult<Vec<AdminAuditEntry>> {
+            Ok(self.0.clone())
+        }
+    }
+
+    fn entry(ts: i64, kind: &str) -> AdminAuditEntry {
+        AdminAuditEntry {
+            ts,
+            id:      format!("id-{kind}"),
+            kind:    kind.to_owned(),
+            subject: None,
+            client:  None,
+            reason:  None,
+            key:     "seq=1".to_owned(),
+        }
+    }
+
+    // ── search_audit tests ────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn search_audit_returns_all_entries() {
+        let audit = MemAudit(vec![
+            entry(100, "LoginSuccess"),
+            entry(200, "SessionRevoked"),
+        ]);
+        let q = AuditQuery::default();
+        let rows = search_audit(&audit, &q).await.unwrap();
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn search_audit_empty_returns_empty() {
+        let audit = MemAudit(vec![]);
+        let rows = search_audit(&audit, &AuditQuery::default()).await.unwrap();
+        assert!(rows.is_empty());
+    }
+
+    // ── export_audit tests ────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn export_audit_csv_roundtrip() {
+        let audit = MemAudit(vec![entry(1_700_000_000, "LoginSuccess")]);
+        let result = export_audit(&audit, &AuditQuery::default(), ExportFormat::Csv, 100)
+            .await.unwrap();
+        assert_eq!(result.row_count, 1);
+        assert!(!result.truncated);
+        assert!(result.body.contains("LoginSuccess"));
+        assert_eq!(result.content_type, "text/csv; charset=utf-8");
+        assert!(result.filename.ends_with(".csv"));
+    }
+
+    #[tokio::test]
+    async fn export_audit_jsonl_roundtrip() {
+        let audit = MemAudit(vec![entry(1_700_000_000, "TokenIssued")]);
+        let result = export_audit(&audit, &AuditQuery::default(), ExportFormat::Jsonl, 100)
+            .await.unwrap();
+        assert!(result.body.contains("TokenIssued"));
+        assert_eq!(result.content_type, "application/x-ndjson; charset=utf-8");
+        assert!(result.filename.ends_with(".jsonl"));
+    }
+
+    #[tokio::test]
+    async fn export_audit_truncates_at_max_rows() {
+        let entries: Vec<AdminAuditEntry> = (0..10).map(|i| entry(i, "E")).collect();
+        let audit = MemAudit(entries);
+        let result = export_audit(&audit, &AuditQuery::default(), ExportFormat::Csv, 5)
+            .await.unwrap();
+        assert_eq!(result.row_count, 5);
+        assert!(result.truncated);
+    }
+
+    #[tokio::test]
+    async fn export_audit_not_truncated_when_under_limit() {
+        let audit = MemAudit(vec![entry(0, "E1"), entry(1, "E2")]);
+        let result = export_audit(&audit, &AuditQuery::default(), ExportFormat::Csv, 100)
+            .await.unwrap();
+        assert_eq!(result.row_count, 2);
+        assert!(!result.truncated);
+    }
+}

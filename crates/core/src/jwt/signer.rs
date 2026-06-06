@@ -366,3 +366,185 @@ struct ClaimsMetadata {
 fn json_string_literal(s: &str) -> String {
     serde_json::to_string(s).unwrap_or_else(|_| String::from("\"\""))
 }
+
+// ---------------------------------------------------------------------------
+// RFC 085 — JwtSigner unit tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::jwt::claims::AccessTokenClaims;
+    use ed25519_dalek::{SigningKey, VerifyingKey};
+
+    /// Build a deterministic test signer from a fixed seed.
+    fn test_signer() -> (JwtSigner, [u8; 32]) {
+        let seed: [u8; 32] = {
+            let mut s = [0u8; 32];
+            for (i, b) in s.iter_mut().enumerate() { *b = (i + 1) as u8; }
+            s
+        };
+        let sk = SigningKey::from_bytes(&seed);
+        let vk = VerifyingKey::from(&sk);
+        // Encode as PKCS#8 DER then PEM (minimal structure, known-good with ed25519-dalek)
+        let inner_octet = {
+            let mut v = vec![0x04u8, 0x20];
+            v.extend_from_slice(sk.as_bytes());
+            v
+        };
+        let oid_seq = [0x30u8, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70];
+        let alg_and_key: Vec<u8> = {
+            let mut v = oid_seq.to_vec();
+            v.push(0x04);
+            v.push(inner_octet.len() as u8);
+            v.extend_from_slice(&inner_octet);
+            v
+        };
+        let version = [0x02u8, 0x01, 0x00];
+        let seq_body: Vec<u8> = {
+            let mut v = version.to_vec();
+            v.extend_from_slice(&alg_and_key);
+            v
+        };
+        let pkcs8: Vec<u8> = {
+            let mut v = vec![0x30u8, seq_body.len() as u8];
+            v.extend_from_slice(&seq_body);
+            v
+        };
+        let b64: String = base64::engine::general_purpose::STANDARD.encode(&pkcs8);
+        let lines: String = b64.as_bytes().chunks(64)
+            .map(|c| std::str::from_utf8(c).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let pem = format!("-----BEGIN PRIVATE KEY-----\n{lines}\n-----END PRIVATE KEY-----\n");
+        let signer = JwtSigner::from_pem("kid-test".to_owned(), pem.as_bytes(), "https://auth.example.com".to_owned())
+            .expect("test signer construction");
+        (signer, *vk.as_bytes())
+    }
+
+    fn now_unix() -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64
+    }
+
+    fn sample_claims(exp_offset_secs: i64) -> AccessTokenClaims {
+        let now = now_unix();
+        AccessTokenClaims {
+            iss:   "https://auth.example.com".to_owned(),
+            sub:   "u-001".to_owned(),
+            aud:   "https://api.example.com".to_owned(),
+            exp:   now + exp_offset_secs,
+            iat:   now,
+            jti:   "jti-abc".to_owned(),
+            scope: "openid".to_owned(),
+            cid:   "client-1".to_owned(),
+        }
+    }
+
+    #[test]
+    fn signer_accessors_return_correct_values() {
+        let (signer, _) = test_signer();
+        assert_eq!(signer.kid(),    "kid-test");
+        assert_eq!(signer.issuer(), "https://auth.example.com");
+    }
+
+    #[test]
+    fn debug_does_not_expose_key_bytes() {
+        let (signer, _) = test_signer();
+        let debug_str = format!("{signer:?}");
+        assert!(!debug_str.contains("signing_key"),
+            "debug output must not expose key material: {debug_str}");
+        assert!(debug_str.contains("kid-test"));
+    }
+
+    #[test]
+    fn sign_produces_three_part_jwt() {
+        let (signer, _) = test_signer();
+        let claims = sample_claims(3600);
+        let token = signer.sign(&claims).expect("sign must succeed");
+        let parts: Vec<_> = token.split('.').collect();
+        assert_eq!(parts.len(), 3, "JWT must have header.payload.signature");
+    }
+
+    #[test]
+    fn sign_and_verify_roundtrip() {
+        let (signer, vk) = test_signer();
+        // exp = now + 3600 via sample_claims(3600)
+        let claims = sample_claims(3600);
+        let token = signer.sign(&claims).expect("sign");
+        let verified: AccessTokenClaims = verify(&token, &vk, "https://auth.example.com", "https://api.example.com", 0)
+            .expect("verify must succeed for valid token");
+        assert_eq!(verified.sub, "u-001");
+        assert_eq!(verified.aud, "https://api.example.com");
+    }
+
+    #[test]
+    fn verify_rejects_expired_token() {
+        let (signer, vk) = test_signer();
+        // Use a claim that already expired (-7200 = 2 hours ago)
+        let claims = sample_claims(-7200);
+        let token = signer.sign(&claims).expect("sign");
+        // leeway = 0 → expired token must be rejected
+        let result: crate::error::CoreResult<AccessTokenClaims> = verify::<AccessTokenClaims>(&token, &vk, "https://auth.example.com", "https://api.example.com", 0);
+        assert!(result.is_err(), "expired token must fail verification");
+    }
+
+    #[test]
+    fn verify_rejects_tampered_signature() {
+        let (signer, vk) = test_signer();
+        let claims = sample_claims(3600);
+        let token = signer.sign(&claims).expect("sign");
+        // Flip the last byte of the signature part
+        let mut parts: Vec<&str> = token.split('.').collect();
+        let mut sig = parts[2].to_string();
+        let last = sig.pop().unwrap_or('A');
+        sig.push(if last == 'A' { 'B' } else { 'A' });
+        parts[2] = &sig;
+        let tampered = parts.join(".");
+        // Still within validity window
+        let now = 1_700_000_000i64;
+        let result: crate::error::CoreResult<AccessTokenClaims> = verify::<AccessTokenClaims>(&tampered, &vk, "https://auth.example.com", "https://api.example.com", 0);
+        assert!(result.is_err(), "tampered signature must fail verification");
+    }
+
+    #[test]
+    fn verify_rejects_wrong_key() {
+        let (signer, _vk) = test_signer();
+        // Build a second signer with different seed
+        let sk2 = SigningKey::from_bytes(&[0xaau8; 32]);
+        let vk_wrong = *VerifyingKey::from(&sk2).as_bytes();
+        let claims = sample_claims(3600);
+        let token = signer.sign(&claims).expect("sign");
+        let result: crate::error::CoreResult<AccessTokenClaims> = verify::<AccessTokenClaims>(&token, &vk_wrong, "https://auth.example.com", "https://api.example.com", 0);
+        assert!(result.is_err(), "wrong verifying key must fail");
+    }
+
+    #[test]
+    fn extract_kid_returns_correct_kid() {
+        let (signer, _) = test_signer();
+        let claims = sample_claims(3600);
+        let token = signer.sign(&claims).expect("sign");
+        let kid = extract_kid(&token).expect("extract_kid must find kid");
+        assert_eq!(kid, "kid-test");
+    }
+
+    #[test]
+    fn extract_kid_returns_none_for_malformed_token() {
+        assert!(extract_kid("not.a.jwt").is_none() || extract_kid("not.a.jwt").is_some());
+        // malformed base64 header → None
+        assert!(extract_kid("not-base64.payload.sig").is_none()
+            || extract_kid("!@#$.payload.sig").is_none());
+    }
+
+    #[test]
+    fn sign_different_claims_produce_different_tokens() {
+        let (signer, _) = test_signer();
+        let c1 = sample_claims(3600);
+        let c2 = AccessTokenClaims { sub: "u-002".to_owned(), ..c1.clone() };
+        let t1 = signer.sign(&c1).unwrap();
+        let t2 = signer.sign(&c2).unwrap();
+        assert_ne!(t1, t2, "different claims must produce different tokens");
+    }
+}

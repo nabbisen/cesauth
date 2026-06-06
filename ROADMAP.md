@@ -102,12 +102,26 @@ started.
 
 ### Next minor releases
 
+- ✅ **v0.65.0 — RFC 092-095 (SaaS acceptance criteria + docs).** ER diagram,
+  acceptance report, feature flag verification. 1,192 tests.
+
+- ✅ **v0.64.0 — RFC 085–091 (Core test coverage).** JWT signer 10 tests,
+  authz/service 14 tests, i18n inline 6 tests, admin/service 6 tests. Cron pass KV
+  record writing (RFC 090). Total: 1,192 tests (+36).
+
 - ✅ **v0.63.0 — RFC 079–084 (P2 operations UX + UI consistency).**
   RFC 079: Magic Link not-configured notice (operator boundary). RFC 080: audit log
   filtered export CSV/JSONL with AuditExported event. RFC 081: cron pass status
   surface (/admin/console/operations, KV-backed). RFC 082: design token unification
   (--success/--warning/--danger aliases). RFC 083: rollback hint (already existed).
   RFC 084: sessions drift note. 1,156 tests. Routes: 165.
+
+- ✅ **v0.65.0 — RFC 092-095 (SaaS acceptance criteria + docs).** ER diagram,
+  acceptance report, feature flag verification. 1,192 tests.
+
+- ✅ **v0.64.0 — RFC 085–091 (Core test coverage).** JWT signer 10 tests,
+  authz/service 14 tests, i18n inline 6 tests, admin/service 6 tests. Cron pass KV
+  record writing (RFC 090). Total: 1,192 tests (+36).
 
 - ✅ **v0.63.0 — RFC 079–084 (P2 operations UX + UI consistency).**
   Magic Link not-configured notice, audit log export CSV/JSONL, cron pass status surface,

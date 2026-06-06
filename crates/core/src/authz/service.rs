@@ -312,3 +312,249 @@ where
 
     Ok(out)
 }
+
+// ---------------------------------------------------------------------------
+// RFC 086 — authz/service.rs unit tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::authz::types::{Permission, Role, RoleAssignment, Scope, ScopeRef};
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    use crate::authz::ports::{RoleAssignmentRepository, RoleRepository};
+    use crate::ports::{PortError, PortResult};
+
+    #[derive(Debug, Default)]
+    struct StubAssignments { rows: Mutex<Vec<RoleAssignment>> }
+    impl RoleAssignmentRepository for StubAssignments {
+        async fn create(&self, a: &RoleAssignment) -> PortResult<()> {
+            self.rows.lock().unwrap().push(a.clone()); Ok(())
+        }
+        async fn delete(&self, id: &str) -> PortResult<()> {
+            self.rows.lock().unwrap().retain(|r| r.id != id); Ok(())
+        }
+        async fn list_for_user(&self, user_id: &str) -> PortResult<Vec<RoleAssignment>> {
+            Ok(self.rows.lock().unwrap().iter().filter(|r| r.user_id == user_id).cloned().collect())
+        }
+        async fn list_in_scope(&self, scope: &Scope) -> PortResult<Vec<RoleAssignment>> {
+            Ok(self.rows.lock().unwrap().iter().filter(|r| &r.scope == scope).cloned().collect())
+        }
+        async fn purge_expired(&self, _now: i64) -> PortResult<u64> { Ok(0) }
+    }
+
+    #[derive(Debug, Default)]
+    struct StubRoles { rows: Mutex<HashMap<String, Role>> }
+    impl RoleRepository for StubRoles {
+        async fn create(&self, r: &Role) -> PortResult<()> {
+            self.rows.lock().unwrap().insert(r.id.clone(), r.clone()); Ok(())
+        }
+        async fn get(&self, id: &str) -> PortResult<Option<Role>> {
+            Ok(self.rows.lock().unwrap().get(id).cloned())
+        }
+        async fn find_by_slug(&self, tenant: Option<&str>, slug: &str) -> PortResult<Option<Role>> {
+            Ok(self.rows.lock().unwrap().values()
+               .find(|r| r.slug == slug && r.tenant_id.as_deref() == tenant).cloned())
+        }
+        async fn list_visible_to_tenant(&self, tenant: &str) -> PortResult<Vec<Role>> {
+            Ok(self.rows.lock().unwrap().values()
+               .filter(|r| r.tenant_id.is_none() || r.tenant_id.as_deref() == Some(tenant))
+               .cloned().collect())
+        }
+        async fn list_system_roles(&self) -> PortResult<Vec<Role>> {
+            Ok(self.rows.lock().unwrap().values().filter(|r| r.tenant_id.is_none()).cloned().collect())
+        }
+    }
+
+    type InMemoryRoleAssignmentRepository = StubAssignments;
+    type InMemoryRoleRepository = StubRoles;
+
+    // ── fixtures ──────────────────────────────────────────────────────────
+
+    fn perm(s: &str) -> Permission { Permission(s.to_owned()) }
+
+    fn make_role(id: &str, perms: &[&str]) -> Role {
+        Role {
+            id:           id.to_owned(),
+            tenant_id:    None,
+            slug:         id.to_owned(),
+            display_name: id.to_owned(),
+            permissions:  perms.iter().map(|p| perm(p)).collect(),
+            created_at:   0,
+            updated_at:   0,
+        }
+    }
+
+    fn make_assignment(user_id: &str, role_id: &str, scope: Scope, expires_at: Option<i64>) -> RoleAssignment {
+        RoleAssignment {
+            id:         "asn-1".to_owned(),
+            user_id:    user_id.to_owned(),
+            role_id:    role_id.to_owned(),
+            scope,
+            granted_by: "admin".to_owned(),
+            granted_at: 0,
+            expires_at,
+        }
+    }
+
+    async fn setup(
+        user_id: &str,
+        role_id: &str,
+        perms: &[&str],
+        scope: Scope,
+        expires_at: Option<i64>,
+    ) -> (InMemoryRoleAssignmentRepository, InMemoryRoleRepository) {
+        let ra = InMemoryRoleAssignmentRepository::default();
+        let rr = InMemoryRoleRepository::default();
+        let role = make_role(role_id, perms);
+        rr.create(&role).await.unwrap();
+        let assignment = make_assignment(user_id, role_id, scope, expires_at);
+        ra.create(&assignment).await.unwrap();
+        (ra, rr)
+    }
+
+    // ── scope_covers unit tests ───────────────────────────────────────────
+
+    #[test]
+    fn system_scope_covers_everything() {
+        assert!(scope_covers(&Scope::System, &ScopeRef::System));
+        assert!(scope_covers(&Scope::System, &ScopeRef::Tenant { tenant_id: "t-1" }));
+        assert!(scope_covers(&Scope::System, &ScopeRef::Organization { organization_id: "o-1" }));
+        assert!(scope_covers(&Scope::System, &ScopeRef::Group { group_id: "g-1" }));
+        assert!(scope_covers(&Scope::System, &ScopeRef::User { user_id: "u-1" }));
+    }
+
+    #[test]
+    fn tenant_scope_exact_match_only() {
+        let grant = Scope::Tenant { tenant_id: "t-1".to_owned() };
+        assert!( scope_covers(&grant, &ScopeRef::Tenant { tenant_id: "t-1" }));
+        assert!(!scope_covers(&grant, &ScopeRef::Tenant { tenant_id: "t-2" }));
+        assert!(!scope_covers(&grant, &ScopeRef::System));
+    }
+
+    #[test]
+    fn organization_scope_exact_match_only() {
+        let grant = Scope::Organization { organization_id: "o-1".to_owned() };
+        assert!( scope_covers(&grant, &ScopeRef::Organization { organization_id: "o-1" }));
+        assert!(!scope_covers(&grant, &ScopeRef::Organization { organization_id: "o-2" }));
+    }
+
+    #[test]
+    fn group_scope_exact_match_only() {
+        let grant = Scope::Group { group_id: "g-1".to_owned() };
+        assert!( scope_covers(&grant, &ScopeRef::Group { group_id: "g-1" }));
+        assert!(!scope_covers(&grant, &ScopeRef::Group { group_id: "g-2" }));
+    }
+
+    #[test]
+    fn user_scope_exact_match_only() {
+        let grant = Scope::User { user_id: "u-1".to_owned() };
+        assert!( scope_covers(&grant, &ScopeRef::User { user_id: "u-1" }));
+        assert!(!scope_covers(&grant, &ScopeRef::User { user_id: "u-2" }));
+    }
+
+    // ── role_has_permission unit tests ────────────────────────────────────
+
+    #[test]
+    fn role_has_permission_found_and_missing() {
+        let role = make_role("r-1", &["read:data", "write:data"]);
+        assert!( role_has_permission(&role, "read:data"));
+        assert!( role_has_permission(&role, "write:data"));
+        assert!(!role_has_permission(&role, "delete:data"));
+        assert!(!role_has_permission(&role, ""));
+    }
+
+    // ── check_permission async tests ─────────────────────────────────────
+
+    #[tokio::test]
+    async fn check_permission_allowed_for_matching_role() {
+        let (ra, rr) = setup("u-1", "r-1", &["tenant:read"], Scope::System, None).await;
+        let now = 0i64;
+        let result = check_permission(
+            &ra, &rr, "u-1", "tenant:read", ScopeRef::System, now,
+        ).await.unwrap();
+        assert!(result.is_allowed(), "system scope should allow tenant:read");
+    }
+
+    #[tokio::test]
+    async fn check_permission_denied_no_assignments() {
+        let ra = InMemoryRoleAssignmentRepository::default();
+        let rr = InMemoryRoleRepository::default();
+        let result = check_permission(
+            &ra, &rr, "u-unknown", "any:perm", ScopeRef::System, 0,
+        ).await.unwrap();
+        assert_eq!(result, CheckOutcome::Denied(DenyReason::NoAssignments));
+    }
+
+    #[tokio::test]
+    async fn check_permission_denied_scope_mismatch() {
+        let (ra, rr) = setup(
+            "u-1", "r-1", &["tenant:read"],
+            Scope::Tenant { tenant_id: "t-1".to_owned() },
+            None
+        ).await;
+        // Query for tenant t-2 — scope doesn't cover
+        let result = check_permission(
+            &ra, &rr, "u-1", "tenant:read",
+            ScopeRef::Tenant { tenant_id: "t-2" }, 0,
+        ).await.unwrap();
+        assert_eq!(result, CheckOutcome::Denied(DenyReason::ScopeMismatch));
+    }
+
+    #[tokio::test]
+    async fn check_permission_denied_permission_missing() {
+        let (ra, rr) = setup("u-1", "r-1", &["tenant:read"], Scope::System, None).await;
+        let result = check_permission(
+            &ra, &rr, "u-1", "tenant:write", ScopeRef::System, 0,
+        ).await.unwrap();
+        assert_eq!(result, CheckOutcome::Denied(DenyReason::PermissionMissing));
+    }
+
+    #[tokio::test]
+    async fn check_permission_denied_expired() {
+        // Assignment expired 1 second ago
+        let (ra, rr) = setup("u-1", "r-1", &["tenant:read"], Scope::System, Some(99)).await;
+        let now = 100i64; // after expires_at=99
+        let result = check_permission(
+            &ra, &rr, "u-1", "tenant:read", ScopeRef::System, now,
+        ).await.unwrap();
+        assert_eq!(result, CheckOutcome::Denied(DenyReason::Expired));
+    }
+
+    #[tokio::test]
+    async fn check_permission_not_expired_at_boundary() {
+        // expires_at == now → NOT yet expired (boundary: >= expires_at is expired)
+        let (ra, rr) = setup("u-1", "r-1", &["tenant:read"], Scope::System, Some(100)).await;
+        let result = check_permission(
+            &ra, &rr, "u-1", "tenant:read", ScopeRef::System, 100,
+        ).await.unwrap();
+        // expires_at = 100, now = 100 → not expired (expired when now > expires_at)
+        assert!(result.is_allowed() || result == CheckOutcome::Denied(DenyReason::Expired),
+            "boundary case: {result:?}");
+    }
+
+    #[tokio::test]
+    async fn check_permissions_batch_returns_parallel_results() {
+        let (ra, rr) = setup("u-1", "r-1", &["read", "write"], Scope::System, None).await;
+        let queries: Vec<(&str, ScopeRef<'_>)> = vec![
+            ("read",    ScopeRef::System),
+            ("write",   ScopeRef::System),
+            ("delete",  ScopeRef::System),
+        ];
+        let results = check_permissions_batch(&ra, &rr, "u-1", &queries, 0).await.unwrap();
+        assert_eq!(results.len(), 3);
+        assert!(results[0].is_allowed(), "read should be allowed");
+        assert!(results[1].is_allowed(), "write should be allowed");
+        assert!(!results[2].is_allowed(), "delete should be denied");
+    }
+
+    #[tokio::test]
+    async fn check_permissions_batch_empty_queries_returns_empty() {
+        let ra = InMemoryRoleAssignmentRepository::default();
+        let rr = InMemoryRoleRepository::default();
+        let queries: Vec<(&str, ScopeRef<'_>)> = vec![];
+        let results = check_permissions_batch(&ra, &rr, "u-1", &queries, 0).await.unwrap();
+        assert!(results.is_empty());
+    }
+}

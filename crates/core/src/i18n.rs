@@ -1091,3 +1091,55 @@ fn parse_q_value(params: &str) -> f32 {
 
 #[cfg(test)]
 mod tests;
+
+// ---------------------------------------------------------------------------
+// RFC 088 — i18n.rs inline tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod inline_tests {
+    use super::*;
+
+    #[test]
+    fn bcp47_ja_returns_ja() {
+        assert_eq!(Locale::Ja.bcp47(), "ja");
+    }
+
+    #[test]
+    fn bcp47_en_returns_en() {
+        assert_eq!(Locale::En.bcp47(), "en");
+    }
+
+    #[test]
+    fn default_locale_is_ja() {
+        assert_eq!(Locale::default(), Locale::Ja);
+    }
+
+    #[test]
+    fn lookup_returns_non_empty_for_all_keys_ja() {
+        // spot-check several key categories
+        assert!(!lookup(MessageKey::LoginTitle, Locale::Ja).is_empty());
+        assert!(!lookup(MessageKey::SecurityTitle, Locale::Ja).is_empty());
+        assert!(!lookup(MessageKey::SkipToMainContent, Locale::Ja).is_empty());
+        assert!(!lookup(MessageKey::TenantInvitePageTitle, Locale::Ja).is_empty());
+        assert!(!lookup(MessageKey::SessionsDriftNote, Locale::Ja).is_empty());
+    }
+
+    #[test]
+    fn lookup_returns_non_empty_for_all_keys_en() {
+        assert!(!lookup(MessageKey::LoginTitle, Locale::En).is_empty());
+        assert!(!lookup(MessageKey::SecurityTitle, Locale::En).is_empty());
+        assert!(!lookup(MessageKey::SkipToMainContent, Locale::En).is_empty());
+        assert!(!lookup(MessageKey::TenantInvitePageTitle, Locale::En).is_empty());
+        assert!(!lookup(MessageKey::SessionsDriftNote, Locale::En).is_empty());
+    }
+
+    #[test]
+    fn ja_and_en_differ_for_selected_keys() {
+        // These specific keys must not be the same in JA and EN
+        // (they are not in the legitimate-duplicate whitelist)
+        let ja = lookup(MessageKey::LoginTitle, Locale::Ja);
+        let en = lookup(MessageKey::LoginTitle, Locale::En);
+        assert_ne!(ja, en, "LoginTitle should differ between JA and EN");
+    }
+}
