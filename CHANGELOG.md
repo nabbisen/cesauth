@@ -26,6 +26,172 @@ split by minor-version range:
 
 ---
 
+## [0.69.0] - 2026-05-13
+
+Continues RFC 108: catalog completion + admin-console template
+migration. Closes the second silent v0.66.0 catalog drift. RFC 112
+(worker auth macro batch) is blocked on environment and pushed to
+v0.70.0 — see "RFC 112 deferred" below.
+
+### RFC 108 — UI template route-catalog migration (v0.69.0 continuation)
+
+Source: HANDOFF v0.66.0 residual #2.
+
+The v0.68.0 partial implementation migrated end-user templates and
+corrected the WebAuthn catalog drift. v0.69.0 adds: a second silent
+v0.66.0 drift correction, full catalog coverage of every
+worker-registered route, and migration of every admin/console
+template.
+
+#### Catalog correction (tenancy console)
+
+Same shape as the v0.68.0 WebAuthn correction. The v0.66.0 catalog
+shipped:
+
+```rust
+pub fn tenant(slug: &str) -> String { format!("/admin/tenancy/{slug}") }
+pub fn tenant_orgs(slug: &str) -> String { format!("/admin/tenancy/{slug}/organizations") }
+```
+
+but the worker has always registered `/admin/tenancy/tenants/{tid}/...`
+(note the `/tenants/` segment). The entire `tenancy_console::*` module
+is rewritten to match worker reality. The old constants and builders
+were never consumed in tree, so nothing on the wire changes.
+
+#### Catalog expansion
+
+| Module | v0.68.0 | v0.69.0 | Δ |
+|---|---:|---:|---:|
+| `admin` (system console) | 12 statics | 12 statics + 6 builders | +6 builders |
+| `tenancy_console` | 1 static + 5 builders (wrong) | 3 statics + 21 builders (correct) | rewrite |
+| `tenant_admin` | 12 builders | 27 builders | +15 builders |
+| Total | ~57 entries | ~83 entries | +26 |
+
+Every const and fn in the catalog now mirrors a route registered by
+`crates/worker/src/lib.rs` (124 routes total).
+
+#### Admin nav migration
+
+All three admin frames now route their tab links through the catalog:
+
+- `crates/ui/src/admin/frame.rs::Tab::href` — 8 system-admin URLs
+  (Overview / Cost / Safety / Audit / Config / Alerts / Tokens / Operations)
+- `crates/ui/src/tenant_admin/frame.rs::TenantAdminTab::href` — 6
+  per-tenant URLs (`/admin/t/{slug}/{overview,organizations,users,...}`)
+- `crates/ui/src/tenancy_console/frame.rs::TenancyConsoleTab::href` —
+  2 deployment-wide URLs (`/admin/tenancy`, `/admin/tenancy/tenants`)
+
+#### `admin/console/*` template migration
+
+Seven production templates fully migrated:
+
+| File | URLs | Notes |
+|---|---:|---|
+| `crates/ui/src/admin/audit.rs` | 3 | static |
+| `crates/ui/src/admin/audit_chain.rs` | 2 | static |
+| `crates/ui/src/admin/overview.rs` | 3 | static |
+| `crates/ui/src/admin/cost.rs` | 1 | static |
+| `crates/ui/src/admin/tokens.rs` | 5 | 1 parameterized (`token_disable`) |
+| `crates/ui/src/admin/config.rs` | 1 | parameterized (`config_edit`) |
+| `crates/ui/src/admin/safety.rs` | 1 | parameterized (`safety_verify`) |
+| `crates/ui/src/admin/config_edit.rs` | 6 | 5 parameterized (`config_edit`) + 1 static |
+
+All parameterized routes apply the **escape contract** introduced in
+v0.68.0: catalog builder returns the raw URL; HTML-escape at the
+template boundary. Each call site is annotated with an inline comment
+referencing the contract.
+
+#### One known catalog gap (intentional)
+
+`crates/ui/src/tenant_admin/oidc_clients.rs` renders a form pointing
+at `/admin/t/{slug}/oidc-clients/{cid}/audience`, but the worker does
+**not** register that route — RFC 017 introduced the UI but apparently
+never wired the worker handler. Pre-existing orphan UI. Not catalogued
+in v0.69.0 because the catalog policy is "mirror worker reality, not
+aspirations." The template stays hardcoded pending a separate fix
+(either wire the worker route or remove the template).
+
+#### Still deferred (v0.70.0+)
+
+- Remaining ~150 hardcoded URLs across 32 production template files
+  in `crates/ui/src/tenant_admin/` and `crates/ui/src/tenancy_console/`.
+  Mechanical follow-up; the catalog has every builder needed.
+- `scripts/drift-scan.sh` URL-hardcode rule (turned on only after the
+  remaining migration completes).
+
+### RFC 112 deferred (environment-blocked)
+
+RFC 112 — the worker auth macro batch migration that would apply
+`require_system_admin!` / `require_tenant_admin_read!` across the
+remaining 124 admin handlers — was scheduled into v0.69.0 alongside
+the RFC 108 work. The implementation environment used for the
+v0.67.0–v0.69.0 development cycle cannot safely verify worker-side
+edits:
+
+- `wasm32-unknown-unknown` is not packaged with Ubuntu's
+  `rustc-1.91` and `rustup` is not available, so the target cannot
+  be installed.
+- `cesauth-worker` depends on `wasm_bindgen` and `js_sys`, so it
+  cannot be host-compiled.
+- `cesauth-adapter-test` (the host-buildable surrogate gate) does
+  not depend on `cesauth-worker`, so checking it gives no signal
+  about worker edits.
+
+Editing 124 handlers without a compile gate would ship unverified
+worker code. RFC 112 is pushed to v0.70.0 pending an environment
+with rustup + wasm32 target installed. No worker code was modified
+during v0.69.0. See `rfcs/proposed/112-worker-auth-macro-batch-migration.md`
+"Implementation environment" for the full note.
+
+### Tests
+
+| Crate | v0.68.0 | v0.69.0 | Δ |
+|---|---:|---:|---:|
+| core | 738 | 738 | — |
+| adapter-test | 125 | 125 | — |
+| ui | 325 | 325 | — |
+| migrate-test | 31 | 31 | — |
+| **Total** | **1,219** | **1,219** | **0** |
+
+RFC 108 is a pure refactor; no new tests were added. Existing
+rendering assertions in `crates/ui/src/{admin,tenant_admin,tenancy_console}/tests.rs`
+continue to pin that the migrated templates still emit the correct
+URLs — they were never changed and remain hardcoded by design (tests
+should fail loudly if a catalog entry drifts).
+
+### Schema / wire / DO
+
+No changes. The catalog correction for `tenancy_console::*` only
+affects the values returned by builder fns; no consumers existed in
+tree when the wrong values shipped, so nothing on the wire changes.
+
+### Operator notes
+
+- No URL on the wire changes. Operators using admin / tenant-admin /
+  tenancy-console URLs see no behavior change.
+- `cesauth_core::routes::tenancy_console::*` API surface changes
+  meaningfully — but no in-tree consumers existed, so this is not a
+  breaking change in practice. Downstream consumers (if any) using
+  the v0.66.0 `tenancy_console::tenant(slug)` builder were already
+  producing dead URLs and will need to update to either the corrected
+  `tenant(tid)` or to the appropriate scoped builder
+  (`tenant_orgs_new`, `organization`, `group_delete`, etc.).
+
+### ADR
+
+No closures.
+
+### Upgrade
+
+No special steps. Replace v0.68.0 bundle with v0.69.0; redeploy with
+`wrangler deploy`. No migrations.
+
+### Tarball
+
+`cesauth-0.69.0.tar.gz`.
+
+---
+
 ## [0.68.0] - 2026-05-13
 
 Implements RFC 108 (partial): route-catalog correction + end-user template

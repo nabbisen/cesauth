@@ -88,6 +88,7 @@ full narrative is in the [archive](docs/changelog-archive/README.md).
 | Admin scope badge, OIDC audience editor, preview-and-apply (RFC 016/017/018) | v0.53.0 | [CHANGELOG](CHANGELOG.md) |
 | Admin frame design tokens + Security Center i18n closure (RFC 105/106) | v0.67.0 | [CHANGELOG](CHANGELOG.md) |
 | Route-catalog correction + end-user template migration (RFC 108 partial) | v0.68.0 | [CHANGELOG](CHANGELOG.md) |
+| Route-catalog completion + admin/console template migration (RFC 108 continued) | v0.69.0 | [CHANGELOG](CHANGELOG.md) |
 
 ---
 
@@ -129,29 +130,44 @@ started.
   migration (~189 URLs across 44 files) + RFC 112 deferred to v0.69.0.
   1,219 tests (no change — pure refactor). 0 warnings.
 
-- 📅 **v0.69.0 — RFC 108 completion + RFC 112 (drift prevention finishing).**
-  Catalog expansion to cover all 124 worker-registered routes (today only
-  ~30 statics live in the catalog; the missing routes are admin and
-  tenant-admin dynamic paths). Migration of remaining ~189 hardcoded URLs
-  in `crates/ui/src/{admin,tenant_admin,tenancy_console}/`. Add the
-  `scripts/drift-scan.sh` URL-hardcode rule (turned on only after
-  migration completes). RFC 112: complete RFC 100 macro migration across
-  the remaining 124 admin handlers (~800 LOC reduction).
+- ✅ **v0.69.0 — RFC 108 catalog completion + admin/console migration.**
+  Second silent v0.66.0 catalog drift caught and fixed: `tenancy_console::*`
+  returned `/admin/tenancy/{slug}/...` but the worker has always registered
+  `/admin/tenancy/tenants/{tid}/...`. Catalog expanded from ~57 to ~83 entries
+  to cover every URL family the production templates need; every const and
+  fn now mirrors a worker-registered route. Admin nav migration across all
+  three frames (16 URLs). `admin/console/*` templates fully migrated (~22
+  URLs across 8 files), including all parameterized routes via builder fns
+  with the v0.68.0 escape contract applied. Remaining ~150 URLs in
+  `tenant_admin/` and `tenancy_console/` (32 files) pushed to v0.70.0 along
+  with the `scripts/drift-scan.sh` URL-hardcode rule. **RFC 112 (worker
+  auth macro batch) pushed to v0.70.0** — the development environment used
+  for this release cycle cannot install wasm32 or compile-verify worker
+  edits; see `rfcs/proposed/112-...md` "Implementation environment". 1,219
+  tests (no change — pure refactor). 0 warnings.
 
-- 📅 **v0.70.0 — RFC 109 (Audit log viewer UI surface).** New `/admin/console/audit`
+- 📅 **v0.70.0 — RFC 108 completion + RFC 112 (drift prevention finishing).**
+  Migrate the remaining ~150 hardcoded URLs in `crates/ui/src/{tenant_admin,
+  tenancy_console}/` to catalog references. Add the `scripts/drift-scan.sh`
+  URL-hardcode rule (turned on only after migration completes). RFC 112:
+  complete RFC 100 macro migration across the remaining 124 admin handlers
+  (~800 LOC reduction). **Environment requirement**: RFC 112 needs rustup
+  + wasm32 target installed.
+
+- 📅 **v0.71.0 — RFC 109 (Audit log viewer UI surface).** New `/admin/console/audit`
   interactive viewer with actor / event / tenant / date filtering and pagination.
   Inherits filter state into existing `POST /admin/console/audit/export` (RFC 080).
   System-admin scoped, JA-only per ADR-013. Source: v0.50.1 deck page 9.
-  (Originally planned for v0.69.0; pushed by the v0.68.0 partial split.)
+  (Originally planned for v0.69.0; pushed by the v0.68.0 + v0.69.0 partial splits.)
 
-- 📅 **v0.71.0 — RFC 110 + 113 (Acceptance alignment).** RFC 110: verify and fill
+- 📅 **v0.72.0 — RFC 110 + 113 (Acceptance alignment).** RFC 110: verify and fill
   Safety controls dashboard alignment with deck page 9 (rate-limit status,
   Turnstile, refresh reuse, TOTP key, runbook link). RFC 113: UI rendering
   acceptance harness — CI gate asserting scope badge / flash region / skip-link /
   footer version / `<html lang>` across all browser-facing routes. Source: deck
   pages 9, 12, 14.
 
-- 📅 **v0.72.0 — RFC 107 + 111 (ADR-013 §Q4 closure).** RFC 107: plural-aware
+- 📅 **v0.73.0 — RFC 107 + 111 (ADR-013 §Q4 closure).** RFC 107: plural-aware
   catalog lookup using CLDR-minimal `Plural::{One, Other}` enum (no `icu` dep —
   WASM size budget). RFC 111: confirm UTC ISO-8601 as the canonical date rendering
   policy and document per-user timezone as separate future work. Both close

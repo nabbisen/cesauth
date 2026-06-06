@@ -4,6 +4,7 @@ use crate::escape;
 use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::policy::{format_change, format_metric};
 use cesauth_core::admin::types::{AdminPrincipal, CostTrend, ServiceId};
+use cesauth_core::routes::admin as routes;
 
 use super::frame::{admin_frame, Tab};
 
@@ -18,10 +19,11 @@ pub fn cost_page(
     let body = format!(
         r##"<p class="muted">Taken at unix {now_unix}.
   Snapshots are persisted at most once per hour per service; repeated views do not inflate cost.
-  See <a href="/admin/console/config">Configuration Review</a> to tune thresholds.</p>
+  See <a href="{config_url}">Configuration Review</a> to tune thresholds.</p>
 {body}"##,
         now_unix = now_unix,
         body = body,
+        config_url = routes::CONFIG,
     );
     admin_frame(
         "Cost dashboard",

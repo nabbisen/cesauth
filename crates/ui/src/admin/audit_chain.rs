@@ -19,6 +19,7 @@
 use crate::escape;
 use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::types::{AdminPrincipal, AuditChainStatus};
+use cesauth_core::routes::admin as routes;
 
 use super::frame::{admin_frame, Tab};
 
@@ -45,7 +46,10 @@ pub fn audit_chain_status_page(
 }
 
 fn nav_back() -> String {
-    r##"<p><a href="/admin/console/audit">← Audit log search</a></p>"##.to_owned()
+    format!(
+        r##"<p><a href="{audit_url}">← Audit log search</a></p>"##,
+        audit_url = routes::AUDIT,
+    )
 }
 
 fn render_summary(s: &AuditChainStatus) -> String {
@@ -140,12 +144,13 @@ fn render_verify_form(csrf: &str) -> String {
         r##"<section aria-label="Trigger verification">
   <h2>Trigger verification</h2>
   <p class="note">Run a full re-verification right now. Walks the chain from the genesis row, ignoring the existing checkpoint. On success the checkpoint is replaced with the new head. Use after a deploy or whenever you want immediate confirmation.</p>
-  <form method="post" action="/admin/console/audit/chain/verify">
+  <form method="post" action="{verify_url}">
     <input type="hidden" name="csrf" value="{csrf}">
     <button type="submit" class="warning">Verify chain now (full re-walk)</button>
   </form>
 </section>"##,
         csrf = escape(csrf),
+        verify_url = routes::AUDIT_CHAIN_VERIFY,
     )
 }
 

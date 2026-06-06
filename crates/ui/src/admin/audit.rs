@@ -3,6 +3,7 @@
 use crate::escape;
 use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::types::{AdminAuditEntry, AdminPrincipal, AuditQuery};
+use cesauth_core::routes::admin as routes;
 
 use super::frame::{admin_frame, Tab};
 
@@ -24,7 +25,10 @@ pub fn audit_page(principal: &AdminPrincipal, q: &AuditQuery, entries: &[AdminAu
 }
 
 fn render_nav() -> String {
-    r##"<p><a href="/admin/console/audit/chain">Chain verification status →</a></p>"##.to_owned()
+    format!(
+        r##"<p><a href="{chain_url}">Chain verification status →</a></p>"##,
+        chain_url = routes::AUDIT_CHAIN,
+    )
 }
 
 fn render_search_form(q: &AuditQuery) -> String {
@@ -34,7 +38,7 @@ fn render_search_form(q: &AuditQuery) -> String {
     format!(
         r##"<section aria-label="Search filters">
   <h2>Filters</h2>
-  <form method="get" action="/admin/console/audit">
+  <form method="get" action="{audit_url}">
     <table>
       <tr>
         <th scope="row"><label for="kind">kind contains</label></th>
@@ -54,7 +58,7 @@ fn render_search_form(q: &AuditQuery) -> String {
       </tr>
     </table>
   </form>
-  <form method="post" action="/admin/console/audit/export" style="margin-top:8px">
+  <form method="post" action="{export_url}" style="margin-top:8px">
     <input type="hidden" name="kind"    value="{kind}">
     <input type="hidden" name="subject" value="{subject}">
     <input type="hidden" name="limit"   value="{limit}">
@@ -62,7 +66,12 @@ fn render_search_form(q: &AuditQuery) -> String {
     <button type="submit" name="format" value="jsonl" class="secondary">Export JSONL</button>
   </form>
   <p class="note">Audit events live in the D1 <code>audit_events</code> table (v0.32.0+, ADR-010). The <em>Chain verification status</em> link above shows whether the SHA-256 chain over those rows is intact.</p>
-</section>"##
+</section>"##,
+        audit_url  = routes::AUDIT,
+        export_url = routes::AUDIT_EXPORT,
+        kind       = kind,
+        subject    = subject,
+        limit      = limit,
     )
 }
 

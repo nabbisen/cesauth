@@ -1,11 +1,36 @@
 # RFC 112 — Worker auth macro batch migration
 
-**Status**: Proposed  
+**Status**: Proposed (v0.69.0 scheduling blocked — see "Implementation environment" below)  
 **Tier**: P2  
 **Size**: Medium  
-**Target**: v0.68.0  
+**Target**: v0.70.0 or later (was v0.68.0 → v0.69.0; pushed again)  
 **Phase**: Drift prevention (finishing track)  
 **Refs**: HANDOFF v0.66.0 残課題 §1 ("RFC 100 macro の他ルートへの適用") / 懸念事項 §2 / RFC 100
+
+## Implementation environment
+
+**v0.69.0 update**: The migration was scheduled into v0.69.0 alongside
+the RFC 108 admin completion, but the implementation environment used
+for v0.67.0–v0.69.0 development cannot safely verify worker-side edits:
+
+- The `wasm32-unknown-unknown` target is not packaged with the Ubuntu
+  `rustc-1.91` distribution that the dev environment relies on.
+  `rustup` is not available, so the target cannot be installed.
+- `cesauth-worker` depends on `wasm_bindgen` and `js_sys`, so it cannot
+  be host-compiled. `cargo check` against the worker crate fails with
+  `cargo: can't find crate for 'core'` when targeting wasm32 (target
+  not installed) or with `wasm_bindgen unresolved` when targeting the
+  host.
+- `cesauth-adapter-test` (which is host-buildable) does **not** depend
+  on `cesauth-worker`, so verifying it gives no signal about worker
+  edits.
+
+The result: editing 124 admin handlers without a compile gate would
+ship unverified worker code. RFC 112 needs an environment with either
+`rustup` (to install wasm32) or a pre-built wasm32 toolchain. Pushed
+to v0.70.0 pending that environment, or to a different developer's
+release track. No worker code has been modified for this RFC during
+v0.69.0.
 
 ## Problem
 

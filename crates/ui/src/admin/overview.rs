@@ -3,6 +3,7 @@
 use crate::escape;
 use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::types::OverviewSummary;
+use cesauth_core::routes::admin as routes;
 
 use super::frame::{admin_frame, Tab};
 
@@ -35,7 +36,7 @@ fn render_alert_counts(s: &OverviewSummary) -> String {
     }
     format!(
         r##"<section aria-label="Alert summary">
-  <h2>Alerts <a href="/admin/console/alerts" class="muted" style="font-weight:normal; font-size:13px;">(all →)</a></h2>
+  <h2>Alerts <a href="{alerts_url}" class="muted" style="font-weight:normal; font-size:13px;">(all →)</a></h2>
   <p role="status">
     <span class="badge critical">{crit} critical</span>
     &nbsp;<span class="badge warn">{warn} warn</span>
@@ -45,6 +46,7 @@ fn render_alert_counts(s: &OverviewSummary) -> String {
         crit = c.critical,
         warn = c.warn,
         info = c.info,
+        alerts_url = routes::ALERTS,
     )
 }
 
@@ -110,9 +112,11 @@ fn render_recent_audit(s: &OverviewSummary) -> String {
     };
     format!(
         r##"<section aria-label="Recent audit events">
-  <h2>Recent audit events <a href="/admin/console/audit" class="muted" style="font-weight:normal; font-size:13px;">(search →)</a></h2>
+  <h2>Recent audit events <a href="{audit_url}" class="muted" style="font-weight:normal; font-size:13px;">(search →)</a></h2>
   {inner}
-</section>"##
+</section>"##,
+        audit_url = routes::AUDIT,
+        inner = inner,
     )
 }
 
@@ -146,8 +150,10 @@ fn render_last_verified(s: &OverviewSummary) -> String {
     };
     format!(
         r##"<section aria-label="Recently verified buckets">
-  <h2>Recently verified buckets <a href="/admin/console/safety" class="muted" style="font-weight:normal; font-size:13px;">(safety →)</a></h2>
+  <h2>Recently verified buckets <a href="{safety_url}" class="muted" style="font-weight:normal; font-size:13px;">(safety →)</a></h2>
   {inner}
-</section>"##
+</section>"##,
+        safety_url = routes::SAFETY,
+        inner = inner,
     )
 }

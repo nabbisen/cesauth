@@ -17,6 +17,7 @@
 use crate::escape;
 use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::types::{AdminPrincipal, Role};
+use cesauth_core::routes::admin as routes;
 
 use super::frame::{admin_frame, Tab};
 
@@ -41,22 +42,25 @@ pub fn list_page(principal: &AdminPrincipal, tokens: &[AdminPrincipal]) -> Strin
   <td>{role_badge}</td>
   <td class="muted">{name}</td>
   <td>
-    <form class="inline" method="post" action="/admin/console/tokens/{id}/disable">
+    <form class="inline" method="post" action="{disable_url}">
       <button type="submit" aria-label="Disable token {name_aria}">Disable</button>
     </form>
   </td>
 </tr>"##,
-                id         = escape(&t.id),
-                role_badge = role_badge,
-                name       = escape(t.name.as_deref().unwrap_or("—")),
-                name_aria  = escape(t.name.as_deref().unwrap_or(&t.id)),
+                id          = escape(&t.id),
+                role_badge  = role_badge,
+                name        = escape(t.name.as_deref().unwrap_or("—")),
+                name_aria   = escape(t.name.as_deref().unwrap_or(&t.id)),
+                // RFC 108 escape contract: catalog builder returns raw URL;
+                // HTML-escape at the template boundary.
+                disable_url = escape(&routes::token_disable(&t.id)),
             )
         }).collect::<Vec<_>>().join("\n")
     };
 
     let body = format!(
         r##"<section aria-label="Active tokens">
-  <h2>Active tokens <a href="/admin/console/tokens/new" style="font-weight:normal; font-size:13px;">(+ create new)</a></h2>
+  <h2>Active tokens <a href="{tokens_new_url}" style="font-weight:normal; font-size:13px;">(+ create new)</a></h2>
   <p class="muted">These are every non-disabled row in <code>admin_tokens</code>. The
     <code>ADMIN_API_KEY</code> bootstrap bearer is not listed here — it lives in
     Workers Secrets, has id <code>super-bootstrap</code>, and cannot be disabled from this UI.</p>
@@ -74,7 +78,9 @@ pub fn list_page(principal: &AdminPrincipal, tokens: &[AdminPrincipal]) -> Strin
     <code>disabled_at</code>. The resolver will treat subsequent uses as unknown (401 with
     reason <code>disabled_token</code>). Re-enabling is not supported from the UI —
     create a new token instead.</p>
-</section>"##
+</section>"##,
+        tokens_new_url = routes::TOKENS_NEW,
+        rows = rows,
     );
 
     admin_frame(
@@ -104,7 +110,7 @@ pub fn new_form(principal: &AdminPrincipal, error: Option<&str>) -> String {
         r##"{error_section}
 <section aria-label="Create new admin token">
   <h2>Create new admin token</h2>
-  <form method="post" action="/admin/console/tokens">
+  <form method="post" action="{tokens_url}">
     <table>
       <tr>
         <th scope="row"><label for="role">Role</label></th>
@@ -129,12 +135,15 @@ pub fn new_form(principal: &AdminPrincipal, error: Option<&str>) -> String {
         <td>
           <p class="muted">The server will mint a 256-bit random bearer, SHA-256-hash it for storage, and show you the plaintext exactly once on the next page.</p>
           <button type="submit">Mint token</button>
-          &nbsp;<a href="/admin/console/tokens">Cancel</a>
+          &nbsp;<a href="{cancel_url}">Cancel</a>
         </td>
       </tr>
     </table>
   </form>
-</section>"##
+</section>"##,
+        error_section = error_section,
+        tokens_url    = routes::TOKENS,
+        cancel_url    = routes::TOKENS,
     );
 
     admin_frame(
@@ -174,13 +183,14 @@ pub fn created_page(
   <h2>How to use it</h2>
   <pre style="background:#f4f4f4; padding:12px; border-radius:4px; overflow-x:auto;"><code>curl -H "Authorization: Bearer {plaintext_short}..." \
      https://cesauth.example/admin/console</code></pre>
-  <p><a href="/admin/console/tokens">← Back to token list (this page will not display the plaintext again)</a></p>
+  <p><a href="{tokens_url}">← Back to token list (this page will not display the plaintext again)</a></p>
 </section>"##,
         id              = escape(&minted.id),
         role            = escape(role_label),
         name            = escape(minted.name.as_deref().unwrap_or("—")),
         plaintext       = escape(plaintext),
         plaintext_short = escape(&plaintext.chars().take(8).collect::<String>()),
+        tokens_url      = routes::TOKENS,
     );
 
     admin_frame(

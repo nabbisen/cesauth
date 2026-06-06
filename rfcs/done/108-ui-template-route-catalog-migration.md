@@ -1,17 +1,17 @@
 # RFC 108 — UI template route-catalog migration
 
-**Status**: Implemented (v0.68.0 — partial; admin/tenant_admin/tenancy_console migration deferred to v0.68.1+)  
+**Status**: Implemented (v0.68.0 — partial; admin nav + admin/console/* templates added v0.69.0; tenant_admin/* and tenancy_console/* migration still deferred)  
 **Tier**: P1  
 **Size**: Large  
 **Target**: v0.68.0  
 **Phase**: Drift prevention (finishing track)  
 **Refs**: HANDOFF v0.66.0 残課題 §2 ("RFC 102 routes.rs の UI 移行") / PDF v0.50.1 page 13 "Form contracts" / RFC 102 / RFC 027
 
-## Deferred-work note (v0.68.0 partial implementation)
+## Deferred-work note (multi-release implementation)
 
-Shipped in v0.68.0:
+### v0.68.0 (initial partial)
 
-- **Catalog audit and correction.** `crates/core/src/routes.rs::auth::*`
+- **Catalog audit and correction (WebAuthn).** `crates/core/src/routes.rs::auth::*`
   had four WebAuthn paths that never matched the worker registration:
   `/me/webauthn/register*` and `/auth/webauthn/*` aspirational constants
   vs the worker's `/webauthn/register/*` and `/webauthn/authenticate/*`
@@ -29,30 +29,62 @@ Shipped in v0.68.0:
   during the migration; the fix and inline comment in
   `security_center.rs::render_session_row_for` pin the contract.
 
-Deferred to a later release:
+### v0.69.0 (catalog completion + admin/console migration)
+
+- **Catalog audit and correction (tenancy console).** Second silent
+  v0.66.0 drift discovered: `tenancy_console::tenant(slug)` etc.
+  returned `/admin/tenancy/{slug}/...` but the worker has always
+  registered `/admin/tenancy/tenants/{tid}/...`. Same shape as the
+  v0.68.0 WebAuthn correction. Rewrote the entire `tenancy_console`
+  module to match worker routes.
+- **Catalog completion.** Expanded from ~57 entries (after v0.68.0)
+  to ~80 entries covering every URL family the production templates
+  need. New builders include `admin::config_edit/preview/apply`,
+  `safety_verify`, `token_disable`, `threshold`; full
+  `tenancy_console::*` rewrite; `tenant_admin` builders for
+  `organizations_new`, `org_status`, `org_memberships*`,
+  `user_role_assignments*`, `role_assignment_delete`, `group_*`,
+  `memberships*`. Every const and fn now mirrors a route registered
+  by `crates/worker/src/lib.rs` (124 routes total).
+- **Admin nav migration (all three frames).** `admin/frame.rs`
+  `Tab::href` (8 URLs), `tenant_admin/frame.rs` `TenantAdminTab::href`
+  (6 URLs), `tenancy_console/frame.rs` `TenancyConsoleTab::href`
+  (2 URLs) all flow through the catalog.
+- **`admin/console/*` template migration.** 7 production templates
+  fully migrated: `audit.rs`, `audit_chain.rs`, `overview.rs`,
+  `cost.rs`, `tokens.rs`, `config.rs`, `safety.rs`, `config_edit.rs`.
+  ~20 URLs migrated, including all parameterized routes via builder
+  fns + the HTML-escape contract.
+
+### Still deferred (v0.70.0+)
 
 - **Admin / tenant_admin / tenancy_console template migration
-  (RFC PR 2 + PR 3).** ~189 hardcoded URLs across 44 production
-  template files in `crates/ui/src/admin/`, `crates/ui/src/tenant_admin/`,
-  `crates/ui/src/tenancy_console/`. Blocked on a larger catalog
-  expansion: the worker registers 124 actual routes; the catalog only
-  has ~30 static constants and a handful of builder fns. The admin
-  URL families (esp. `/admin/t/{slug}/groups/{gid}/memberships/{uid}/delete`-shaped
-  paths) require many new builder fns. Tracked for v0.68.1+ as
-  follow-up work; the audit-and-add cycle is mechanical but high-volume.
+  (RFC PR 2 + PR 3, remainder).** ~150 hardcoded URLs across 32
+  production template files in `crates/ui/src/tenant_admin/` and
+  `crates/ui/src/tenancy_console/`. The catalog now has all the
+  necessary builders so this is mechanical follow-up work. Highest-volume
+  files: `tenancy_console/tenant_detail.rs` (18 URLs),
+  `tenancy_console/role_assignments.rs` (8), several form files
+  with 5–7 URLs each.
 - **Drift-scan rule (RFC PR 4).** Deferred alongside the admin
   migration so that turning the rule on doesn't immediately fail CI.
-  Once the admin migration completes, `scripts/drift-scan.sh` gains
-  the URL-hardcode pattern with explicit exemptions for tests and any
+  Once the migration completes, `scripts/drift-scan.sh` gains the
+  URL-hardcode pattern with explicit exemptions for tests and any
   unavoidable inline cases.
+- **One known catalog gap (intentional).** `tenant_admin/oidc_clients.rs`
+  template renders a form pointing at `/admin/t/{slug}/oidc-clients/{cid}/audience`
+  but the worker does **not** register that route — RFC 017 introduced
+  the UI but apparently never wired the worker handler. Pre-existing
+  bug. Not catalogued because the catalog mirrors worker registrations,
+  not aspirational paths. Template left with its hardcoded URL pending
+  a separate fix (either wire the worker route or remove the template).
 
-Rationale for partial implementation: the lifecycle policy
+Rationale for multi-release implementation: the lifecycle policy
 (RFC 019 / `rfcs/done/019-rfc-lifecycle-policy.md` §Granularity of
 transitions) allows partial implementation when the partial work
-captures the RFC's main design decision. The catalog correction and
-end-user migration establish the pattern (catalog as single source of
-truth; HTML-escape contract; per-domain migration shape) that the
-admin migration follows mechanically.
+captures the RFC's main design decision. By v0.69.0 the pattern is
+fully established across the system-admin surface; the remaining
+tenant_admin/tenancy_console work is volume, not novelty.
 
 ## Problem
 

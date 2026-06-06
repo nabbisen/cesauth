@@ -10,6 +10,7 @@ use crate::escape;
 use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::types::Role;
 use cesauth_core::i18n::Locale;
+use cesauth_core::routes::tenancy_console as routes;
 
 /// Tabs in the tenancy console nav.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,8 +28,8 @@ pub enum TenancyConsoleTab {
 impl TenancyConsoleTab {
     fn href(self) -> Option<&'static str> {
         match self {
-            TenancyConsoleTab::Overview            => Some("/admin/tenancy"),
-            TenancyConsoleTab::Tenants             => Some("/admin/tenancy/tenants"),
+            TenancyConsoleTab::Overview            => Some(routes::ROOT),
+            TenancyConsoleTab::Tenants             => Some(routes::TENANTS),
             // Drill-in only — no top-level entry.
             TenancyConsoleTab::UserRoleAssignments => None,
         }

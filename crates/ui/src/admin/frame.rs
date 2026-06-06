@@ -15,6 +15,7 @@ use crate::escape;
 use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::types::Role;
 use cesauth_core::i18n::Locale;
+use cesauth_core::routes::admin as routes;
 
 /// Nav-tab identifier. Used by the frame to render the active link
 /// with `aria-current="page"`.
@@ -37,14 +38,14 @@ pub enum Tab {
 impl Tab {
     fn href(self) -> &'static str {
         match self {
-            Tab::Overview    => "/admin/console",
-            Tab::Cost        => "/admin/console/cost",
-            Tab::Safety      => "/admin/console/safety",
-            Tab::Audit       => "/admin/console/audit",
-            Tab::Config      => "/admin/console/config",
-            Tab::Alerts      => "/admin/console/alerts",
-            Tab::Tokens      => "/admin/console/tokens",
-            Tab::Operations  => "/admin/console/operations",
+            Tab::Overview    => routes::OVERVIEW,
+            Tab::Cost        => routes::COST,
+            Tab::Safety      => routes::SAFETY,
+            Tab::Audit       => routes::AUDIT,
+            Tab::Config      => routes::CONFIG,
+            Tab::Alerts      => routes::ALERTS,
+            Tab::Tokens      => routes::TOKENS,
+            Tab::Operations  => routes::OPERATIONS,
         }
     }
     fn label(self) -> &'static str {

@@ -14,6 +14,7 @@ use crate::escape;
 use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::policy::role_allows;
 use cesauth_core::admin::types::{AdminAction, AdminPrincipal, DataSafetyReport, Threshold};
+use cesauth_core::routes::admin as routes;
 
 use super::frame::{admin_frame, Tab};
 
@@ -52,8 +53,10 @@ fn render_safety(r: &DataSafetyReport, may_edit: bool) -> String {
         r.buckets.iter().map(|b| {
             let action_cell = if may_edit {
                 format!(
-                    r#"<td><a href="/admin/console/config/{bucket}/edit">edit</a></td>"#,
-                    bucket = escape(&b.bucket),
+                    r#"<td><a href="{edit_url}">edit</a></td>"#,
+                    // RFC 108 escape contract: catalog builder returns raw URL;
+                    // HTML-escape at the template boundary.
+                    edit_url = escape(&routes::config_edit(&b.bucket)),
                 )
             } else {
                 String::new()

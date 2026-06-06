@@ -25,6 +25,7 @@ use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::types::{
     AdminPrincipal, BucketSafetyChange, BucketSafetyDiff, BucketSafetyState,
 };
+use cesauth_core::routes::admin as routes;
 
 use super::frame::{admin_frame, Tab};
 
@@ -42,7 +43,10 @@ pub fn edit_form(
         "{error}\n{form}\n{back}",
         error  = render_error(error),
         form   = render_form(&state.bucket, state, ""),
-        back   = r#"<p><a href="/admin/console/config">← Back to configuration review</a></p>"#,
+        back   = format!(
+            r#"<p><a href="{url}">← Back to configuration review</a></p>"#,
+            url = routes::CONFIG,
+        ),
     );
     admin_frame(
         &format!("Edit bucket: {}", state.bucket),
@@ -109,10 +113,12 @@ fn checkbox(name: &str, label: &str, checked: bool) -> String {
 fn render_form(bucket: &str, state: &BucketSafetyState, hidden: &str) -> String {
     let bucket_esc = escape(bucket);
     let notes_esc  = escape(state.notes.as_deref().unwrap_or(""));
+    // RFC 108 escape contract: catalog builder returns raw URL; HTML-escape here.
+    let edit_url   = escape(&routes::config_edit(bucket));
     format!(
         r##"<section aria-label="Edit attested state">
   <h2>Attested state</h2>
-  <form class="danger" method="post" action="/admin/console/config/{bucket_esc}/edit">
+  <form class="danger" method="post" action="{edit_url}">
     {hidden}
     <table>
       {public}
@@ -137,6 +143,7 @@ fn render_form(bucket: &str, state: &BucketSafetyState, hidden: &str) -> String 
         bucket_esc = bucket_esc,
         hidden     = hidden,
         notes      = notes_esc,
+        edit_url   = edit_url,
         public     = checkbox("public",               "Public bucket (DANGEROUS)",     state.public),
         cors       = checkbox("cors_configured",      "CORS configured",               state.cors_configured),
         lock       = checkbox("bucket_lock",          "Bucket lock configured",        state.bucket_lock),
@@ -216,34 +223,41 @@ fn render_apply_form(diff: &BucketSafetyDiff) -> String {
     let bucket_esc = escape(&diff.current.bucket);
     let p = &diff.proposed;
     let hidden = hidden_fields(p);
+    // RFC 108 escape contract.
+    let edit_url = escape(&routes::config_edit(&diff.current.bucket));
 
     format!(
         r##"<section aria-label="Apply the change">
-  <form class="danger" method="post" action="/admin/console/config/{bucket_esc}/edit">
+  <form class="danger" method="post" action="{edit_url}">
     {hidden}
     <input type="hidden" name="confirm" value="yes">
     <p><strong>This will write the new attestation to D1 and emit an audit event.</strong>
        If this doesn't look right, click &quot;Start over&quot; instead.</p>
     <button type="submit" aria-label="Apply this change to bucket {bucket_esc}">Apply the change</button>
     &nbsp;
-    <a href="/admin/console/config/{bucket_esc}/edit">Start over</a>
+    <a href="{edit_url}">Start over</a>
   </form>
 </section>"##,
         bucket_esc = bucket_esc,
         hidden     = hidden,
+        edit_url   = edit_url,
     )
 }
 
 fn render_no_changes(bucket: &str) -> String {
+    // RFC 108 escape contract.
+    let edit_url = escape(&routes::config_edit(bucket));
     format!(
         r##"<section aria-label="No changes">
   <p role="status"><span class="badge muted">no change</span> The values you submitted match the current attestation for <code>{bucket}</code>. Nothing to apply.</p>
-  <p><a href="/admin/console/config/{bucket}/edit">← Back to edit form</a>
+  <p><a href="{edit_url}">← Back to edit form</a>
     &nbsp;&middot;&nbsp;
-    <a href="/admin/console/config">← Back to configuration review</a>
+    <a href="{config_url}">← Back to configuration review</a>
   </p>
 </section>"##,
         bucket = escape(bucket),
+        edit_url   = edit_url,
+        config_url = routes::CONFIG,
     )
 }
 

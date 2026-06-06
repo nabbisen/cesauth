@@ -22,6 +22,7 @@ use crate::escape;
 use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::types::Role;
 use cesauth_core::i18n::Locale;
+use cesauth_core::routes::tenant_admin as routes;
 
 /// Tabs in the tenant-admin nav. All hrefs are built per-render
 /// because they include the tenant slug.
@@ -52,12 +53,12 @@ impl TenantAdminTab {
     /// the frame doesn't know about.
     fn href(self, slug: &str) -> Option<String> {
         match self {
-            TenantAdminTab::Overview          => Some(format!("/admin/t/{slug}")),
-            TenantAdminTab::Organizations     => Some(format!("/admin/t/{slug}/organizations")),
-            TenantAdminTab::Users             => Some(format!("/admin/t/{slug}/users")),
-            TenantAdminTab::Invitations       => Some(format!("/admin/t/{slug}/invitations")),
-            TenantAdminTab::DeletionRequests  => Some(format!("/admin/t/{slug}/deletion-requests")),
-            TenantAdminTab::Subscription      => Some(format!("/admin/t/{slug}/subscription")),
+            TenantAdminTab::Overview          => Some(routes::overview(slug)),
+            TenantAdminTab::Organizations     => Some(routes::organizations(slug)),
+            TenantAdminTab::Users             => Some(routes::users(slug)),
+            TenantAdminTab::Invitations       => Some(routes::invitations(slug)),
+            TenantAdminTab::DeletionRequests  => Some(routes::deletion_requests(slug)),
+            TenantAdminTab::Subscription      => Some(routes::subscription(slug)),
             TenantAdminTab::UserRoleAssignments
             | TenantAdminTab::OrganizationDetail => None,
         }

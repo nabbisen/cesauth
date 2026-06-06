@@ -4,6 +4,7 @@ use crate::escape;
 use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::policy::role_allows;
 use cesauth_core::admin::types::{AdminAction, AdminPrincipal, BucketSafetyState, DataSafetyReport};
+use cesauth_core::routes::admin as routes;
 
 use super::frame::{admin_frame, Tab};
 
@@ -98,11 +99,13 @@ fn render_row(b: &BucketSafetyState, may_verify: bool) -> String {
     let action_cell = if may_verify {
         format!(
             r##"<td>
-  <form class="inline" method="post" action="/admin/console/safety/{bucket}/verify">
+  <form class="inline" method="post" action="{verify_url}">
     <button type="submit" aria-label="Stamp '{bucket}' as re-verified now">re-verify</button>
   </form>
 </td>"##,
-            bucket = escape(&b.bucket),
+            bucket     = escape(&b.bucket),
+            // RFC 108 escape contract: catalog builder returns raw URL.
+            verify_url = escape(&routes::safety_verify(&b.bucket)),
         )
     } else {
         r#"<td class="muted">—</td>"#.to_owned()
