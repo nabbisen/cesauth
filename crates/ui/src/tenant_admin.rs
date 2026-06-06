@@ -40,6 +40,8 @@ pub mod oidc_clients;
 pub mod overview;
 pub mod organizations;
 pub mod users;
+pub mod invitations;
+pub mod deletions;
 pub mod role_assignments;
 pub mod subscription;
 pub mod forms;

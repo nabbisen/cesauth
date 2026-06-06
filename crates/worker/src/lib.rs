@@ -233,6 +233,9 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async("/admin/tenancy",                                            |req, ctx| async move { routes::admin::tenancy_console::overview::page(req, ctx).await })
         .get_async("/admin/tenancy/tenants",                                    |req, ctx| async move { routes::admin::tenancy_console::tenants::page(req, ctx).await })
         .get_async("/admin/tenancy/tenants/:tid",                               |req, ctx| async move { routes::admin::tenancy_console::tenant_detail::page(req, ctx).await })
+        // RFC 068: Tenant suspend/restore (§16.8)
+        .post_async("/admin/tenancy/tenants/:id/suspend",                       |req, ctx| async move { routes::admin::tenancy_console::tenant_detail::suspend(req, ctx).await })
+        .post_async("/admin/tenancy/tenants/:id/restore",                       |req, ctx| async move { routes::admin::tenancy_console::tenant_detail::restore(req, ctx).await })
         .get_async("/admin/tenancy/tenants/:tid/subscription/history",          |req, ctx| async move { routes::admin::tenancy_console::subscription::page(req, ctx).await })
         .get_async("/admin/tenancy/organizations/:oid",                         |req, ctx| async move { routes::admin::tenancy_console::organizations::page(req, ctx).await })
         .get_async("/admin/tenancy/users/:uid/role_assignments",                |req, ctx| async move { routes::admin::tenancy_console::role_assignments::page(req, ctx).await })
@@ -336,6 +339,7 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async ("/admin/t/:slug/groups/:gid/memberships/:uid/delete",                    |req, ctx| async move { routes::admin::tenant_admin::forms::membership_remove::confirm_group(req, ctx).await })
         .post_async("/admin/t/:slug/groups/:gid/memberships/:uid/delete",                    |req, ctx| async move { routes::admin::tenant_admin::forms::membership_remove::submit_group(req, ctx).await })
         // RFC 043: Invitation tokens
+        .get_async ("/admin/t/:slug/invitations",                  |req, ctx| async move { routes::invitations::list(req, ctx).await })
         .post_async("/admin/t/:slug/invitations",                  |req, ctx| async move { routes::invitations::issue(req, ctx).await })
         .get_async ("/accept-invite",                              |req, ctx| async move { routes::invitations::accept_page(req, ctx).await })
         .post_async("/accept-invite",                              |req, ctx| async move { routes::invitations::accept_submit(req, ctx).await })

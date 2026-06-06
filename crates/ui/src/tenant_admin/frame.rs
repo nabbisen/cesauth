@@ -33,6 +33,10 @@ pub enum TenantAdminTab {
     Organizations,
     /// `/admin/t/<slug>/users`.
     Users,
+    /// `/admin/t/<slug>/invitations` — RFC 066.
+    Invitations,
+    /// `/admin/t/<slug>/deletion-requests` — RFC 067.
+    DeletionRequests,
     /// `/admin/t/<slug>/subscription`.
     Subscription,
     /// Drill-in destination from a user row. No top-level tab.
@@ -48,10 +52,12 @@ impl TenantAdminTab {
     /// the frame doesn't know about.
     fn href(self, slug: &str) -> Option<String> {
         match self {
-            TenantAdminTab::Overview      => Some(format!("/admin/t/{slug}")),
-            TenantAdminTab::Organizations => Some(format!("/admin/t/{slug}/organizations")),
-            TenantAdminTab::Users         => Some(format!("/admin/t/{slug}/users")),
-            TenantAdminTab::Subscription  => Some(format!("/admin/t/{slug}/subscription")),
+            TenantAdminTab::Overview          => Some(format!("/admin/t/{slug}")),
+            TenantAdminTab::Organizations     => Some(format!("/admin/t/{slug}/organizations")),
+            TenantAdminTab::Users             => Some(format!("/admin/t/{slug}/users")),
+            TenantAdminTab::Invitations       => Some(format!("/admin/t/{slug}/invitations")),
+            TenantAdminTab::DeletionRequests  => Some(format!("/admin/t/{slug}/deletion-requests")),
+            TenantAdminTab::Subscription      => Some(format!("/admin/t/{slug}/subscription")),
             TenantAdminTab::UserRoleAssignments
             | TenantAdminTab::OrganizationDetail => None,
         }
@@ -62,6 +68,8 @@ impl TenantAdminTab {
             TenantAdminTab::Overview            => "Overview",
             TenantAdminTab::Organizations       => "Organizations",
             TenantAdminTab::Users               => "Users",
+            TenantAdminTab::Invitations         => "Invitations",
+            TenantAdminTab::DeletionRequests    => "Deletions",
             TenantAdminTab::Subscription        => "Subscription",
             TenantAdminTab::UserRoleAssignments => "User roles",
             TenantAdminTab::OrganizationDetail  => "Organization",

@@ -102,6 +102,59 @@ started.
 
 ### Next minor releases
 
+- ✅ **v0.61.0 — RFC 059–070 (test coverage completion + §16.7/§16.8 docs + UI pages).**
+  RFC 059: admin/policy.rs (13 tests) + oidc/introspect.rs (8 tests).
+  RFC 060: jwt/claims.rs (6 tests). RFC 065: oidc/token.rs (13 tests).
+  RFC 069: webauthn/cose.rs (7 tests). RFC 061-062: data-model.md,
+  admin-operations.md, migration-procedures.md (§16.7 complete).
+  RFC 066-067: tenant admin UI — invitation page + deletion requests page.
+  RFC 068: POST /admin/tenancy/tenants/:id/suspend and /restore (§16.8).
+  RFC 070: versions_mapping.txt update. Total: **1,100+ tests**.
+
+- ✅ **v0.60.0 — RFC 059-064 (coverage + SaaS §16.7 documentation).**
+  admin/policy.rs tests (13), oidc/introspect.rs tests (8), jwt/claims.rs
+  tests (6). data-model.md ER diagram, admin-operations.md, migration-
+  procedures.md. SUMMARY.md updated. 1,089 tests.
+
+- ✅ **v0.59.0 — RFC 054-058 (OIDC/PKCE, tenancy tests, soft-delete, TOTP, E2E).**
+  PKCE tests (+9), authorization tests (+4), tenancy/service.rs tests (12),
+  soft-delete service (soft_delete_tenant/org/group + suspend/restore), TOTP
+  storage.rs tests (6), E2E onboarding scenarios (5 — §16.2/16.4/16.6). 1,062 tests.
+
+- ✅ **v0.58.0 — RFC 049-053 (accept-invite, SQL validation, tenant_id, authz, sessions).**
+  /accept-invite full CloudflareInvitationRepository implementation. migrate-test
+  SQL queries validated (8 tests). authenticators.tenant_id added (migration 0020,
+  SCHEMA_VERSION 20). authz hardening (8 security tests). SessionCreated/Revoked/
+  Expired/MfaVerified EventKind. 1,023 tests.
+
+- ✅ **v0.57.0 — RFC 045-048 (audit events, worker layers, D1 adapters, billing).**
+  6 new EventKind (Invitation×3 + Deletion×3). Invitation + deletion worker routes.
+  CloudflareInvitationRepository + CloudflareDeletionRequestRepository D1 adapters.
+  InMemory adapters. sweep_pending_deletions cron. billing change_plan / is_feature_
+  enabled / check_quota (9 tests). 1,005 tests.
+
+- ✅ **v0.56.0 — RFC 040-044 (OIDC userinfo, token refactor, invitations, deletions).**
+  GET/POST /userinfo endpoint (10 tests). TokenDeps + TokenConfig refactor.
+  Preview-and-apply LOG_LEVEL adoption. invitation_tokens table (migration 0018,
+  11 tests). deletion_requests table (migration 0019, 8 tests). CoreError::Conflict.
+  996 tests, SCHEMA_VERSION 19.
+
+- ✅ **v0.55.0 — RFC 030-039 (P0/P1 review fixes: security, CSP nonces, id_token nonce,
+  mailer security, /userinfo discovery, CI hardening).**
+  Category::Magic, MagicLinkMailer dyn-free, id_token nonce, auth_time in
+  FamilyState, /introspect tenant boundary, request_id audit chain,
+  docs cleanup, CI test/clippy/wasm/deny gates. 963 tests.
+
+- ✅ **v0.54.0 — RFC 001 + RFC 013/025/027 + RFC 020-029 (SaaS multi-tenancy core).**
+  id_token issuance (OIDC Core §3.1.2.2). schema_meta, 0004 FK repair, COLLATE
+  NOCASE fix. Permission catalog sync. ON DELETE CASCADE. Tenant boundary integrity.
+  migration 0001-0017. WebAuthn tenant isolation. Batch authz. Admin console
+  preview-and-apply. TOTP unconfirmed sweep. Introspect rate limit. 958 tests.
+
+- ✅ **v0.53.0 — RFC 014-018 (audit hash chain, id_token ADR, RFC 018 preview infra).**
+  Audit hash chain (DO-serialized). id_token design (ADR-008). Preview-and-apply
+  infrastructure (mint_preview_token / verify_preview_token). 888 tests.
+
 - ✅ **v0.52.1 — RFC 012 + RFC 007 (doc/repo hygiene + attack surface review cadence).**
   Patch release. README and intro.md factual errors corrected (admin console
   existence, audit→D1 not R2). `migrate.rs` 2568-line monolith split into

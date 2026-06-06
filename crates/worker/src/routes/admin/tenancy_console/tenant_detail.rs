@@ -62,3 +62,85 @@ pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
         plan:          plan.as_ref(),
     }))
 }
+
+// -------------------------------------------------------------------------
+// POST /admin/tenancy/tenants/:id/suspend   (Operations+, RFC 068)
+// -------------------------------------------------------------------------
+
+pub async fn suspend<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let principal = match crate::routes::admin::auth::resolve_or_respond(&req, &ctx.env).await? {
+        Ok(p)  => p,
+        Err(r) => return Ok(r),
+    };
+    if let Err(r) = crate::routes::admin::auth::ensure_role_allows(
+        &principal,
+        cesauth_core::admin::types::AdminAction::ManageTenancy,
+    ) {
+        return Ok(r);
+    }
+
+    let tenant_id = ctx.param("id")
+        .ok_or_else(|| worker::Error::RustError("missing id".into()))?
+        .to_owned();
+
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    let tenants = cesauth_cf::tenancy::CloudflareTenantRepository::new(&ctx.env);
+
+    use cesauth_core::tenancy::service::suspend_tenant;
+    if let Err(e) = suspend_tenant(&tenants, &tenant_id, now).await {
+        return worker::Response::error(format!("suspend failed: {e:?}"), 500);
+    }
+
+    crate::audit::write_owned(
+        &ctx.env,
+        crate::audit::EventKind::TenantStatusChanged,
+        Some(principal.id.clone()),
+        Some(tenant_id.clone()),
+        Some("status:Suspended".to_owned()),
+    ).await.ok();
+
+    let mut resp = worker::Response::empty()?.with_status(303);
+    let _ = resp.headers_mut().set("location", &format!("/admin/tenancy/tenants/{tenant_id}"));
+    Ok(resp)
+}
+
+// -------------------------------------------------------------------------
+// POST /admin/tenancy/tenants/:id/restore   (Operations+, RFC 068)
+// -------------------------------------------------------------------------
+
+pub async fn restore<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let principal = match crate::routes::admin::auth::resolve_or_respond(&req, &ctx.env).await? {
+        Ok(p)  => p,
+        Err(r) => return Ok(r),
+    };
+    if let Err(r) = crate::routes::admin::auth::ensure_role_allows(
+        &principal,
+        cesauth_core::admin::types::AdminAction::ManageTenancy,
+    ) {
+        return Ok(r);
+    }
+
+    let tenant_id = ctx.param("id")
+        .ok_or_else(|| worker::Error::RustError("missing id".into()))?
+        .to_owned();
+
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    let tenants = cesauth_cf::tenancy::CloudflareTenantRepository::new(&ctx.env);
+
+    use cesauth_core::tenancy::service::restore_tenant;
+    if let Err(e) = restore_tenant(&tenants, &tenant_id, now).await {
+        return worker::Response::error(format!("restore failed: {e:?}"), 500);
+    }
+
+    crate::audit::write_owned(
+        &ctx.env,
+        crate::audit::EventKind::TenantStatusChanged,
+        Some(principal.id.clone()),
+        Some(tenant_id.clone()),
+        Some("status:Active".to_owned()),
+    ).await.ok();
+
+    let mut resp = worker::Response::empty()?.with_status(303);
+    let _ = resp.headers_mut().set("location", &format!("/admin/tenancy/tenants/{tenant_id}"));
+    Ok(resp)
+}

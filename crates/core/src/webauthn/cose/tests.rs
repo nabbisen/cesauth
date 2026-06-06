@@ -67,3 +67,48 @@ fn none_attestation_requires_empty_stmt() {
     ]);
     assert!(require_none_attestation(&bad_stmt).is_err());
 }
+
+// ── RFC 069: additional coverage ──────────────────────────────────────────
+
+#[test]
+fn sha256_empty_string_known_vector() {
+    let digest = sha256(b"");
+    let hex = hex::encode(digest);
+    assert_eq!(hex, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+}
+
+#[test]
+fn sha256_abc_known_vector() {
+    let digest = sha256(b"abc");
+    let hex = hex::encode(digest);
+    assert_eq!(hex, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+}
+
+#[test]
+fn parse_cose_public_key_rejects_empty_bytes() {
+    assert!(parse_cose_public_key(&[]).is_err(),
+        "empty COSE bytes must be rejected");
+}
+
+#[test]
+fn parse_cose_public_key_rejects_truncated_cbor() {
+    let bad = [0xa2u8, 0x01]; // map(2) then just one byte
+    assert!(parse_cose_public_key(&bad).is_err());
+}
+
+#[test]
+fn parse_att_obj_rejects_empty_bytes() {
+    assert!(parse_att_obj(&[]).is_err());
+}
+
+#[test]
+fn cose_alg_variants_are_distinct() {
+    assert_ne!(CoseAlg::EdDsa, CoseAlg::Es256);
+}
+
+#[test]
+fn require_none_attestation_rejects_empty_map() {
+    let cbor = V::Map(vec![]);
+    assert!(require_none_attestation(&cbor).is_err(),
+        "attestation without fmt must fail");
+}

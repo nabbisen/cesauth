@@ -26,6 +26,73 @@ split by minor-version range:
 
 ---
 
+## [0.61.0] - 2026-05-12
+
+Implements RFC 065-070: test coverage completion across token/cose/claims modules,
+tenant admin UI pages for invitations and deletions, suspend/restore routes for
+§16.8 acceptance, and project hygiene cleanup.
+
+### Test coverage (RFC 065, 069)
+
+**oidc/token/tests.rs** +11 tests (`classify()` comprehensive coverage):
+`classify_auth_code_success`, `classify_refresh_success`, `classify_refresh_with_scope`,
+four missing-field cases, `token_response_bearer_constructor`,
+`token_response_serializes_bearer`, `token_error_serializes_snake_case`
+
+**webauthn/cose/tests.rs** +7 tests:
+`sha256_empty_string_known_vector`, `sha256_abc_known_vector`,
+`parse_cose_public_key_rejects_empty_bytes`, `parse_cose_public_key_rejects_truncated_cbor`,
+`parse_att_obj_rejects_empty_bytes`, `cose_alg_variants_are_distinct`,
+`require_none_attestation_rejects_empty_map`
+
+### Tenant admin UI (RFC 066, 067)
+
+**`cesauth-ui::tenant_admin::invitations`** (new):
+- `invitations_page(principal, tenant, invitations, now_unix)` — invitation list with
+  issue-form (email + role selector), status badges (pending/expired/revoked),
+  per-row revoke button with CSRF
+
+**`cesauth-ui::tenant_admin::deletions`** (new):
+- `deletion_requests_page(principal, tenant, requests, now_unix)` — deletion queue with
+  grace-period display, per-row Cancel and "Execute now" actions with confirmation
+
+**`TenantAdminTab`** extended with `Invitations` and `DeletionRequests` variants.
+
+### Tenant suspend/restore (RFC 068) — SaaS §16.8
+
+- `POST /admin/tenancy/tenants/:id/suspend` → calls `suspend_tenant()`,
+  emits `TenantStatusChanged`, redirects to tenant detail
+- `POST /admin/tenancy/tenants/:id/restore` → calls `restore_tenant()`,
+  emits `TenantStatusChanged`
+- Requires `AdminAction::ManageTenancy` (Operations+)
+
+**§16.8 acceptance criteria now complete**:
+- 管理画面から主要操作が実行可能 ✅ (invitation, deletion, suspend/restore routes)
+- 監査ログから原因追跡が可能 ✅ (EventKind chain across all operations)
+- テナント単位での停止・復帰が可能 ✅ (this RFC)
+
+### Project hygiene (RFC 070)
+
+- `versions_mapping.txt` updated with full v0.52.1→v0.61.0 history
+- `ROADMAP.md` prefixed with 9 new completed entries (v0.53.0–v0.61.0)
+- `GET /admin/t/:slug/invitations` route added (was POST-only, route-contracts gap)
+
+### Routes
+
+163 routes documented in `route-contracts.md` (+3 new routes).
+
+### Test counts
+
+| Crate | v0.60.0 | v0.61.0 | Δ |
+|---|---|---|---|
+| `cesauth-core` | 663 | **681** | +18 |
+| `cesauth-adapter-test` | 125 | **125** | ±0 |
+| `cesauth-ui` | 270 | **270** | ±0 |
+| `cesauth-migrate-test` | 31 | **31** | ±0 |
+| **Total** | **1,089** | **1,107** | **+18** |
+
+---
+
 ## [0.60.0] - 2026-05-12
 
 Implements RFC 059-064: coverage completeness across previously untested

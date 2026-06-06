@@ -84,6 +84,7 @@ code-review responsibility.
 | POST | `/admin/console/config/:bucket/preview` | System admin | none | config preview | n/a | required |
 | POST | `/admin/console/config/:bucket/apply` | System admin | `config_applied` | redirect | n/a | required |
 | POST | `/admin/t/:slug/invitations` | Tenant admin | `invitation_issued` | redirect | CSRF | required |
+| GET  | `/admin/t/:slug/invitations` | Tenant admin | none | HTML | n/a | required |
 | GET  | `/accept-invite` | public (invite link) | none | HTML | n/a | N/A |
 | POST | `/accept-invite` | public (invite link) | `invitation_accepted` | redirect | n/a | N/A |
 | POST | `/me/security/delete-account` | authenticated user | `deletion_requested` | redirect | CSRF | session |
@@ -106,6 +107,8 @@ code-review responsibility.
 | Method | Path | Actor | Audit kind | View / template | Rendering test | CSRF |
 |---|---|---|---|---|---|---|
 | GET | `/admin/tenancy` | System admin | none | tenancy overview | n/a | N/A (GET) |
+| POST | `/admin/tenancy/tenants/:id/suspend` | System admin | `tenant_status_changed` | redirect | CSRF | required |
+| POST | `/admin/tenancy/tenants/:id/restore` | System admin | `tenant_status_changed` | redirect | CSRF | required |
 | GET | `/admin/tenancy/tenants` | System admin | none | tenant list | n/a | N/A (GET) |
 | GET | `/admin/tenancy/tenants/:tid` | System admin | none | tenant detail | n/a | N/A (GET) |
 | GET | `/admin/tenancy/tenants/:tid/subscription/history` | System admin | none | subscription history | n/a | N/A (GET) |

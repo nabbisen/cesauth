@@ -254,3 +254,35 @@ fn urlencoding(s: &str) -> String {
         }
     }).collect()
 }
+
+// ---------------------------------------------------------------------------
+// GET /admin/t/:slug/invitations  (RFC 066)
+// ---------------------------------------------------------------------------
+
+pub async fn list<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
+        Ok(p)  => p,
+        Err(r) => return Ok(r),
+    };
+    let ctx_ta = match gate::resolve_or_respond(principal, &ctx).await? {
+        Ok(c)  => c,
+        Err(r) => return Ok(r),
+    };
+
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    let inv_repo = cesauth_cf::ports::repo::CloudflareInvitationRepository::new(&ctx.env);
+
+    let invitations = match cesauth_core::invitation::InvitationRepository::list_pending_by_tenant(
+        &inv_repo, &ctx_ta.tenant.id, now,
+    ).await {
+        Ok(v)  => v,
+        Err(_) => vec![],
+    };
+
+    render::html_response(cesauth_ui::tenant_admin::invitations::invitations_page(
+        &ctx_ta.principal,
+        &ctx_ta.tenant,
+        &invitations,
+        now,
+    ))
+}
