@@ -26,6 +26,65 @@ split by minor-version range:
 
 ---
 
+## [0.78.11] - 2026-05-20
+
+Migration fix. Magic-link login failed at runtime with
+`no such table: main.users_pre_0016: SQLITE_ERROR` when the active
+session store attempted an INSERT into `user_sessions`.
+
+### Root cause (same pattern as v0.78.10, different table)
+
+Migration 0016 rebuilds `users` via `ALTER TABLE users RENAME TO
+users_pre_0016 / CREATE TABLE users / INSERT / DROP TABLE users_pre_0016`.
+SQLite 3.26.0+ rewrites FK references in every other table at rename time,
+so eight tables ended the migration with `user_id` pointing at the
+non-existent `users_pre_0016`.
+
+`PRAGMA foreign_key_check` at the end of migration 0016 passes on a
+fresh (empty) database because it checks *row-level* integrity only;
+the dangling FK schema entry is invisible until a real INSERT fires
+FK enforcement at runtime.
+
+Migration 0016 already rebuilt `authenticators`, `consent`, and `grants`,
+but missed the eight tables below.
+
+### Added to migration 0016
+
+Eight new rebuild blocks, each following the rename/create/insert/drop
+pattern already established in the migration:
+
+| Table | Additional index restored |
+|---|---|
+| `user_sessions` | `idx_user_sessions_active_created` (from 0014) |
+| `user_tenant_memberships` | — |
+| `user_organization_memberships` | — |
+| `user_group_memberships` | — |
+| `role_assignments` | — |
+| `totp_authenticators` | — |
+| `totp_recovery_codes` | — |
+| `anonymous_sessions` | — |
+
+`user_sessions` required one extra line: the partial index
+`idx_user_sessions_active_created` (created in migration 0014) was
+lost when the table was rebuilt, and the migration-chain test
+`active_sessions_cron_scan_uses_partial_index` caught the omission.
+
+### Tests
+
+31 / 31 migration chain tests pass (including the index-plan test
+that caught the missing `idx_user_sessions_active_created`).
+
+### Pattern for future rebuild migrations
+
+Any migration that rebuilds a table with `ALTER TABLE foo RENAME TO
+foo_pre_N; ... DROP TABLE foo_pre_N` must also rebuild every table
+that has a FK pointing at `foo`. SQLite 3.26.0+ silently rewrites
+those FK targets to `foo_pre_N`; after the drop, those FKs become
+dangling and break at runtime. `PRAGMA foreign_key_check` does not
+catch this on an empty database.
+
+---
+
 ## [0.78.10] - 2026-05-20
 
 Migration fix. `wrangler d1 migrations apply cesauth --local` failed
