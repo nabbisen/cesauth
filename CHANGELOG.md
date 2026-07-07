@@ -26,6 +26,113 @@ split by minor-version range:
 
 ---
 
+## [0.78.3] - 2026-05-19
+
+Patch release. Fixes all 44 `cesauth-worker` compilation errors that
+appeared when `wrangler dev` compiled for the `wasm32-unknown-unknown`
+target. None of these errors were caused by v0.75.0–v0.78.2 changes;
+they are pre-existing drift between the worker crate call-sites and
+core API changes accumulated since v0.66.0.
+
+### Error categories and fixes
+
+**Duplicate enum variant (1 error)**
+
+`EventKind::SessionRevoked` was defined twice in `crates/worker/src/audit.rs` — once in the RFC 053 session lifecycle section (L73) and again in a legacy "Sessions" section (L274). Removed the duplicate definition and its unreachable `as_str()` match arm.
+
+**Missing module file (1 error)**
+
+`pub mod preview;` in `routes/admin/console.rs` referenced a file that didn't exist. Created a stub `console/preview.rs` that returns HTTP 501 until the full implementation ships (env-blocked — requires wasm32 to develop and verify).
+
+**Wrong module path (1 error)**
+
+`crate::adapter_cf::audit_repo(&ctx.env)` in `audit_export.rs` — `adapter_cf` does not exist in the worker crate root. Replaced with the direct constructor `cesauth_cf::ports::audit::CloudflareAuditEventRepository::new(&ctx.env)`, consistent with every other audit repository construction site in the codebase.
+
+**`ctx` not in scope in non-async helper / wrong env variable (8 errors)**
+
+Several CSP-nonce failure paths attempted `crate::audit::write_owned(&ctx.env, ...)`:
+- In `render::html_response` (a non-async free function with no `ctx` parameter): replaced with `worker::console_error!()` — no audit possible without an env handle, and CspNonce generation failure is catastrophic enough to warrant a console log.
+- In `me/security.rs`, `me/totp/disable.rs`, `me/totp/enroll.rs`, `me/totp/verify.rs` (get_handler): these functions take `env: worker::Env`, not `ctx: RouteContext`. Changed `ctx.env` → `env`.
+- In `me/totp/verify.rs` (decide_verify_get): this function takes no env at all and returns `VerifyGetDecision`. Replaced the incorrect `return Response::error(...)` with `return VerifyGetDecision::StaleGate` and `worker::console_error!()` for logging.
+
+**`await` in non-async function (1 error)**
+
+`render::html_response` used `.await` in the CSP nonce audit path — same root as above. Fixed by removing the audit call entirely.
+
+**Missing struct fields (6 errors)**
+
+- `SecurityCenterState` missing `active_sessions_count` (`me/security.rs`): added `active_sessions_count: None`.
+- `Challenge::AuthCode` missing `auth_time` (`oidc/authorize.rs`): added `auth_time: now` (uses code-issuance time; the id_token builder falls back to `issued_at` when `auth_time == 0`, so either value is correct).
+- `AuditSearch` missing `before_seq` (`routes/dev.rs`): added `before_seq: None`.
+- `NewGroupInput` missing `organization_tenant_id` (3 sites: `tenancy_console/forms/group_create.rs`, `tenant_admin/forms/group_create.rs`, `api_v1/groups.rs`): added `organization_tenant_id: None`.
+
+**Missing `tenant_id` in `MagicLinkPayload` (1 error)**
+
+`invitations.rs` built a `MagicLinkPayload` without the `tenant_id` field added in a later release. Added `tenant_id: Some(&ctx_ta.tenant.id)`.
+
+**Renamed / removed API items (5 errors)**
+
+- `gate::check_write` → `gate::check_action` with explicit `ScopeRef` argument (`invitations.rs`).
+- `PermissionCatalog::MEMBER_ADD` → `PermissionCatalog::GROUP_MEMBER_ADD` (`invitations.rs`).
+- `ReconcileStats.drift_count + .ok_count` — both fields removed; replaced with `s.walked` which is the total count of sessions examined per pass (`lib.rs`).
+- `key_repo.list_active_verifying_keys()` → `key_repo.list_active()` — the method was renamed when the trait was refactored. Requires adding `use cesauth_core::ports::repo::SigningKeyRepository;` (was already imported but unused — warning now resolved).
+- `cesauth_core::jwt::verify_for_introspect(&token, key)` — the function gained two arguments (`expected_iss: &str`, `leeway_secs: u64`) when the audience-gate was moved out. Updated to `verify_for_introspect::<AccessTokenClaims>(&token, &raw_bytes, &cfg.issuer, 30)`. The `public_key_b64` field is now decoded from base64 inline, following the same pattern as `routes/oidc/introspect.rs`.
+
+**Missing trait imports (3 errors)**
+
+- `MagicLinkMailer` not in scope at 3 call sites (`anonymous.rs`, `invitations.rs`, `magic_link/request.rs`). Added `use cesauth_core::magic_link::MagicLinkMailer;`.
+- `DeletionRequestRepository` not in scope (`sweep.rs`). Added `use cesauth_core::deletion::DeletionRequestRepository;`.
+
+**`KvError` vs `worker::Error` mismatch (1 error)**
+
+`kv.put(...).execute().await` in `cron_status.rs` returns `Result<(), KvError>` but the function signature expects `Result<(), worker::Error>`. Added `.map_err(|e| worker::Error::RustError(...))`.
+
+**Non-exhaustive `CoreError` match (1 error)**
+
+`error.rs::oauth_error_code_status` — two new `CoreError` variants (`Conflict`, `CrossTenantReference`) added in later core releases were not covered. Added match arms mapping them to `("conflict", 409)` and `("invalid_request", 400)` respectively.
+
+**`crate::i18n::Locale` private (1 error)**
+
+`invitations.rs` accessed `Locale` through the worker `i18n` module's private `use` alias. Changed to `cesauth_core::i18n::Locale::default()` directly.
+
+**`&str` where `String` expected (5 errors)**
+
+`render::html_response` takes `String`. Five call sites in `invitations.rs` passed `&str` literals. Added `.to_owned()` at each.
+
+**Missing `form_error` helper (2 errors)**
+
+`invitations.rs` called `render::form_error(...)` which doesn't exist in the render module. Added a file-local helper `fn form_error(msg: &str) -> Result<Response>` that wraps `render::html_response`.
+
+**`cfg` variable / macro collision (1 error)**
+
+`invitations.rs::accept_submit` called `log::emit(&cfg.log, ...)` inside a code path where the `cfg` Config variable had not yet been initialized (it was declared later in the function). Moved `Config::from_env()` to before the `accept_invitation` call and renamed the binding to `app_cfg` to avoid shadowing the `cfg!` built-in macro.
+
+**`String` vs `&str` in `h.set()` call (1 error)**
+
+`render.rs`: `h.set("content-security-policy", format!(...))` — `h.set` requires `&str`, `format!` returns `String`. Bound the formatted string to a `let csp_header` and passed `&csp_header`.
+
+**Unused `mut` warnings (4 warnings → 0)**
+
+`https_provider.rs` `let mut headers` and `let mut resp` were redundant after the v0.78.1/v0.78.2 changes. Removed `mut`.
+
+### Warnings also fixed
+
+In addition to the 44 errors, 4 warnings are now resolved:
+- `serde::Deserialize` unused import (`invitations.rs`) — removed.
+- `InvitationRepository` unused import (`invitations.rs`) — removed.
+- `FlashView` unused import (`me/security.rs`) — removed.
+- `SigningKeyRepository` unused import (`oidc/userinfo.rs`) — resolved by actually using the trait via `list_active()`.
+- Two `unused mut` warnings in `https_provider.rs` — removed.
+
+### Tests
+
+1,290 / 1,290 pass (host-buildable crates). 0 production warnings.
+The `cesauth-worker` and `cesauth-adapter-cloudflare` crates require
+the wasm32 target; all fixes are verified structurally against the
+core API and follow established patterns in the existing codebase.
+
+---
+
 ## [0.78.2] - 2026-05-19
 
 Patch release. Fixes three errors introduced by v0.78.1's over-eager

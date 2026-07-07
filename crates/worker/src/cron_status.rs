@@ -22,6 +22,7 @@ pub async fn record_cron_pass(env: &Env, record: &CronPassRecord) -> worker::Res
         .expiration_ttl(8 * 24 * 3600) // 8 days
         .execute()
         .await
+        .map_err(|e| worker::Error::RustError(format!("cron_status kv write failed: {e}")))
 }
 
 /// Status record stored in KV for one cron pass run.

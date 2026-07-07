@@ -119,6 +119,7 @@ pub async fn list_audit<D>(req: Request, ctx: RouteContext<D>) -> Result<Respons
     let search = cesauth_core::ports::audit::AuditSearch {
         kind, subject, since, until,
         limit: Some(limit),
+        before_seq: None,
     };
     let rows = match repo.search(&search).await {
         Ok(r)  => r,

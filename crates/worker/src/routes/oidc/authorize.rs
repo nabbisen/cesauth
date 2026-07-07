@@ -123,6 +123,11 @@ pub async fn authorize<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
             code_challenge_method: ar.code_challenge_method.clone(),
             issued_at:             now,
             expires_at:            now + cfg.auth_code_ttl_secs,
+            // RFC 001: auth_time = when the user authenticated. For an
+            // existing session reuse we use `now` as a conservative
+            // approximation; the id_token builder falls back to
+            // issued_at when auth_time == 0, so 0 is also safe here.
+            auth_time:             now,
         };
         let store = CloudflareAuthChallengeStore::new(&ctx.env);
         if let Err(e) = store.put(&code, &code_chal).await {

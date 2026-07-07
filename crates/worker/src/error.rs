@@ -56,6 +56,12 @@ pub(crate) fn oauth_error_code_status(err: &CoreError) -> (&'static str, u16) {
         | JwtSigning
         | Serialization
         | Internal              => ("server_error",           500),
+        // v0.50.x additions: map to the closest RFC 6749 codes.
+        // Conflict is a data-layer constraint violation (e.g. duplicate slug);
+        // CrossTenantReference is a structural integrity guard.  Neither should
+        // reach the OAuth token endpoint, but the match must be exhaustive.
+        Conflict                   => ("invalid_request",     409),
+        CrossTenantReference { .. } => ("invalid_request",    400),
     }
 }
 

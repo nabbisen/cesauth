@@ -104,11 +104,11 @@ where
     let csp_nonce = match cesauth_core::security_headers::CspNonce::generate() {
         Ok(n) => n,
         Err(_) => {
-            crate::audit::write_owned(
-                &ctx.env, crate::audit::EventKind::CsrfRngFailure,
-                None, None, Some("csp_nonce_failure".to_owned()),
-            ).await.ok();
-            return Response::error("service temporarily unavailable", 500);
+            // No env available in this helper fn; log via console only.
+            worker::console_error!("csp_nonce_failure in decide_verify_get");
+            // CspNonce::generate fails only if getrandom fails — treat as
+            // a transient gate failure; caller will redirect the user.
+            return VerifyGetDecision::StaleGate;
         }
     };
     cesauth_ui::set_render_nonce(csp_nonce.as_str());
@@ -147,7 +147,7 @@ pub async fn get_handler(
             Ok(tok) => tok,
             Err(_) => {
                 crate::audit::write_owned(
-                    &ctx.env, crate::audit::EventKind::CsrfRngFailure,
+                    &env, crate::audit::EventKind::CsrfRngFailure,
                     None, None, Some("route=/me/security/totp/verify".to_owned()),
                 ).await.ok();
                 return Response::error("service temporarily unavailable", 500);

@@ -122,7 +122,7 @@ impl MagicLinkMailer for HttpsProviderMailer {
         })
         .to_string();
 
-        let mut headers = Headers::new();
+        let headers = Headers::new();
         headers
             .set("Content-Type", "application/json")
             .map_err(|e| MailerError::Transient(e.to_string()))?;
@@ -138,7 +138,7 @@ impl MagicLinkMailer for HttpsProviderMailer {
         let req = Request::new_with_init(&self.provider_url, &init)
             .map_err(|e| MailerError::Transient(e.to_string()))?;
 
-        let mut resp = Fetch::Request(req)
+        let resp = Fetch::Request(req)
             .send()
             .await
             .map_err(|e| MailerError::Transient(e.to_string()))?;

@@ -51,10 +51,8 @@ pub fn html_response(body: String) -> Result<Response> {
     let csp_nonce = match cesauth_core::security_headers::CspNonce::generate() {
         Ok(n) => n,
         Err(_) => {
-            crate::audit::write_owned(
-                &ctx.env, crate::audit::EventKind::CsrfRngFailure,
-                None, None, Some("csp_nonce_failure".to_owned()),
-            ).await.ok();
+            // ctx is not available in this helper fn; log via console instead.
+            worker::console_error!("csp_nonce_failure: getrandom error in html_response");
             return Response::error("service temporarily unavailable", 500);
         }
     };
@@ -62,16 +60,18 @@ pub fn html_response(body: String) -> Result<Response> {
     let mut resp = Response::from_html(body)?;
     let h = resp.headers_mut();
     let _ = h.set("cache-control", "no-store");
-    let _ = h.set(
-        "content-security-policy",
-        format!("default-src 'self'; \
+    // format! returns String; bind to a local so .as_str() can borrow it.
+    let csp_header = format!(
+        "default-src 'self'; \
          script-src 'none'; \
          style-src 'self' 'nonce-{n}'; \
          img-src 'self' data:; \
          form-action 'self'; \
          frame-ancestors 'none'; \
-         base-uri 'none'", n = csp_nonce.as_str()),
+         base-uri 'none'",
+        n = csp_nonce.as_str(),
     );
+    let _ = h.set("content-security-policy", &csp_header);
     let _ = h.set("x-content-type-options", "nosniff");
     let _ = h.set("x-frame-options",        "DENY");
     let _ = h.set("referrer-policy",        "no-referrer");

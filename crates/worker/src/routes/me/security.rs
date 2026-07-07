@@ -109,6 +109,7 @@ pub async fn get_handler(req: Request, env: worker::Env) -> Result<Response> {
         primary_method,
         totp_enabled,
         recovery_codes_remaining: recovery_count,
+        active_sessions_count: None,  // optional field; set if session count is available
     };
 
     // v0.39.0: negotiate locale once for the page.
@@ -138,7 +139,7 @@ pub async fn get_handler(req: Request, env: worker::Env) -> Result<Response> {
         Ok(n) => n,
         Err(_) => {
             crate::audit::write_owned(
-                &ctx.env, crate::audit::EventKind::CsrfRngFailure,
+                &env, crate::audit::EventKind::CsrfRngFailure,
                 None, None, Some("csp_nonce_failure".to_owned()),
             ).await.ok();
             return Response::error("service temporarily unavailable", 500);

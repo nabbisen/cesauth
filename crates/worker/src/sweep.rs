@@ -46,6 +46,7 @@
 
 use cesauth_cf::ports::repo::CloudflareUserRepository;
 use cesauth_core::anonymous::ANONYMOUS_USER_RETENTION_SECONDS;
+use cesauth_core::deletion::DeletionRequestRepository;
 use cesauth_core::ports::repo::UserRepository;
 use time::OffsetDateTime;
 use worker::Env;

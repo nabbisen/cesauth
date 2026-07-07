@@ -263,15 +263,10 @@ pub enum EventKind {
     MagicLinkDeliveryFailed,
     // Sessions
     SessionStarted,
-    /// Legacy generic revoke event. v0.35.0 splits revocations
-    /// into `SessionRevokedByUser` / `SessionRevokedByAdmin` /
-    /// `SessionIdleTimeout` / `SessionAbsoluteTimeout` so
-    /// operators can monitor "user actively logged out" vs
-    /// "admin kicked the session" vs "auto-expiry". This kind
-    /// remains for backward compatibility with v0.4.x — v0.34.x
-    /// audit rows. Pre-v0.35.0 rows in the audit chain still
-    /// carry it; new code paths use the split kinds below.
-    SessionRevoked,
+    // NOTE: `SessionRevoked` is defined above (line ~73) under the RFC 053 session
+    // lifecycle section. That is the canonical definition; the duplicate that used
+    // to live here (with the "legacy compatibility" note) has been removed to fix
+    // the E0428 "defined multiple times" compilation error.
     /// **v0.35.0** — User clicked "revoke" on
     /// `/me/security/sessions`. Distinct from
     /// `SessionRevokedByAdmin` so security teams monitoring for
@@ -380,7 +375,7 @@ impl EventKind {
             Self::MagicLinkDelivered           => "magic_link_delivered",
             Self::MagicLinkDeliveryFailed      => "magic_link_delivery_failed",
             Self::SessionStarted               => "session_started",
-            Self::SessionRevoked               => "session_revoked",
+            // SessionRevoked is matched above (in the RFC 053 section); no duplicate here.
             Self::SessionRevokedByUser         => "session_revoked_by_user",
             Self::SessionRevokedByAdmin        => "session_revoked_by_admin",
             Self::SessionIdleTimeout           => "session_idle_timeout",

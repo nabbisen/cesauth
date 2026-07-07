@@ -52,7 +52,7 @@ pub async fn export<D>(mut req: Request, ctx: RouteContext<D>) -> worker::Result
         .and_then(|v| v.to_string().parse().ok())
         .unwrap_or(10_000);
 
-    let audit_repo = crate::adapter_cf::audit_repo(&ctx.env)?;
+    let audit_repo = cesauth_cf::ports::audit::CloudflareAuditEventRepository::new(&ctx.env);
     let result = export_audit(&audit_repo, &query, format, max_rows).await
         .map_err(|e| worker::Error::RustError(format!("audit export failed: {e:?}")))?;
 

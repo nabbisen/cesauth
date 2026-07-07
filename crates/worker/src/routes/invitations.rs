@@ -5,14 +5,14 @@
 //!   GET  /accept-invite                  — renders accept page
 //!   POST /accept-invite                  — verifies + marks accepted
 
-use serde::Deserialize;
 use time::OffsetDateTime;
 use worker::{Request, Response, Result, RouteContext};
 
 use cesauth_cf::ports::repo::CloudflareInvitationRepository;
 use cesauth_core::invitation::{
-    self, InvitationRepository, InvitationVerifyOutcome, DEFAULT_INVITE_TTL_SECS,
+    self, InvitationVerifyOutcome, DEFAULT_INVITE_TTL_SECS,
 };
+use cesauth_core::magic_link::MagicLinkMailer;
 
 use crate::adapter::mailer;
 use crate::audit::{self, EventKind};
@@ -21,6 +21,14 @@ use crate::log::{self, Category, Level};
 use crate::routes::admin::auth;
 use crate::routes::admin::console::render;
 use crate::routes::admin::tenant_admin::gate;
+
+/// Return a simple HTML error page for form validation failures.
+fn form_error(msg: &str) -> Result<Response> {
+    render::html_response(format!(
+        "<html><head><title>Error</title></head><body><p>{}</p></body></html>",
+        msg
+    ))
+}
 
 // ---------------------------------------------------------------------------
 // POST /admin/t/:slug/invitations
@@ -36,9 +44,10 @@ pub async fn issue<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
         Err(r) => return Ok(r),
     };
 
-    if let Err(r) = gate::check_write(
+    if let Err(r) = gate::check_action(
         &ctx_ta,
-        cesauth_core::authz::types::PermissionCatalog::MEMBER_ADD,
+        cesauth_core::authz::types::PermissionCatalog::GROUP_MEMBER_ADD,
+        cesauth_core::authz::types::ScopeRef::Tenant { tenant_id: &ctx_ta.tenant.id },
         &ctx,
     ).await? {
         return Ok(r);
@@ -73,7 +82,7 @@ pub async fn issue<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
             log::emit(&cfg.log, Level::Warn, Category::Auth,
                 &format!("duplicate invitation for {email} in tenant {}", ctx_ta.tenant.slug),
                 Some(&ctx_ta.principal.id));
-            return render::html_response("<html><body><p>A pending invitation for this email already exists. Please wait for it to expire or have an admin revoke it.</p></body></html>");
+            return render::html_response("<html><body><p>A pending invitation for this email already exists. Please wait for it to expire or have an admin revoke it.</p></body></html>".to_owned());
         }
         Err(e) => {
             log::emit(&cfg.log, Level::Error, Category::Storage,
@@ -87,11 +96,12 @@ pub async fn issue<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
     let accept_url = format!("{}/accept-invite?id={}&email={}",
         cfg.issuer, inv.id, urlencoding(&inv.email));
     let payload = cesauth_core::magic_link::MagicLinkPayload {
-        recipient: &inv.email,
-        handle:    &inv.id,
-        code:      &accept_url,   // the "code" IS the full accept URL for invitations
-        locale:    crate::i18n::locale_str(crate::i18n::Locale::default()),
-        reason:    cesauth_core::magic_link::MagicLinkReason::InitialAuth,
+        recipient:  &inv.email,
+        handle:     &inv.id,
+        code:       &accept_url,   // the "code" IS the full accept URL for invitations
+        locale:     crate::i18n::locale_str(cesauth_core::i18n::Locale::default()),
+        reason:     cesauth_core::magic_link::MagicLinkReason::InitialAuth,
+        tenant_id:  Some(&ctx_ta.tenant.id),
     };
     let mailer_inst = mailer::from_env(&ctx.env);
     if let Err(e) = mailer_inst.send(&payload).await {
@@ -205,22 +215,19 @@ pub async fn accept_submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<
     let inv = match outcome {
         InvitationVerifyOutcome::Valid(i) => i,
         InvitationVerifyOutcome::Expired =>
-            return render::html_response("<html><body>Invitation expired.</body></html>"),
+            return render::html_response("<html><body>Invitation expired.</body></html>".to_owned()),
         InvitationVerifyOutcome::Revoked =>
-            return render::html_response("<html><body>Invitation revoked.</body></html>"),
+            return render::html_response("<html><body>Invitation revoked.</body></html>".to_owned()),
         InvitationVerifyOutcome::AlreadyAccepted =>
-            return render::html_response("<html><body>Already accepted. Please sign in.</body></html>"),
+            return render::html_response("<html><body>Already accepted. Please sign in.</body></html>".to_owned()),
         InvitationVerifyOutcome::NotFound =>
             return Response::error("invitation not found", 404),
     };
 
-    // Mark invitation accepted. The actual user account creation happens
-    // when the user completes the Magic Link or WebAuthn registration flow
-    // that we redirect them into.  For now, mark "accepted" optimistically
-    // so the invite can't be replayed, and redirect to the magic-link
-    // request page pre-filled with the email.
+    // Mark invitation accepted.
+    let app_cfg = Config::from_env(&ctx.env)?;
     if let Err(e) = invitation::accept_invitation(&inv_repo, &inv.id, "pending-registration", now).await {
-        log::emit(&cfg.log, Level::Error, Category::Auth,
+        log::emit(&app_cfg.log, Level::Error, Category::Auth,
             &format!("accept_invitation mark failed: {e:?}"),
             Some(&inv.email));
         return Response::error("internal error", 500);
@@ -233,7 +240,6 @@ pub async fn accept_submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<
     ).await.ok();
 
     // Redirect to magic-link request page with email pre-filled.
-    let cfg = Config::from_env(&ctx.env)?;
     let redirect = format!("/magic-link/request?email={}&invite_id={}",
         urlencoding(&inv.email), inv.id);
     let mut resp = Response::empty()?.with_status(303);

@@ -1,7 +1,7 @@
 //! `POST /magic-link/request` handler.
 
 use cesauth_cf::ports::store::{CloudflareAuthChallengeStore, CloudflareRateLimitStore};
-use cesauth_core::magic_link::{self, MagicLinkPayload, MagicLinkReason};
+use cesauth_core::magic_link::{self, MagicLinkMailer, MagicLinkPayload, MagicLinkReason};
 use cesauth_core::ports::store::{AuthChallengeStore, Challenge, RateLimitStore};
 use serde::Deserialize;
 use time::OffsetDateTime;

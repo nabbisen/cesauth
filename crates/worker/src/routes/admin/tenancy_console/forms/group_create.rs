@@ -134,6 +134,7 @@ async fn create_and_redirect<F: FnOnce(&str) -> String>(
     let groups = CloudflareGroupRepository::new(env);
     let group = match create_group(&groups, &NewGroupInput {
         tenant_id, parent, slug, display_name,
+        organization_tenant_id: None,
     }, now).await {
         Ok(g) => g,
         Err(e) => {

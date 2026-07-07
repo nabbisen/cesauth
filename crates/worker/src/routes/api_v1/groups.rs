@@ -60,10 +60,11 @@ pub async fn create<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     let groups = CloudflareGroupRepository::new(&ctx.env);
 
     let group = match create_group(&groups, &NewGroupInput {
-        tenant_id:    &tid,
+        tenant_id:              &tid,
         parent,
-        slug:         &body.slug,
-        display_name: &body.display_name,
+        slug:                   &body.slug,
+        display_name:           &body.display_name,
+        organization_tenant_id: None,
     }, now).await {
         Ok(g)  => g,
         Err(e) => return port_error_response(e),

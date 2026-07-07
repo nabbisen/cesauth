@@ -90,7 +90,7 @@ pub async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
 
             let sia_result = session_index_audit::run(&env).await;
             let t3 = worker::Date::now().as_millis() / 1000;
-            let processed_sia = sia_result.as_ref().map(|s| (s.drift_count + s.ok_count) as u64).unwrap_or(0);
+            let processed_sia = sia_result.as_ref().map(|s| s.walked).unwrap_or(0);
             let _ = cron_status::record_cron_pass(&env, &cron_status::CronPassRecord::new(
                 "session_index_audit", t2 as i64, t3 as i64,
                 sia_result.is_ok(), processed_sia, "apply",

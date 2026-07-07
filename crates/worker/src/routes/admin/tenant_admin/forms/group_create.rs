@@ -83,12 +83,13 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     let now = OffsetDateTime::now_utc().unix_timestamp();
     let groups = CloudflareGroupRepository::new(&ctx.env);
     let input = cesauth_core::tenancy::ports::NewGroupInput {
-        tenant_id:    &ctx_ta.tenant.id,
-        parent:       cesauth_core::tenancy::types::GroupParent::Organization {
+        tenant_id:              &ctx_ta.tenant.id,
+        parent:                 cesauth_core::tenancy::types::GroupParent::Organization {
             organization_id: org.id.clone(),
         },
-        slug:         &slug,
-        display_name: &display_name,
+        slug:                   &slug,
+        display_name:           &display_name,
+        organization_tenant_id: None,
     };
     let group = match create_group(&groups, &input, now).await {
         Ok(g)  => g,

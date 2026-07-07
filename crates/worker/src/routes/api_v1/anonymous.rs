@@ -30,7 +30,7 @@ use cesauth_cf::ports::store::{CloudflareAuthChallengeStore, CloudflareRateLimit
 use cesauth_core::anonymous::{
     AnonymousSession, AnonymousSessionRepository, ANONYMOUS_TOKEN_TTL_SECONDS,
 };
-use cesauth_core::magic_link::{self, MagicLinkPayload, MagicLinkReason};
+use cesauth_core::magic_link::{self, MagicLinkMailer, MagicLinkPayload, MagicLinkReason};
 use cesauth_core::ports::repo::UserRepository;
 use cesauth_core::ports::store::{AuthChallengeStore, Challenge, RateLimitStore};
 use cesauth_core::tenancy::{AccountType, DEFAULT_TENANT_ID};

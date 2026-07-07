@@ -25,8 +25,10 @@
 //!   but we choose to do so for defence in depth).
 
 use cesauth_cf::ports::repo::{CloudflareSigningKeyRepository, CloudflareUserRepository};
+use cesauth_core::jwt::claims::AccessTokenClaims;
 use cesauth_core::oidc::userinfo::build_userinfo_claims;
 use cesauth_core::ports::repo::{SigningKeyRepository, UserRepository};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use worker::{Request, Response, Result, RouteContext};
 
 use crate::config::Config;
@@ -45,15 +47,31 @@ pub async fn handler<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> 
 
     // ── Verify access token ───────────────────────────────────────────────
     let key_repo = CloudflareSigningKeyRepository::new(&ctx.env);
-    let keys = match key_repo.list_active_verifying_keys().await {
+    // `list_active` is the correct method name on SigningKeyRepository (trait).
+    let keys = match key_repo.list_active().await {
         Ok(k)  => k,
         Err(_) => return Response::error("service temporarily unavailable", 503),
     };
 
-    let claims = {
+    // Decode each key from base64, then try verify_for_introspect (4-arg form).
+    // Same pattern as routes/oidc/introspect.rs — skip malformed keys with a
+    // console warning rather than failing the whole request.
+    let keys_raw: Vec<Vec<u8>> = keys.iter()
+        .filter_map(|k| match STANDARD.decode(&k.public_key_b64) {
+            Ok(raw) => Some(raw),
+            Err(_)  => {
+                worker::console_warn!("userinfo: malformed public_key_b64 for kid={}", k.kid);
+                None
+            }
+        })
+        .collect();
+
+    let claims: AccessTokenClaims = {
         let mut verified = None;
-        for key in &keys {
-            if let Ok(c) = cesauth_core::jwt::verify_for_introspect(&token, key) {
+        for raw in &keys_raw {
+            if let Ok(c) = cesauth_core::jwt::verify_for_introspect::<AccessTokenClaims>(
+                &token, raw, &cfg.issuer, 30,
+            ) {
                 verified = Some(c);
                 break;
             }
