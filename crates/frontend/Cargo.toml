@@ -17,26 +17,27 @@ path = "src/lib.rs"
 
 [features]
 default = []
-# Activate this ONLY when building with Trunk for the browser.
-# cesauth-backend depends on this crate WITHOUT this feature;
-# enabling it in the backend would pull browser-only WASM APIs
-# into the Cloudflare Workers runtime, which is incompatible.
 csr = [
     "dep:leptos",
+    "dep:leptos_router",
+    "dep:gloo-net",
     "dep:console_error_panic_hook",
     "leptos/csr",
 ]
 
 [dependencies]
-# Always present (both backend-linked rlib and Trunk cdylib).
 cesauth-core = { path = "../core" }
 time         = { workspace = true }
+serde        = { workspace = true }
 
 # Leptos — optional; only compiled when `csr` feature is active.
 # Pin to 0.8.2: see RFC 115 §2 for the getrandom/uuid constraint.
-leptos       = { version = "=0.8.2", optional = true }
-# leptos_router is not needed for the Phase B PoC counter.
-# It will be added in Phase C when real page routing is required.
+leptos        = { version = "=0.8.2", optional = true }
+leptos_router = { version = "=0.8.2", optional = true }
+
+# Browser HTTP client for Leptos components.
+# gloo-net works on wasm32 + browser APIs only; must stay optional.
+gloo-net = { version = "0.6", optional = true }
 
 # Browser debug helper — only meaningful in the cdylib/browser target.
 console_error_panic_hook = { version = "0.1", optional = true }

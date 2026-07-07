@@ -246,7 +246,7 @@ dependencies = [
 
 [[package]]
 name = "cesauth-adapter-cloudflare"
-version = "0.79.1"
+version = "0.79.2"
 dependencies = [
  "cesauth-core",
  "js-sys",
@@ -262,7 +262,7 @@ dependencies = [
 
 [[package]]
 name = "cesauth-adapter-test"
-version = "0.79.1"
+version = "0.79.2"
 dependencies = [
  "cesauth-core",
  "serde",
@@ -273,7 +273,7 @@ dependencies = [
 
 [[package]]
 name = "cesauth-backend"
-version = "0.79.1"
+version = "0.79.2"
 dependencies = [
  "base64",
  "cesauth-adapter-cloudflare",
@@ -295,7 +295,7 @@ dependencies = [
 
 [[package]]
 name = "cesauth-core"
-version = "0.79.1"
+version = "0.79.2"
 dependencies = [
  "aes-gcm",
  "base64",
@@ -322,17 +322,20 @@ dependencies = [
 
 [[package]]
 name = "cesauth-frontend"
-version = "0.79.1"
+version = "0.79.2"
 dependencies = [
  "cesauth-core",
  "console_error_panic_hook",
+ "gloo-net",
  "leptos",
+ "leptos_router",
+ "serde",
  "time",
 ]
 
 [[package]]
 name = "cesauth-migrate"
-version = "0.79.1"
+version = "0.79.2"
 dependencies = [
  "anyhow",
  "cesauth-core",
@@ -344,7 +347,7 @@ dependencies = [
 
 [[package]]
 name = "cesauth-migrate-test"
-version = "0.79.1"
+version = "0.79.2"
 dependencies = [
  "cesauth-core",
  "rusqlite",
@@ -1478,6 +1481,43 @@ dependencies = [
  "server_fn_macro",
  "syn",
  "uuid",
+]
+
+[[package]]
+name = "leptos_router"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d1b70dbd176bd0129e5db0e2ed48b7ff076c1b17cf52bbd0e85dcc3e6b9cbc0"
+dependencies = [
+ "any_spawner",
+ "either_of",
+ "futures",
+ "gloo-net",
+ "js-sys",
+ "leptos",
+ "leptos_router_macro",
+ "once_cell",
+ "or_poisoned",
+ "reactive_graph",
+ "rustc_version",
+ "send_wrapper",
+ "tachys",
+ "thiserror 2.0.18",
+ "url",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
+name = "leptos_router_macro"
+version = "0.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "409c0bd99f986c3cfa1a4db2443c835bc602ded1a12784e22ecb28c3ed5a2ae2"
+dependencies = [
+ "proc-macro-error2",
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

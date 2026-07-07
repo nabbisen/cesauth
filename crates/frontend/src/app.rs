@@ -1,60 +1,72 @@
-//! Leptos application root (Phase B proof-of-concept).
+//! Leptos application root with client-side router.
 //!
-//! This module is the entry point for the Leptos CSR bundle.  During
-//! Phase B of the Leptos migration the sole purpose is to prove that
-//! the build pipeline (Trunk → WASM bundle → Workers Static Assets →
-//! HTML shell → browser hydration) works end-to-end.
+//! The `App` component is the single mount point for the Leptos CSR
+//! bundle.  It owns the `<Router>` and declares every client-side
+//! route.  Routes are added here as screens are migrated from the
+//! old string-template layer.
 //!
-//! The `App` component will be replaced with a real Leptos router and
-//! page components as individual screens are migrated in Phase C
-//! (v0.79.2 onward).
+//! ## Route ownership
+//!
+//! `leptos_router` handles URL parsing and renders the matching
+//! `<Route>` component.  The backend still owns the initial HTTP
+//! response (returning the HTML shell); the router takes over all
+//! subsequent navigation.
+//!
+//! ## Adding a new screen
+//!
+//! 1. Create `crates/frontend/src/pages/<screen>.rs`.
+//! 2. Add `pub mod <screen>;` to `crates/frontend/src/pages/mod.rs`.
+//! 3. Add a `<Route path=… view=…/>` entry below.
+//! 4. Add/update the corresponding backend route to return the Leptos
+//!    HTML shell instead of the old string template.
 
 use leptos::prelude::*;
+use leptos_router::components::{Router, Routes, Route};
 
-/// Root component — mounted by `leptos_start()` in `lib.rs`.
-///
-/// Phase B: renders a single counter page at `/__leptos` to confirm
-/// the pipeline is operational.  Replace with `<Router>` + pages in
-/// Phase C.
+use crate::pages::security_center::SecurityCenter;
+
+// ─── Root component ──────────────────────────────────────────────────────────
+
+/// Root Leptos component — mounted by `leptos_start()` in `lib.rs`.
 #[component]
 pub fn App() -> impl IntoView {
     view! {
-        <main>
-            <Counter/>
-        </main>
+        <Router>
+            <Routes fallback=|| view! { <NotFound/> }>
+                // ── Migrated screens (Phase C) ───────────────────────
+                <Route path="/me/security" view=SecurityCenter />
+
+                // ── Phase B PoC (remove in v0.80.0) ─────────────────
+                <Route path="/__leptos" view=PocCounter />
+            </Routes>
+        </Router>
     }
 }
 
-/// A minimal counter demonstrating reactive state.
-///
-/// This is the canonical "Leptos works" smoke test.  It has no
-/// product meaning and will be removed when Phase C replaces this
-/// module with real screens.
-#[component]
-fn Counter() -> impl IntoView {
-    let (count, set_count) = signal(0_i32);
+// ─── Phase B PoC counter (temporary) ─────────────────────────────────────────
 
+#[component]
+fn PocCounter() -> impl IntoView {
+    let (count, set_count) = signal(0_i32);
     view! {
-        <div class="leptos-poc" style="font-family:sans-serif;padding:2rem">
+        <div style="font-family:sans-serif;padding:2rem">
             <h1>"cesauth — Leptos Phase B PoC"</h1>
-            <p>
-                "This page confirms that the Trunk → WASM → Workers "
-                "Static Assets → HTML shell pipeline is working."
-            </p>
-            <hr/>
             <p>"Counter: " <strong>{count}</strong></p>
-            <button on:click=move |_| set_count.update(|n| *n += 1)>
-                "+1"
-            </button>
+            <button on:click=move |_| set_count.update(|n| *n += 1)>"+1"</button>
             " "
-            <button on:click=move |_| set_count.set(0)>
-                "Reset"
-            </button>
-            <hr/>
-            <p style="color:gray;font-size:0.85rem">
-                "Phase C will replace this with real screens. "
-                "See RFC 115 and the migration plan."
-            </p>
+            <button on:click=move |_| set_count.set(0)>"Reset"</button>
         </div>
+    }
+}
+
+// ─── 404 fallback ────────────────────────────────────────────────────────────
+
+#[component]
+fn NotFound() -> impl IntoView {
+    view! {
+        <main>
+            <h1>"Page not found"</h1>
+            <p><a href="/">"Return to sign-in"</a></p>
+        </main>
     }
 }

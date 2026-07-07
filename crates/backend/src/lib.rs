@@ -193,6 +193,9 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async ("/me/security",                     |req, ctx| async move {
             routes::me::security::get_handler(req, ctx.env).await
         })
+        .get_async ("/me/security.json",                |req, ctx| async move {
+            routes::me::security::get_json_handler(req, ctx.env).await
+        })
         .get_async ("/me/security/sessions",            |req, ctx| async move {
             routes::me::sessions::get_handler(req, ctx).await
         })

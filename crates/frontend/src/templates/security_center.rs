@@ -16,7 +16,8 @@ use super::chrome::frame_with_flash;
 /// by the Security Center to label "how you sign in". Surfaces
 /// only as display copy; no security decision rides on this
 /// value. Set by the worker from the session record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PrimaryAuthMethod {
     /// WebAuthn / Passkey. Already MFA-strong (device possession
     /// + on-device user verification), so TOTP is bypassed in
@@ -63,7 +64,7 @@ impl PrimaryAuthMethod {
 /// meaningful when `totp_enabled` is `true` — the rendering
 /// suppresses the recovery section when TOTP is off, since
 /// unconfirmed users have no codes.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct SecurityCenterState {
     pub primary_method:           PrimaryAuthMethod,
     pub totp_enabled:             bool,

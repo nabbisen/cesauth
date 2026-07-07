@@ -165,6 +165,9 @@ mod tests;
 #[cfg(feature = "csr")]
 pub mod app;
 
+#[cfg(feature = "csr")]
+pub mod pages;
+
 /// Browser WASM entry point.
 ///
 /// Trunk generates a `<script type="module">` that imports the
