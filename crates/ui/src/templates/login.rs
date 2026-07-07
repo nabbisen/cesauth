@@ -225,7 +225,7 @@ pub fn login_page_for(
 /// failing closed but invisible-to-users. v0.25.0 fixes the UX and
 /// adds an end-to-end form test (see `tests.rs`).
 pub fn magic_link_sent_page(handle: &str, csrf_token: &str) -> String {
-    magic_link_sent_page_for(handle, csrf_token, cesauth_core::i18n::Locale::default())
+    magic_link_sent_page_for(handle, csrf_token, None, cesauth_core::i18n::Locale::default())
 }
 
 /// **v0.47.0** — Locale-aware variant of
@@ -240,17 +240,25 @@ pub fn magic_link_sent_page(handle: &str, csrf_token: &str) -> String {
 /// handlers were already negotiating locale in v0.39.0
 /// and pass through `_for`, so the production path is
 /// unaffected.
+///
+/// **v0.78.5** — added `error: Option<&str>` so the verify handler
+/// can re-render the form with an inline error message instead of
+/// returning a raw JSON 400 to the browser.
 pub fn magic_link_sent_page_for(
     handle: &str,
     csrf_token: &str,
+    error: Option<&str>,
     locale: cesauth_core::i18n::Locale,
 ) -> String {
     use cesauth_core::i18n::{lookup, MessageKey};
+    let error_html = error
+        .map(|msg| format!("<p role=\"alert\" class=\"form-error\">{}</p>\n", escape(msg)))
+        .unwrap_or_default();
     let body = format!(
         r#"
 <h1>{heading}</h1>
 <p>{intro}</p>
-
+{error_html}
 <form method="POST" action="{verify_url}" aria-labelledby="otp-heading">
   <h2 id="otp-heading" class="muted">{otp_heading}</h2>
   <input type="hidden" name="handle" value="{handle}">
@@ -269,6 +277,7 @@ pub fn magic_link_sent_page_for(
         handle      = escape(handle),
         csrf        = escape(csrf_token),
         verify_url  = cesauth_core::routes::auth::MAGIC_LINK_VERIFY_FORM,
+        error_html  = error_html,
     );
     frame_for(lookup(MessageKey::MagicLinkSentPageTitle, locale), &body, locale)
 }

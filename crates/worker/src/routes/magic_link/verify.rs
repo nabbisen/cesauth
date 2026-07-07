@@ -22,6 +22,34 @@ use super::{
     MAIL_VERIFY_WINDOW_SECS, TURNSTILE_FIELD,
 };
 
+// ── Error response helpers ────────────────────────────────────────────────────
+
+/// Re-render the verify form with an inline error so the user can retry.
+/// Used for *retriable* failures (wrong code, rate limit). The CSRF cookie
+/// already set by `/magic-link/request` is still valid; we just generate a
+/// fresh token for the re-rendered form.
+fn form_retry(handle: &str, error_msg: &str, req: &Request) -> Result<Response> {
+    let locale = crate::i18n::resolve_locale(req);
+    let csrf_token = csrf::mint().unwrap_or_default();
+    let set_cookie = csrf::set_cookie_header(&csrf_token);
+    let html = cesauth_ui::templates::magic_link_sent_page_for(
+        handle, &csrf_token, Some(error_msg), locale,
+    );
+    let mut resp = Response::from_html(html)?;
+    resp.headers_mut().append("set-cookie", &set_cookie).ok();
+    Ok(resp)
+}
+
+/// Render a terminal HTML error page for *non-retriable* failures (expired
+/// link, CSRF mismatch, internal errors). The user must request a new link.
+fn html_terminal_error(title: &str, detail: &str, req: &Request) -> Result<Response> {
+    let locale = crate::i18n::resolve_locale(req);
+    let html = cesauth_ui::templates::error_page_for(title, detail, locale);
+    let mut resp = Response::from_html(html)?.with_status(400);
+    let _ = resp.headers_mut().set("cache-control", "no-store");
+    Ok(resp)
+}
+
 
 #[derive(Debug, Deserialize, Default)]
 struct VerifyBody {
@@ -66,10 +94,7 @@ pub async fn verify<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         }
     };
 
-    // CSRF check on the form-encoded path. JSON-content-type requests
-    // are exempt — they require a CORS preflight that an attacker
-    // page cannot satisfy. The login flow's CSRF cookie was set by
-    // /authorize when the login page was rendered.
+    // CSRF check on the form-encoded path.
     if !is_json {
         let cookie = csrf_from_cookie.as_deref().unwrap_or("");
         if !csrf::verify(&body.csrf, cookie) {
@@ -77,12 +102,22 @@ pub async fn verify<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
                 &ctx.env, EventKind::MagicLinkFailed,
                 None, None, Some("csrf_mismatch".into()),
             ).await.ok();
-            return oauth_error_response(&cesauth_core::CoreError::InvalidRequest("csrf"));
+            // Non-retriable: the CSRF cookie / submitted token mismatch means
+            // the session state is invalid. Ask the user to restart.
+            return html_terminal_error(
+                "Verification failed",
+                "Your session may have expired. Please request a new magic link.",
+                &req,
+            );
         }
     }
 
     if body.handle.is_empty() || body.code.is_empty() {
-        return oauth_error_response(&cesauth_core::CoreError::InvalidRequest("handle or code"));
+        return if is_json {
+            oauth_error_response(&cesauth_core::CoreError::InvalidRequest("handle or code"))
+        } else {
+            html_terminal_error("Invalid request", "Missing verification code or handle.", &req)
+        };
     }
 
     let cfg = Config::from_env(&ctx.env)?;
@@ -91,11 +126,18 @@ pub async fn verify<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
 
     // Turnstile gate (same logic as /request).
     if let Err(e) = enforce_turnstile(&ctx.env, &cfg, &bucket, body.turnstile.as_deref()).await {
-        return oauth_error_response(&e);
+        return if is_json {
+            oauth_error_response(&e)
+        } else {
+            html_terminal_error(
+                "Verification required",
+                "Please complete the security challenge and try again.",
+                &req,
+            )
+        };
     }
 
-    // Per-handle rate limit for verify. Prevents brute-force of the
-    // 40-bit code.
+    // Per-handle rate limit for verify.
     let rate   = CloudflareRateLimitStore::new(&ctx.env);
     let decision = rate.hit(
         &bucket, now, MAIL_VERIFY_WINDOW_SECS, MAIL_VERIFY_LIMIT, MAIL_VERIFY_ESCALATE,
@@ -107,27 +149,45 @@ pub async fn verify<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     }
 
     if !decision.allowed {
-        return oauth_error_response(&cesauth_core::CoreError::MagicLinkMismatch);
+        return if is_json {
+            oauth_error_response(&cesauth_core::CoreError::MagicLinkMismatch)
+        } else {
+            form_retry(
+                &body.handle,
+                "Too many attempts. Please wait a moment and try again.",
+                &req,
+            )
+        };
     }
 
     let store = CloudflareAuthChallengeStore::new(&ctx.env);
-
-    // Bump attempts first - if verification fails, this still counts
-    // against the rate window on top of the DO-level cap.
     let _ = store.bump_magic_link_attempts(&body.handle).await;
 
-    // Peek (don't consume yet) so we can verify first. On success we
-    // consume; on failure the next attempt can retry against the same
-    // hash, subject to rate limiting.
     let chal = match store.peek(&body.handle).await {
         Ok(Some(c)) => c,
-        _ => return oauth_error_response(&cesauth_core::CoreError::MagicLinkMismatch),
+        _ => return if is_json {
+            oauth_error_response(&cesauth_core::CoreError::MagicLinkMismatch)
+        } else {
+            html_terminal_error(
+                "Link expired",
+                "This magic link has expired or was already used. Please request a new one.",
+                &req,
+            )
+        },
     };
 
     let (email, code_hash, expires_at) = match chal {
         Challenge::MagicLink { email_or_user, code_hash, expires_at, .. } =>
             (email_or_user, code_hash, expires_at),
-        _ => return oauth_error_response(&cesauth_core::CoreError::MagicLinkMismatch),
+        _ => return if is_json {
+            oauth_error_response(&cesauth_core::CoreError::MagicLinkMismatch)
+        } else {
+            html_terminal_error(
+                "Link expired",
+                "This magic link has expired or was already used. Please request a new one.",
+                &req,
+            )
+        },
     };
 
     if let Err(e) = magic_link::verify(&body.code, &code_hash, now, expires_at) {
@@ -135,7 +195,16 @@ pub async fn verify<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
             &ctx.env, EventKind::MagicLinkFailed,
             Some(email), None, Some(format!("{e:?}")),
         ).await.ok();
-        return oauth_error_response(&e);
+        return if is_json {
+            oauth_error_response(&e)
+        } else {
+            // Retriable: user may have mistyped the code; re-render the form.
+            form_retry(
+                &body.handle,
+                "Incorrect or expired code. Please check your email and try again.",
+                &req,
+            )
+        };
     }
 
     // Consume the challenge only on verified success.
@@ -150,7 +219,11 @@ pub async fn verify<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     // because delivery of the one-time code *is* the verification.
     let user_id = match resolve_or_create_user(&ctx.env, &email, now).await {
         Ok(id)  => id,
-        Err(e)  => return oauth_error_response(&e),
+        Err(e)  => return if is_json {
+            oauth_error_response(&e)
+        } else {
+            html_terminal_error("Sign-in failed", "Unable to complete sign-in. Please try again.", &req)
+        },
     };
 
     post_auth::complete_auth(

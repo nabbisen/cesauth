@@ -342,7 +342,7 @@ fn security_center_totp_enabled_badge_uses_catalog() {
 
 #[test]
 fn magic_link_sent_page_for_renders_japanese_default() {
-    let html = magic_link_sent_page_for("alice@example.com", "csrf-tok", Locale::Ja);
+    let html = magic_link_sent_page_for("alice@example.com", "csrf-tok", None, Locale::Ja);
     assert!(html.contains("メールを確認してください"));
     assert!(html.contains("ワンタイムコード"));
     assert!(html.contains("続ける"));
@@ -353,7 +353,7 @@ fn magic_link_sent_page_for_renders_japanese_default() {
 
 #[test]
 fn magic_link_sent_page_for_renders_english() {
-    let html = magic_link_sent_page_for("alice@example.com", "csrf", Locale::En);
+    let html = magic_link_sent_page_for("alice@example.com", "csrf", None, Locale::En);
     assert!(html.contains("Check your inbox"));
     assert!(html.contains("One-time code"));
     assert!(html.contains(">Continue<"));

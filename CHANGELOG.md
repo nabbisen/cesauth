@@ -26,6 +26,89 @@ split by minor-version range:
 
 ---
 
+## [0.78.6] - 2026-05-20
+
+Bug fix. `/magic-link/verify` returned a raw JSON `400 Bad Request`
+in the browser instead of an HTML page on all error conditions.
+
+### Root cause
+
+Every error path in `crates/worker/src/routes/magic_link/verify.rs`
+called `oauth_error_response(...)`, which unconditionally returns a
+JSON body (`{"error": "..."}`) with the appropriate HTTP status code.
+That is correct for programmatic API callers (JSON `Content-Type`),
+but the browser form path (`Content-Type: application/x-www-form-urlencoded`)
+got the same raw JSON response — showing a file-download dialog or
+a blank JSON view depending on the browser, with no UI chrome.
+
+### Fix
+
+Two parts:
+
+**1. `magic_link_sent_page_for` gains an `error: Option<&str>` slot**
+(`crates/ui/src/templates/login.rs`).
+
+When `Some(msg)` is supplied, a `<p role="alert" class="form-error">`
+paragraph is rendered above the OTP form. This allows the verify
+handler to re-render the form in-place with a human-readable error
+message so the user can correct and retry — the same UX pattern
+used by the TOTP verify and login pages.
+
+All existing callers updated to pass `None` (no behaviour change):
+- `magic_link_sent_page` shorthand wrapper
+- Two `request.rs` call sites (Turnstile-required path + normal
+  post-send path)
+- Two i18n test call sites in `templates/tests/i18n.rs`
+
+**2. `verify.rs` errors now branch on `is_json`**
+
+`is_json` was already computed early in the handler (for CSRF
+exemption logic). Each error path now chooses:
+
+| Condition | `is_json = true` | `is_json = false` (browser form) |
+|---|---|---|
+| CSRF mismatch | JSON 400 | `html_terminal_error` — "session expired, request a new link" |
+| Missing handle/code | JSON 400 | `html_terminal_error` |
+| Turnstile required | JSON 400 | `html_terminal_error` — "complete security challenge" |
+| Rate limited | JSON 400 | `form_retry` — "too many attempts, try again" |
+| Challenge not found / already used | JSON 400 | `html_terminal_error` — "link expired" |
+| Wrong code | JSON 400 | `form_retry` — "incorrect code, check your email" |
+| User resolution failure | JSON 400 | `html_terminal_error` — "sign-in failed" |
+
+`form_retry` re-renders `magic_link_sent_page_for` with the error
+message and mints a fresh CSRF token (replacing the cookie). The
+handle is preserved so the user can resubmit without re-requesting.
+
+`html_terminal_error` renders `error_page_for` at HTTP 400 with
+a user-facing message and no internal detail.
+
+The API contract for JSON callers is unchanged.
+
+### Tests
+
+1,290 / 1,290 pass. 0 warnings. The template signature change is
+covered by the two existing i18n tests (now updated to pass `None`).
+
+---
+
+## [0.78.5] - 2026-05-20
+
+Patch release. Single error: `module audit_query is private` (E0603)
+in `crates/worker/src/routes/admin/console/audit_export.rs`.
+
+The v0.78.4 fix used `cesauth_cf::admin::audit_query::CloudflareAuditQuerySource`
+— accessing the submodule directly — but `admin.rs` declares
+`mod audit_query;` without `pub`, making the module private.
+The struct is already re-exported at the `cesauth_cf::admin` level
+via `pub use audit_query::CloudflareAuditQuerySource;`.
+
+Fix: dropped the `::audit_query` segment so the path reads
+`cesauth_cf::admin::CloudflareAuditQuerySource::new(&ctx.env)`.
+
+1,290 / 1,290 tests pass. 0 warnings.
+
+---
+
 ## [0.78.4] - 2026-05-19
 
 Patch release. Fixes four classes of remaining `cesauth-worker`

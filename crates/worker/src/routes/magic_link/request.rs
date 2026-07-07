@@ -145,7 +145,7 @@ pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
         let placeholder_handle = Uuid::new_v4().to_string();
         let placeholder_csrf   = cookie_csrf.as_deref().unwrap_or("");
         return Response::from_html(
-            cesauth_ui::templates::magic_link_sent_page_for(&placeholder_handle, placeholder_csrf, locale)
+            cesauth_ui::templates::magic_link_sent_page_for(&placeholder_handle, placeholder_csrf, None, locale)
         );
     }
 
@@ -238,7 +238,7 @@ pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
     cesauth_ui::set_render_nonce(csp_nonce.as_str());
 
     Response::from_html(
-        cesauth_ui::templates::magic_link_sent_page_for(&handle, csrf_for_form, locale)
+        cesauth_ui::templates::magic_link_sent_page_for(&handle, csrf_for_form, None, locale)
     )
 }
 
