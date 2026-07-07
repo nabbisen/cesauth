@@ -143,17 +143,19 @@ impl MagicLinkMailer for HttpsProviderMailer {
             .await
             .map_err(|e| MailerError::Transient(e.to_string()))?;
 
-        // workers-rs 0.8 with `http` feature: same API migration as
-        // service_binding.rs — status_code() → status().as_u16(),
-        // headers().get() returns Option<&HeaderValue> not Result.
-        let status = resp.status().as_u16();
+        // worker::Response (returned by Fetch::Request::send) uses the
+        // pre-http-feature API: .status_code() → u16, and
+        // .headers().get(name) → worker::Result<Option<String>>.
+        // (Contrast with service_binding.rs which uses svc.fetch_request()
+        // and lands on the http-feature Response type.)
+        let status = resp.status_code();
         if status >= 200 && status < 300 {
             let now = worker::Date::now().as_millis() as i64 / 1000;
             let provider_msg_id = resp
                 .headers()
                 .get("X-Message-Id")
-                .and_then(|v| v.to_str().ok())
-                .map(str::to_owned);
+                .ok()
+                .flatten();
             Ok(DeliveryReceipt {
                 provider_message_id: provider_msg_id,
                 queued_at_unix: now,

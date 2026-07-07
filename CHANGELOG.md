@@ -26,6 +26,62 @@ split by minor-version range:
 
 ---
 
+## [0.78.2] - 2026-05-19
+
+Patch release. Fixes three errors introduced by v0.78.1's over-eager
+worker API migration, plus a pre-existing `Send` bound violation that
+was newly visible after the v0.78.1 fixes cleared compilation.
+
+### What was wrong in v0.78.1
+
+**Over-applied `http`-feature migration to `https_provider.rs`.**
+The two mailer impls use different response types:
+
+- `ServiceBindingMailer` calls `svc.fetch_request(req).await` — this
+  returns the **`http`-feature** response type. `status_code()` was
+  removed; `.status().as_u16()` and the `http::HeaderMap` headers
+  chain are correct here. v0.78.1 had this right.
+- `HttpsProviderMailer` calls `Fetch::Request(req).send().await` —
+  this still returns the **old `worker::Response`** type.
+  `status_code()` and `.headers().get(name).ok().flatten()` are
+  correct here. v0.78.1 wrongly applied the `http`-feature
+  migration to this file too.
+
+Fix: reverted `https_provider.rs` to the original API.
+
+### Pre-existing: `MagicLinkMailer::send` `+ Send` bound
+
+`crates/core/src/magic_link/mailer.rs` had the associated future
+typed as `impl Future<Output = ...> + Send`. This compiled fine
+with older workers-rs where `JsFuture` was implicitly `Send`.
+
+js-sys 0.3.98 (pulled transitively by workers-rs 0.8.1) explicitly
+marks `JsFuture` as `!Send`. `ServiceBindingMailer::send` uses
+`svc.fetch_request()` which internally drives a `JsFuture`, so the
+returned async block is `!Send`. This violated the trait bound.
+
+Fix: removed `+ Send` from the future return in
+`MagicLinkMailer::send`. This is safe because:
+- Cloudflare Workers run on a single-threaded WASM VM; `Send` on the
+  future is meaningless there.
+- No call site passes this future to a multi-threaded spawner
+  (`tokio::spawn` or similar). Both callers just `.await` it
+  directly inside a worker request handler.
+- Host-side adapter-test impls are unaffected; their futures remain
+  `Send` — removing the bound from the trait only relaxes the
+  constraint, it doesn't break anything that already works.
+
+### Unused `mut` warnings in `service_binding.rs`
+
+Two variables (`headers`, `resp`) no longer need `mut` after the
+v0.78.1 API migration. Cleaned up to keep the build warning-free.
+
+### Tests
+
+1,290 / 1,290 pass. 0 warnings.
+
+---
+
 ## [0.78.1] - 2026-05-19
 
 Patch release. Fixes `wrangler dev` build failure reported against

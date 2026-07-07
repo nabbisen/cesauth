@@ -59,10 +59,18 @@ pub trait MagicLinkMailer: Send + Sync {
     ///
     /// The caller renders the same success-shaped HTTP response regardless
     /// of this return value (no enumeration leak via differential response).
+    ///
+    /// **Note on `+ Send`**: the future bound was intentionally dropped in
+    /// v0.78.2. Workers run in a single-threaded WASM context; `+ Send` on
+    /// the future is meaningless there. The Cloudflare adapter uses
+    /// `JsFuture` (js-sys ≥ 0.3.98), which is explicitly `!Send`. No
+    /// call site passes this future to a multi-threaded spawner, so the
+    /// removal is safe. Host-side adapter-test impls continue to work
+    /// because their futures are trivially `Send`.
     fn send(
         &self,
         payload: &MagicLinkPayload<'_>,
-    ) -> impl Future<Output = Result<DeliveryReceipt, MailerError>> + Send;
+    ) -> impl Future<Output = Result<DeliveryReceipt, MailerError>>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

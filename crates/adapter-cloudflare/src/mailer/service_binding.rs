@@ -70,7 +70,7 @@ impl MagicLinkMailer for ServiceBindingMailer<'_> {
         })
         .to_string();
 
-        let mut headers = Headers::new();
+        let headers = Headers::new();
         headers
             .set("Content-Type", "application/json")
             .map_err(|e| MailerError::Transient(e.to_string()))?;
@@ -83,7 +83,7 @@ impl MagicLinkMailer for ServiceBindingMailer<'_> {
         let req = Request::new_with_init("/", &init)
             .map_err(|e| MailerError::Transient(e.to_string()))?;
 
-        let mut resp = svc
+        let resp = svc
             .fetch_request(req)
             .await
             .map_err(|e| MailerError::Transient(e.to_string()))?;
