@@ -26,6 +26,100 @@ split by minor-version range:
 
 ---
 
+## [0.75.0] - 2026-05-14
+
+Maintenance release. Splits the largest single test file
+(`crates/ui/src/templates/tests.rs`, previously 2,057 lines) into
+per-feature submodules under `templates/tests/`, bringing every
+template-tests file under the 500-ELOC "strongly recommended split"
+threshold from the dev guidelines. No behaviour changes; same 355 UI
+lib tests pass, organized into 7 modules instead of 1.
+
+### File split layout
+
+`crates/ui/src/templates/tests.rs` (now 34 lines, mod declarations
+only) routes to seven submodules under `crates/ui/src/templates/tests/`:
+
+| Submodule | Lines | Scope |
+|-----------|-------|-------|
+| `common.rs` | 58 | Shared `strip_inline_style`, `make_state`, `sample_item` fixtures |
+| `early_pages.rs` | 321 | login, error, magic_link sent, initial TOTP flow (v0.28.0–v0.30.0) |
+| `v0_31_design.rs` | 476 | design tokens, flash_block, totp_enroll error slot, security_center base (v0.31.0 P0-A through P0-D) |
+| `v0_35_sessions.rs` | 306 | sessions_page rendering + EN locale (v0.35.0) |
+| `v0_45_bulk_revoke.rs` | 84 | sessions bulk-revoke (ADR-012 §Q4, v0.45.0) |
+| `i18n.rs` | 443 | cross-template i18n tests (v0.39.0 + v0.47.0) |
+| `rfc_006_and_later.rs` | 430 | RFC 006 nonce + RFC 027 flash a11y + `<html lang>` + recovery confirm + skip-link |
+
+Largest module is `v0_31_design.rs` at 476 lines — just under the
+500-ELOC strongly-recommended threshold. Adding a new test should go
+next to the milestone that introduced the feature; new feature
+milestones get a new submodule rather than padding an existing one.
+
+### Drift-scan exemption
+
+The drift-scan script `scripts/drift-scan.sh` had a path-pattern
+exemption for `*/tests.rs` (test files render hardcoded URLs by
+design — they're drift detectors for the route catalog). v0.75.0
+extends the exemption to `*/tests/*.rs` so the new submodule layout
+keeps the same exemption.
+
+### Why no RFC
+
+This is a mechanical refactor with no design decisions; the dev
+guidelines themselves authorize the split ("Splitting is strongly
+recommended if it exceeds 500 ELOC"). The lifecycle policy doesn't
+require an RFC for guideline-following mechanical work.
+
+### Other large test files (not in this release)
+
+The dev guidelines flag these for future splits, none touched in v0.75.0:
+
+- `crates/core/src/service/introspect/tests.rs` — 1,519 lines
+- `crates/core/src/migrate/tests.rs` — 1,154 lines
+- `crates/ui/src/tenant_admin/tests.rs` — 895 lines
+- `crates/migrate-test/tests/migration_chain.rs` — 881 lines
+
+Production source files exceeding the threshold (lower priority — the
+guideline applies to test files at the same threshold but they touch
+fewer call sites and are reorganized less often):
+
+- `crates/core/src/i18n/mod.rs` — 1,475 lines (already split into 8
+  `lookup_*` group functions per RFC 097; the wrapper file is large
+  but the internal structure is fine)
+- `crates/migrate/src/main.rs` — 1,024 lines (single CLI tool)
+- `crates/core/src/security_headers.rs` — 847 lines
+- `crates/core/src/totp.rs` — 635 lines
+
+A subsequent maintenance release can address these as needed; v0.75.0
+deliberately ships a narrow, focused refactor rather than batching all
+splits at once.
+
+### Tests
+
+1,290 / 1,290 pass (767 core + 133 adapter-test + 355 ui lib + 4 ui
+integration + 31 migrate-test) — **identical** to v0.74.0. The split
+preserves every test; the only differences are file paths.
+
+### Warnings
+
+0 production lib warnings on
+`cargo-1.91 check -p cesauth-core -p cesauth-ui -p cesauth-adapter-test`.
+
+### Drift-scan
+
+Clean (exemption extended; no production URL leaks introduced).
+
+### Contract invariants reaffirmed
+
+- **Tests-as-drift-detectors**: test files at any depth under the
+  `tests/` subdirectory are exempt from RFC 108's hardcoded-URL
+  check, mirroring the existing `tests.rs` exemption.
+- **Cross-module test fixtures** (`make_state`, `sample_item`) moved
+  to `common.rs` rather than duplicated — same correctness contract,
+  one definition site.
+
+---
+
 ## [0.74.0] - 2026-05-14
 
 Ships 4 of 5 PDF v0.50.1 page 9 "Safety controls" gap-fills as new

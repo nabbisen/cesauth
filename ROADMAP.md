@@ -94,6 +94,7 @@ full narrative is in the [archive](docs/changelog-archive/README.md).
 | RFC 110 + 113 — Safety controls audit + UI rendering acceptance harness | v0.72.0 | [CHANGELOG](CHANGELOG.md) |
 | RFC 107 + 111 — ADR-013 §Q4 closure (plural-aware lookup + UTC ISO-8601 policy) | v0.73.0 | [CHANGELOG](CHANGELOG.md) |
 | RFC 110b/c/d/e — Safety controls panel gap-fills (Turnstile/refresh-reuse/TOTP-key/runbook-link); 110a still deferred | v0.74.0 | [CHANGELOG](CHANGELOG.md) |
+| Test file modularization — `templates/tests.rs` (2,057 lines) split into 7 per-feature submodules (dev-guideline compliance, no behaviour change) | v0.75.0 | [CHANGELOG](CHANGELOG.md) |
 
 ---
 
@@ -243,6 +244,18 @@ started.
   when an environment with rustup/wasm32 is available.
   1,290 tests (+12 vs v0.73.0 baseline: +8 core safety_controls,
   +4 ui controls-section rendering). 0 warnings.
+
+- ✅ **v0.75.0 — Test file modularization (maintenance release).**
+  Split the largest single test file (`crates/ui/src/templates/tests.rs`,
+  2,057 lines) into 7 per-feature submodules under
+  `templates/tests/`. All submodules now under the 500-ELOC
+  "strongly recommended split" threshold from the dev guidelines.
+  Cross-module fixtures (`make_state`, `sample_item`) moved to
+  `common.rs`. Drift-scan exemption extended from `*/tests.rs` to
+  `*/tests/*.rs` to preserve the existing tests-as-drift-detectors
+  contract. No behaviour changes; 1,290 tests pass identically.
+  Other oversize test files (introspect, migrate, tenant_admin,
+  migration_chain) flagged for future maintenance releases.
 
 - 📅 **v0.75.0+ — RFC 110a (Rate limit summary, env-blocked).**
   KV-backed bucket enumeration across the brute-force and

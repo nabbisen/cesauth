@@ -119,6 +119,12 @@ ui_url_matches=()
 while IFS= read -r -d '' file; do
     case "$file" in
         */tests.rs)                                continue ;;
+        # v0.75.0: test files split out under tests/ subdirs (per the
+        # dev guidelines' 500-ELOC threshold). Same exemption rationale
+        # as standalone tests.rs files — these are rendering test
+        # fixtures, deliberately keeping hardcoded URLs as drift
+        # detectors.
+        */tests/*.rs)                              continue ;;
         */tenant_admin/oidc_clients.rs)            continue ;;
         */tenancy_console/forms/membership_add.rs) continue ;;
     esac
