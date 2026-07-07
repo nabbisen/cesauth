@@ -14,3 +14,4 @@
 //!   v0.80.0 — remove all old string templates
 pub mod security_center;
 pub mod sessions;
+pub mod totp;

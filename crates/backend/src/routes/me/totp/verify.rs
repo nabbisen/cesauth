@@ -121,6 +121,10 @@ where
 
 
 /// `GET /me/security/totp/verify` — render the prompt page.
+/// `GET /me/security/totp/verify` — Leptos HTML shell (v0.79.4).
+///
+/// Guards: must have a valid `__Host-cesauth_totp` cookie pointing at
+/// a live `PendingTotp` challenge; otherwise redirects to `/login`.
 pub async fn get_handler(
     req: Request,
     env: worker::Env,
@@ -137,64 +141,43 @@ pub async fn get_handler(
     let store = CloudflareAuthChallengeStore::new(&env);
     match decide_verify_get(&totp_handle, &store).await {
         VerifyGetDecision::StaleGate => clear_gate_and_redirect("/login"),
+        VerifyGetDecision::RenderPage =>
+            crate::routes::leptos_shell::leptos_html_shell(
+                &req, &env, "Two-factor verification — cesauth", "en",
+            ).await,
+    }
+}
+
+/// `GET /me/security/totp/verify.json` — CSRF token for the verify form.
+pub async fn get_json_handler(
+    req: Request,
+    env: worker::Env,
+) -> Result<Response> {
+    let cookie_header = match req.headers().get("cookie")? {
+        Some(h) => h,
+        None    => return Response::error("Unauthorized", 401),
+    };
+    let totp_handle = match extract_totp_handle(&cookie_header) {
+        Some(h) if !h.is_empty() => h.to_owned(),
+        _ => return Response::error("Unauthorized", 401),
+    };
+    let store = CloudflareAuthChallengeStore::new(&env);
+    match decide_verify_get(&totp_handle, &store).await {
+        VerifyGetDecision::StaleGate => Response::error("TOTP gate expired", 401),
         VerifyGetDecision::RenderPage => {
-            // CSRF token: mint or reuse from cookie, set cookie if new.
-            let existing = csrf::extract_from_cookie_header(&cookie_header).map(str::to_owned);
-            let (token, set_cookie) = match existing {
-                Some(t) if !t.is_empty() => (t, None),
-                _ => {
-                    let t = match csrf::mint() {
-            Ok(tok) => tok,
-            Err(_) => {
-                crate::audit::write_owned(
-                    &env, crate::audit::EventKind::CsrfRngFailure,
-                    None, None, Some("route=/me/security/totp/verify".to_owned()),
-                ).await.ok();
-                return Response::error("service temporarily unavailable", 500);
-            }
-        };
-                    let h = csrf::set_cookie_header(&t);
-                    (t, Some(h))
-                }
-            };
-            let locale = crate::i18n::resolve_locale(&req);
-            let html = templates::totp_verify_page_for(&token, None, locale);
-            let mut resp = Response::from_html(html)?;
-            if let Some(h) = set_cookie {
-                resp.headers_mut().append("set-cookie", &h).ok();
-            }
+            let csrf_token = csrf::mint()
+                .map_err(|_| worker::Error::RustError("csrf rng failed".into()))?;
+            let mut resp = Response::from_json(&serde_json::json!({
+                "csrf_token":  csrf_token,
+                "totp_handle": totp_handle,
+            }))?;
+            resp.headers_mut().append("set-cookie",
+                &csrf::set_cookie_header(&csrf_token)).ok();
+            resp.headers_mut().set("cache-control", "no-store").ok();
             Ok(resp)
         }
     }
 }
-
-
-/// Outcome of [`decide_verify_post`].
-///
-/// Variants encode "what should happen" in domain terms; the
-/// handler maps each to a concrete `worker::Response`. Some
-/// variants carry data needed by `complete_auth_post_gate` so the
-/// handler can resume the original auth flow without re-reading
-/// the (already-consumed) challenge.
-///
-/// Side effects performed BY the decision:
-///
-/// - `take` on the challenge store (consumes the gate).
-/// - `put` to re-park on `BadCode` (preserves the gate for retry).
-/// - `update_last_used_step` on `Success` (replay protection).
-///
-/// Side effects performed BY the handler (after the decision):
-///
-/// - `complete_auth_post_gate` on `Success` and `NoUserAuthenticator`.
-/// - 302 + cookie clear on `Lockout`, `NoChallenge`.
-/// - 200 + page render on `BadCode`.
-/// - 4xx / 5xx response codes on the failure variants.
-#[derive(Debug)]
-pub(crate) enum VerifyPostDecision {
-    /// CSRF token didn't match. Handler returns 400. No state
-    /// is mutated — the challenge is preserved for a retry.
-    CsrfFailure,
-
     /// `take` returned None / wrong variant / store errored. The
     /// gate is unusable. Handler clears the
     /// `__Host-cesauth_totp` cookie and 302's to /login.

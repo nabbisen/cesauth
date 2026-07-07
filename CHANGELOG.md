@@ -26,6 +26,58 @@ split by minor-version range:
 
 ---
 
+## [0.79.3] - 2026-05-20
+
+### RFC 115 — Phase C, Screen 2: Sessions list migrated to Leptos
+
+`GET /me/security/sessions` now serves the Leptos shell.
+
+**New `SessionListItem` serde derives.** The struct gains
+`serde::Serialize + Deserialize` so the backend can return it as
+JSON and the component can deserialise it.
+
+**New `GET /me/security/sessions.json` endpoint.**  Returns:
+
+```json
+{
+  "sessions": [ { ...SessionListItem fields... } ],
+  "current_session_id": "...",
+  "csrf_token": "..."
+}
+```
+
+A fresh CSRF token is minted server-side and returned alongside
+the data.  The component embeds it in every revoke form's hidden
+field.  This keeps the CSRF flow identical to the old string-template
+approach (server mints, form carries, server validates), adapted for
+the CSR data-fetch pattern.
+
+**New `crates/frontend/src/pages/sessions.rs`.**  The `Sessions`
+component uses `Resource` + `Suspense` and renders:
+
+- A `<table>` of active sessions, one row per `SessionListItem`.
+- Per-row revoke forms (`POST /me/security/sessions/:id/revoke`) with
+  CSRF; the current-session row has a disabled button.
+- A "Sign out all other sessions" bulk-revoke form
+  (`POST /me/security/sessions/revoke-others`) shown only when
+  other sessions exist.
+- A `SessionsError` fallback component for 401 and network errors.
+- `format_ts` helper that emits `YYYY-MM-DD HH:MM` from Unix
+  seconds using the `time` crate (already a workspace dep).
+
+**Post-revoke flow unchanged.**  The `post_revoke` and
+`post_revoke_others` handlers are not modified.  They continue
+to POST-redirect back to `/me/security/sessions` with a flash
+cookie.  The Leptos shell at that URL re-fetches the session list
+on mount, showing the updated state (and the flash banner once
+flash support is added to the Leptos layer in a future release).
+
+**`app.rs`** gets a `<Route path="/me/security/sessions" view=Sessions/>`.
+
+1,290 / 1,290 tests pass.
+
+---
+
 ## [0.79.2] - 2026-05-20
 
 ### RFC 115 — Phase C, Screen 1: Security Centre migrated to Leptos

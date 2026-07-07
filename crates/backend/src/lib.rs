@@ -216,11 +216,17 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async ("/me/security/totp/enroll",         |req, ctx| async move {
             routes::me::totp::enroll::get_handler(req, ctx.env).await
         })
+        .get_async ("/me/security/totp/enroll.json",    |req, ctx| async move {
+            routes::me::totp::enroll::get_json_handler(req, ctx.env).await
+        })
         .post_async("/me/security/totp/enroll/confirm", |req, ctx| async move {
             routes::me::totp::enroll::post_confirm_handler(req, ctx.env).await
         })
         .get_async ("/me/security/totp/verify",         |req, ctx| async move {
             routes::me::totp::verify::get_handler(req, ctx.env).await
+        })
+        .get_async ("/me/security/totp/verify.json",    |req, ctx| async move {
+            routes::me::totp::verify::get_json_handler(req, ctx.env).await
         })
         .post_async("/me/security/totp/verify",         |req, ctx| async move {
             routes::me::totp::verify::post_handler(req, ctx.env).await
@@ -230,6 +236,9 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         })
         .get_async ("/me/security/totp/disable",        |req, ctx| async move {
             routes::me::totp::disable::get_handler(req, ctx.env).await
+        })
+        .get_async ("/me/security/totp/disable.json",   |req, ctx| async move {
+            routes::me::totp::disable::get_json_handler(req, ctx.env).await
         })
         .post_async("/me/security/totp/disable",        |req, ctx| async move {
             routes::me::totp::disable::post_handler(req, ctx.env).await

@@ -151,11 +151,87 @@ where
 
 
 /// `GET /me/security/totp/enroll` — start a fresh enrollment.
+/// `GET /me/security/totp/enroll` — Leptos HTML shell (v0.79.4).
 pub async fn get_handler(
     req: Request,
     env: worker::Env,
 ) -> Result<Response> {
-    // RFC 006 (v0.52.0): per-request CSP nonce
+    let _session = match me_auth::resolve_or_redirect(&req, &env).await? {
+        Ok(s)  => s,
+        Err(r) => return Ok(r),
+    };
+    crate::routes::leptos_shell::leptos_html_shell(
+        &req, &env, "Enable two-factor authentication — cesauth", "en",
+    ).await
+}
+
+/// `GET /me/security/totp/enroll.json` — create enrollment row, return QR data.
+///
+/// Creates a new (unconfirmed) enrollment row in D1, sets the
+/// `__Host-cesauth_totp_enroll` cookie, and returns the QR SVG +
+/// base32 secret so the Leptos component can render them.
+pub async fn get_json_handler(
+    req: Request,
+    env: worker::Env,
+) -> Result<Response> {
+    let session = match me_auth::resolve_or_redirect(&req, &env).await? {
+        Ok(s)  => s,
+        Err(_) => return Response::error("Unauthorized", 401),
+    };
+
+    let key = match load_totp_encryption_key(&env)? {
+        Some(k) => k,
+        None => return Response::error(
+            "TOTP is not configured (TOTP_ENCRYPTION_KEY missing)", 503,
+        ),
+    };
+    let key_id = match load_totp_encryption_key_id(&env) {
+        Some(id) => id,
+        None => return Response::error(
+            "TOTP is not configured (TOTP_ENCRYPTION_KEY_ID missing)", 503,
+        ),
+    };
+
+    let email = match read_user_email(&env, &session.user_id).await? {
+        Some(e) => e,
+        None => return Response::error("Account inconsistent — no email", 500),
+    };
+
+    let secret = match Secret::generate() {
+        Ok(s)  => s,
+        Err(_) => return Response::error("RNG unavailable", 503),
+    };
+    let row_id = Uuid::new_v4().to_string();
+    let now_unix = OffsetDateTime::now_utc().unix_timestamp();
+    let totp_repo = CloudflareTotpAuthenticatorRepository::new(&env);
+
+    match decide_enroll_get(
+        &session.user_id, &email,
+        &secret, &row_id,
+        &key, &key_id,
+        &totp_repo, now_unix,
+    ).await {
+        EnrollGetDecision::EncryptError  => Response::error("encryption failed", 500),
+        EnrollGetDecision::StoreError    => Response::error("storage failed", 500),
+        EnrollGetDecision::QrRenderError => Response::error("QR render failed", 500),
+        EnrollGetDecision::Success { secret_b32, qr_svg } => {
+            let csrf_token = csrf::mint()
+                .map_err(|_| worker::Error::RustError("csrf rng failed".into()))?;
+            let body = serde_json::json!({
+                "qr_svg":     qr_svg,
+                "secret_b32": secret_b32,
+                "csrf_token": csrf_token,
+            });
+            let mut resp = Response::from_json(&body)?;
+            let h = resp.headers_mut();
+            h.append("set-cookie",
+                &set_totp_enroll_cookie_header(&row_id, TOTP_ENROLL_TTL_SECS)).ok();
+            h.append("set-cookie", &csrf::set_cookie_header(&csrf_token)).ok();
+            h.set("cache-control", "no-store").ok();
+            Ok(resp)
+        }
+    }
+}
     let csp_nonce = match cesauth_core::security_headers::CspNonce::generate() {
         Ok(n) => n,
         Err(_) => {

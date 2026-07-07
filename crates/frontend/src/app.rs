@@ -25,6 +25,7 @@ use leptos_router::components::{Router, Routes, Route};
 
 use crate::pages::security_center::SecurityCenter;
 use crate::pages::sessions::Sessions;
+use crate::pages::totp::{TotpDisable, TotpEnroll, TotpVerify};
 
 // ─── Root component ──────────────────────────────────────────────────────────
 
@@ -35,8 +36,11 @@ pub fn App() -> impl IntoView {
         <Router>
             <Routes fallback=|| view! { <NotFound/> }>
                 // ── Migrated screens (Phase C) ───────────────────────
-                <Route path="/me/security"          view=SecurityCenter />
-                <Route path="/me/security/sessions" view=Sessions />
+                <Route path="/me/security"                   view=SecurityCenter />
+                <Route path="/me/security/sessions"          view=Sessions />
+                <Route path="/me/security/totp/enroll"       view=TotpEnroll />
+                <Route path="/me/security/totp/verify"       view=TotpVerify />
+                <Route path="/me/security/totp/disable"      view=TotpDisable />
 
                 // ── Phase B PoC (remove in v0.80.0) ─────────────────
                 <Route path="/__leptos" view=PocCounter />

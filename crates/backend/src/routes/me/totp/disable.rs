@@ -142,6 +142,7 @@ where
 
 
 /// `GET /me/security/totp/disable` — show confirmation page.
+/// `GET /me/security/totp/disable` — Leptos HTML shell (v0.79.4).
 pub async fn get_handler(
     req: Request,
     env: worker::Env,
@@ -150,53 +151,28 @@ pub async fn get_handler(
         Ok(s)  => s,
         Err(r) => return Ok(r),
     };
-
-    // Mint or reuse CSRF token. Same pattern as enroll.
-    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
-    let existing = csrf::extract_from_cookie_header(&cookie_header).map(str::to_owned);
-    let (token, set_cookie) = match existing {
-        Some(t) if !t.is_empty() => (t, None),
-        _ => {
-            let t = match csrf::mint() {
-            Ok(tok) => tok,
-            Err(_) => {
-                crate::audit::write_owned(
-                    &env, crate::audit::EventKind::CsrfRngFailure,
-                    None, None, Some("route=/me/security/totp/disable".to_owned()),
-                ).await.ok();
-                return Response::error("service temporarily unavailable", 500);
-            }
-        };
-            let h = csrf::set_cookie_header(&t);
-            (t, Some(h))
-        }
-    };
-
-    // **v0.47.0** — negotiate locale for the page render.
-    let locale = crate::i18n::resolve_locale(&req);
-
-    // **v0.52.0 (RFC 006)** — generate per-request CSP nonce and register
-    // it with the UI render layer before calling any template function.
-    let csp_nonce = match cesauth_core::security_headers::CspNonce::generate() {
-        Ok(n) => n,
-        Err(_) => {
-            crate::audit::write_owned(
-                &env, crate::audit::EventKind::CsrfRngFailure,
-                None, None, Some("csp_nonce_failure".to_owned()),
-            ).await.ok();
-            return Response::error("service temporarily unavailable", 500);
-        }
-    };
-    cesauth_frontend::set_render_nonce(csp_nonce.as_str());
-    let html = templates::totp_disable_confirm_page_for(&token, locale);
-    let mut resp = Response::from_html(html)?;
-    if let Some(s) = set_cookie {
-        resp.headers_mut().append("set-cookie", &s).ok();
-    }
-    Ok(resp)
+    crate::routes::leptos_shell::leptos_html_shell(
+        &req, &env, "Disable two-factor authentication — cesauth", "en",
+    ).await
 }
 
-
+/// `GET /me/security/totp/disable.json` — CSRF token for disable form.
+pub async fn get_json_handler(
+    req: Request,
+    env: worker::Env,
+) -> Result<Response> {
+    let _session = match me_auth::resolve_or_redirect(&req, &env).await? {
+        Ok(s)  => s,
+        Err(_) => return Response::error("Unauthorized", 401),
+    };
+    let csrf_token = csrf::mint()
+        .map_err(|_| worker::Error::RustError("csrf rng failed".into()))?;
+    let mut resp = Response::from_json(&serde_json::json!({ "csrf_token": csrf_token }))?;
+    resp.headers_mut().append("set-cookie",
+        &csrf::set_cookie_header(&csrf_token)).ok();
+    resp.headers_mut().set("cache-control", "no-store").ok();
+    Ok(resp)
+}
 /// `POST /me/security/totp/disable` — confirm + execute the
 /// removal, redirect home with a success notice.
 pub async fn post_handler(
