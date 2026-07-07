@@ -26,6 +26,93 @@ split by minor-version range:
 
 ---
 
+## [0.78.9] - 2026-05-20
+
+Documents the three secrets required for local login. No code changes.
+
+After magic-link verification succeeded, `post_auth` crashed with
+`SESSION_COOKIE_KEY secret is not set` because `.dev.vars` only
+contained `WRANGLER_LOCAL = "1"`. Two more secrets are required to
+complete the full login ceremony; a third (`TOTP_ENCRYPTION_KEY`) is
+needed for TOTP registration.
+
+### Required secrets for local development
+
+| Secret | Purpose | Required for |
+|--------|---------|-------------|
+| `JWT_SIGNING_KEY` | Ed25519 PEM key for signing JWTs | Token issuance (OIDC flow) |
+| `SESSION_COOKIE_KEY` | HMAC key for signing session cookies | Any authenticated page |
+| `TOTP_ENCRYPTION_KEY` | AES-256-GCM key for TOTP secrets at rest | TOTP enroll/verify |
+
+`TOTP_ENCRYPTION_KEY` is optional — omit it to disable TOTP
+registration in local dev. The other two are required for any
+authenticated request to succeed.
+
+### Complete `.dev.vars` for local development
+
+Generate fresh values and write the file in one step:
+
+```sh
+JWT_KEY=$(openssl genpkey -algorithm ed25519 | tr '\n' '|' | sed 's/|/\\n/g; s/\\n$//')
+SESSION_KEY=$(openssl rand -base64 48 | tr -d '\n')
+TOTP_KEY=$(openssl rand -base64 32 | tr -d '\n')
+
+cat > .dev.vars << EOF
+WRANGLER_LOCAL = "1"
+JWT_SIGNING_KEY = "$JWT_KEY"
+SESSION_COOKIE_KEY = "$SESSION_KEY"
+TOTP_ENCRYPTION_KEY = "$TOTP_KEY"
+EOF
+```
+
+`.dev.vars` is already listed in `.gitignore` (added in v0.78.7).
+Never commit it.
+
+### Note on `JWT_SIGNING_KEY` format
+
+The worker normalises `\n` sequences to real newlines before
+passing the value to the PEM parser:
+
+```rust
+let normalized = raw.replace("\\n", "\n");
+```
+
+The `tr | sed` pipeline above converts the PEM's real newlines into
+literal `\n` two-character sequences so the whole key fits on a single
+line in `.dev.vars`. This matches the format `wrangler secret put`
+uses for production secrets (which also escapes newlines).
+
+### Full local development procedure (updated)
+
+```sh
+# 1. Generate secrets (first time only)
+JWT_KEY=$(openssl genpkey -algorithm ed25519 | tr '\n' '|' | sed 's/|/\\n/g; s/\\n$//')
+SESSION_KEY=$(openssl rand -base64 48 | tr -d '\n')
+TOTP_KEY=$(openssl rand -base64 32 | tr -d '\n')
+cat > .dev.vars << EOF
+WRANGLER_LOCAL = "1"
+JWT_SIGNING_KEY = "$JWT_KEY"
+SESSION_COOKIE_KEY = "$SESSION_KEY"
+TOTP_ENCRYPTION_KEY = "$TOTP_KEY"
+EOF
+
+# 2. Apply migrations (first time only)
+wrangler d1 migrations apply cesauth --local
+
+# 3. Start local dev server
+wrangler dev
+
+# 4. Request a magic link
+open http://localhost:8787/magic-link/request
+
+# 5. Copy the OTP from the wrangler terminal:
+#    [magic_link dev] recipient=...  handle=...  code=ABCD2345
+
+# 6. Enter the code on the verification page → logged in.
+```
+
+---
+
 ## [0.78.8] - 2026-05-20
 
 Migration fix. `0013_tenant_composite_keys.sql` failed with

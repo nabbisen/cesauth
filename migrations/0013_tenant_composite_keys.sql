@@ -86,6 +86,32 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_groups_org_slug
 CREATE UNIQUE INDEX IF NOT EXISTS idx_groups_tenant_id_id
     ON groups(tenant_id, id);
 
+-- ============================================================================
+-- 4. Rebuild user_group_memberships to restore FK reference to `groups`.
+--
+-- SQLite 3.26.0+ updates FK references in other tables when a table is
+-- renamed.  After `ALTER TABLE groups RENAME TO groups_pre_0013`, any table
+-- that had `REFERENCES groups(...)` now references `groups_pre_0013(...)`.
+-- After `DROP TABLE groups_pre_0013`, those references become dangling.
+-- Wrangler's SQLite (and some versions of D1) report dangling FK targets as
+-- hard errors in PRAGMA foreign_key_check; rusqlite silently ignores them.
+-- Rebuilding user_group_memberships here re-points the FK at `groups`.
+-- ============================================================================
+
+ALTER TABLE user_group_memberships RENAME TO user_group_memberships_pre_0013;
+
+CREATE TABLE user_group_memberships (
+    group_id   TEXT NOT NULL REFERENCES groups(id),
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    joined_at  INTEGER NOT NULL,
+    PRIMARY KEY (group_id, user_id)
+);
+
+INSERT INTO user_group_memberships SELECT * FROM user_group_memberships_pre_0013;
+DROP TABLE user_group_memberships_pre_0013;
+
+CREATE INDEX IF NOT EXISTS idx_ugm_user ON user_group_memberships(user_id);
+
 -- Defense-in-depth: abort the migration if any existing row violates
 -- the new composite FKs.
 PRAGMA foreign_key_check;

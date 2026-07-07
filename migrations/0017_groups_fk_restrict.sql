@@ -33,6 +33,8 @@ CREATE TABLE groups (
     parent_group_id    TEXT,
     created_at         INTEGER NOT NULL,
     updated_at         INTEGER NOT NULL,
+    -- Required for self-referential composite FK resolution at CREATE TABLE time.
+    UNIQUE (tenant_id, id),
     CHECK (
         (parent_kind = 'tenant'       AND organization_id IS NULL) OR
         (parent_kind = 'organization' AND organization_id IS NOT NULL)
@@ -57,6 +59,22 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_groups_org_slug
     ON groups(organization_id, slug) WHERE parent_kind = 'organization';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_groups_tenant_id_id
     ON groups(tenant_id, id);
+
+-- Rebuild user_group_memberships to restore FK reference to `groups`
+-- (same reason as migration 0013 — see that migration's comment).
+ALTER TABLE user_group_memberships RENAME TO user_group_memberships_pre_0017;
+
+CREATE TABLE user_group_memberships (
+    group_id   TEXT NOT NULL REFERENCES groups(id),
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    joined_at  INTEGER NOT NULL,
+    PRIMARY KEY (group_id, user_id)
+);
+
+INSERT INTO user_group_memberships SELECT * FROM user_group_memberships_pre_0017;
+DROP TABLE user_group_memberships_pre_0017;
+
+CREATE INDEX IF NOT EXISTS idx_ugm_user ON user_group_memberships(user_id);
 
 PRAGMA foreign_key_check;
 
