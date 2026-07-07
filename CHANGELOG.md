@@ -26,6 +26,66 @@ split by minor-version range:
 
 ---
 
+## [0.78.4] - 2026-05-19
+
+Patch release. Fixes four classes of remaining `cesauth-worker`
+errors that were masked in v0.78.3 (either revealed by fixing
+earlier errors, or introduced by a faulty `sed` substitution
+in that patch).
+
+### Corrupted enum + `ctx` references (8 errors)
+
+The v0.78.3 patch attempted to replace `&ctx.env` with `&env` in
+`me/totp/disable.rs` and `me/totp/enroll.rs` using a shell `sed`
+command whose replacement string contained a literal `&`. In POSIX
+`sed`, `&` in the replacement expands to the entire matched text,
+so the match was prepended to itself, producing the nonsense
+identifier `CsrfRngFailureenv` and leaving the original `ctx.env`
+reference intact.
+
+Fixed by re-applying the substitution correctly in Python (no
+special-character ambiguity). All four call sites now read
+`&env, crate::audit::EventKind::CsrfRngFailure,` as intended.
+
+### `render::form_error` still not found (2 errors)
+
+v0.78.3 added a private `fn form_error(msg: &str)` inside
+`invitations.rs`, but the two call sites still used the qualified
+path `render::form_error(...)`. The helper was never moved into
+the render module — it lives locally in `invitations.rs`.
+Fixed both call sites: `render::form_error` → `form_error`.
+
+### Wrong repository type for `export_audit` (3 errors)
+
+`export_audit` requires an `AuditQuerySource` implementor.
+`CloudflareAuditEventRepository` implements `AuditEventRepository`
+(append + search), not `AuditQuerySource` (batch export query).
+The correct type is `CloudflareAuditQuerySource`. Fixed
+`audit_export.rs` to construct a `CloudflareAuditQuerySource::new`
+instead.
+
+### Borrow of moved value in cron handler (4 errors)
+
+`lib.rs` used the pattern:
+```rust
+let result = some_cron::run(&env).await;
+record_cron_pass(..., result.err().map(|e| format!("{e:?}"))).await;
+if let Err(e) = &result { ... }   // ERROR: result was moved by .err()
+```
+
+`.err()` on a `Result` consumes the value. Fixed by changing
+`.err()` to `.as_ref().err()` for the four affected cron results
+(`chain_result`, `sia_result`, `retention_result`, `repair_result`).
+The `sweep_result` that precedes them already had `as_ref()` in the
+correct `.as_ref().map(...)` call and is not followed by a borrow,
+so it was unaffected.
+
+### Tests
+
+1,290 / 1,290 pass. 0 warnings.
+
+---
+
 ## [0.78.3] - 2026-05-19
 
 Patch release. Fixes all 44 `cesauth-worker` compilation errors that

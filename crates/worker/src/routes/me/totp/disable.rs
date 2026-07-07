@@ -161,7 +161,7 @@ pub async fn get_handler(
             Ok(tok) => tok,
             Err(_) => {
                 crate::audit::write_owned(
-                    &ctx.env, crate::audit::EventKind::CsrfRngFailureenv, crate::audit::EventKind::CsrfRngFailure,
+                    &env, crate::audit::EventKind::CsrfRngFailure,
                     None, None, Some("route=/me/security/totp/disable".to_owned()),
                 ).await.ok();
                 return Response::error("service temporarily unavailable", 500);
@@ -181,7 +181,7 @@ pub async fn get_handler(
         Ok(n) => n,
         Err(_) => {
             crate::audit::write_owned(
-                &ctx.env, crate::audit::EventKind::CsrfRngFailureenv, crate::audit::EventKind::CsrfRngFailure,
+                &env, crate::audit::EventKind::CsrfRngFailure,
                 None, None, Some("csp_nonce_failure".to_owned()),
             ).await.ok();
             return Response::error("service temporarily unavailable", 500);

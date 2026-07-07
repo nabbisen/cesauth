@@ -82,7 +82,7 @@ pub async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
             let _ = cron_status::record_cron_pass(&env, &cron_status::CronPassRecord::new(
                 "audit_chain", t1 as i64, t2 as i64,
                 chain_result.is_ok(), 0, "apply",
-                chain_result.err().map(|e| format!("{e:?}")),
+                chain_result.as_ref().err().map(|e| format!("{e:?}")),
             )).await;
             if let Err(e) = &chain_result {
                 console_error!("audit chain verification failed: {e:?}");
@@ -94,7 +94,7 @@ pub async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
             let _ = cron_status::record_cron_pass(&env, &cron_status::CronPassRecord::new(
                 "session_index_audit", t2 as i64, t3 as i64,
                 sia_result.is_ok(), processed_sia, "apply",
-                sia_result.err().map(|e| format!("{e:?}")),
+                sia_result.as_ref().err().map(|e| format!("{e:?}")),
             )).await;
             if let Err(e) = &sia_result {
                 console_error!("session index audit failed: {e:?}");
@@ -105,7 +105,7 @@ pub async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
             let _ = cron_status::record_cron_pass(&env, &cron_status::CronPassRecord::new(
                 "audit_retention", t3 as i64, t4 as i64,
                 retention_result.is_ok(), 0, "apply",
-                retention_result.err().map(|e| format!("{e:?}")),
+                retention_result.as_ref().err().map(|e| format!("{e:?}")),
             )).await;
             if let Err(e) = &retention_result {
                 console_error!("audit retention cron failed: {e:?}");
@@ -119,7 +119,7 @@ pub async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
             let _ = cron_status::record_cron_pass(&env, &cron_status::CronPassRecord::new(
                 "session_index_repair", t4 as i64, t5 as i64,
                 repair_result.is_ok(), 0, repair_mode,
-                repair_result.err().map(|e| format!("{e:?}")),
+                repair_result.as_ref().err().map(|e| format!("{e:?}")),
             )).await;
             if let Err(e) = &repair_result {
                 console_error!("session index repair cron failed: {e:?}");

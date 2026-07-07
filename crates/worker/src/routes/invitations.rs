@@ -56,11 +56,11 @@ pub async fn issue<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
     let form = req.form_data().await?;
     let email = match form.get("email") {
         Some(worker::FormEntry::Field(v)) if !v.is_empty() => v,
-        _ => return render::form_error("email required"),
+        _ => return form_error("email required"),
     };
     let role = match form.get("role") {
         Some(worker::FormEntry::Field(v)) if !v.is_empty() => v,
-        _ => return render::form_error("role required"),
+        _ => return form_error("role required"),
     };
 
     let now = OffsetDateTime::now_utc().unix_timestamp();
