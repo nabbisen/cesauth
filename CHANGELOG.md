@@ -26,6 +26,86 @@ split by minor-version range:
 
 ---
 
+## [0.79.5] - 2026-05-20
+
+### RFC 115 — Phase C, Screen 4: Login + Magic Link entry point migrated to Leptos
+
+`GET /` and `GET /login` now return the Leptos HTML shell.
+
+#### Frontend changes
+
+**New `crates/frontend/src/pages/login.rs`** — `Login` component:
+
+- **Email form (fallback path)** — A standard `<form method="POST"
+  action="/magic-link/request">` that submits normally to the backend.
+  The server responds with the OTP input page (still the existing
+  string template; will be migrated in v0.79.6). This preserves the
+  full magic-link flow without any additional backend changes.
+
+- **Passkey button (primary path)** — A `<button>` that on click
+  calls the `cesauthPasskeyAuthenticate` JavaScript helper via
+  `js_sys::Reflect`. The button shows a "Signing in…" state while
+  the Promise is pending and an inline error message on failure.
+  Error codes (`passkey_cancelled`, `passkey_unsupported`,
+  `webauthn_not_loaded`) map to user-readable strings.
+
+**New `crates/frontend/static/webauthn.js`** — ES module loaded by
+the HTML shell's CSP-nonced bootstrap script. Implements the full
+passkey authentication ceremony:
+
+1. `POST /webauthn/authenticate/start` → challenge + handle
+2. `navigator.credentials.get({ publicKey })` → browser passkey picker
+3. `POST /webauthn/authenticate/finish` → session cookie set
+4. `window.location.replace(finishResp.url)` → navigate to the
+   correct destination (OIDC `redirect_uri?code=…` or `/me/security`)
+
+`finishResp.url` (the browser Fetch API's `response.url` property)
+gives the final URL after all server-side redirects are followed.
+This correctly handles both the direct login case (`/me/security`)
+and the OIDC Authorization Code flow (the `redirect_uri` of the RP).
+
+The helper is exposed on `window.__cesauth.passkeyAuthenticate`.
+The Leptos component reaches it via `js_sys::Reflect::get`.
+This design satisfies the strict `script-src 'nonce-…'` CSP — no
+`'unsafe-eval'`, no `'unsafe-inline'`, no dynamic `import()`.
+
+**HTML shell updated** to also import `webauthn.js` in the bootstrap
+`<script type="module" nonce="…">`, making the helper available on
+every Leptos-backed page (passkey registration from `/me/security`
+will use it in a future release).
+
+**`Makefile`** — `build-frontend` now also copies `static/` files
+into `dist/` so they are served via Workers Static Assets.
+
+#### New Cargo dependencies (all `csr`-feature-gated)
+
+- `web-sys` with features: `Window`, `Navigator`, `Location`,
+  `Request`, `RequestInit`, `RequestMode`, `Response`, `Headers`.
+- `wasm-bindgen-futures = "0.4"` — `JsFuture` for awaiting the
+  WebAuthn Promise from Rust/WASM.
+- `js-sys` (workspace, `optional = true`) — `Reflect`, `Function`,
+  `Promise`, `JsValue` for the interop bridge.
+
+#### Backend changes
+
+- `routes/ui.rs::login` simplified to a two-line Leptos shell
+  handler (no CSRF minting, no template render, no CSP nonce logic —
+  all of that now lives in the Leptos component and
+  `leptos_shell::leptos_html_shell`).
+- No changes to any POST handlers (`/magic-link/request`,
+  `/webauthn/authenticate/start`, `/webauthn/authenticate/finish`).
+
+#### Known limitation
+
+The Magic Link sent+verify page (the OTP input screen, currently
+served by `magic_link_sent_page_for`) is NOT yet Leptos.  After the
+user submits their email, the server responds with the old string
+template.  This will be resolved in v0.79.6.
+
+1,290 / 1,290 tests pass.
+
+---
+
 ## [0.79.4] - 2026-05-20
 
 ### RFC 115 — Phase C, Screen 3: TOTP flows migrated to Leptos

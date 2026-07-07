@@ -21,6 +21,7 @@
 //! the same per-route gate composition.
 
 pub mod gate;
+pub mod json_api;
 pub mod overview;
 pub mod organizations;
 pub mod organization_detail;

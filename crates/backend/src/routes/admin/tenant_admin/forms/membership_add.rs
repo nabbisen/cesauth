@@ -41,20 +41,20 @@ use crate::routes::admin::tenant_admin::gate;
 // ---------------------------------------------------------------------
 
 pub async fn form_tenant<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
-        Ok(p) => p, Err(r) => return Ok(r),
+    let ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
+        Ok(c)  => c,
+        Err(r) => return Ok(r),
     };
-    let ctx_ta = match gate::resolve_or_respond(principal, &ctx).await? {
-        Ok(c) => c, Err(r) => return Ok(r),
-    };
-    if let Err(r) = gate::check_action(
-        &ctx_ta, PermissionCatalog::TENANT_MEMBER_ADD,
-        ScopeRef::Tenant { tenant_id: &ctx_ta.tenant.id }, &ctx,
-    ).await? { return Ok(r); }
+    super::super::json_api::shell(&req, &ctx, "Add member — cesauth").await
+}
 
-    render::html_response(ui::for_tenant(
-        &ctx_ta.principal, &ctx_ta.tenant, "", "member", None,
-    ))
+/// `GET .json` — CSRF token for the form_tenant form.
+pub async fn form_tenant_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let _ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
+        Ok(c)  => c,
+        Err(_) => return Response::error("Unauthorized", 401),
+    };
+    super::super::json_api::csrf_json()
 }
 
 pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -160,13 +160,20 @@ async fn gate_for_org<D>(
 }
 
 pub async fn form_org<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let (ctx_ta, org) = match gate_for_org(&req, &ctx).await? {
-        Ok(p) => p, Err(r) => return Ok(r),
+    let ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
+        Ok(c)  => c,
+        Err(r) => return Ok(r),
     };
-    render::html_response(ui::for_organization(
-        &ctx_ta.principal, &ctx_ta.tenant, &org.id, &org.slug,
-        "", "member", None,
-    ))
+    super::super::json_api::shell(&req, &ctx, "Add org member — cesauth").await
+}
+
+/// `GET .json` — CSRF token for the form_org form.
+pub async fn form_org_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let _ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
+        Ok(c)  => c,
+        Err(_) => return Response::error("Unauthorized", 401),
+    };
+    super::super::json_api::csrf_json()
 }
 
 pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -268,13 +275,20 @@ async fn gate_for_group<D>(
 }
 
 pub async fn form_group<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let (ctx_ta, group, org_id) = match gate_for_group(&req, &ctx).await? {
-        Ok(t) => t, Err(r) => return Ok(r),
+    let ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
+        Ok(c)  => c,
+        Err(r) => return Ok(r),
     };
-    render::html_response(ui::for_group(
-        &ctx_ta.principal, &ctx_ta.tenant,
-        &group.id, &group.slug, &org_id, "", None,
-    ))
+    super::super::json_api::shell(&req, &ctx, "Add group member — cesauth").await
+}
+
+/// `GET .json` — CSRF token for the form_group form.
+pub async fn form_group_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let _ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
+        Ok(c)  => c,
+        Err(_) => return Response::error("Unauthorized", 401),
+    };
+    super::super::json_api::csrf_json()
 }
 
 pub async fn submit_group<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {

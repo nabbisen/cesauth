@@ -8,30 +8,41 @@ use worker::{Request, Response, Result, RouteContext};
 
 use crate::routes::admin::auth;
 use crate::routes::admin::console::render;
-use crate::routes::admin::tenant_admin::gate;
+use crate::routes::admin::tenant_admin::{gate, json_api};
 
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
-        Ok(p)     => p,
-        Err(resp) => return Ok(resp),
+    let ctx_ta = match json_api::resolve_ctx(&req, &ctx).await? {
+        Ok(c)  => c,
+        Err(r) => return Ok(r),
     };
-    let ctx_ta = match gate::resolve_or_respond(principal, &ctx).await? {
-        Ok(c)     => c,
-        Err(resp) => return Ok(resp),
-    };
-
-    if let Err(resp) = gate::check_read(
+    if let Err(r) = gate::check_read(
         &ctx_ta,
-        cesauth_core::authz::types::PermissionCatalog::ORGANIZATION_READ,
+        cesauth_core::authz::types::PermissionCatalog::TENANT_READ,
         &ctx,
-    ).await? {
-        return Ok(resp);
-    }
+    ).await? { return Ok(r); }
+    json_api::shell(&req, &ctx, &format!("Organisations — {} — cesauth", ctx_ta.tenant.display_name)).await
+}
 
-    let orgs_repo = CloudflareOrganizationRepository::new(&ctx.env);
-    let orgs = orgs_repo.list_for_tenant(&ctx_ta.tenant.id).await
-        .unwrap_or_default();
-
-    let aff = gate::build_affordances(&ctx_ta, &ctx).await?;
-    render::html_response(organizations_page(&ctx_ta.principal, &ctx_ta.tenant, &orgs, &aff))
+pub async fn page_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let ctx_ta = match json_api::resolve_ctx(&req, &ctx).await? {
+        Ok(c)  => c,
+        Err(_) => return Response::error("Unauthorized", 401),
+    };
+    if let Err(_) = gate::check_read(
+        &ctx_ta,
+        cesauth_core::authz::types::PermissionCatalog::TENANT_READ,
+        &ctx,
+    ).await? { return Response::error("Forbidden", 403); }
+    let orgs = {
+        use cesauth_cf::ports::repo::CloudflareOrganizationRepository;
+        use cesauth_core::tenancy::OrganizationRepository;
+        let repo = CloudflareOrganizationRepository::new(&ctx.env);
+        repo.list_for_tenant(&ctx_ta.tenant.id, 200).await.unwrap_or_default()
+    };
+    let mut resp = Response::from_json(&serde_json::json!({
+        "tenant":        ctx_ta.tenant,
+        "organizations": orgs,
+    }))?;
+    resp.headers_mut().set("cache-control", "no-store").ok();
+    Ok(resp)
 }

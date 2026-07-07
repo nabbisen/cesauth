@@ -26,6 +26,14 @@ use leptos_router::components::{Router, Routes, Route};
 use crate::pages::login::Login;
 use crate::pages::security_center::SecurityCenter;
 use crate::pages::sessions::Sessions;
+use crate::pages::tenant_admin::{
+    forms::{AddTenantMember, NewOrganization},
+    invitations::TenantInvitations,
+    organizations::TenantOrganizations,
+    overview::TenantOverview,
+    subscription::TenantSubscription,
+    users::TenantUsers,
+};
 use crate::pages::totp::{TotpDisable, TotpEnroll, TotpVerify};
 
 // ─── Root component ──────────────────────────────────────────────────────────
@@ -45,6 +53,14 @@ pub fn App() -> impl IntoView {
                 <Route path="/me/security/totp/verify"       view=TotpVerify />
                 <Route path="/me/security/totp/disable"      view=TotpDisable />
 
+                // ── Tenant admin ──────────────────────────────────
+                <Route path="/admin/t/:slug"                         view=TenantOverview />
+                <Route path="/admin/t/:slug/users"                   view=TenantUsers />
+                <Route path="/admin/t/:slug/organizations"           view=TenantOrganizations />
+                <Route path="/admin/t/:slug/subscription"            view=TenantSubscription />
+                <Route path="/admin/t/:slug/invitations"             view=TenantInvitations />
+                <Route path="/admin/t/:slug/organizations/new"       view=NewOrganization />
+                <Route path="/admin/t/:slug/memberships/new"         view=AddTenantMember />
                 // ── Phase B PoC (remove in v0.80.0) ─────────────────
                 <Route path="/__leptos" view=PocCounter />
             </Routes>

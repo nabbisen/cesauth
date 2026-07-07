@@ -78,20 +78,20 @@ async fn list_available_roles(env: &worker::Env, tenant_id: &str) -> Vec<Role> {
 }
 
 pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let (ctx_ta, user) = match gate_and_load_user(&req, &ctx).await? {
-        Ok(p)     => p,
-        Err(resp) => return Ok(resp),
+    let ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
+        Ok(c)  => c,
+        Err(r) => return Ok(r),
     };
-    let available = list_available_roles(&ctx.env, &ctx_ta.tenant.id).await;
-    render::html_response(grant_form(
-        &ctx_ta.principal, &ctx_ta.tenant,
-        &GrantInput {
-            subject_user: &user,
-            available_roles: &available,
-            role_id: "", scope_type: "tenant", scope_id: "", expires_at: "",
-            error: None,
-        },
-    ))
+    super::super::json_api::shell(&req, &ctx, "Add role assignment — cesauth").await
+}
+
+/// `GET .json` — CSRF token for the form form.
+pub async fn form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let _ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
+        Ok(c)  => c,
+        Err(_) => return Response::error("Unauthorized", 401),
+    };
+    super::super::json_api::csrf_json()
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {

@@ -343,11 +343,17 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         // See `routes/admin/tenant_admin/gate.rs`. v0.13.0 ships read
         // pages only; mutation forms land in 0.14.0.
         .get_async("/admin/t/:slug",                                                     |req, ctx| async move { routes::admin::tenant_admin::overview::page(req, ctx).await })
+        .get_async("/admin/t/:slug.json",                                                     |req, ctx| async move { routes::admin::tenant_admin::overview::page_json(req, ctx).await })
         .get_async("/admin/t/:slug/organizations",                                       |req, ctx| async move { routes::admin::tenant_admin::organizations::page(req, ctx).await })
+        .get_async("/admin/t/:slug/organizations.json",                                       |req, ctx| async move { routes::admin::tenant_admin::organizations::page_json(req, ctx).await })
         .get_async("/admin/t/:slug/organizations/:oid",                                  |req, ctx| async move { routes::admin::tenant_admin::organization_detail::page(req, ctx).await })
+        .get_async("/admin/t/:slug/organizations/:oid.json",                                  |req, ctx| async move { routes::admin::tenant_admin::organization_detail::page_json(req, ctx).await })
         .get_async("/admin/t/:slug/users",                                               |req, ctx| async move { routes::admin::tenant_admin::users::page(req, ctx).await })
+        .get_async("/admin/t/:slug/users.json",                                                |req, ctx| async move { routes::admin::tenant_admin::users::page_json(req, ctx).await })
         .get_async("/admin/t/:slug/users/:uid/role_assignments",                         |req, ctx| async move { routes::admin::tenant_admin::role_assignments::page(req, ctx).await })
+        .get_async("/admin/t/:slug/users/:uid/role_assignments.json",                         |req, ctx| async move { routes::admin::tenant_admin::role_assignments::page_json(req, ctx).await })
         .get_async("/admin/t/:slug/subscription",                                        |req, ctx| async move { routes::admin::tenant_admin::subscription::page(req, ctx).await })
+        .get_async("/admin/t/:slug/subscription.json",                                        |req, ctx| async move { routes::admin::tenant_admin::subscription::page_json(req, ctx).await })
         // --- tenant-scoped mutation forms (v0.14.0) -----------------
         // Each form has GET (form) + POST (preview/apply via the
         // `confirm` form field). Per-route auth: gate's 3-step
@@ -355,10 +361,12 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         // Audit emissions use `via=tenant-admin,tenant=<id>` to
         // distinguish them from system-admin originated entries.
         .get_async ("/admin/t/:slug/organizations/new",                                      |req, ctx| async move { routes::admin::tenant_admin::forms::organization_create::form(req, ctx).await })
+        .get_async ("/admin/t/:slug/organizations/new.json",                                    |req, ctx| async move { routes::admin::tenant_admin::forms::organization_create::form_json(req, ctx).await })
         .post_async("/admin/t/:slug/organizations/new",                                      |req, ctx| async move { routes::admin::tenant_admin::forms::organization_create::submit(req, ctx).await })
         .get_async ("/admin/t/:slug/organizations/:oid/status",                              |req, ctx| async move { routes::admin::tenant_admin::forms::organization_set_status::form(req, ctx).await })
         .post_async("/admin/t/:slug/organizations/:oid/status",                              |req, ctx| async move { routes::admin::tenant_admin::forms::organization_set_status::submit(req, ctx).await })
         .get_async ("/admin/t/:slug/organizations/:oid/groups/new",                          |req, ctx| async move { routes::admin::tenant_admin::forms::group_create::form(req, ctx).await })
+        .get_async ("/admin/t/:slug/organizations/:oid/groups/new.json",                         |req, ctx| async move { routes::admin::tenant_admin::forms::group_create::form_json(req, ctx).await })
         .post_async("/admin/t/:slug/organizations/:oid/groups/new",                          |req, ctx| async move { routes::admin::tenant_admin::forms::group_create::submit(req, ctx).await })
         .get_async ("/admin/t/:slug/groups/:gid/delete",                                     |req, ctx| async move { routes::admin::tenant_admin::forms::group_delete::form(req, ctx).await })
         .post_async("/admin/t/:slug/groups/:gid/delete",                                     |req, ctx| async move { routes::admin::tenant_admin::forms::group_delete::submit(req, ctx).await })
@@ -375,6 +383,7 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         // depth: target user_id is verified to belong to this
         // tenant before any add proceeds.
         .get_async ("/admin/t/:slug/memberships/new",                                        |req, ctx| async move { routes::admin::tenant_admin::forms::membership_add::form_tenant(req, ctx).await })
+        .get_async ("/admin/t/:slug/memberships/new.json",                                      |req, ctx| async move { routes::admin::tenant_admin::forms::membership_add::form_tenant_json(req, ctx).await })
         .post_async("/admin/t/:slug/memberships",                                            |req, ctx| async move { routes::admin::tenant_admin::forms::membership_add::submit_tenant(req, ctx).await })
         .get_async ("/admin/t/:slug/memberships/:uid/delete",                                |req, ctx| async move { routes::admin::tenant_admin::forms::membership_remove::confirm_tenant(req, ctx).await })
         .post_async("/admin/t/:slug/memberships/:uid/delete",                                |req, ctx| async move { routes::admin::tenant_admin::forms::membership_remove::submit_tenant(req, ctx).await })
@@ -388,11 +397,13 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .post_async("/admin/t/:slug/groups/:gid/memberships/:uid/delete",                    |req, ctx| async move { routes::admin::tenant_admin::forms::membership_remove::submit_group(req, ctx).await })
         // RFC 043: Invitation tokens
         .get_async ("/admin/t/:slug/invitations",                  |req, ctx| async move { routes::invitations::list(req, ctx).await })
+        .get_async ("/admin/t/:slug/invitations.json",                  |req, ctx| async move { routes::invitations::list_json(req, ctx).await })
         .post_async("/admin/t/:slug/invitations",                  |req, ctx| async move { routes::invitations::issue(req, ctx).await })
         .get_async ("/accept-invite",                              |req, ctx| async move { routes::invitations::accept_page(req, ctx).await })
         .post_async("/accept-invite",                              |req, ctx| async move { routes::invitations::accept_submit(req, ctx).await })
         // RFC 044: Deletion requests
         .get_async ("/admin/t/:slug/deletion-requests",            |req, ctx| async move { routes::deletions::admin_list(req, ctx).await })
+        .get_async ("/admin/t/:slug/deletion-requests.json",            |req, ctx| async move { routes::deletions::admin_list_json(req, ctx).await })
         .post_async("/admin/t/:slug/deletion-requests/:id/cancel", |req, ctx| async move { routes::deletions::admin_cancel(req, ctx).await })
         .post_async("/admin/t/:slug/deletion-requests/:id/execute",|req, ctx| async move { routes::deletions::admin_execute(req, ctx).await })
         // --- system-admin token-mint UI (v0.14.0) -------------------

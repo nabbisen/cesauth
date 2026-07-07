@@ -14,7 +14,7 @@ use super::affordances::Affordances;
 use super::frame::{tenant_admin_frame, TenantAdminTab};
 
 /// Per-tenant counters, scoped to `tenant.id`.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct TenantOverviewCounts {
     pub organizations: i64,
     pub users:         i64,

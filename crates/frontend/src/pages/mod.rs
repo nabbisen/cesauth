@@ -15,4 +15,5 @@
 pub mod login;
 pub mod security_center;
 pub mod sessions;
+pub mod tenant_admin;
 pub mod totp;

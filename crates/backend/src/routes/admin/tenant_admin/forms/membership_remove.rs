@@ -26,35 +26,20 @@ use crate::routes::admin::tenant_admin::gate;
 // ---------------------------------------------------------------------
 
 pub async fn confirm_tenant<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
-        Ok(p) => p, Err(r) => return Ok(r),
+    let ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
+        Ok(c)  => c,
+        Err(r) => return Ok(r),
     };
-    let ctx_ta = match gate::resolve_or_respond(principal, &ctx).await? {
-        Ok(c) => c, Err(r) => return Ok(r),
+    super::super::json_api::shell(&req, &ctx, "Remove member — cesauth").await
+}
+
+/// `GET .json` — CSRF token for the confirm_tenant form.
+pub async fn confirm_tenant_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let _ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
+        Ok(c)  => c,
+        Err(_) => return Response::error("Unauthorized", 401),
     };
-    if let Err(r) = gate::check_action(
-        &ctx_ta, PermissionCatalog::TENANT_MEMBER_REMOVE,
-        ScopeRef::Tenant { tenant_id: &ctx_ta.tenant.id }, &ctx,
-    ).await? { return Ok(r); }
-
-    let uid = match ctx.param("uid") {
-        Some(s) => s.clone(),
-        None    => return Response::error("missing user id", 400),
-    };
-
-    let memberships = CloudflareMembershipRepository::new(&ctx.env);
-    let role_label = memberships.list_tenant_members(&ctx_ta.tenant.id).await.ok()
-        .and_then(|rows| rows.into_iter().find(|m| m.user_id == uid))
-        .map(|m| match m.role {
-            TenantMembershipRole::Owner  => "owner",
-            TenantMembershipRole::Admin  => "admin",
-            TenantMembershipRole::Member => "member",
-        })
-        .unwrap_or("(unknown)");
-
-    render::html_response(ui::for_tenant(
-        &ctx_ta.principal, &ctx_ta.tenant, &uid, role_label,
-    ))
+    super::super::json_api::csrf_json()
 }
 
 pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -137,21 +122,20 @@ async fn gate_for_org<D>(
 }
 
 pub async fn confirm_org<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let (ctx_ta, org, uid) = match gate_for_org(&req, &ctx).await? {
-        Ok(t) => t, Err(r) => return Ok(r),
+    let ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
+        Ok(c)  => c,
+        Err(r) => return Ok(r),
     };
-    let memberships = CloudflareMembershipRepository::new(&ctx.env);
-    let role_label = memberships.list_organization_members(&org.id).await.ok()
-        .and_then(|rows| rows.into_iter().find(|m| m.user_id == uid))
-        .map(|m| match m.role {
-            OrganizationRole::Admin  => "admin",
-            OrganizationRole::Member => "member",
-        })
-        .unwrap_or("(unknown)");
-    render::html_response(ui::for_organization(
-        &ctx_ta.principal, &ctx_ta.tenant,
-        &org.id, &org.slug, &uid, role_label,
-    ))
+    super::super::json_api::shell(&req, &ctx, "Remove org member — cesauth").await
+}
+
+/// `GET .json` — CSRF token for the confirm_org form.
+pub async fn confirm_org_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let _ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
+        Ok(c)  => c,
+        Err(_) => return Response::error("Unauthorized", 401),
+    };
+    super::super::json_api::csrf_json()
 }
 
 pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -226,13 +210,20 @@ async fn gate_for_group<D>(
 }
 
 pub async fn confirm_group<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let (ctx_ta, group, org_id, uid) = match gate_for_group(&req, &ctx).await? {
-        Ok(t) => t, Err(r) => return Ok(r),
+    let ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
+        Ok(c)  => c,
+        Err(r) => return Ok(r),
     };
-    render::html_response(ui::for_group(
-        &ctx_ta.principal, &ctx_ta.tenant,
-        &group.id, &group.slug, &org_id, &uid,
-    ))
+    super::super::json_api::shell(&req, &ctx, "Remove group member — cesauth").await
+}
+
+/// `GET .json` — CSRF token for the confirm_group form.
+pub async fn confirm_group_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let _ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
+        Ok(c)  => c,
+        Err(_) => return Response::error("Unauthorized", 401),
+    };
+    super::super::json_api::csrf_json()
 }
 
 pub async fn submit_group<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {

@@ -94,19 +94,20 @@ async fn gate_and_load<D>(
 }
 
 pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let (ctx_ta, assignment, user, label) = match gate_and_load(&req, &ctx).await? {
-        Ok(t)     => t,
-        Err(resp) => return Ok(resp),
+    let ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
+        Ok(c)  => c,
+        Err(r) => return Ok(r),
     };
-    render::html_response(form_page(
-        &ctx_ta.principal, &ctx_ta.tenant,
-        &RevokeInput {
-            assignment: &assignment,
-            subject_user: &user,
-            role_label: &label,
-            error: None,
-        },
-    ))
+    super::super::json_api::shell(&req, &ctx, "Remove role assignment — cesauth").await
+}
+
+/// `GET .json` — CSRF token for the form form.
+pub async fn form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let _ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
+        Ok(c)  => c,
+        Err(_) => return Response::error("Unauthorized", 401),
+    };
+    super::super::json_api::csrf_json()
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {

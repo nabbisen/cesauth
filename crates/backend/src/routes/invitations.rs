@@ -266,29 +266,17 @@ fn urlencoding(s: &str) -> String {
 // ---------------------------------------------------------------------------
 
 pub async fn list<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
-        Ok(p)  => p,
-        Err(r) => return Ok(r),
-    };
-    let ctx_ta = match gate::resolve_or_respond(principal, &ctx).await? {
-        Ok(c)  => c,
-        Err(r) => return Ok(r),
-    };
+    crate::routes::leptos_shell::leptos_html_shell(&req, &ctx.env, "Invitations — cesauth", "en").await
+}
 
-    let now = time::OffsetDateTime::now_utc().unix_timestamp();
-    let inv_repo = cesauth_cf::ports::repo::CloudflareInvitationRepository::new(&ctx.env);
-
-    let invitations = match cesauth_core::invitation::InvitationRepository::list_pending_by_tenant(
-        &inv_repo, &ctx_ta.tenant.id, now,
-    ).await {
-        Ok(v)  => v,
-        Err(_) => vec![],
-    };
-
-    render::html_response(cesauth_frontend::tenant_admin::invitations::invitations_page(
-        &ctx_ta.principal,
-        &ctx_ta.tenant,
-        &invitations,
-        now,
-    ))
+pub async fn list_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    crate::csrf::mint()
+        .map_err(|_| worker::Error::RustError("csrf rng failed".into()))
+        .and_then(|t| {
+            let set_cookie = crate::csrf::set_cookie_header(&t);
+            let mut resp = worker::Response::from_json(&serde_json::json!({"csrf_token": t}))?;
+            resp.headers_mut().append("set-cookie", &set_cookie).ok();
+            resp.headers_mut().set("cache-control", "no-store").ok();
+            Ok(resp)
+        })
 }

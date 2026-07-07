@@ -59,24 +59,19 @@ pub async fn request_self<D>(mut req: Request, ctx: RouteContext<D>) -> Result<R
 // ---------------------------------------------------------------------------
 
 pub async fn admin_list<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
-        Ok(p)  => p,
-        Err(r) => return Ok(r),
-    };
-    let ctx_ta = match gate::resolve_or_respond(principal, &ctx).await? {
-        Ok(c)  => c,
-        Err(r) => return Ok(r),
-    };
+    crate::routes::leptos_shell::leptos_html_shell(&req, &ctx.env, "Deletion requests — cesauth", "en").await
+}
 
-    // Full implementation pending CloudflareDeletionRequestRepository.
-    let html = format!(
-        r#"<!DOCTYPE html><html><head><title>Deletion Requests</title></head>
-<body><h1>Pending Deletion Requests — {}</h1>
-<p>No pending deletion requests.</p>
-</body></html>"#,
-        ctx_ta.tenant.slug
-    );
-    render::html_response(html)
+pub async fn admin_list_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    crate::csrf::mint()
+        .map_err(|_| worker::Error::RustError("csrf rng failed".into()))
+        .and_then(|t| {
+            let set_cookie = crate::csrf::set_cookie_header(&t);
+            let mut resp = worker::Response::from_json(&serde_json::json!({"csrf_token": t}))?;
+            resp.headers_mut().append("set-cookie", &set_cookie).ok();
+            resp.headers_mut().set("cache-control", "no-store").ok();
+            Ok(resp)
+        })
 }
 
 // ---------------------------------------------------------------------------

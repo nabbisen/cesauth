@@ -16,24 +16,20 @@ use crate::routes::admin::tenant_admin::gate;
 use crate::routes::api_v1::quota;
 
 pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
-        Ok(p)     => p,
-        Err(resp) => return Ok(resp),
+    let ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
+        Ok(c)  => c,
+        Err(r) => return Ok(r),
     };
-    let ctx_ta = match gate::resolve_or_respond(principal, &ctx).await? {
-        Ok(c)     => c,
-        Err(resp) => return Ok(resp),
-    };
-    if let Err(resp) = gate::check_action(
-        &ctx_ta,
-        PermissionCatalog::ORGANIZATION_CREATE,
-        ScopeRef::Tenant { tenant_id: &ctx_ta.tenant.id },
-        &ctx,
-    ).await? { return Ok(resp); }
+    super::super::json_api::shell(&req, &ctx, "Create organisation — cesauth").await
+}
 
-    render::html_response(organization_create_form(
-        &ctx_ta.principal, &ctx_ta.tenant, "", "", None,
-    ))
+/// `GET .json` — CSRF token for the form form.
+pub async fn form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let _ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
+        Ok(c)  => c,
+        Err(_) => return Response::error("Unauthorized", 401),
+    };
+    super::super::json_api::csrf_json()
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
