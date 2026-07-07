@@ -246,7 +246,7 @@ dependencies = [
 
 [[package]]
 name = "cesauth-adapter-cloudflare"
-version = "0.80.0"
+version = "0.80.1"
 dependencies = [
  "cesauth-core",
  "js-sys",
@@ -262,7 +262,7 @@ dependencies = [
 
 [[package]]
 name = "cesauth-adapter-test"
-version = "0.80.0"
+version = "0.80.1"
 dependencies = [
  "cesauth-core",
  "serde",
@@ -273,7 +273,7 @@ dependencies = [
 
 [[package]]
 name = "cesauth-backend"
-version = "0.80.0"
+version = "0.80.1"
 dependencies = [
  "base64",
  "cesauth-adapter-cloudflare",
@@ -295,7 +295,7 @@ dependencies = [
 
 [[package]]
 name = "cesauth-core"
-version = "0.80.0"
+version = "0.80.1"
 dependencies = [
  "aes-gcm",
  "base64",
@@ -322,7 +322,7 @@ dependencies = [
 
 [[package]]
 name = "cesauth-frontend"
-version = "0.80.0"
+version = "0.80.1"
 dependencies = [
  "cesauth-core",
  "console_error_panic_hook",
@@ -338,7 +338,7 @@ dependencies = [
 
 [[package]]
 name = "cesauth-migrate"
-version = "0.80.0"
+version = "0.80.1"
 dependencies = [
  "anyhow",
  "cesauth-core",
@@ -350,7 +350,7 @@ dependencies = [
 
 [[package]]
 name = "cesauth-migrate-test"
-version = "0.80.0"
+version = "0.80.1"
 dependencies = [
  "cesauth-core",
  "rusqlite",
@@ -758,9 +758,9 @@ dependencies = [
 
 [[package]]
 name = "either"
-version = "1.15.0"
+version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
+checksum = "91622ff5e7162018101f2fea40d6ebf4a78bbe5a49736a2020649edf9693679e"
 
 [[package]]
 name = "either_of"
@@ -1626,9 +1626,9 @@ checksum = "60993920e071b0c9b66f14e2b32740a4e27ffc82854dcd72035887f336a09a28"
 
 [[package]]
 name = "num-conv"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6673768db2d862beb9b39a78fdcb1a69439615d5794a1be50caa9bc92c81967"
+checksum = "521739c6d2bac4aa25192232afe6841231376b2b26d4d9fae5ecf8ca5772e441"
 
 [[package]]
 name = "num-traits"
@@ -1720,18 +1720,18 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "pin-project"
-version = "1.1.12"
+version = "1.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbf0d9e68100b3a7989b4901972f265cd542e560a3a8a724e1e20322f4d06ce9"
+checksum = "2466b2336ed02bcdca6b294417127b90ec92038d1d5c4fbeac971a922e0e0924"
 dependencies = [
  "pin-project-internal",
 ]
 
 [[package]]
 name = "pin-project-internal"
-version = "1.1.12"
+version = "1.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a990e22f43e84855daf260dded30524ef4a9021cc7541c26540500a50b624389"
+checksum = "c96395f0a926bc13b1c17622aaddda1ecb55d49c8f1bf9777e4d877800a43f8b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3064,9 +3064,9 @@ dependencies = [
 
 [[package]]
 name = "worker"
-version = "0.8.1"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4afd7ae4f7fcc11e0e5e64b964890b3dda90f1290b0612f7cd821b381cc18826"
+checksum = "2d3c60a70414db58e1890f3675d02692adace736657cb66994f220ae3780c90d"
 dependencies = [
  "async-trait",
  "bytes",
@@ -3082,6 +3082,7 @@ dependencies = [
  "serde-wasm-bindgen",
  "serde_json",
  "serde_urlencoded",
+ "strum",
  "tokio",
  "url",
  "wasm-bindgen",
@@ -3094,9 +3095,9 @@ dependencies = [
 
 [[package]]
 name = "worker-macros"
-version = "0.8.1"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6371f41ac538c9f6dbe4d40cf7db58ed451eb0529a66f3e29ab8726217fc8a05"
+checksum = "60bcb459a67977fcb79698a3123ae58a928b1b24cc3035eaec033dbdfc139438"
 dependencies = [
  "async-trait",
  "proc-macro2",
@@ -3111,9 +3112,9 @@ dependencies = [
 
 [[package]]
 name = "worker-sys"
-version = "0.8.1"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c8de95c532944cee89d63fa8d7945f3db6260ca75ee3da42f7acfeebf538e4c"
+checksum = "c0e59a8504685d87649b8fda877d95fcc48f8c8177dbd77a4dc8e67f8fc80240"
 dependencies = [
  "cfg-if",
  "js-sys",
@@ -3184,9 +3185,9 @@ dependencies = [
 
 [[package]]
 name = "zerofrom"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69faa1f2a1ea75661980b013019ed6687ed0e83d069bc1114e2cc74c6c04c4df"
+checksum = "0ec05a11813ea801ff6d75110ad09cd0824ddba17dfe17128ea0d5f68e6c5272"
 dependencies = [
  "zerofrom-derive",
 ]
