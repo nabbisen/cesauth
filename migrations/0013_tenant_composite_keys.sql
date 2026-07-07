@@ -55,6 +55,12 @@ CREATE TABLE groups (
     parent_group_id    TEXT,
     created_at         INTEGER NOT NULL,
     updated_at         INTEGER NOT NULL,
+    -- Required so the self-referential FK below can resolve (tenant_id, id)
+    -- as a unique target at CREATE TABLE time.  SQLite validates composite
+    -- FK parent columns against PRIMARY KEY / UNIQUE constraints in the
+    -- schema, and for a self-referential FK the constraint must be present
+    -- in the same CREATE TABLE statement.
+    UNIQUE (tenant_id, id),
     CHECK (
         (parent_kind = 'tenant'       AND organization_id IS NULL) OR
         (parent_kind = 'organization' AND organization_id IS NOT NULL)

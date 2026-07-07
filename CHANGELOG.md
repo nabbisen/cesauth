@@ -26,6 +26,127 @@ split by minor-version range:
 
 ---
 
+## [0.78.8] - 2026-05-20
+
+Migration fix. `0013_tenant_composite_keys.sql` failed with
+`SQLITE_ERROR: foreign key mismatch - "groups" referencing "groups"`
+when applied locally via `wrangler d1 migrations apply cesauth --local`.
+
+### Root cause
+
+The migration rebuilds the `groups` table and declares a
+self-referential composite FK:
+
+```sql
+FOREIGN KEY (tenant_id, parent_group_id)
+    REFERENCES groups(tenant_id, id)
+    ON DELETE SET NULL
+```
+
+For SQLite to accept a composite FK, the referenced columns must be
+covered by a `PRIMARY KEY` or `UNIQUE` constraint **in the schema at
+`CREATE TABLE` time**. The `UNIQUE INDEX idx_groups_tenant_id_id ON
+groups(tenant_id, id)` was created at the *end* of the migration —
+after the `CREATE TABLE`. SQLite raises "foreign key mismatch" when
+it cannot find a matching uniqueness constraint on the parent side of
+the FK at table-creation time. This is a schema validation error, not
+a data enforcement error, and occurs even with `PRAGMA foreign_keys =
+OFF`.
+
+### Fix
+
+Added an inline `UNIQUE (tenant_id, id)` constraint to the `CREATE
+TABLE groups` body. This gives SQLite a uniqueness declaration to
+resolve the self-referential FK against during table creation. The
+subsequent `CREATE UNIQUE INDEX IF NOT EXISTS idx_groups_tenant_id_id`
+at the end of the migration is retained as an explicit named index
+(harmless given `IF NOT EXISTS`).
+
+### Tests
+
+31 / 31 migration chain tests pass. The fix was verified through
+`cesauth-migrate-test`, which applies every migration to a fresh
+in-memory SQLite database and runs FK integrity checks.
+
+---
+
+## [0.78.7] - 2026-05-20
+
+Fixes local development login flow. Adds `.gitignore`.
+
+### Problem
+
+`DevConsoleMailer` (activated by `WRANGLER_LOCAL=1`) deliberately
+withheld the OTP code from its console log, printing only the
+`handle` and `recipient`. The intention was that developers would
+retrieve the code from local D1 storage, but:
+
+1. The code is stored in an **AuthChallenge Durable Object**, not in
+   D1, so `wrangler d1 execute ... --local` cannot reach it.
+2. The suggested `scripts/dev-otp.sh` script was never written.
+3. The OTP alphabet is 31 chars × 8 chars = 31⁸ ≈ 852 billion
+   combinations — not brute-forceable in reasonable time.
+
+Result: with a stock checkout and `WRANGLER_LOCAL=1`, developers
+had no way to complete the magic-link login flow locally.
+
+### Fix
+
+`DevConsoleMailer` now logs the OTP code to the terminal:
+
+```
+[magic_link dev] recipient=you@example.com  handle=abc123  code=ABCD2345  reason=initial_auth
+```
+
+**Security rationale for logging the code here:**
+
+- `DevConsoleMailer` is constructed only when
+  `env.var("WRANGLER_LOCAL") == "1"` — enforced by the `from_env`
+  factory. Production `wrangler.toml` has `WRANGLER_LOCAL = "0"`.
+- The local-only override belongs in `.dev.vars` (now in
+  `.gitignore`), which is never committed.
+- Terminal output of a local dev process has no retention path, no
+  forwarding, and no log aggregation.
+- This is no different from any other development tool that prints a
+  temporary credential (database seed passwords, self-signed cert
+  passphrases, test API keys) to the console.
+- The previous alternative (`scripts/dev-otp.sh` brute-forcing the
+  hash) would have been computationally impractical and offered no
+  security advantage — the code is usable only once, rate-limited,
+  and expires.
+
+### Complete local login procedure
+
+1. Create `.dev.vars` in the repo root (git-ignored):
+   ```toml
+   WRANGLER_LOCAL = "1"
+   ```
+2. Run `wrangler dev`. Apply migrations if first run:
+   ```sh
+   wrangler d1 migrations apply cesauth --local
+   ```
+3. Open `http://localhost:8787/magic-link/request`.
+4. Enter any email address and submit the form.
+5. The wrangler terminal prints the log line above.
+6. Copy the `code=` value and enter it on the verification page.
+7. You are now logged in.
+
+### Also: `.gitignore` added
+
+The repository had no `.gitignore`. Added one covering:
+- `.dev.vars` (local dev secrets — must never be committed)
+- `.wrangler/` and `crates/worker/build/` (wrangler artifacts)
+- `/target/` (Rust build artifacts)
+- Common editor and OS artifacts
+
+### Tests
+
+1,290 / 1,290 pass. 0 warnings. `DevConsoleMailer` is wasm32-only
+and not covered by host-side tests, but the logic change is
+trivial — one `console_log!` argument added.
+
+---
+
 ## [0.78.6] - 2026-05-20
 
 Bug fix. `/magic-link/verify` returned a raw JSON `400 Bad Request`
