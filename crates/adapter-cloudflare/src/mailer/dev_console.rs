@@ -1,26 +1,39 @@
-//! Dev-only mailer: logs the challenge handle to the worker console.
-//!
-//! The OTP code is NEVER logged. Developers running `wrangler dev`
-//! can retrieve the challenge from local D1:
-//!
-//! ```sh
-//! wrangler d1 execute cesauth-db --local \
-//!   --command "SELECT code_hash FROM auth_challenges WHERE handle = '<handle>'"
-//! ```
-//!
-//! For local testing, the developer tool `scripts/dev-otp.sh` (if present)
-//! can derive the plaintext from the hash against the short known alphabet.
+//! Dev-only mailer: logs the magic-link OTP code and handle to the worker
+//! console so developers can complete the login flow without an email
+//! provider configured.
 //!
 //! **Guard**: this adapter MUST NOT be active outside `WRANGLER_LOCAL=1`.
-//! The `from_env` factory enforces this guard before constructing.
+//! The `from_env` factory in `crates/adapter-cloudflare/src/mailer.rs`
+//! enforces this guard before constructing. The production `wrangler.toml`
+//! sets `WRANGLER_LOCAL = "0"`; developers set it to `"1"` only in
+//! `.dev.vars` (which is git-ignored).
+//!
+//! ## Local login flow
+//!
+//! 1. Create `.dev.vars` in the repo root (git-ignored) with:
+//!    ```
+//!    WRANGLER_LOCAL = "1"
+//!    ```
+//! 2. Run `wrangler dev`.
+//! 3. Request a magic link at `/magic-link/request`.
+//! 4. Watch the **wrangler dev terminal** — you will see a log line like:
+//!    ```
+//!    [magic_link dev] recipient=you@example.com  handle=abc123  code=ABCD2345
+//!    ```
+//! 5. Enter `ABCD2345` into the code field on the verification page
+//!    (it is case-insensitive; the handler normalises before comparing).
+//!
+//! The code is logged **only to the local terminal**. It is never written
+//! to any persistent storage and never appears in production logs.
 
 use cesauth_core::magic_link::{DeliveryReceipt, MailerError, MagicLinkMailer, MagicLinkPayload};
 
 /// Mailer adapter for local `wrangler dev` sessions.
 ///
-/// Logs `handle` and `recipient` to the worker console. Never logs
-/// `payload.code`. Suitable only for development; the factory rejects
-/// this adapter outside `WRANGLER_LOCAL=1`.
+/// Logs the OTP code, handle, and recipient to the worker console.
+/// Safe because the `from_env` factory refuses to construct this
+/// outside `WRANGLER_LOCAL=1`, so the log line only ever appears in
+/// a local terminal with no retention or forwarding.
 pub struct DevConsoleMailer;
 
 impl MagicLinkMailer for DevConsoleMailer {
@@ -28,13 +41,16 @@ impl MagicLinkMailer for DevConsoleMailer {
         &self,
         payload: &MagicLinkPayload<'_>,
     ) -> Result<DeliveryReceipt, MailerError> {
-        // Deliberately do NOT log payload.code.
-        // The developer fetches the OTP from local D1 by handle.
+        // Log the OTP code so local devs can complete login without
+        // an email provider.  Intentional and safe: DevConsoleMailer
+        // is never constructed outside WRANGLER_LOCAL=1 (enforced by
+        // the from_env factory), so this only appears in a local
+        // wrangler dev terminal.
         worker::console_log!(
-            "magic_link dev-console: handle={} recipient={} reason={} \
-             (retrieve OTP from local D1 by handle)",
-            payload.handle,
+            "[magic_link dev] recipient={}  handle={}  code={}  reason={}",
             payload.recipient,
+            payload.handle,
+            payload.code,
             payload.reason.as_str(),
         );
         Ok(DeliveryReceipt {
