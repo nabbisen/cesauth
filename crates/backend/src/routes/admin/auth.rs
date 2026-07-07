@@ -25,14 +25,42 @@ use worker::{Env, Request, Response, Result};
 
 use crate::audit::{self, EventKind};
 
-/// Extract the bearer token from `Authorization: Bearer ...`.
+/// Name of the httpOnly cookie that carries the admin bearer token for
+/// browser sessions.  The Leptos CSR shell sets this cookie when the
+/// operator visits `GET /admin/login?token=<bearer>`.  Once set, the
+/// browser includes it automatically on every `/admin/*` request, so
+/// the Leptos components do not need to manage tokens explicitly.
+pub const ADMIN_TOKEN_COOKIE: &str = "__Host-cesauth_admin";
+
+/// Extract the bearer token from either:
+///   1. `Authorization: Bearer ...` header (API clients / curl)
+///   2. `__Host-cesauth_admin` httpOnly cookie (browser Leptos session)
 ///
-/// Returns `None` when the header is missing, empty, or the scheme is
-/// anything other than `Bearer`.
+/// The cookie path is restricted to `/admin/*`; the `__Host-` prefix
+/// requires `Secure`, `Path=/`, no `Domain`.  httpOnly prevents JS
+/// from reading it.
 fn bearer(req: &Request) -> Option<String> {
-    let header = req.headers().get("authorization").ok().flatten()?;
-    let stripped = header.strip_prefix("Bearer ")?;
-    if stripped.is_empty() { None } else { Some(stripped.to_owned()) }
+    // 1. Try the Authorization header first (API callers).
+    if let Ok(Some(header)) = req.headers().get("authorization") {
+        if let Some(stripped) = header.strip_prefix("Bearer ") {
+            if !stripped.is_empty() {
+                return Some(stripped.to_owned());
+            }
+        }
+    }
+    // 2. Fall back to the admin cookie (browser Leptos clients).
+    let cookie_header = req.headers().get("cookie").ok().flatten()?;
+    for part in cookie_header.split(';') {
+        let part = part.trim();
+        if let Some(val) = part.strip_prefix(ADMIN_TOKEN_COOKIE) {
+            if let Some(val) = val.strip_prefix('=') {
+                if !val.is_empty() {
+                    return Some(val.to_owned());
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Try to resolve the request's bearer to an [`AdminPrincipal`].

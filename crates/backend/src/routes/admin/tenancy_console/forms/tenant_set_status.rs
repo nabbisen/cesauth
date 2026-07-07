@@ -18,18 +18,11 @@ use crate::routes::admin::tenancy_console::forms::common::{
 };
 
 pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match require_manage(&req, &ctx.env).await? {
-        Ok(p) => p, Err(r) => return Ok(r),
-    };
-    let Some(tid) = ctx.param("tid") else { return Response::error("not found", 404); };
+    crate::routes::admin::operator_json_api::shell(&req, &ctx, "テナントステータス変更 — cesauth").await
+}
 
-    let tenants = CloudflareTenantRepository::new(&ctx.env);
-    let tenant = match tenants.get(tid).await {
-        Ok(Some(t)) => t,
-        Ok(None)    => return Response::error("not found", 404),
-        Err(_)      => return Response::error("storage error", 500),
-    };
-    render::html_response(form_page(&principal, &tenant, None, "", None))
+pub async fn form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    crate::routes::admin::operator_json_api::csrf_json()
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {

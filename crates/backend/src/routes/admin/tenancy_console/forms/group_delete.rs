@@ -14,15 +14,11 @@ use crate::routes::admin::tenancy_console::forms::common::{
 use cesauth_core::tenancy::types::GroupParent;
 
 pub async fn confirm<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match require_manage(&req, &ctx.env).await? {
-        Ok(p) => p, Err(r) => return Ok(r),
-    };
-    let Some(gid) = ctx.param("gid") else { return Response::error("not found", 404); };
-    let groups = CloudflareGroupRepository::new(&ctx.env);
-    let group = match groups.get(gid).await {
-        Ok(Some(g)) => g, _ => return Response::error("not found", 404),
-    };
-    render::html_response(confirm_page(&principal, &group))
+    crate::routes::admin::operator_json_api::shell(&req, &ctx, "グループ削除確認 — cesauth").await
+}
+
+pub async fn confirm_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    crate::routes::admin::operator_json_api::csrf_json()
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {

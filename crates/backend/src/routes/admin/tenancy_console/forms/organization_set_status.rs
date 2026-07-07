@@ -14,16 +14,11 @@ use crate::routes::admin::tenancy_console::forms::common::{
 };
 
 pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match require_manage(&req, &ctx.env).await? {
-        Ok(p) => p, Err(r) => return Ok(r),
-    };
-    let Some(oid) = ctx.param("oid") else { return Response::error("not found", 404); };
-    let orgs = CloudflareOrganizationRepository::new(&ctx.env);
-    let org = match orgs.get(oid).await {
-        Ok(Some(o)) => o,
-        _ => return Response::error("not found", 404),
-    };
-    render::html_response(form_page(&principal, &org, None, "", None))
+    crate::routes::admin::operator_json_api::shell(&req, &ctx, "組織ステータス変更 — cesauth").await
+}
+
+pub async fn form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    crate::routes::admin::operator_json_api::csrf_json()
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {

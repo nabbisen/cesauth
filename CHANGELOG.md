@@ -14,6 +14,71 @@ changes will always be called out here.
 
 ---
 
+## [0.80.0] - 2026-05-20
+
+### RFC 115 — Phase C complete: old string templates removed
+
+Completion release for the Leptos frontend migration (RFC 115).
+
+**Template functions deleted** (replaced by Leptos components):
+`login_page_for`, `login_page`, `security_center_page_for`,
+`security_center_page`, `security_center_page_with_flash`,
+`sessions_page_for`, `sessions_page`, `totp_disable_confirm_page_for`,
+`totp_disable_confirm_page`.
+
+**Retained** (still used by POST handler error re-renders):
+`magic_link_sent_page_for`, `error_page_for`, `totp_enroll_page_for`,
+`totp_recovery_codes_page_for`, `totp_verify_page_for`.
+
+**79 template tests removed** — tests that existed solely to pin the
+deleted functions. Total test count: 1,211 (was 1,290).
+
+**PoC infrastructure removed**: `GET /__leptos` route, `PocCounter`
+component, `poc_handler`.
+
+**`oidc/authorize.rs` fixed**: `GET /authorize` cold path now redirects
+to `302 /login` with the pending-AR cookie pre-set, instead of rendering
+the login template directly. Correct behaviour under Leptos CSR.
+
+**Orphaned backend code removed** from `me/security.rs`, `me/sessions.rs`,
+`routes/ui.rs` — old GET handler bodies left by the Phase C migration that
+were invisible to host-side `cargo check` (backend is wasm32-only).
+
+**`drift-scan.sh`** updated: RFC 108 check exempts `crates/frontend/src/pages/`
+and `app.rs` (Leptos CSR files). Follow-up RFC will decide on centralised
+route constants.
+
+---
+
+## [0.79.7] - 2026-05-20
+
+### RFC 115 — Phase C, Screen 5: System operator console migrated to Leptos
+
+35 GET routes under `/admin/console/*` and `/admin/tenancy/*` migrated.
+ADR-013 (JA-only operator surface) honoured throughout.
+
+**Admin cookie bearer** (`routes/admin/auth.rs`): `bearer()` now also reads
+from `__Host-cesauth_admin` httpOnly cookie, enabling browser-side Leptos
+components to authenticate without custom `Authorization` headers.
+
+**New `GET /admin/login?token=<bearer>`**: sets the admin cookie and
+redirects to `/admin/console`. Includes a Japanese-text form for token
+paste-in. Cookie: `HttpOnly`, `Secure`, `SameSite=Strict`, 12-hour TTL.
+
+**New `routes/admin/operator_json_api.rs`**: shared helpers parallel to
+the tenant-admin `json_api.rs`.
+
+**JSON endpoints added** for data pages: console overview, operations,
+tokens, tenancy overview, tenants list, tenant detail.
+
+**Frontend (`pages/operator/`)**: All components use Japanese text per
+ADR-013. Key components: `ConsoleOverview`, `ConsoleOperations`,
+`ConsoleAudit`, `ConsoleSafety`, `ConsoleTokens`, `TenancyOverview`,
+`TenancyTenants`, `TenancyTenantDetail`.
+
+---
+
+
 ## Older releases
 
 Entries for v0.49.0 and earlier are in

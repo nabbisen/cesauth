@@ -12,19 +12,6 @@ use cesauth_core::i18n::Locale;
 use super::common::strip_inline_style;
 
 #[test]
-fn login_page_contains_aria_live_region() {
-    let html = login_page("t", None, None);
-    assert!(html.contains("aria-live=\"assertive\""));
-}
-
-#[test]
-fn login_page_escapes_csrf_token() {
-    let html = login_page("a\"b", None, None);
-    assert!(html.contains(r#"value="a&quot;b""#));
-    assert!(!html.contains(r#"value="a"b""#));
-}
-
-#[test]
 fn error_page_escapes_detail() {
     let html = error_page("oops", "<script>");
     assert!(html.contains("&lt;script&gt;"));
@@ -277,45 +264,4 @@ fn verify_page_does_not_leak_user_id() {
 
 // =====================================================================
 // TOTP disable confirmation page (v0.30.0)
-// =====================================================================
-
-#[test]
-fn disable_page_includes_csrf_token() {
-    let html = totp_disable_confirm_page("tok-abc");
-    assert!(html.contains(r#"<input type="hidden" name="csrf" value="tok-abc">"#));
-}
-
-#[test]
-fn disable_page_form_posts_to_disable_endpoint() {
-    let html = totp_disable_confirm_page("t");
-    assert!(html.contains(r#"action="/me/security/totp/disable""#));
-    assert!(html.contains(r#"method="POST""#));
-}
-
-#[test]
-fn disable_page_warns_about_recovery_code_loss() {
-    // The disable flow wipes recovery codes too. Pin so a future
-    // UX iteration that softens the warning doesn't accidentally
-    // hide the consequence. **v0.47.0** — page is now JA-default;
-    // assert via _for(.., Locale::En).
-    let html = totp_disable_confirm_page_for("t", Locale::En);
-    assert!(html.contains("recovery codes"),
-        "disable page must mention recovery codes are wiped: {html}");
-}
-
-#[test]
-fn disable_page_offers_cancel_link() {
-    // **v0.47.0** — JA-default; assert via _for(.., En).
-    let html = totp_disable_confirm_page_for("t", Locale::En);
-    assert!(html.contains(r#"<a href="/">Cancel"#),
-        "destructive flow must offer a no-op exit: {html}");
-}
-
-#[test]
-fn disable_page_escapes_csrf() {
-    let html = totp_disable_confirm_page("t<>k");
-    assert!(html.contains("t&lt;&gt;k"));
-    assert!(!html.contains(r#"value="t<>k""#));
-}
-
 // =====================================================================

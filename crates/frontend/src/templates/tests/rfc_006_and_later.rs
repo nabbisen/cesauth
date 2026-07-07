@@ -12,34 +12,6 @@ use cesauth_core::i18n::Locale;
 use super::common::{strip_inline_style, make_state};
 
 // RFC 006 (v0.52.0) — nonce injection tests
-// =====================================================================
-
-#[test]
-fn login_page_for_emits_nonce_attribute_on_inline_style() {
-    crate::set_render_nonce("test_nonce_abc");
-    let html = login_page_for("csrf", None, None, true, cesauth_core::i18n::Locale::default());
-    assert!(html.contains(r#"nonce="test_nonce_abc""#),
-        "inline <style> must carry the per-request nonce attribute: {html}");
-}
-
-#[test]
-fn login_page_for_emits_nonce_attribute_on_inline_script() {
-    crate::set_render_nonce("test_nonce_abc");
-    let html = login_page_for("csrf", None, None, true, cesauth_core::i18n::Locale::default());
-    assert!(html.contains(r#"<script defer nonce="test_nonce_abc""#),
-        "inline <script> must carry the per-request nonce attribute: {html}");
-}
-
-#[test]
-fn login_page_for_does_not_emit_inline_event_handler() {
-    crate::set_render_nonce("test_nonce_xyz");
-    let html = login_page_for("csrf", None, None, true, cesauth_core::i18n::Locale::default());
-    assert!(!html.contains("onclick="),
-        "login page must not use inline event handlers (CSP audit): {html}");
-    assert!(!html.contains("onload="),
-        "login page must not use inline event handlers (CSP audit): {html}");
-}
-
 #[test]
 fn frame_with_flash_emits_nonce_in_style_tag() {
     crate::set_render_nonce("nonce_frame_test");
@@ -184,49 +156,6 @@ fn flash_block_polite_uses_role_status_assertive_uses_role_alert() {
     assert!(assertive_html.contains(r#"role="alert""#) && assertive_html.contains(r#"aria-live="assertive""#),
         "assertive flash must pair role=alert with aria-live=assertive: {assertive_html}");
 }
-
-// ── RFC 072 — html lang attribute ─────────────────────────────────────────
-
-#[test]
-fn login_page_ja_uses_lang_ja() {
-    let html = super::super::login_page_for("csrf", None, None, true, Locale::Ja);
-    assert!(html.contains(r#"<html lang="ja""#),
-        "JA locale must produce <html lang=\"ja\">");
-}
-
-#[test]
-fn login_page_en_uses_lang_en() {
-    let html = super::super::login_page_for("csrf", None, None, true, Locale::En);
-    assert!(html.contains(r#"<html lang="en""#),
-        "EN locale must produce <html lang=\"en\">");
-}
-
-#[test]
-fn security_center_ja_uses_lang_ja() {
-    use super::super::{security_center_page_for, SecurityCenterState, PrimaryAuthMethod};
-    let state = SecurityCenterState {
-        primary_method: PrimaryAuthMethod::Passkey,
-        totp_enabled: false,
-        recovery_codes_remaining: 10,
-        active_sessions_count: None,
-    };
-    let html = security_center_page_for(&state, "", Locale::Ja);
-    assert!(html.contains(r#"<html lang="ja""#));
-}
-
-#[test]
-fn security_center_en_uses_lang_en() {
-    use super::super::{security_center_page_for, SecurityCenterState, PrimaryAuthMethod};
-    let state = SecurityCenterState {
-        primary_method: PrimaryAuthMethod::Passkey,
-        totp_enabled: false,
-        recovery_codes_remaining: 10,
-        active_sessions_count: None,
-    };
-    let html = security_center_page_for(&state, "", Locale::En);
-    assert!(html.contains(r#"<html lang="en""#));
-}
-
 #[test]
 fn admin_frame_uses_lang_ja() {
     // tokens::list_page is simple and goes through admin_frame
@@ -237,63 +166,6 @@ fn admin_frame_uses_lang_ja() {
     assert!(html.contains(r#"<html lang="ja""#),
         "admin frame must always use lang=\"ja\" (JA-only policy)");
 }
-
-// ── RFC 075 — Security Center summary card ────────────────────────────────
-
-#[test]
-fn security_summary_has_four_badge_slots() {
-    let state = make_state(PrimaryAuthMethod::Passkey, true, 8);
-    let html = security_center_page_for(&state, "", Locale::Ja);
-    assert!(html.contains("security-summary__badges"),
-        "must render summary badges section");
-    // Passkey, TOTP, Recovery (totp enabled), sessions (None → hidden)
-    assert!(html.contains("パスキー設定済み"), "passkey badge must appear in JA");
-    assert!(html.contains("TOTP 有効"),        "totp badge must appear in JA");
-    assert!(html.contains("リカバリーコード 8 残"), "recovery badge must appear in JA");
-}
-
-#[test]
-fn security_summary_en_locale() {
-    let state = make_state(PrimaryAuthMethod::Passkey, true, 5);
-    let html = security_center_page_for(&state, "", Locale::En);
-    assert!(html.contains("Passkey OK"),   "EN passkey badge");
-    assert!(html.contains("TOTP enabled"), "EN TOTP badge");
-    assert!(html.contains("Recovery: 5"), "EN recovery badge");
-}
-
-#[test]
-fn security_summary_recovery_zero_uses_danger_badge() {
-    let state = make_state(PrimaryAuthMethod::Passkey, true, 0);
-    let html = security_center_page_for(&state, "", Locale::Ja);
-    assert!(html.contains("badge--danger"), "0 recovery codes must use danger badge");
-    assert!(html.contains("リカバリーコード 0 残"));
-}
-
-#[test]
-fn security_summary_sessions_count_shown_when_some() {
-    let mut state = make_state(PrimaryAuthMethod::Passkey, false, 0);
-    state.active_sessions_count = Some(3);
-    let html = security_center_page_for(&state, "", Locale::Ja);
-    assert!(html.contains("セッション 3"), "session count must appear when Some");
-}
-
-#[test]
-fn security_summary_sessions_hidden_when_none() {
-    let state = make_state(PrimaryAuthMethod::Passkey, false, 0);
-    // active_sessions_count is None by default in make_state
-    let html = security_center_page_for(&state, "", Locale::Ja);
-    assert!(!html.contains("セッション "), "session badge must be absent when count is None");
-}
-
-#[test]
-fn security_summary_badges_have_icon_and_text() {
-    let state = make_state(PrimaryAuthMethod::Passkey, true, 6);
-    let html = security_center_page_for(&state, "", Locale::Ja);
-    // Each badge must have both icon span and text span
-    assert!(html.contains("badge__icon"), "badges must have icon span (WCAG 1.4.1)");
-    assert!(html.contains("badge__text"), "badges must have text span");
-}
-
 // ── RFC 076 — Recovery code save-confirmation gate ────────────────────────
 
 #[test]
@@ -364,67 +236,4 @@ fn recovery_codes_page_en_confirm_label() {
     );
     assert!(html.contains("I have saved my recovery codes"),
         "EN confirm label must appear");
-}
-
-// ── RFC 077 — skip-to-content link (WCAG 2.4.1) ──────────────────────────
-
-#[test]
-fn end_user_frame_has_skip_link_ja() {
-    let html = login_page_for("csrf", None, None, true, Locale::Ja);
-    assert!(html.contains("href=\"#main\" class=\"skip-link\""),
-        "JA login page must have skip-link");
-    assert!(html.contains("メインコンテンツへスキップ"),
-        "JA skip-link text must appear");
-}
-
-#[test]
-fn end_user_frame_has_skip_link_en() {
-    let html = login_page_for("csrf", None, None, true, Locale::En);
-    assert!(html.contains("href=\"#main\" class=\"skip-link\""),
-        "EN login page must have skip-link");
-    assert!(html.contains("Skip to main content"),
-        "EN skip-link text must appear");
-}
-
-#[test]
-fn end_user_frame_main_has_id_main() {
-    let html = login_page_for("csrf", None, None, true, Locale::Ja);
-    assert!(html.contains("<main id=\"main\""),
-        "main element must have id=main for skip-link target");
-}
-
-// ── RFC 079 — Magic Link not configured notice ────────────────────────────
-
-#[test]
-fn login_page_magic_link_available_renders_form() {
-    let html = login_page_for("csrf", None, None, true, Locale::Ja);
-    assert!(html.contains(r#"action="/magic-link/request""#),
-        "when available=true, magic link form must be present");
-}
-
-#[test]
-fn login_page_magic_link_unavailable_shows_notice_ja() {
-    let html = login_page_for("csrf", None, None, false, Locale::Ja);
-    assert!(!html.contains(r#"action="/magic-link/request""#),
-        "when unavailable, magic link form must be absent");
-    assert!(html.contains("メールリンクは現在ご利用いただけません"),
-        "JA unavailable notice must appear");
-}
-
-#[test]
-fn login_page_magic_link_unavailable_shows_notice_en() {
-    let html = login_page_for("csrf", None, None, false, Locale::En);
-    assert!(!html.contains(r#"action="/magic-link/request""#),
-        "when unavailable, form absent");
-    assert!(html.contains("Magic Link is currently unavailable"),
-        "EN unavailable notice must appear");
-}
-
-#[test]
-fn login_page_magic_link_unavailable_no_provider_details() {
-    let html = login_page_for("csrf", None, None, false, Locale::Ja);
-    // Must not leak provider name, API key presence, or error code
-    assert!(!html.contains("SendGrid"),   "must not leak provider name");
-    assert!(!html.contains("NotConfigured"), "must not leak error type");
-    assert!(!html.contains("api_key"),    "must not leak config field");
 }

@@ -21,8 +21,10 @@
 //! this module's top level so `lib.rs`'s router wiring didn't have to
 //! change when the refactor landed.
 
+pub mod admin_login;
 pub mod auth;
 pub mod console;
+pub mod operator_json_api;
 pub mod legacy;
 pub mod tenancy_console;
 pub mod tenant_admin;

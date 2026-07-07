@@ -20,58 +20,15 @@ use crate::routes::admin::auth;
 use crate::routes::admin::console::render;
 
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
-        Ok(p)  => p,
-        Err(r) => return Ok(r),
+    crate::routes::admin::operator_json_api::shell(&req, &ctx, "安全性 — cesauth").await
+}
+
+pub async fn page_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let _admin = match crate::routes::admin::operator_json_api::resolve_admin(&req, &ctx).await? {
+        Ok(a)  => a,
+        Err(_) => return Response::error("Unauthorized", 401),
     };
-    if let Err(r) = auth::ensure_role_allows(&principal, AdminAction::ViewConsole) {
-        return Ok(r);
-    }
-
-    let now = OffsetDateTime::now_utc().unix_timestamp();
-    let safety = CloudflareBucketSafetyRepository::new(&ctx.env);
-    let thresh = CloudflareThresholdRepository::new(&ctx.env);
-
-    let report = build_safety_report(&safety, &thresh, now)
-        .await
-        .map_err(|e| worker::Error::RustError(format!("safety: {e}")))?;
-
-    // RFC 110b/c/d/e (v0.74.0): assemble the Safety controls panel.
-    //
-    // - 110b: TURNSTILE_SECRET_KEY presence
-    // - 110c: refresh-token reuse count in last 24h (via core service)
-    // - 110d: TOTP_SECRET_KEY presence
-    // - 110e: RUNBOOK_URL (optional config)
-    //
-    // Env-var lookups are wasm32-only and not unit-testable in the
-    // current sandbox; the service-side count_refresh_reuse_since is
-    // covered by 8 host-buildable tests.
-    let turnstile_configured = ctx.env.var("TURNSTILE_SECRET_KEY")
-        .map(|v| !v.to_string().is_empty()).unwrap_or(false);
-    let totp_key_configured  = ctx.env.var("TOTP_SECRET_KEY")
-        .map(|v| !v.to_string().is_empty()).unwrap_or(false);
-    let runbook_url = ctx.env.var("RUNBOOK_URL").ok()
-        .map(|v| v.to_string())
-        .filter(|s| !s.is_empty());
-    let audit_repo = CloudflareAuditEventRepository::new(&ctx.env);
-    let controls = compute_safety_controls(
-        &audit_repo, now,
-        turnstile_configured, totp_key_configured, runbook_url,
-    ).await.map_err(|e| worker::Error::RustError(format!("safety_controls: {e}")))?;
-
-    audit::write_owned(
-        &ctx.env, EventKind::AdminConsoleViewed,
-        Some(principal.id.clone()), None, Some("safety".into()),
-    ).await.ok();
-
-    if render::prefers_json(&req) {
-        render::json_response(&serde_json::json!({
-            "data_safety": report,
-            "controls":    controls,
-        }))
-    } else {
-        render::html_response(ui::admin::safety_page(&principal, &report, Some(&controls)))
-    }
+    crate::routes::admin::operator_json_api::csrf_json()
 }
 
 /// `POST /admin/console/safety/:bucket/verify`

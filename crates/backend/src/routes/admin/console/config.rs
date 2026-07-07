@@ -43,41 +43,15 @@ use crate::routes::admin::console::render;
 // -------------------------------------------------------------------------
 
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
-        Ok(p)  => p,
-        Err(r) => return Ok(r),
+    crate::routes::admin::operator_json_api::shell(&req, &ctx, "設定 — cesauth").await
+}
+
+pub async fn page_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let _admin = match crate::routes::admin::operator_json_api::resolve_admin(&req, &ctx).await? {
+        Ok(a)  => a,
+        Err(_) => return Response::error("Unauthorized", 401),
     };
-    if let Err(r) = auth::ensure_role_allows(&principal, AdminAction::ViewConsole) {
-        return Ok(r);
-    }
-
-    let now = OffsetDateTime::now_utc().unix_timestamp();
-    let safety = CloudflareBucketSafetyRepository::new(&ctx.env);
-    let thresh = CloudflareThresholdRepository::new(&ctx.env);
-
-    // Gather in parallel-ish. `build_safety_report` does bucket+thresh
-    // already; we call it then fetch the threshold list explicitly for
-    // the review section.
-    let report = build_safety_report(&safety, &thresh, now)
-        .await
-        .map_err(|e| worker::Error::RustError(format!("config: {e}")))?;
-    let thresholds = cesauth_core::admin::ports::ThresholdRepository::list(&thresh)
-        .await
-        .unwrap_or_default();
-
-    audit::write_owned(
-        &ctx.env, EventKind::AdminConsoleViewed,
-        Some(principal.id.clone()), None, Some("config".into()),
-    ).await.ok();
-
-    if render::prefers_json(&req) {
-        render::json_response(&serde_json::json!({
-            "report":     report,
-            "thresholds": thresholds,
-        }))
-    } else {
-        render::html_response(ui::admin::config_page(&principal, &report, &thresholds))
-    }
+    crate::routes::admin::operator_json_api::csrf_json()
 }
 
 // -------------------------------------------------------------------------
@@ -214,31 +188,15 @@ pub async fn apply<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
 // -------------------------------------------------------------------------
 
 pub async fn edit_form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
-        Ok(p)  => p,
-        Err(r) => return Ok(r),
+    crate::routes::admin::operator_json_api::shell(&req, &ctx, "設定編集 — cesauth").await
+}
+
+pub async fn edit_form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let _admin = match crate::routes::admin::operator_json_api::resolve_admin(&req, &ctx).await? {
+        Ok(a)  => a,
+        Err(_) => return Response::error("Unauthorized", 401),
     };
-    if let Err(r) = auth::ensure_role_allows(&principal, AdminAction::EditBucketSafety) {
-        return Ok(r);
-    }
-
-    let Some(bucket) = ctx.param("bucket") else {
-        return Response::error("missing bucket", 400);
-    };
-
-    let safety = CloudflareBucketSafetyRepository::new(&ctx.env);
-    let state = match cesauth_core::admin::ports::BucketSafetyRepository::get(&safety, bucket).await {
-        Ok(Some(s))  => s,
-        Ok(None)     => return Response::error("unknown bucket", 404),
-        Err(e)       => return Response::error(format!("read failed: {e}"), 500),
-    };
-
-    audit::write_owned(
-        &ctx.env, EventKind::AdminConsoleViewed,
-        Some(principal.id.clone()), None, Some(format!("config_edit:{bucket}")),
-    ).await.ok();
-
-    render::html_response(ui::admin::config_edit_form(&principal, &state, None))
+    crate::routes::admin::operator_json_api::csrf_json()
 }
 
 // -------------------------------------------------------------------------

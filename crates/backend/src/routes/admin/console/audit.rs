@@ -37,67 +37,13 @@ use crate::routes::admin::auth;
 use crate::routes::admin::console::render;
 
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
-        Ok(p)  => p,
-        Err(r) => return Ok(r),
+    crate::routes::admin::operator_json_api::shell(&req, &ctx, "監査ログ — cesauth").await
+}
+
+pub async fn page_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let _admin = match crate::routes::admin::operator_json_api::resolve_admin(&req, &ctx).await? {
+        Ok(a)  => a,
+        Err(_) => return Response::error("Unauthorized", 401),
     };
-    if let Err(r) = auth::ensure_role_allows(&principal, AdminAction::ViewConsole) {
-        return Ok(r);
-    }
-
-    // Parse query params into an AuditQuery.
-    let url = req.url()?;
-    let mut q = AuditQuery::default();
-    for (k, v) in url.query_pairs() {
-        match k.as_ref() {
-            // Legacy params (v0.31.x compat) -------------------------------
-            "prefix"   => q.prefix = Some(v.into_owned()),
-            "limit"    => q.limit  = v.parse::<u32>().ok(),
-            "kind"     => q.kind_contains    = Some(v.into_owned()),
-            "subject"  => q.subject_contains = Some(v.into_owned()),
-            // RFC 109 (v0.71.0) params -------------------------------------
-            // `actor` is the form-field name; aliases to `subject_contains`.
-            "actor"    => q.subject_contains = Some(v.into_owned()),
-            // `event` is the exact-match dropdown selection.
-            "event"    => q.event_exact      = Some(v.into_owned()),
-            // RFC 3339 → Unix seconds; invalid values dropped silently
-            // so the rest of the page still renders.
-            "from"     => q.since = audit_pagination::parse_rfc3339_to_unix(&v),
-            "to"       => q.until = audit_pagination::parse_rfc3339_to_unix(&v),
-            // Opaque cursor: passed verbatim to the adapter.
-            "cursor"   => q.cursor = Some(v.into_owned()),
-            _          => {}
-        }
-    }
-
-    let source = CloudflareAuditQuerySource::new(&ctx.env);
-    let entries = search_audit(&source, &q)
-        .await
-        .map_err(|e| worker::Error::RustError(format!("audit search: {e}")))?;
-
-    audit::write_owned(
-        &ctx.env, EventKind::AdminConsoleViewed,
-        Some(principal.id.clone()), None, Some("audit".into()),
-    ).await.ok();
-
-    if render::prefers_json(&req) {
-        render::json_response(&serde_json::json!({
-            "query":   {
-                "prefix":  q.prefix,
-                "limit":   q.limit,
-                "kind":    q.kind_contains,
-                "subject": q.subject_contains,
-                // RFC 109 fields surfaced in the JSON projection too,
-                // so a CLI consumer that calls Accept: application/json
-                // sees the same filter shape as the HTML view.
-                "event":   q.event_exact,
-                "since":   q.since,
-                "until":   q.until,
-                "cursor":  q.cursor,
-            },
-            "results": entries,
-        }))
-    } else {
-        render::html_response(ui::admin::audit_page(&principal, &q, &entries))
-    }
+    crate::routes::admin::operator_json_api::csrf_json()
 }

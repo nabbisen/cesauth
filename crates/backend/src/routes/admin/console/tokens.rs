@@ -72,30 +72,15 @@ async fn parse_form(req: &mut Request) -> Result<HashMap<String, String>> {
 // -------------------------------------------------------------------------
 
 pub async fn list<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
-        Ok(p)  => p,
-        Err(r) => return Ok(r),
+    crate::routes::admin::operator_json_api::shell(&req, &ctx, "管理トークン — cesauth").await
+}
+
+pub async fn list_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let _admin = match crate::routes::admin::operator_json_api::resolve_admin(&req, &ctx).await? {
+        Ok(a)  => a,
+        Err(_) => return Response::error("Unauthorized", 401),
     };
-    if let Err(r) = auth::ensure_role_allows(&principal, AdminAction::ManageAdminTokens) {
-        return Ok(r);
-    }
-
-    let repo = CloudflareAdminTokenRepository::new(&ctx.env);
-    let tokens = repo.list().await
-        .map_err(|e| worker::Error::RustError(format!("token list: {e}")))?;
-
-    audit::write_owned(
-        &ctx.env, EventKind::AdminConsoleViewed,
-        Some(principal.id.clone()), None, Some("tokens".into()),
-    ).await.ok();
-
-    if render::prefers_json(&req) {
-        render::json_response(&serde_json::json!({
-            "tokens": tokens,
-        }))
-    } else {
-        render::html_response(ui::admin::tokens_list_page(&principal, &tokens))
-    }
+    crate::routes::admin::operator_json_api::csrf_json()
 }
 
 // -------------------------------------------------------------------------
@@ -103,14 +88,15 @@ pub async fn list<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
 // -------------------------------------------------------------------------
 
 pub async fn new_form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
-        Ok(p)  => p,
-        Err(r) => return Ok(r),
+    crate::routes::admin::operator_json_api::shell(&req, &ctx, "トークン発行 — cesauth").await
+}
+
+pub async fn new_form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let _admin = match crate::routes::admin::operator_json_api::resolve_admin(&req, &ctx).await? {
+        Ok(a)  => a,
+        Err(_) => return Response::error("Unauthorized", 401),
     };
-    if let Err(r) = auth::ensure_role_allows(&principal, AdminAction::ManageAdminTokens) {
-        return Ok(r);
-    }
-    render::html_response(ui::admin::token_new_form(&principal, None))
+    crate::routes::admin::operator_json_api::csrf_json()
 }
 
 // -------------------------------------------------------------------------

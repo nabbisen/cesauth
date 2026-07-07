@@ -20,29 +20,11 @@ use crate::routes::admin::tenancy_console::forms::common::{
 };
 
 pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match require_manage(&req, &ctx.env).await? {
-        Ok(p) => p, Err(r) => return Ok(r),
-    };
-    let Some(tid) = ctx.param("tid") else { return Response::error("not found", 404); };
+    crate::routes::admin::operator_json_api::shell(&req, &ctx, "プラン変更 — cesauth").await
+}
 
-    let tenants = CloudflareTenantRepository::new(&ctx.env);
-    let tenant = match tenants.get(tid).await {
-        Ok(Some(t)) => t, _ => return Response::error("not found", 404),
-    };
-    let subs = CloudflareSubscriptionRepository::new(&ctx.env);
-    let plans = CloudflarePlanRepository::new(&ctx.env);
-    let current = match subs.current_for_tenant(&tenant.id).await {
-        Ok(Some(s)) => s,
-        Ok(None)    => return Response::error("no subscription on file", 404),
-        Err(_)      => return Response::error("storage error", 500),
-    };
-    let current_plan = plans.get(&current.plan_id).await.ok().flatten();
-    let available    = plans.list_active().await.unwrap_or_default();
-    let selected_id  = current.plan_id.clone();
-    render::html_response(form_page(
-        &principal, &tenant.id, &tenant.slug, &current,
-        current_plan.as_ref(), &available, &selected_id, None,
-    ))
+pub async fn form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    crate::routes::admin::operator_json_api::csrf_json()
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {

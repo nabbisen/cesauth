@@ -13,6 +13,7 @@
 //!   v0.79.7 — system operator console
 //!   v0.80.0 — remove all old string templates
 pub mod login;
+pub mod operator;
 pub mod security_center;
 pub mod sessions;
 pub mod tenant_admin;

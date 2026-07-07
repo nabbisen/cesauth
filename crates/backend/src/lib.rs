@@ -247,7 +247,9 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .post_async("/admin/users",          |req, ctx| async move { routes::admin::create_user(req, ctx).await })
         .delete_async("/admin/sessions/:id", |req, ctx| async move { routes::admin::revoke_session(req, ctx).await })
         // --- Admin Console (v0.3.0) ----------------------------------
+        .get_async ("/admin/login",                          |req, ctx| async move { routes::admin::admin_login::get_handler(req, ctx).await })
         .get_async ("/admin/console",                          |req, ctx| async move { routes::admin::console::overview::page(req, ctx).await })
+        .get_async ("/admin/console.json",                      |req, ctx| async move { routes::admin::console::overview::page_json(req, ctx).await })
         .get_async ("/admin/console/cost",                     |req, ctx| async move { routes::admin::console::cost::page(req, ctx).await })
         .get_async ("/admin/console/safety",                   |req, ctx| async move { routes::admin::console::safety::page(req, ctx).await })
         .post_async("/admin/console/safety/:bucket/verify",    |req, ctx| async move { routes::admin::console::safety::verify(req, ctx).await })
@@ -269,18 +271,23 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .post_async("/admin/console/config/:bucket/edit",      |req, ctx| async move { routes::admin::console::config::edit_submit(req, ctx).await })
         // Admin-token CRUD (Super-only).
         .get_async ("/admin/console/tokens",                   |req, ctx| async move { routes::admin::console::tokens::list(req, ctx).await })
+        .get_async ("/admin/console/tokens.json",               |req, ctx| async move { routes::admin::console::tokens::list_json(req, ctx).await })
         .get_async ("/admin/console/tokens/new",               |req, ctx| async move { routes::admin::console::tokens::new_form(req, ctx).await })
         .post_async("/admin/console/tokens",                   |req, ctx| async move { routes::admin::console::tokens::create(req, ctx).await })
         // RFC 081: cron pass status surface
         .get_async ("/admin/console/operations",               |req, ctx| async move { routes::admin::console::operations_route::page(req, ctx).await })
+        .get_async ("/admin/console/operations.json",           |req, ctx| async move { routes::admin::console::operations_route::page_json(req, ctx).await })
         .post_async("/admin/console/tokens/:id/disable",       |req, ctx| async move { routes::admin::console::tokens::disable(req, ctx).await })
         // --- tenancy console (v0.8.0 read pages) ------------------------
         // Operator-facing inspection of the v0.4.x tenancy-service
         // state. Every read route is open to ViewTenancy (every
         // valid role); see `routes/admin/tenancy_console.rs`.
         .get_async("/admin/tenancy",                                            |req, ctx| async move { routes::admin::tenancy_console::overview::page(req, ctx).await })
+        .get_async("/admin/tenancy.json",                                            |req, ctx| async move { routes::admin::tenancy_console::overview::page_json(req, ctx).await })
         .get_async("/admin/tenancy/tenants",                                    |req, ctx| async move { routes::admin::tenancy_console::tenants::page(req, ctx).await })
+        .get_async("/admin/tenancy/tenants.json",                                    |req, ctx| async move { routes::admin::tenancy_console::tenants::page_json(req, ctx).await })
         .get_async("/admin/tenancy/tenants/:tid",                               |req, ctx| async move { routes::admin::tenancy_console::tenant_detail::page(req, ctx).await })
+        .get_async("/admin/tenancy/tenants/:tid.json",                               |req, ctx| async move { routes::admin::tenancy_console::tenant_detail::page_json(req, ctx).await })
         // RFC 068: Tenant suspend/restore (§16.8)
         .post_async("/admin/tenancy/tenants/:id/suspend",                       |req, ctx| async move { routes::admin::tenancy_console::tenant_detail::suspend(req, ctx).await })
         .post_async("/admin/tenancy/tenants/:id/restore",                       |req, ctx| async move { routes::admin::tenancy_console::tenant_detail::restore(req, ctx).await })
@@ -461,15 +468,6 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         // --- UI -------------------------------------------------------
         .get_async("/",         |req, ctx| async move { routes::ui::login(req, ctx).await })
         .get_async("/login",    |req, ctx| async move { routes::ui::login(req, ctx).await })
-        // --- Leptos CSR shell -----------------------------------------
-        // Phase B (RFC 115): proof-of-concept that the Trunk + Workers
-        // Static Assets pipeline is working.  Replace with per-screen
-        // Leptos routes in Phase C.  The route is not dev-gated;
-        // it will serve a 500 in production until the Static Assets
-        // binding is configured and `trunk build` has run.
-        .get_async("/__leptos", |req, ctx| async move {
-            routes::leptos_shell::poc_handler(req, ctx).await
-        })
         // --- Session management ---------------------------------------
         .post_async("/logout",  |req, ctx| async move { routes::session::logout(req, ctx).await })
         // --- Dev-only (guarded by WRANGLER_LOCAL=1) ------------------

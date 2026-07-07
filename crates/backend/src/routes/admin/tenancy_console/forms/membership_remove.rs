@@ -23,25 +23,11 @@ use crate::routes::admin::tenancy_console::forms::common::{
 // ----- Tenant membership -----
 
 pub async fn confirm_tenant<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match require_manage(&req, &ctx.env).await? {
-        Ok(p) => p, Err(r) => return Ok(r),
-    };
-    let Some(tid) = ctx.param("tid") else { return Response::error("not found", 404); };
-    let Some(uid) = ctx.param("uid") else { return Response::error("not found", 404); };
-    let tenants = CloudflareTenantRepository::new(&ctx.env);
-    let memberships = CloudflareMembershipRepository::new(&ctx.env);
-    let tenant = match tenants.get(tid).await {
-        Ok(Some(t)) => t, _ => return Response::error("not found", 404),
-    };
-    let role = memberships.list_tenant_members(tid).await.ok()
-        .and_then(|rows| rows.into_iter().find(|m| m.user_id.as_str() == uid))
-        .map(|m| match m.role {
-            cesauth_core::tenancy::types::TenantMembershipRole::Owner  => "owner",
-            cesauth_core::tenancy::types::TenantMembershipRole::Admin  => "admin",
-            cesauth_core::tenancy::types::TenantMembershipRole::Member => "member",
-        })
-        .unwrap_or("(unknown)");
-    render::html_response(ui::for_tenant(&principal, &tenant.id, &tenant.slug, uid, role))
+    crate::routes::admin::operator_json_api::shell(&req, &ctx, "メンバー削除確認 — cesauth").await
+}
+
+pub async fn confirm_tenant_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    crate::routes::admin::operator_json_api::csrf_json()
 }
 
 pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -84,24 +70,11 @@ pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<
 // ----- Organization membership -----
 
 pub async fn confirm_org<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match require_manage(&req, &ctx.env).await? {
-        Ok(p) => p, Err(r) => return Ok(r),
-    };
-    let Some(oid) = ctx.param("oid") else { return Response::error("not found", 404); };
-    let Some(uid) = ctx.param("uid") else { return Response::error("not found", 404); };
-    let orgs = CloudflareOrganizationRepository::new(&ctx.env);
-    let memberships = CloudflareMembershipRepository::new(&ctx.env);
-    let org = match orgs.get(oid).await {
-        Ok(Some(o)) => o, _ => return Response::error("not found", 404),
-    };
-    let role = memberships.list_organization_members(oid).await.ok()
-        .and_then(|rows| rows.into_iter().find(|m| m.user_id.as_str() == uid))
-        .map(|m| match m.role {
-            cesauth_core::tenancy::types::OrganizationRole::Admin  => "admin",
-            cesauth_core::tenancy::types::OrganizationRole::Member => "member",
-        })
-        .unwrap_or("(unknown)");
-    render::html_response(ui::for_organization(&principal, &org.id, &org.slug, uid, role))
+    crate::routes::admin::operator_json_api::shell(&req, &ctx, "メンバー削除確認 — cesauth").await
+}
+
+pub async fn confirm_org_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    crate::routes::admin::operator_json_api::csrf_json()
 }
 
 pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -143,16 +116,11 @@ pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Res
 // ----- Group membership -----
 
 pub async fn confirm_group<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match require_manage(&req, &ctx.env).await? {
-        Ok(p) => p, Err(r) => return Ok(r),
-    };
-    let Some(gid) = ctx.param("gid") else { return Response::error("not found", 404); };
-    let Some(uid) = ctx.param("uid") else { return Response::error("not found", 404); };
-    let groups = CloudflareGroupRepository::new(&ctx.env);
-    let group = match groups.get(gid).await {
-        Ok(Some(g)) => g, _ => return Response::error("not found", 404),
-    };
-    render::html_response(ui::for_group(&principal, &group.id, &group.slug, &group.tenant_id, uid))
+    crate::routes::admin::operator_json_api::shell(&req, &ctx, "メンバー削除確認 — cesauth").await
+}
+
+pub async fn confirm_group_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    crate::routes::admin::operator_json_api::csrf_json()
 }
 
 pub async fn submit_group<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {

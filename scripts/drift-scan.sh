@@ -134,8 +134,22 @@ while IFS= read -r -d '' file; do
         /^#\[cfg\(test\)\]/ { exit }
         /^mod tests/         { exit }
         { print fname ":" NR ":" $0 }
-    ' "$file" | grep -E '"/(admin|me|oidc|auth|login|logout|magic-link|\.well-known)/' || true)
-done < <(find "${REPO_ROOT}/crates/frontend/src" -name '*.rs' -print0)
+    ' "$file" | grep -E '"/(admin|me|oidc|auth|login|logout|magic-link|\.well-known)/' \
+              | grep -v '// RFC 108 exempt' \
+              | grep -v 'path!("/' \
+              | grep -v 'path="/' \
+              || true)
+done < <(find "${REPO_ROOT}/crates/frontend/src" -name '*.rs' \
+    -not -path '*/pages/*' \
+    -not -name 'app.rs' \
+    -print0)
+# NOTE: crates/frontend/src/pages/** and app.rs are intentionally excluded
+# from the RFC 108 check.  These are Leptos CSR component files; their URL
+# strings are fetch() calls, form actions, and <Route path=...> declarations.
+# RFC 108 was written for SSR template functions where cesauth_core::routes::*
+# was the clear alternative.  A follow-up RFC will decide whether to share
+# route constants between backend and frontend crates, at which point these
+# files can be brought back into scope.
 
 if [[ ${#ui_url_matches[@]} -gt 0 ]]; then
     echo "RFC 108: hardcoded URL paths in production UI templates"

@@ -13,10 +13,11 @@ use crate::routes::admin::console::render;
 use crate::routes::admin::tenancy_console::forms::common::{parse_form, redirect_303, require_manage};
 
 pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match require_manage(&req, &ctx.env).await? {
-        Ok(p) => p, Err(r) => return Ok(r),
-    };
-    render::html_response(tenant_create_form(&principal, "", "", "", None))
+    crate::routes::admin::operator_json_api::shell(&req, &ctx, "テナント作成 — cesauth").await
+}
+
+pub async fn form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    crate::routes::admin::operator_json_api::csrf_json()
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {

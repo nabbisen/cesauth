@@ -43,19 +43,6 @@ use crate::config::Config;
 const LEPTOS_JS:   &str = "cesauth_frontend.js";
 const LEPTOS_WASM: &str = "cesauth_frontend_bg.wasm";
 
-/// `GET /__leptos` — Phase B proof-of-concept shell.
-///
-/// Returns the HTML shell for the Leptos counter PoC.  This route is
-/// temporary; Phase C will replace it with per-screen routes (or a
-/// single catch-all for SPA-style navigation).
-pub async fn poc_handler<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    leptos_html_shell(
-        &req, &ctx.env,
-        "cesauth — Leptos PoC",
-        "en",
-    ).await
-}
-
 /// Render the HTML shell that bootstraps the Leptos CSR bundle.
 ///
 /// Used by `poc_handler` now; will be used by all Leptos-backed route

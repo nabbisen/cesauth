@@ -19,23 +19,11 @@ use crate::routes::admin::tenancy_console::forms::common::{
 };
 
 pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match require_manage(&req, &ctx.env).await? {
-        Ok(p) => p, Err(r) => return Ok(r),
-    };
-    let Some(tid) = ctx.param("tid") else { return Response::error("not found", 404); };
-    let tenants = CloudflareTenantRepository::new(&ctx.env);
-    let tenant = match tenants.get(tid).await {
-        Ok(Some(t)) => t, _ => return Response::error("not found", 404),
-    };
-    let subs = CloudflareSubscriptionRepository::new(&ctx.env);
-    let current = match subs.current_for_tenant(&tenant.id).await {
-        Ok(Some(s)) => s,
-        Ok(None)    => return Response::error("no subscription on file", 404),
-        Err(_)      => return Response::error("storage error", 500),
-    };
-    render::html_response(form_page(
-        &principal, &tenant.id, &tenant.slug, &current, None, None,
-    ))
+    crate::routes::admin::operator_json_api::shell(&req, &ctx, "サブスクリプション状態変更 — cesauth").await
+}
+
+pub async fn form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    crate::routes::admin::operator_json_api::csrf_json()
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {

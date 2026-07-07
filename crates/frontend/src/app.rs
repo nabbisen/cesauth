@@ -24,6 +24,14 @@ use leptos::prelude::*;
 use leptos_router::components::{Router, Routes, Route};
 
 use crate::pages::login::Login;
+use crate::pages::operator::{
+    console::{
+        ConsoleAlerts, ConsoleAudit, ConsoleAuditChain, ConsoleConfig,
+        ConsoleCost, ConsoleOperations, ConsoleOverview, ConsoleSafety,
+        ConsoleTokens,
+    },
+    tenancy::{TenancyOverview, TenancyTenantDetail, TenancyTenants},
+};
 use crate::pages::security_center::SecurityCenter;
 use crate::pages::sessions::Sessions;
 use crate::pages::tenant_admin::{
@@ -61,26 +69,22 @@ pub fn App() -> impl IntoView {
                 <Route path="/admin/t/:slug/invitations"             view=TenantInvitations />
                 <Route path="/admin/t/:slug/organizations/new"       view=NewOrganization />
                 <Route path="/admin/t/:slug/memberships/new"         view=AddTenantMember />
-                // ── Phase B PoC (remove in v0.80.0) ─────────────────
-                <Route path="/__leptos" view=PocCounter />
+                // ── System operator console ───────────────────────
+                <Route path="/admin/console"                         view=ConsoleOverview />
+                <Route path="/admin/console/operations"              view=ConsoleOperations />
+                <Route path="/admin/console/audit"                   view=ConsoleAudit />
+                <Route path="/admin/console/audit/chain"             view=ConsoleAuditChain />
+                <Route path="/admin/console/safety"                  view=ConsoleSafety />
+                <Route path="/admin/console/cost"                    view=ConsoleCost />
+                <Route path="/admin/console/tokens"                  view=ConsoleTokens />
+                <Route path="/admin/console/alerts"                  view=ConsoleAlerts />
+                <Route path="/admin/console/config"                  view=ConsoleConfig />
+                // ── Tenancy console ───────────────────────────────
+                <Route path="/admin/tenancy"                         view=TenancyOverview />
+                <Route path="/admin/tenancy/tenants"                 view=TenancyTenants />
+                <Route path="/admin/tenancy/tenants/:tid"            view=TenancyTenantDetail />
             </Routes>
         </Router>
-    }
-}
-
-// ─── Phase B PoC counter (temporary) ─────────────────────────────────────────
-
-#[component]
-fn PocCounter() -> impl IntoView {
-    let (count, set_count) = signal(0_i32);
-    view! {
-        <div style="font-family:sans-serif;padding:2rem">
-            <h1>"cesauth — Leptos Phase B PoC"</h1>
-            <p>"Counter: " <strong>{count}</strong></p>
-            <button on:click=move |_| set_count.update(|n| *n += 1)>"+1"</button>
-            " "
-            <button on:click=move |_| set_count.set(0)>"Reset"</button>
-        </div>
     }
 }
 

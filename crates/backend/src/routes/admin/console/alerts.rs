@@ -19,35 +19,13 @@ use crate::routes::admin::auth;
 use crate::routes::admin::console::render;
 
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
-        Ok(p)  => p,
-        Err(r) => return Ok(r),
+    crate::routes::admin::operator_json_api::shell(&req, &ctx, "アラート — cesauth").await
+}
+
+pub async fn page_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let _admin = match crate::routes::admin::operator_json_api::resolve_admin(&req, &ctx).await? {
+        Ok(a)  => a,
+        Err(_) => return Response::error("Unauthorized", 401),
     };
-    if let Err(r) = auth::ensure_role_allows(&principal, AdminAction::ViewConsole) {
-        return Ok(r);
-    }
-
-    let now = OffsetDateTime::now_utc().unix_timestamp();
-    let metrics = CloudflareUsageMetricsSource::new(&ctx.env);
-    let snaps   = CloudflareCostSnapshotRepository::new(&ctx.env);
-    let safety  = CloudflareBucketSafetyRepository::new(&ctx.env);
-    let thresh  = CloudflareThresholdRepository::new(&ctx.env);
-
-    let alerts = generate_alerts(&metrics, &snaps, &safety, &thresh, now)
-        .await
-        .unwrap_or_default();
-
-    audit::write_owned(
-        &ctx.env, EventKind::AdminConsoleViewed,
-        Some(principal.id.clone()), None, Some("alerts".into()),
-    ).await.ok();
-
-    if render::prefers_json(&req) {
-        render::json_response(&serde_json::json!({
-            "as_of":  now,
-            "alerts": alerts,
-        }))
-    } else {
-        render::html_response(ui::admin::alerts_page(&principal, now, &alerts))
-    }
+    crate::routes::admin::operator_json_api::csrf_json()
 }

@@ -29,57 +29,15 @@ use crate::csrf;
 use crate::routes::admin::auth;
 
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
-        Ok(p)  => p,
-        Err(r) => return Ok(r),
+    crate::routes::admin::operator_json_api::shell(&req, &ctx, "監査チェーン — cesauth").await
+}
+
+pub async fn page_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let _admin = match crate::routes::admin::operator_json_api::resolve_admin(&req, &ctx).await? {
+        Ok(a)  => a,
+        Err(_) => return Response::error("Unauthorized", 401),
     };
-    if let Err(r) = auth::ensure_role_allows(&principal, AdminAction::ViewConsole) {
-        return Ok(r);
-    }
-
-    let status = read_status(&ctx.env).await?;
-
-    // CSRF for the verify-now POST below. Mint or reuse.
-    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
-    let existing = csrf::extract_from_cookie_header(&cookie_header).map(str::to_owned);
-    let (csrf_token, set_cookie) = match existing {
-        Some(t) if !t.is_empty() => (t, None),
-        _ => {
-            let t = match csrf::mint() {
-            Ok(tok) => tok,
-            Err(_) => {
-                crate::audit::write_owned(
-                    &ctx.env, crate::audit::EventKind::CsrfRngFailure,
-                    None, None, Some("route=/admin/console/audit/chain".to_owned()),
-                ).await.ok();
-                return Response::error("service temporarily unavailable", 500);
-            }
-        };
-            let h = csrf::set_cookie_header(&t);
-            (t, Some(h))
-        }
-    };
-
-
-    // **v0.52.0 (RFC 006)** — generate per-request CSP nonce and register
-    // it with the UI render layer before calling any template function.
-    let csp_nonce = match cesauth_core::security_headers::CspNonce::generate() {
-        Ok(n) => n,
-        Err(_) => {
-            crate::audit::write_owned(
-                &ctx.env, crate::audit::EventKind::CsrfRngFailure,
-                None, None, Some("csp_nonce_failure".to_owned()),
-            ).await.ok();
-            return Response::error("service temporarily unavailable", 500);
-        }
-    };
-    cesauth_frontend::set_render_nonce(csp_nonce.as_str());
-    let html = ui::admin::audit_chain_status_page(&principal, &status, &csrf_token);
-    let mut resp = Response::from_html(html)?;
-    if let Some(h) = set_cookie {
-        resp.headers_mut().append("set-cookie", &h).ok();
-    }
-    Ok(resp)
+    crate::routes::admin::operator_json_api::csrf_json()
 }
 
 pub async fn verify_now<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {

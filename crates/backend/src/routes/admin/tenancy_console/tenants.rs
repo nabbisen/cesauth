@@ -10,15 +10,19 @@ use crate::routes::admin::auth;
 use crate::routes::admin::console::render;
 
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
-        Ok(p)    => p,
-        Err(resp) => return Ok(resp),
-    };
-    if let Err(resp) = auth::ensure_role_allows(&principal, AdminAction::ViewTenancy) {
-        return Ok(resp);
-    }
+    crate::routes::admin::operator_json_api::shell(&req, &ctx, "テナント一覧 — cesauth").await
+}
 
-    let tenants = CloudflareTenantRepository::new(&ctx.env);
-    let rows = tenants.list_active().await.unwrap_or_default();
-    render::html_response(tenants_page(&principal, &rows))
+pub async fn page_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let _admin = match crate::routes::admin::operator_json_api::resolve_admin(&req, &ctx).await? {
+        Ok(a)  => a,
+        Err(_) => return Response::error("Unauthorized", 401),
+    };
+    use cesauth_cf::ports::repo::CloudflareTenantRepository;
+    use cesauth_core::tenancy::TenantRepository;
+    let repo = CloudflareTenantRepository::new(&ctx.env);
+    let tenants = repo.list(200).await.unwrap_or_default();
+    let mut resp = Response::from_json(&serde_json::json!({ "tenants": tenants }))?;
+    resp.headers_mut().set("cache-control", "no-store").ok();
+    Ok(resp)
 }
