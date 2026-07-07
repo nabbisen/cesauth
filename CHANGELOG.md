@@ -26,6 +26,87 @@ split by minor-version range:
 
 ---
 
+## [0.76.0] - 2026-05-14
+
+Maintenance release continuing v0.75.0's test-file modularization
+track. Splits the second-largest test file
+(`crates/core/src/service/introspect/tests.rs`, previously 1,519
+lines) into 6 sibling files under `tests/`, plus a slim base file.
+No behaviour changes; same 54 introspect tests pass, organized into
+7 files instead of 1.
+
+### File split layout
+
+The original file already had clean internal organization: each test
+category lived in a nested `mod foo { ... }` block. v0.76.0 unwraps
+those into sibling files. Each `mod` block becomes a sibling file
+declared from the parent `tests.rs`.
+
+| File | Lines | Scope |
+|------|-------|-------|
+| `tests.rs` (slim) | 348 | Header, `StubFamilyStore` + helpers, base-scope tests, 6 mod declarations |
+| `tests/multi_key.rs` | 295 | Multi-key introspection (RFC 014 / RFC 049 key rotation grace period) |
+| `tests/extract_kid_tests.rs` | 66 | `extract_kid` JWT header parsing |
+| `tests/rate_limit.rs` | 182 | Introspect endpoint rate limiting |
+| `tests/refresh_ext.rs` | 323 | Refresh-token extension introspection |
+| `tests/audience_gate.rs` | 231 | Audience-gate enforcement |
+| `tests/rfc009_aud_correctness.rs` | 78 | RFC 009 aud-claim correctness |
+
+All seven files under 500 ELOC; the slim base `tests.rs` at 348
+lines stays under the threshold while keeping the shared
+`StubFamilyStore` and helpers visible to every sub-file via
+`use super::*` from each sibling.
+
+### Why this layout instead of moving helpers to common.rs
+
+The introspect tests already used the convention "base scope holds
+shared helpers + base tests; nested `mod foo` blocks hold themed
+tests". The split preserves that convention exactly — each
+sibling file is just the unwrapped contents of its original `mod foo`
+block, and the base scope keeps its shared definitions. No helper
+needs to migrate; the imports `use super::*` in each sibling reach
+the parent (now `tests.rs`) and pull in `StubFamilyStore`,
+`encode_token`, `FAKE_PUBKEY`, `ISS`, `AUD`, `fake_keys`.
+
+This pattern is **lower-disruption** than the templates split in
+v0.75.0 (which had to consolidate helpers into a new `common.rs`
+because the original file had ad-hoc helper placement). Future test-
+file splits should prefer this pattern when the original file
+already has clean nested `mod foo` organization.
+
+### Remaining test files for future maintenance releases
+
+Updated from the v0.75.0 list:
+
+- `crates/core/src/migrate/tests.rs` — 1,154 lines (next obvious candidate)
+- `crates/ui/src/tenant_admin/tests.rs` — 895 lines
+- `crates/migrate-test/tests/migration_chain.rs` — 881 lines
+
+### Tests
+
+1,290 / 1,290 pass (767 core + 133 adapter-test + 355 ui lib + 4 ui
+integration + 31 migrate-test) — **identical** to v0.75.0.
+
+### Warnings
+
+0 production lib warnings.
+
+### Drift-scan
+
+Clean. The v0.75.0 drift-scan exemption for `*/tests/*.rs` (added in
+that release) covers the new file layout without further script
+changes — exactly why the exemption was generalized then.
+
+### Contract invariants reaffirmed
+
+- **Tests-as-drift-detectors**: covered by the existing
+  `*/tests/*.rs` exemption from v0.75.0.
+- **Shared test fixtures stay close to use sites**: the base
+  `tests.rs` keeps the shared `StubFamilyStore` and helpers; no
+  cross-file helper imports needed for this split.
+
+---
+
 ## [0.75.0] - 2026-05-14
 
 Maintenance release. Splits the largest single test file

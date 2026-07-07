@@ -95,6 +95,7 @@ full narrative is in the [archive](docs/changelog-archive/README.md).
 | RFC 107 + 111 — ADR-013 §Q4 closure (plural-aware lookup + UTC ISO-8601 policy) | v0.73.0 | [CHANGELOG](CHANGELOG.md) |
 | RFC 110b/c/d/e — Safety controls panel gap-fills (Turnstile/refresh-reuse/TOTP-key/runbook-link); 110a still deferred | v0.74.0 | [CHANGELOG](CHANGELOG.md) |
 | Test file modularization — `templates/tests.rs` (2,057 lines) split into 7 per-feature submodules (dev-guideline compliance, no behaviour change) | v0.75.0 | [CHANGELOG](CHANGELOG.md) |
+| Test file modularization continued — `service/introspect/tests.rs` (1,519 lines) split into 6 sibling files (low-disruption unwrap-mod-block pattern) | v0.76.0 | [CHANGELOG](CHANGELOG.md) |
 
 ---
 
@@ -244,6 +245,19 @@ started.
   when an environment with rustup/wasm32 is available.
   1,290 tests (+12 vs v0.73.0 baseline: +8 core safety_controls,
   +4 ui controls-section rendering). 0 warnings.
+
+- ✅ **v0.76.0 — Test file modularization continued (maintenance release).**
+  Split the second-largest test file
+  (`crates/core/src/service/introspect/tests.rs`, 1,519 lines) into
+  6 sibling files under `tests/` plus a slim base `tests.rs` (348
+  lines). The original file already had clean internal organization
+  (each test category in a nested `mod foo` block), so the split is
+  the "unwrap-mod-block" pattern — lower-disruption than v0.75.0's
+  templates split. Shared `StubFamilyStore` and helpers stay in the
+  base `tests.rs`; sibling files reach them via `use super::*`. No
+  behaviour changes; 1,290 tests pass identically. Drift-scan
+  exemption (`*/tests/*.rs`, added in v0.75.0) covers the new
+  layout without script changes.
 
 - ✅ **v0.75.0 — Test file modularization (maintenance release).**
   Split the largest single test file (`crates/ui/src/templates/tests.rs`,
