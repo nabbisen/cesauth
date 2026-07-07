@@ -26,6 +26,54 @@ split by minor-version range:
 
 ---
 
+## [0.79.4] - 2026-05-20
+
+### RFC 115 — Phase C, Screen 3: TOTP flows migrated to Leptos
+
+Three TOTP screens in one release — all simpler than Sessions
+because they are single-step read+submit forms with no tables.
+
+**Screens migrated:**
+
+| Route | Component | Notes |
+|---|---|---|
+| `GET /me/security/totp/enroll` | `TotpEnroll` | QR + manual key + confirm form |
+| `GET /me/security/totp/verify` | `TotpVerify` | 2FA gate after Magic Link |
+| `GET /me/security/totp/disable` | `TotpDisable` | Destructive-action confirm |
+
+**New JSON endpoints:**
+
+- `GET /me/security/totp/enroll.json` — creates an unconfirmed enrollment row,
+  sets `__Host-cesauth_totp_enroll` cookie, returns `{ qr_svg, secret_b32, csrf_token }`.
+  The QR SVG is server-generated from the TOTP secret and returned as a
+  raw string. The Leptos component injects it via `inner_html=…` (safe:
+  data is not user-supplied).
+- `GET /me/security/totp/verify.json` — validates the TOTP handle cookie, returns
+  `{ csrf_token, totp_handle }`. Returns 401 if the gate has expired.
+- `GET /me/security/totp/disable.json` — returns `{ csrf_token }`.
+
+**All POST handlers unchanged.** The form submission targets
+(`/me/security/totp/enroll/confirm`, `/me/security/totp/verify`,
+`/me/security/totp/disable`) still receive form-encoded POST requests;
+no changes to CSRF validation, session ownership checks, or audit
+event emission.
+
+**New `crates/frontend/src/pages/totp.rs`** contains all three
+components — enroll, verify, disable — together. Kept in one file
+because they are all small single-form screens sharing the same
+`fetch + Resource + Suspense` pattern.
+
+**Notable `TotpEnroll` implementation detail:** the QR SVG is
+rendered via Leptos's `inner_html=…` prop, which sets `innerHTML`
+on the container `<div>`. This is the correct approach for injecting
+server-generated SVG markup. It is safe here because the SVG is
+constructed entirely from the TOTP provisioning URI (which contains
+only the issuer name and the secret), not from any user input.
+
+1,290 / 1,290 tests pass.
+
+---
+
 ## [0.79.3] - 2026-05-20
 
 ### RFC 115 — Phase C, Screen 2: Sessions list migrated to Leptos

@@ -109,6 +109,9 @@ pub async fn leptos_html_shell<D>(
   -->
   <script type="module" nonce="{n}">
     import init from "/assets/{js}";
+    import {{ cesauthPasskeyAuthenticate }} from "/assets/webauthn.js";
+    // Expose WebAuthn helper so Rust/WASM can call it via js_sys reflection.
+    window.__cesauth = {{ passkeyAuthenticate: cesauthPasskeyAuthenticate }};
     init();
   </script>
 </body>

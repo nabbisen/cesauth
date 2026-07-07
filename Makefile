@@ -29,10 +29,11 @@
 ## so the frontend must be built first.
 build: build-frontend build-backend
 
-## Compile the Leptos CSR bundle with Trunk.
-## Output: crates/frontend/dist/cesauth_frontend{,_bg}.{js,wasm}
+## Compile the Leptos CSR bundle with Trunk + copy static assets to dist/.
+## Output: crates/frontend/dist/
 build-frontend:
 	cd crates/frontend && trunk build --release
+	cp crates/frontend/static/* crates/frontend/dist/
 
 ## Compile the Cloudflare Workers backend.
 ## Output: crates/backend/build/worker/shim.mjs + *.wasm

@@ -23,6 +23,7 @@
 use leptos::prelude::*;
 use leptos_router::components::{Router, Routes, Route};
 
+use crate::pages::login::Login;
 use crate::pages::security_center::SecurityCenter;
 use crate::pages::sessions::Sessions;
 use crate::pages::totp::{TotpDisable, TotpEnroll, TotpVerify};
@@ -36,6 +37,8 @@ pub fn App() -> impl IntoView {
         <Router>
             <Routes fallback=|| view! { <NotFound/> }>
                 // ── Migrated screens (Phase C) ───────────────────────
+                <Route path="/"                              view=Login />
+                <Route path="/login"                         view=Login />
                 <Route path="/me/security"                   view=SecurityCenter />
                 <Route path="/me/security/sessions"          view=Sessions />
                 <Route path="/me/security/totp/enroll"       view=TotpEnroll />

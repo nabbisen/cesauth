@@ -22,6 +22,9 @@ csr = [
     "dep:leptos_router",
     "dep:gloo-net",
     "dep:console_error_panic_hook",
+    "dep:web-sys",
+    "dep:wasm-bindgen-futures",
+    "dep:js-sys",
     "leptos/csr",
 ]
 
@@ -36,8 +39,19 @@ leptos        = { version = "=0.8.2", optional = true }
 leptos_router = { version = "=0.8.2", optional = true }
 
 # Browser HTTP client for Leptos components.
-# gloo-net works on wasm32 + browser APIs only; must stay optional.
 gloo-net = { version = "0.6", optional = true }
 
-# Browser debug helper — only meaningful in the cdylib/browser target.
+# Browser DOM/Navigator/fetch APIs.
+web-sys = { version = "0.3", features = [
+    "Window", "Navigator", "Location",
+    "Request", "RequestInit", "RequestMode",
+    "Response", "Headers",
+], optional = true }
+
+# Async bridge for Promises → Rust futures.
+wasm-bindgen-futures = { version = "0.4", optional = true }
+
+# Raw JS reflection for WebAuthn credential serialisation.
+js-sys = { workspace = true, optional = true }
+
 console_error_panic_hook = { version = "0.1", optional = true }

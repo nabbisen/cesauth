@@ -21,18 +21,15 @@ use crate::csrf;
 use crate::log::{self, Category, Level};
 use crate::routes::me::auth as me_auth;
 
+/// `GET /` and `GET /login` — Leptos shell for the login page.
+///
+/// No session check; the login page is always public.  The Leptos
+/// `Login` component renders the email form and the passkey button.
 pub async fn login<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let cfg  = Config::from_env(&ctx.env)?;
-    let csrf_token = match csrf::mint() {
-        Ok(t) => t,
-        Err(_) => {
-            crate::audit::write_owned(
-                &ctx.env, crate::audit::EventKind::CsrfRngFailure,
-                None, None, Some("route=/login".to_owned()),
-            ).await.ok();
-            return Response::error("service temporarily unavailable", 500);
-        }
-    };
+    crate::routes::leptos_shell::leptos_html_shell(
+        &req, &ctx.env, "Sign in — cesauth", "en",
+    ).await
+}
     let sitekey = Some(cfg.turnstile_sitekey.as_str()).filter(|s| !s.is_empty());
     // v0.39.0: negotiate locale from Accept-Language.
     let locale = crate::i18n::resolve_locale(&req);
