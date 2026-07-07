@@ -155,3 +155,27 @@ pub fn js_string_literal(s: &str) -> String {
 
 #[cfg(test)]
 mod tests;
+
+// ── Leptos CSR layer ─────────────────────────────────────────────────────────
+//
+// Only compiled when the `csr` feature is active, i.e. when Trunk
+// builds the browser WASM bundle.  cesauth-backend links this crate
+// without the `csr` feature and never sees these items.
+
+#[cfg(feature = "csr")]
+pub mod app;
+
+/// Browser WASM entry point.
+///
+/// Trunk generates a `<script type="module">` that imports the
+/// compiled WASM and calls the `#[wasm_bindgen(start)]`-tagged
+/// export.  That calls into `leptos::mount::mount_to_body`, which
+/// mounts the Leptos root component into the `<div id="root">` that
+/// the backend's HTML shell provides.
+#[cfg(feature = "csr")]
+#[wasm_bindgen::prelude::wasm_bindgen(start)]
+pub fn leptos_start() {
+    // Surface Rust panics as readable console errors in the browser.
+    console_error_panic_hook::set_once();
+    leptos::mount::mount_to_body(app::App);
+}

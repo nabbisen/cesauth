@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<!--
+  Trunk shell template for `crates/frontend`.
+
+  In PRODUCTION this file is NOT served directly.  Trunk uses it
+  only as the build template; the resulting assets (frontend.js +
+  frontend_bg.wasm) are served by the cesauth-backend Worker via
+  Workers Static Assets.  The HTML shell served to browsers is
+  rendered by crates/backend/src/routes/leptos_shell.rs.
+
+  In LOCAL DEV (`trunk serve`) this is the page Trunk serves on its
+  own port (usually 8080) so you can iterate on frontend components
+  without starting wrangler.  It is intentionally minimal — the real
+  authentication routes are on the wrangler dev port (8787).
+
+  The `<link data-trunk rel="rust"/>` tag is the Trunk directive that:
+  - Compiles crates/frontend with --features csr
+  - Injects the generated <script type="module"> that loads the WASM
+  - Applies wasm-opt level "z" (size-optimised) in release mode
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>cesauth (dev)</title>
+  <!-- Trunk injects the compiled WASM bootstrap script here. -->
+  <link data-trunk rel="rust" data-wasm-opt="z"/>
+</head>
+<body>
+  <!--
+    Mount point.  Leptos mounts the App component into this div.
+    The backend's HTML shell (leptos_shell.rs) provides the same
+    div in production.
+  -->
+  <div id="root"></div>
+  <noscript>
+    <p>This application requires JavaScript and WebAssembly.</p>
+  </noscript>
+</body>
+</html>

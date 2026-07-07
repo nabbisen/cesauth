@@ -11,6 +11,7 @@ pub mod api_v1;
 pub mod deletions;
 pub mod dev;
 pub mod invitations;
+pub mod leptos_shell;
 pub mod magic_link;
 pub mod me;
 pub mod oidc;

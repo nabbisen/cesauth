@@ -136,3 +136,15 @@ WRANGLER_LOCAL          = "0"
 # operators in any timezone see the result before their workday.
 [triggers]
 crons = ["0 4 * * *"]
+
+# --- Frontend static assets (RFC 115 — Leptos migration) -------------------
+# Workers Static Assets serves the Leptos WASM bundle and JS loader built
+# by `trunk build` in `crates/frontend/dist/`.  The Worker handles all
+# dynamic routes; requests to `/assets/*` are served from this bucket.
+#
+# Build step (must run before wrangler dev / wrangler deploy):
+#   cd crates/frontend && trunk build --release
+#
+# The assets directory is gitignored; it is a build artefact.
+[assets]
+directory = "crates/frontend/dist"

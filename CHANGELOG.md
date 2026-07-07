@@ -26,6 +26,96 @@ split by minor-version range:
 
 ---
 
+## [0.79.1] - 2026-05-20
+
+### RFC 115 — Phase B: Leptos v0.8 foundation
+
+Adds the Leptos CSR infrastructure without migrating any production
+screen. All existing screens continue to use the current string
+templates unchanged.
+
+**`crates/frontend` changes:**
+
+- `[lib]` section gains `crate-type = ["cdylib", "rlib"]`.
+  - `cdylib` — Trunk builds this to a browser WASM bundle with
+    `--features csr`. Worker-build and cargo test never see it.
+  - `rlib` — cesauth-backend continues to link the template
+    functions for un-migrated screens.
+- New optional `csr` feature. Activates `leptos = "=0.8.2"` with
+  the `leptos/csr` sub-feature plus `console_error_panic_hook`.
+  The feature is **never** enabled in the `cesauth-backend`
+  dependency graph; no browser-only WASM APIs leak into the
+  Cloudflare Workers runtime.
+- New `src/app.rs` — root Leptos `App` component and a minimal
+  `Counter` component (Phase B smoke test).
+- `lib.rs` gains a `#[wasm_bindgen(start)] pub fn leptos_start()`
+  entry point, guarded by `#[cfg(feature = "csr")]`. This is what
+  the browser calls when the WASM module initialises.
+- New `index.html` — Trunk shell template for `trunk serve`
+  (local dev only; production uses the backend HTML shell).
+
+**`crates/backend` changes:**
+
+- New `src/routes/leptos_shell.rs` — renders the minimal HTML shell
+  the browser needs to bootstrap the Leptos bundle, with:
+  - Per-request CSP nonce (RFC 006).
+  - `<link rel="preload">` for the WASM binary.
+  - `<script type="module" nonce="…">` bootstrap script.
+- New route `GET /__leptos` → `leptos_shell::poc_handler`.
+  Returns the Phase B counter shell. Route is temporary; Phase C
+  replaces it with real authenticated screens.
+
+**`wrangler.toml`:**
+
+- Added `[assets]` section: `directory = "crates/frontend/dist"`.
+  Cloudflare Workers Static Assets will serve the Trunk build
+  output at `/assets/*`. The dist directory is gitignored (it is
+  a build artefact).
+
+**`Makefile`** (new):
+
+- `make build` — `trunk build --release` then `wrangler build`.
+- `make dev` — concurrent `trunk watch` + `wrangler dev`.
+- `make test` — all host-side tests.
+- `make clean` — removes dist/, build/, .wrangler/state.
+
+**Leptos version pin:**
+
+Pinned to `=0.8.2`. Leptos 0.8.6+ pulls `uuid 1.18` → `getrandom
+0.3.3`, which requires the `wasm_js` feature on wasm32 targets.
+`worker-build` does not propagate that feature, causing build
+failures (see GitHub issue #4260 in leptos-rs/leptos). Upgrade
+path tracked for a follow-up RFC.
+
+**Running the Phase B PoC locally:**
+
+```sh
+# 1. Install Trunk (once)
+cargo install trunk
+rustup target add wasm32-unknown-unknown
+
+# 2. Build the frontend bundle
+make build-frontend          # or: cd crates/frontend && trunk build
+
+# 3. Apply D1 migrations (first time)
+wrangler d1 migrations apply cesauth --local
+
+# 4. Start wrangler dev (reads dist/ from [assets])
+make dev-backend             # or: wrangler dev
+
+# 5. Open the PoC page
+open http://localhost:8787/__leptos
+```
+
+The counter page proves the full pipeline: Trunk compilation →
+WASM bundle → Workers Static Assets → HTML shell (CSP nonce) →
+browser bootstrap → Leptos reactive UI.
+
+**Tests:** 1,290 / 1,290 pass. The `csr` feature is off during
+cargo test; Leptos code is not compiled in the host test run.
+
+---
+
 ## [0.79.0] - 2026-05-20
 
 ### Breaking changes (RFC 114 — Workspace restructuring)

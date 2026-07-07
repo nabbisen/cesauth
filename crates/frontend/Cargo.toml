@@ -6,24 +6,37 @@ rust-version.workspace = true
 license.workspace     = true
 repository.workspace  = true
 authors.workspace     = true
-description = "Minimal, accessible HTML templates for cesauth login flows."
+description = "Typed, accessible UI components and HTML templates for cesauth login flows."
 
 [lib]
+# cdylib  — Trunk builds this to WASM for the browser (--features csr).
+# rlib    — cargo/wrangler links this into cesauth-backend (no csr feature).
+# Both must be present so trunk and cargo can each use the right artifact.
+crate-type = ["cdylib", "rlib"]
 path = "src/lib.rs"
 
+[features]
+default = []
+# Activate this ONLY when building with Trunk for the browser.
+# cesauth-backend depends on this crate WITHOUT this feature;
+# enabling it in the backend would pull browser-only WASM APIs
+# into the Cloudflare Workers runtime, which is incompatible.
+csr = [
+    "dep:leptos",
+    "dep:console_error_panic_hook",
+    "leptos/csr",
+]
+
 [dependencies]
-# No templating engine on purpose: the pages are small enough that a
-# `format!` is clearer and ships zero extra dependencies.
-#
-# The admin-console templates (v0.3.0 and later) read domain types
-# straight out of `cesauth-core::admin::types`. Going through `core`
-# rather than redeclaring the shapes here keeps the UI and the handlers
-# honestly in sync. `core` itself has no Cloudflare deps (see its
-# module-level comment), so this does NOT pull worker/wasm code into
-# the UI build.
+# Always present (both backend-linked rlib and Trunk cdylib).
 cesauth-core = { path = "../core" }
-# v0.33.0: ISO-8601 timestamp formatting in the audit chain
-# status page (`audit_chain.rs`). The dep was already transitively
-# present through cesauth-core but adding our own direct line keeps
-# the import explicit.
 time         = { workspace = true }
+
+# Leptos — optional; only compiled when `csr` feature is active.
+# Pin to 0.8.2: see RFC 115 §2 for the getrandom/uuid constraint.
+leptos       = { version = "=0.8.2", optional = true }
+# leptos_router is not needed for the Phase B PoC counter.
+# It will be added in Phase C when real page routing is required.
+
+# Browser debug helper — only meaningful in the cdylib/browser target.
+console_error_panic_hook = { version = "0.1", optional = true }

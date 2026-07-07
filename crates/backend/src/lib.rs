@@ -435,7 +435,16 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         // --- UI -------------------------------------------------------
         .get_async("/",         |req, ctx| async move { routes::ui::login(req, ctx).await })
         .get_async("/login",    |req, ctx| async move { routes::ui::login(req, ctx).await })
-        // --- Session management --------------------------------------
+        // --- Leptos CSR shell -----------------------------------------
+        // Phase B (RFC 115): proof-of-concept that the Trunk + Workers
+        // Static Assets pipeline is working.  Replace with per-screen
+        // Leptos routes in Phase C.  The route is not dev-gated;
+        // it will serve a 500 in production until the Static Assets
+        // binding is configured and `trunk build` has run.
+        .get_async("/__leptos", |req, ctx| async move {
+            routes::leptos_shell::poc_handler(req, ctx).await
+        })
+        // --- Session management ---------------------------------------
         .post_async("/logout",  |req, ctx| async move { routes::session::logout(req, ctx).await })
         // --- Dev-only (guarded by WRANGLER_LOCAL=1) ------------------
         // These exist to make `docs/local-development.md` runnable
