@@ -1,11 +1,11 @@
 # RFC 111 — Date rendering policy (ADR-013 §Q4 closure / date side)
 
-**Status**: Proposed  
+**Status**: Implemented (v0.73.0 — UTC ISO-8601 confirmed as canonical policy, `cesauth_core::util::format_unix_as_iso8601` is the single formatter, per-file legacy formatters removed)  
 **Tier**: P2  
 **Size**: Small  
-**Target**: v0.71.0  
+**Target**: v0.71.0 (originally) → shipped v0.73.0  
 **Phase**: i18n completeness (finishing track)  
-**Refs**: ADR-013 §Q4 ("date / plural は未解決として扱う") / PDF v0.50.1 page 12 "i18n contract: date / plural は未解決として扱う" / `crates/ui/src/templates/security_center.rs::format_unix_local`
+**Refs**: ADR-013 §Q3 + §Q4 (both closed v0.73.0) / PDF v0.50.1 page 12 "i18n contract: date / plural は未解決として扱う" / RFC 096 (canonical formatter introduced) / `docs/src/expert/i18n.md` §"Date / time rendering"
 
 ## Problem
 

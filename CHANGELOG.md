@@ -26,6 +26,155 @@ split by minor-version range:
 
 ---
 
+## [0.73.0] - 2026-05-14
+
+Closes RFC 107 (Recovery code pluralization) and RFC 111 (Date rendering
+policy) — both close out ADR-013 §Q4 ("date / plural deferred until a
+real string demands it"). The plural side has its first plural-aware
+string; the date side confirms UTC ISO-8601 as the cesauth-wide policy
+and consolidates onto a single formatter.
+
+### RFC 107 — Recovery code pluralization (ADR-013 §Q4 plural side)
+
+Source: ADR-013 §Q4 "pluralization deferred until a real string demands
+it" + PDF v0.50.1 page 12 "i18n contract: date / plural は未解決".
+
+**What landed in `cesauth_core::i18n`:**
+
+- `Plural { One, Other }` enum — closed-set, CLDR-minimal. Locales that
+  need richer categories (Slavic `Few`/`Many`, Arabic `Zero`/`Two`)
+  surface as exhaustive-match compile errors when added.
+- `plural_for(locale: Locale, n: u64) -> Plural` — CLDR cardinal rule
+  dispatcher. EN: `n == 1` → `One`, else `Other`. JA: always `Other`
+  (Japanese is plural-invariant per CLDR).
+- `lookup_plural(key: MessageKey, locale: Locale, n: u64) -> &'static str`
+  — parallel catalog branch alongside `lookup`. Today's plural-aware
+  set is exactly one key: `SecurityRecoveryRemaining`. Other keys
+  passed to this function panic loudly (programming error, not
+  fallback case).
+- `is_plural_aware(key) -> bool` — documents the closed plural-aware
+  set. Lets callers gate without the panic.
+
+**User-visible change.** EN locale, N ≥ 2 recovery codes:
+
+- Before: `Recovery codes: 5 valid`
+- After:  `5 valid recovery codes`
+
+JA stays exactly the same (plural-invariant): `リカバリーコード: 5 個有効`.
+
+The N = 0 and N = 1 paths in `security_center.rs::recovery_status_html_for`
+already used dedicated singular banners (`SecurityRecoveryZeroTitle` /
+`OneTitle`) and are unchanged.
+
+**Why no `icu` dependency.** CLDR has 8 plural categories across all
+locales; cesauth's two locales need exactly 2. The WASM size budget and
+the catalog-as-closed-enum design choice make a 30-line hand-rolled
+implementation correct and stable. Adding richer categories later is a
+strictly additive change.
+
+**Tests.** 8 new core unit tests covering CLDR rule correctness for EN
+and JA, plural-key registration invariants, and the
+`#[should_panic]` guardrail. Existing UI test for the N ≥ 2 path was
+updated for the new EN string. Total core tests: 759 (+8); ui lib: 351
+(+5 including 1 new plural-related test and 4 RFC 111 pin tests below).
+
+### RFC 111 — Date rendering policy (ADR-013 §Q3 + §Q4 date side)
+
+Source: ADR-013 §Q3 ("date/time format localization") and §Q4 ("date /
+plural deferred") + RFC 096 (canonical formatter introduced).
+
+**Policy confirmed**: UTC ISO-8601 (RFC 3339, Z-suffix form) is the
+canonical date rendering for every visible timestamp. Locale does not
+affect date format. Per-user timezone preferences are tracked as
+separate future work (would supplement UTC, not replace it).
+
+**Rationale** (two reasons, recorded in
+`docs/src/expert/i18n.md` §"Date / time rendering"):
+
+1. Timezone ambiguity is unsafe on security-sensitive surfaces (audit
+   log, session list, token expiration). UTC ISO-8601 has exactly one
+   interpretation.
+2. Operator tooling (Cloudflare Workers Logs, R2 audit dump, migrate
+   export, the RFC 109 audit viewer cursor) all use UTC ISO-8601.
+   Matching the UI gives operators a zero-conversion trace path.
+
+**Consolidation work**: removed legacy per-file formatters in favour of
+the canonical `cesauth_core::util::format_unix_as_iso8601` (introduced
+in RFC 096):
+
+- `crates/ui/src/templates/security_center.rs::format_unix_local`
+  removed (used the `time` crate's RFC 3339 path, emitted `+00:00`
+  offset form). 2 call sites migrated.
+- `crates/ui/src/admin/audit_chain.rs::format_unix` removed. 2 call
+  sites migrated.
+
+User-visible delta: session list and chain-verification page
+timestamps now emit `2024-01-01T00:00:00Z` instead of
+`2024-01-01T00:00:00+00:00`. Both are valid RFC 3339; the canonical
+form aligns with audit-export and cron-status output.
+
+**Pin tests** in `crates/ui/src/admin/tests.rs::rfc_111` (4 tests):
+
+- `canonical_formatter_emits_utc_z_form` — positive pin on output shape.
+- `canonical_formatter_emits_epoch_for_zero` — boundary case.
+- `canonical_formatter_never_emits_offset_form` — **negative** pin
+  guarding against regression to the legacy `+00:00` form.
+- `canonical_formatter_handles_negative_as_epoch` — defensive pin.
+
+**Documentation**:
+
+- New `docs/src/expert/i18n.md` (concise digest of the i18n contract:
+  locale set, plural form, date policy).
+- ADR-013 §Q3 + §Q4 both marked `Resolved in v0.73.0` with rationale
+  text.
+
+### ADR-013 §Q4 — closed
+
+Both halves of "date / plural deferred" are now resolved:
+
+- **Plural** — RFC 107. Closed-enum `Plural`, `lookup_plural` parallel
+  branch, first plural-aware key shipped.
+- **Date** — RFC 111. UTC ISO-8601 policy, single canonical formatter,
+  per-user timezone tracked as future work.
+
+ADR-013 itself remains open for Q1 (user-pref cookie) and Q2
+(tenant-default locale), neither of which has surfaced operational
+demand.
+
+### Tests
+
+1,278 / 1,278 pass (759 core + 133 adapter-test + 351 ui lib + 4 ui
+integration + 31 migrate-test). **+13** over the v0.72.0 baseline:
+
+- core: +8 (RFC 107 plural rules + lookup_plural variants +
+  is_plural_aware registration + panic guardrail)
+- ui lib: +5 (1 RFC 107 plural variants test + 4 RFC 111 pins)
+
+### Warnings
+
+0 production lib warnings on
+`cargo-1.91 check -p cesauth-core -p cesauth-ui -p cesauth-adapter-test`.
+
+### Drift-scan
+
+Clean. The RFC 111 grep-acceptance criteria are met:
+- `grep -rn "OffsetDateTime::from_unix_timestamp" crates/ui/` is empty
+- `grep -rn "fn format_unix_local" crates/ui/` is empty
+
+### Contract invariants reaffirmed
+
+- **Catalog is a closed enum** (RFC 097 / RFC 102 / ADR-013): adding a
+  locale or a plural category surfaces as an exhaustive-match compile
+  error. Maintained.
+- **Single canonical date formatter** (RFC 096 → RFC 111): one
+  `format_unix_as_iso8601`, callable from every UI / adapter / service
+  layer. Pin tests guard the contract.
+- **Tests-as-drift-detectors**: RFC 107's `is_plural_aware` is asserted
+  against the closed key set; RFC 111's negative `+00:00` pin will
+  loudly catch any regression to the legacy formatter.
+
+---
+
 ## [0.72.0] - 2026-05-14
 
 Closes RFC 110 (Safety controls dashboard alignment audit) and RFC 113

@@ -41,15 +41,13 @@ the residual gaps. See ROADMAP.md "UI/UX finishing track" for grouping.
 
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
-| [107](./proposed/107-recovery-code-pluralization.md) | Recovery code pluralization (ADR-013 §Q4 closure / plural side) | P2 | v0.73.0 |
-| [111](./proposed/111-date-rendering-policy.md) | Date rendering policy (ADR-013 §Q4 closure / date side) | P2 | v0.73.0 |
 | [112](./proposed/112-worker-auth-macro-batch-migration.md) | Worker auth macro batch migration (RFC 100 全面適用) | P2 | env-blocked |
 
 ---
 
 ## Done
 
-108 RFCs (001–106, 108–110, 113) shipped between v0.50.3 and v0.72.0. Full
+110 RFCs (001–106, 107, 108–111, 113) shipped between v0.50.3 and v0.73.0. Full
 list with shipped-in versions: see ROADMAP.md "Shipped" section and
 CHANGELOG.md release entries. Selected highlights only listed here; the
 canonical catalogue is the filesystem at `done/`.
@@ -67,9 +65,11 @@ canonical catalogue is the filesystem at `done/`.
 | [096–104](./done/) | Codebase audit remediation | v0.66.0 |
 | [105](./done/105-admin-frame-design-token-unification.md) | Admin frame design-token unification | v0.67.0 |
 | [106](./done/106-security-center-i18n-closure.md) | Security Center i18n closure (TOTP/recovery banners) | v0.67.0 |
+| [107](./done/107-recovery-code-pluralization.md) | Recovery code pluralization (ADR-013 §Q4 plural side) | v0.73.0 |
 | [108](./done/108-ui-template-route-catalog-migration.md) | UI template route-catalog migration (closed v0.70.0) | v0.68.0–v0.70.0 |
 | [109](./done/109-audit-log-viewer-ui.md) | Audit log viewer UI surface | v0.71.0 |
 | [110](./done/110-safety-controls-alignment.md) | Safety controls dashboard alignment audit (verification + pin tests; gap-fills 110a–110e deferred) | v0.72.0 |
+| [111](./done/111-date-rendering-policy.md) | Date rendering policy (ADR-013 §Q4 date side) | v0.73.0 |
 | [113](./done/113-ui-rendering-acceptance-harness.md) | UI rendering acceptance harness | v0.72.0 |
 
 For the full mapping (every shipped RFC with its release tag), the
@@ -123,7 +123,8 @@ Actual shipping order:
 | v0.70.0 | 108 (closure) | tenant_admin + tenancy_console migration + drift-scan |
 | v0.71.0 | 109 | Audit log viewer (new surface) |
 | v0.72.0 | 110, 113 | Safety alignment audit + acceptance harness |
-| v0.73.0 (planned) | 107, 111 | ADR-013 §Q4 closure |
+| v0.73.0 | 107, 111 | ADR-013 §Q4 closure (plural-aware lookup + UTC ISO-8601 policy) |
+| v0.74.0+ (planned) | 110a–110e | Safety controls panel gap-fills |
 | Pending env | 112 | Worker auth macro batch (rustup/wasm32 required) |
 
 Dependencies between RFCs are minimal:

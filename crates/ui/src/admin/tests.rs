@@ -369,3 +369,45 @@ mod rfc_110 {
     }
 }
 
+// ─── RFC 111 — date rendering policy (ADR-013 §Q4 date-side closure) ─────
+//
+// Every visible timestamp in cesauth goes through
+// `cesauth_core::util::format_unix_as_iso8601`. The pin below asserts
+// the format the canonical formatter produces (UTC `Z` form, RFC 3339).
+// A change in formatter output requires updating the docs at
+// `docs/src/expert/i18n.md` §"Date / time rendering" in the same commit.
+
+mod rfc_111 {
+    use cesauth_core::util::format_unix_as_iso8601;
+
+    #[test]
+    fn canonical_formatter_emits_utc_z_form() {
+        // 2024-01-01T00:00:00Z is a useful round-number anchor.
+        assert_eq!(format_unix_as_iso8601(1_704_067_200), "2024-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn canonical_formatter_emits_epoch_for_zero() {
+        assert_eq!(format_unix_as_iso8601(0), "1970-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn canonical_formatter_never_emits_offset_form() {
+        // RFC 111 amendment: legacy formatters used the `+00:00` offset
+        // form. The canonical formatter standardised on `Z`. Pin the
+        // negative so any regression to the offset form is caught.
+        let s = format_unix_as_iso8601(1_704_067_200);
+        assert!(!s.contains("+00:00"),
+            "RFC 111: canonical formatter must use 'Z' suffix, not '+00:00'. \
+             Got: {s}");
+        assert!(s.ends_with('Z'),
+            "RFC 111: canonical formatter output must end with 'Z'. Got: {s}");
+    }
+
+    #[test]
+    fn canonical_formatter_handles_negative_as_epoch() {
+        // Defensive: negative inputs (rare but possible from i64 fields)
+        // clamp to epoch, not panic.
+        assert_eq!(format_unix_as_iso8601(-1), "1970-01-01T00:00:00Z");
+    }
+}

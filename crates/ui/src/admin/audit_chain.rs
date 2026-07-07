@@ -78,7 +78,8 @@ fn render_summary(s: &AuditChainStatus) -> String {
     };
 
     let last_run_at = s.last_run_at
-        .map(|t| escape(&format_unix(t)))
+        // RFC 111 (ADR-013 §Q4): canonical UTC ISO-8601 formatter.
+        .map(|t| escape(&cesauth_core::util::format_unix_as_iso8601(t)))
         .unwrap_or_else(|| "—".to_owned());
 
     let rows_walked = s.last_run_rows_walked
@@ -116,7 +117,8 @@ fn render_checkpoint(s: &AuditChainStatus) -> String {
     let seq        = s.checkpoint_seq.unwrap();
     let chain_hash = s.checkpoint_chain_hash.as_deref().unwrap_or("");
     let at         = s.checkpoint_at
-        .map(format_unix)
+        // RFC 111: canonical UTC ISO-8601 formatter.
+        .map(cesauth_core::util::format_unix_as_iso8601)
         .unwrap_or_else(|| "—".to_owned());
     let consistency = match s.last_run_checkpoint_match {
         Some(true)  => r##"<span class="badge badge--success">✓ matches current row at seq</span>"##,
@@ -154,14 +156,13 @@ fn render_verify_form(csrf: &str) -> String {
     )
 }
 
-/// Format a Unix-seconds timestamp as ISO-8601 UTC. We avoid
-/// pulling a localization helper because the admin console is
-/// operator-facing English/numeric only.
-fn format_unix(unix: i64) -> String {
-    use time::format_description::well_known::Rfc3339;
-    let dt = time::OffsetDateTime::from_unix_timestamp(unix).unwrap_or_else(|_| time::OffsetDateTime::UNIX_EPOCH);
-    dt.format(&Rfc3339).unwrap_or_else(|_| unix.to_string())
-}
+/// RFC 111 (ADR-013 §Q4 date-side closure, v0.73.0): the per-file
+/// `format_unix` helper was removed. All visible timestamps now go
+/// through `cesauth_core::util::format_unix_as_iso8601` — a single
+/// canonical UTC ISO-8601 formatter shared with audit export, cron
+/// status, and the audit log viewer. Per-user timezone preferences
+/// remain future work; see `docs/src/expert/i18n.md` §"Date / time
+/// rendering" for the policy.
 
 #[cfg(test)]
 mod tests {

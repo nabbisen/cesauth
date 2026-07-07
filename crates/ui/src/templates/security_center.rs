@@ -308,10 +308,11 @@ fn totp_section_html_for(
 /// the v0.39.0 deferral). The N=1 / N=0 banners use a paired strong-title
 /// + detail pattern (`SecurityRecoveryZeroTitle` + `SecurityRecoveryZeroDetail`,
 /// and similarly for N=1) so translators can adjust emphasis independently.
-/// The N≥2 path interpolates `{n}` into `SecurityRecoveryRemaining`;
-/// true plural-form handling waits for RFC 107.
+/// The N≥2 path uses `lookup_plural` (RFC 107) — EN renders
+/// `2 valid recovery codes` (plural agreement with the count), JA renders
+/// the plural-invariant `リカバリーコード: {n} 個有効`.
 fn recovery_status_html_for(n: u32, locale: cesauth_core::i18n::Locale) -> String {
-    use cesauth_core::i18n::{lookup, MessageKey};
+    use cesauth_core::i18n::{lookup, lookup_plural, MessageKey};
     match n {
         0 => format!(
             r#"<div class="flash flash--danger" role="alert" aria-live="assertive">
@@ -338,7 +339,10 @@ fn recovery_status_html_for(n: u32, locale: cesauth_core::i18n::Locale) -> Strin
         ),
 
         n => {
-            let template = lookup(MessageKey::SecurityRecoveryRemaining, locale);
+            // RFC 107 (ADR-013 §Q4 plural closure): pick the catalog
+            // entry matching this `(locale, n)` pair — EN gets the
+            // plural agreement, JA stays plural-invariant.
+            let template = lookup_plural(MessageKey::SecurityRecoveryRemaining, locale, n as u64);
             let label = template.replace("{n}", &n.to_string());
             format!(
                 r#"<p>
@@ -495,8 +499,12 @@ fn render_session_row_for(
         "admin"      => lookup(MessageKey::SessionsAuthMethodAdmin,     locale),
         _            => lookup(MessageKey::SessionsAuthMethodUnknown,   locale),
     };
-    let created = format_unix_local(s.created_at);
-    let last    = format_unix_local(s.last_seen_at);
+    // RFC 111 (ADR-013 §Q4 date-side closure): every visible timestamp
+    // goes through the canonical UTC ISO-8601 formatter. Per-user
+    // timezone is future work; the policy is documented in
+    // docs/src/expert/i18n.md §"Date / time rendering".
+    let created = cesauth_core::util::format_unix_as_iso8601(s.created_at);
+    let last    = cesauth_core::util::format_unix_as_iso8601(s.last_seen_at);
 
     let badge = if s.is_current {
         format!(
@@ -559,18 +567,6 @@ fn render_session_row_for(
         l_client  = escape(lookup(MessageKey::SessionsLabelClient,     locale)),
         l_sid     = escape(lookup(MessageKey::SessionsLabelSessionId,  locale)),
     )
-}
-
-/// Format a Unix-seconds timestamp as ISO-8601 UTC. The user
-/// page is otherwise localized JA, but timestamp formatting
-/// stays UTC because cesauth has no per-user timezone yet —
-/// see ROADMAP i18n track for that future work.
-fn format_unix_local(unix: i64) -> String {
-    use time::format_description::well_known::Rfc3339;
-    time::OffsetDateTime::from_unix_timestamp(unix)
-        .ok()
-        .and_then(|d| d.format(&Rfc3339).ok())
-        .unwrap_or_else(|| unix.to_string())
 }
 
 /// Truncate a UUID-shaped session_id to the first 8 chars for

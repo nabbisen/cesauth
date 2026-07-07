@@ -102,6 +102,48 @@ impl Locale {
     }
 }
 
+/// CLDR cardinal plural category for the currently-supported locales
+/// (RFC 107, ADR-013 §Q4 closure).
+///
+/// cesauth ships the minimum useful subset of CLDR's plural categories.
+/// Today's locales only need `One` and `Other`:
+///
+/// - **JA**: every count maps to `Other`. Japanese has no morphological
+///   plural; CLDR calls this "no plural rule".
+/// - **EN**: `n == 1` → `One`; everything else (including `0`) → `Other`.
+///   This is the CLDR EN cardinal rule verbatim.
+///
+/// Adding a locale with richer plural categories (`Zero` / `Few` / `Many`
+/// / `Two` — Slavic, Arabic, etc.) means:
+///
+/// 1. add the missing variant to this enum;
+/// 2. extend [`plural_for`] with that locale's CLDR rule;
+/// 3. extend every plural-aware catalog entry in `lookup_plural`.
+///
+/// All three steps surface as compile errors thanks to exhaustive
+/// `match`. No runtime parsing of CLDR XML, no `icu` dependency.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Plural {
+    /// CLDR `one` — singular form. EN: `n == 1`. JA: never used.
+    One,
+    /// CLDR `other` — default / plural form. All locales reach this.
+    Other,
+}
+
+/// Pick the CLDR plural category for an integer count.
+///
+/// Returns the [`Plural`] variant the catalog should look up for this
+/// `(locale, n)` pair. Bridge between counts and the plural-aware
+/// branch of [`lookup_plural`].
+pub fn plural_for(locale: Locale, n: u64) -> Plural {
+    match locale {
+        // CLDR EN: one ↔ n == 1; everything else (including 0) is other.
+        Locale::En => if n == 1 { Plural::One } else { Plural::Other },
+        // CLDR JA: every count is "other" (Japanese is plural-invariant).
+        Locale::Ja => Plural::Other,
+    }
+}
+
 /// Closed set of user-visible message keys.
 ///
 /// **Naming convention**: keys are PascalCase, named after
@@ -394,6 +436,52 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
     // during development. In production this path is unreachable if the
     // exhaustive-match test in i18n/tests.rs passes.
     panic!("i18n: no translation for {key:?} in locale {locale:?}")
+}
+
+/// Resolve a plural-aware `(key, locale, n) -> &'static str`.
+///
+/// **RFC 107 (ADR-013 §Q4 closure).** Use this whenever a visible string
+/// agrees grammatically with a count. The caller supplies the integer
+/// `n`; this function picks the CLDR cardinal category via
+/// [`plural_for`] and returns the catalog entry for that pair.
+///
+/// Plural-aware keys (today: `SecurityRecoveryRemaining`) carry distinct
+/// variants for each plural category their locales need. Non-plural-aware
+/// keys (the vast majority) are not registered here and would panic if
+/// passed — the static helper `is_plural_aware` documents the closed set.
+///
+/// The catalog string returned may carry the `{n}` placeholder; the
+/// caller substitutes it as usual. Decoupling plural-form selection from
+/// `{n}` substitution keeps both steps narrow and testable.
+pub fn lookup_plural(key: MessageKey, locale: Locale, n: u64) -> &'static str {
+    use MessageKey::*;
+    let category = plural_for(locale, n);
+    match (key, locale, category) {
+        // ── SecurityRecoveryRemaining — first plural-aware key (RFC 107) ──
+        //
+        // CLDR notes:
+        //   - EN: `1 valid recovery code` vs `N valid recovery codes`
+        //   - JA: every count uses the same form (plural-invariant)
+        (SecurityRecoveryRemaining, Locale::En, Plural::One)   => "1 valid recovery code",
+        (SecurityRecoveryRemaining, Locale::En, Plural::Other) => "{n} valid recovery codes",
+        (SecurityRecoveryRemaining, Locale::Ja, _)             => "リカバリーコード: {n} 個有効",
+        // Any other key is a programming error: this lookup is reserved
+        // for keys explicitly registered as plural-aware. Mirror
+        // `lookup`'s panic posture so the failure is loud during dev.
+        (k, l, _) => panic!(
+            "i18n::lookup_plural: key {k:?} is not plural-aware; use `lookup` \
+             instead. (locale={l:?})"
+        ),
+    }
+}
+
+/// Whether a `MessageKey` is registered for plural-aware lookup.
+///
+/// Closed list maintained alongside `lookup_plural`'s match arms. Adding
+/// a new plural-aware key requires updating both — the i18n test suite
+/// pins this consistency.
+pub const fn is_plural_aware(key: MessageKey) -> bool {
+    matches!(key, MessageKey::SecurityRecoveryRemaining)
 }
 
 #[inline]

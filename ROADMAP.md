@@ -92,6 +92,7 @@ full narrative is in the [archive](docs/changelog-archive/README.md).
 | RFC 108 closure (tenant_admin + tenancy_console migration + drift-scan rule) | v0.70.0 | [CHANGELOG](CHANGELOG.md) |
 | RFC 109 — Audit log viewer UI surface (with scope amendments) | v0.71.0 | [CHANGELOG](CHANGELOG.md) |
 | RFC 110 + 113 — Safety controls audit + UI rendering acceptance harness | v0.72.0 | [CHANGELOG](CHANGELOG.md) |
+| RFC 107 + 111 — ADR-013 §Q4 closure (plural-aware lookup + UTC ISO-8601 policy) | v0.73.0 | [CHANGELOG](CHANGELOG.md) |
 
 ---
 
@@ -198,11 +199,35 @@ started.
   in place of per-route enumeration (same coverage at one-sixth the
   maintenance cost). 1,265 tests (+13 vs v0.71.0 baseline). 0 warnings.
 
-- 📅 **v0.73.0 — RFC 107 + 111 (ADR-013 §Q4 closure).** RFC 107: plural-aware
-  catalog lookup using CLDR-minimal `Plural::{One, Other}` enum (no `icu` dep —
-  WASM size budget). RFC 111: confirm UTC ISO-8601 as the canonical date rendering
-  policy and document per-user timezone as separate future work. Both close
-  ADR-013 §Q4 ("date / plural deferred"). Source: ADR-013 §Q4 + deck page 12.
+- ✅ **v0.73.0 — RFC 107 + 111 (ADR-013 §Q4 closure).** RFC 107 adds a
+  CLDR-minimal `Plural::{One, Other}` enum + `plural_for(locale, n)`
+  dispatcher + `lookup_plural(key, locale, n)` parallel catalog branch
+  to `cesauth_core::i18n`. First plural-aware key:
+  `SecurityRecoveryRemaining` — EN now renders proper plural
+  agreement (`5 valid recovery codes`); JA stays plural-invariant.
+  No `icu` dependency; WASM size budget preserved. RFC 111 confirms
+  UTC ISO-8601 (RFC 3339, Z-form) as cesauth's canonical date
+  rendering: `cesauth_core::util::format_unix_as_iso8601` is the
+  single formatter, callable from every UI / adapter / service
+  layer. Per-file legacy formatters (`format_unix_local` in
+  security_center.rs, `format_unix` in audit_chain.rs) removed; 4
+  call sites consolidated to the canonical formatter. ADR-013 §Q3
+  + §Q4 both marked Resolved with rationale text; new
+  `docs/src/expert/i18n.md` digests the i18n contract.
+  1,278 tests (+13 vs v0.72.0 baseline: +8 core plural rules,
+  +5 ui plural-variants + RFC 111 pins). 0 warnings.
+
+- 📅 **v0.74.0+ — RFC 110a–110e gap-fills** (Safety controls
+  panel: rate-limit summary, Turnstile indicator, refresh-reuse
+  summary, TOTP key status, runbook link). Each touches a different
+  worker data source; several need rustup/wasm32-blocked
+  verification of the worker handler.
+
+- ⏸ **RFC 112 — Worker auth macro batch (environment-blocked).**
+  Mechanical RFC 100 macro adoption across remaining admin handlers
+  (~800 LOC reduction). Sandbox where v0.66.0–v0.73.0 were prepared
+  cannot install rustup + wasm32 target. Ships once an
+  environment with worker compile-verify is available.
 
 - ✅ **v0.66.0 — RFC 096-103 (codebase audit remediation).**
   Zero non-deprecated warnings. Shared util.rs (5 constant_time_eq → 1, 3 ISO-8601 → 1).

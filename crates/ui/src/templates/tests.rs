@@ -1452,11 +1452,34 @@ fn security_center_recovery_many_renders_catalog_with_substitution() {
     assert!(!html_ja.contains("{n}"),
         "{{n}} placeholder must be replaced before rendering");
 
+    // RFC 107 (ADR-013 §Q4 plural closure): EN now uses
+    // proper plural agreement — `5 valid recovery codes`, not the
+    // pre-v0.73.0 substitution form `Recovery codes: 5 valid`.
     let html_en = security_center_page_for(&state_ja, "", Locale::En);
-    assert!(html_en.contains("Recovery codes: 5 valid"),
-        "EN N>=2 path must substitute the count: {html_en}");
+    assert!(html_en.contains("5 valid recovery codes"),
+        "EN N>=2 plural path (RFC 107) must use plural-aware form: {html_en}");
     assert!(!html_en.contains("{n}"),
         "{{n}} placeholder must be replaced before rendering (EN)");
+}
+
+#[test]
+fn security_center_recovery_singular_renders_plural_one_form() {
+    // RFC 107: N==1 path goes through the dedicated singular banner
+    // (SecurityRecoveryOneTitle / OneDetail), NOT through
+    // lookup_plural. But the existence of `Plural::One` and
+    // `lookup_plural(SecurityRecoveryRemaining, En, 1)` is documented
+    // separately — this test guards the i18n catalog.
+    use cesauth_core::i18n::{lookup_plural, MessageKey};
+    let en_one = lookup_plural(MessageKey::SecurityRecoveryRemaining, Locale::En, 1);
+    assert_eq!(en_one, "1 valid recovery code",
+        "EN plural::One form for SecurityRecoveryRemaining must use singular noun");
+    let en_other = lookup_plural(MessageKey::SecurityRecoveryRemaining, Locale::En, 5);
+    assert_eq!(en_other, "{n} valid recovery codes",
+        "EN plural::Other form must use plural noun + {{n}} placeholder");
+    let ja_one = lookup_plural(MessageKey::SecurityRecoveryRemaining, Locale::Ja, 1);
+    let ja_two = lookup_plural(MessageKey::SecurityRecoveryRemaining, Locale::Ja, 2);
+    assert_eq!(ja_one, ja_two,
+        "JA is plural-invariant — same string for any count");
 }
 
 #[test]

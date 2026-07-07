@@ -1,11 +1,11 @@
 # RFC 107 — Recovery code pluralization (ADR-013 §Q4 closure)
 
-**Status**: Proposed  
+**Status**: Implemented (v0.73.0 — `Plural { One, Other }` enum, `plural_for(locale, n)` CLDR dispatcher, `lookup_plural(key, locale, n)` parallel catalog branch; `SecurityRecoveryRemaining` is the first plural-aware key)  
 **Tier**: P2  
 **Size**: Small  
-**Target**: v0.71.0  
+**Target**: v0.71.0 (originally) → shipped v0.73.0  
 **Phase**: i18n completeness (finishing track)  
-**Refs**: ADR-013 §Q4 ("pluralization deferred until a real string demands it") / PDF v0.50.1 page 12 "i18n contract: date / plural は未解決として扱う" / RFC 106
+**Refs**: ADR-013 §Q4 (closed v0.73.0) / PDF v0.50.1 page 12 "i18n contract: date / plural は未解決として扱う" / RFC 106 / `docs/src/expert/i18n.md` §"Plural form"
 
 ## Problem
 
