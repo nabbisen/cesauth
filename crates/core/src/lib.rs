@@ -10,7 +10,7 @@
 //!
 //! * Pure functions and value types live here.
 //! * Anything that touches D1, KV, R2, a Durable Object, or an HTTP
-//!   response **does not** live here - it belongs to `cesauth-worker`
+//!   response **does not** live here - it belongs to `cesauth-backend`
 //!   or `cesauth-do`.
 //! * Traits that describe *what* a storage-facing caller must provide
 //!   (for example, "give me the authenticator with this credential_id")

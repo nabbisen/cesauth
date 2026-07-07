@@ -26,6 +26,100 @@ split by minor-version range:
 
 ---
 
+## [0.79.0] - 2026-05-20
+
+### Breaking changes (RFC 114 — Workspace restructuring)
+
+**Crate renames:**
+
+| Old name | New name |
+|---|---|
+| `cesauth-worker` | `cesauth-backend` |
+| `cesauth-ui` | `cesauth-frontend` |
+
+All internal `use cesauth_worker::…` and `use cesauth_ui::…` import
+paths have been rewritten to `cesauth_backend::…` and
+`cesauth_frontend::…` respectively throughout the workspace.
+
+**Motivation.** The old names encoded deployment-specific assumptions
+that the project's architecture explicitly rejects:
+- `crates/worker` suggested Cloudflare-only code; most of its
+  content (routes, OIDC flows, admin console, post-auth) is
+  deployment-neutral.
+- `crates/ui` suggested presentation only; the crate's intended
+  scope includes interaction design, state, accessibility, and flows.
+
+`frontend` / `backend` is the deployment-neutral, symmetric pairing
+that accurately reflects the two crates' architectural roles.
+
+**Entrypoints split.** A new `crates/backend/src/entrypoints/`
+directory isolates the Cloudflare-specific bindings:
+
+- `entrypoints/cloudflare.rs` — Durable Object re-exports. The
+  `#[event(fetch)]` and `#[event(scheduled)]` handlers remain in
+  `lib.rs` for now (env-blocked: the full move requires wasm32
+  target verification). Completion tracked in RFC 114.
+- `entrypoints/mod.rs` — declares `pub mod cloudflare` and
+  documents the placeholder for a future `pub mod axum` self-hosted
+  entrypoint.
+
+**No behaviour changes.** HTTP surface, cookie contract, OIDC
+endpoints, database schema, and audit event shapes are unchanged.
+All 1,290 host-side tests pass.
+
+---
+
+## [0.78.13] - 2026-05-20
+
+Fixes the infinite redirect loop introduced by v0.78.12.
+
+### What v0.78.12 got wrong
+
+Adding a shallow HMAC-only session check to `GET /` caused a loop:
+
+1. `GET /` — cookie HMAC validates → `302 /me/security`
+2. `GET /me/security` — DO lookup fails (session revoked, or DO state
+   lost after `wrangler dev` restart) → `302 /?next=/me/security`
+3. `GET /` — cookie still HMAC-valid → `302 /me/security`
+4. Loop → browser reports "The page isn't redirecting properly"
+
+The HMAC check is not sufficient: a cookie can be correctly signed but
+refer to a session that has been revoked or that the Durable Object no
+longer knows about (common after `wrangler dev` restarts, which reset
+in-memory DO state).
+
+### Correct fix
+
+Reverted `GET /` to its original form (no session check). Instead,
+changed `complete_auth`'s no-pending-AR fallback landing from `"/"`
+to `"/me/security"`:
+
+```rust
+// Before:
+.unwrap_or_else(|| "/".to_owned())
+
+// After:
+.unwrap_or_else(|| "/me/security".to_owned())
+```
+
+This means a direct magic-link login (without an OAuth client) lands
+at `/me/security` immediately, bypassing `/` entirely. No loop is
+possible:
+
+- `GET /` always renders the login form (unaffected)
+- If `/me/security` rejects the session it redirects to `/?next=...`
+  which renders the login form (not another redirect to `/me/security`)
+
+The `login_next` cookie path is unaffected: if the user was trying to
+reach a specific page before login, `complete_auth` still honours that
+cookie and redirects there.
+
+### Tests
+
+1,290 / 1,290 pass. 0 warnings.
+
+---
+
 ## [0.78.12] - 2026-05-20
 
 Bug fix. After a successful magic-link login without an active OIDC

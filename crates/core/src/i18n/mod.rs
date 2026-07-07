@@ -43,7 +43,7 @@
 //! 2. Resolving via `lookup(key, locale)` at the rendering
 //!    boundary (template / response builder).
 //! 3. The locale is passed in by the worker layer — see
-//!    `cesauth_worker::i18n` for the resolver.
+//!    `cesauth_backend::i18n` for the resolver.
 //!
 //! Migration happens incrementally; v0.36.0 migrates the
 //! flash keys + TOTP wrong-code re-render + sessions page

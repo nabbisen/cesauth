@@ -21,7 +21,7 @@ echo "Running cargo bloat for wasm32-unknown-unknown…"
 cd "$REPO_ROOT"
 
 BLOAT_OUTPUT=$(cargo bloat --release --target wasm32-unknown-unknown \
-    -p cesauth-worker --crates 2>&1 || true)
+    -p cesauth-backend --crates 2>&1 || true)
 
 cat > "$OUT_FILE" << MDEOF
 # Bundle Composition Snapshot

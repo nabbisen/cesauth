@@ -40,7 +40,7 @@ To **raise the budget** deliberately:
 ```bash
 # Requires: cargo install cargo-bloat
 cargo bloat --release --target wasm32-unknown-unknown \
-    -p cesauth-worker --crates 2>&1 | head -40
+    -p cesauth-backend --crates 2>&1 | head -40
 ```
 
 Look for the largest newcomers in the crate list.  Common causes:

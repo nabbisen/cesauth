@@ -2,7 +2,7 @@
 //!
 //! Per spec §10.3, we separate **internal errors** (what went wrong) from
 //! **external responses** (what the client is told). The mapping to the
-//! standardized OAuth / HTTP error codes happens in `cesauth-worker`, so
+//! standardized OAuth / HTTP error codes happens in `cesauth-backend`, so
 //! that `core` stays protocol-library-pure.
 
 use thiserror::Error;

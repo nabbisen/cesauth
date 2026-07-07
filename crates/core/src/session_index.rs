@@ -37,7 +37,7 @@
 //!
 //! **This module isn't**: a runner. The cron job that
 //! walks D1 + queries DO + emits audit events lives in
-//! the worker (see `cesauth_worker::session_index_audit`).
+//! the worker (see `cesauth_backend::session_index_audit`).
 //! The repair tool — D1 update / D1 delete — is deferred
 //! to a future release (ADR-012 §Q1.5).
 //!

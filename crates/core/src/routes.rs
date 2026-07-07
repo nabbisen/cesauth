@@ -21,7 +21,7 @@
 //! # Drift correctness (RFC 108)
 //!
 //! Every const and fn in this module mirrors a route registered by
-//! `crates/worker/src/lib.rs`. Renames of either side must update both
+//! `crates/backend/src/lib.rs`. Renames of either side must update both
 //! atomically; `scripts/drift-scan.sh` is the planned CI gate for that
 //! (turned on once the admin template migration completes).
 //!

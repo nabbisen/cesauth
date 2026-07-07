@@ -7,7 +7,7 @@
 # --------------------------------------------------------------------------
 
 name               = "cesauth"
-main               = "crates/worker/build/worker/shim.mjs"
+main               = "crates/backend/build/worker/shim.mjs"
 compatibility_date = "2026-04-01"
 # nodejs_compat removed — RFC 029 measurement confirmed 0 diff when removed;
 # no Node.js API call sites exist in the codebase. See ADR-016 / RFC 038.
@@ -19,9 +19,9 @@ compatibility_date = "2026-04-01"
 # workspace root (whose Cargo.toml is a virtual manifest - `worker-build`
 # would fail there with `missing field 'package'`). Output paths are
 # resolved relative to that crate path, which is why `main` above is
-# `crates/worker/build/worker/shim.mjs`.
+# `crates/backend/build/worker/shim.mjs`.
 [build]
-command = "cargo install -q worker-build && worker-build --release crates/worker"
+command = "cargo install -q worker-build && worker-build --release crates/backend"
 
 # --- D1: long-lived relational data --------------------------------------
 # Keep only one primary DB. Everything tx-like goes through Durable Objects
@@ -108,7 +108,7 @@ WEBAUTHN_RP_ID          = "auth.example.com"
 WEBAUTHN_RP_NAME        = "cesauth"
 WEBAUTHN_RP_ORIGIN      = "https://auth.example.com"
 TURNSTILE_SITEKEY       = ""
-# --- Operational logging. See crates/worker/src/log.rs -----------------
+# --- Operational logging. See crates/backend/src/log.rs -----------------
 # LOG_LEVEL: one of "trace", "debug", "info", "warn", "error".
 # Lines below this level are dropped. Default: "info".
 LOG_LEVEL               = "info"
@@ -122,7 +122,7 @@ WRANGLER_LOCAL          = "0"
 
 # --- Cron Triggers (v0.18.0) -----------------------------------------------
 # Cloudflare Workers Cron Triggers fire the `#[event(scheduled)]` handler
-# in `crates/worker/src/lib.rs` on the schedule below. cesauth uses
+# in `crates/backend/src/lib.rs` on the schedule below. cesauth uses
 # triggers only for the anonymous-trial retention sweep (ADR-004 §Q3);
 # future triggers will be added to this list and dispatched on the
 # `event.cron()` value.

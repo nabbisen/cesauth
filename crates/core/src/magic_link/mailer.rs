@@ -11,7 +11,7 @@
 //!
 //! This module defines the contract. Operator-side crates implement
 //! `MagicLinkMailer` and wire their implementation into cesauth's worker
-//! factory (`cesauth_worker::adapter::mailer::from_env`). Four reference
+//! factory (`cesauth_backend::adapter::mailer::from_env`). Four reference
 //! adapters ship in `cesauth-adapter-cloudflare`:
 //!
 //! - `DevConsoleMailer` — logs the handle to stdout (never the code);
@@ -33,7 +33,7 @@
 //!
 //! ## Audit boundary (compile-time)
 //!
-//! `cesauth-core` does NOT depend on `cesauth-worker::audit`. Mailer
+//! `cesauth-core` does NOT depend on `cesauth-backend::audit`. Mailer
 //! adapter crates likewise. A mailer adapter cannot call `audit::write_*`
 //! because the symbol is not in scope — Cargo's crate graph enforces the
 //! boundary structurally. Audit writes are the calling worker handler's

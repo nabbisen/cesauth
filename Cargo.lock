@@ -179,7 +179,7 @@ dependencies = [
 
 [[package]]
 name = "cesauth-adapter-cloudflare"
-version = "0.78.13"
+version = "0.79.0"
 dependencies = [
  "cesauth-core",
  "js-sys",
@@ -195,7 +195,7 @@ dependencies = [
 
 [[package]]
 name = "cesauth-adapter-test"
-version = "0.78.13"
+version = "0.79.0"
 dependencies = [
  "cesauth-core",
  "serde",
@@ -205,8 +205,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "cesauth-backend"
+version = "0.79.0"
+dependencies = [
+ "base64",
+ "cesauth-adapter-cloudflare",
+ "cesauth-adapter-test",
+ "cesauth-core",
+ "cesauth-frontend",
+ "getrandom 0.2.17",
+ "hmac",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "time",
+ "tokio",
+ "url",
+ "uuid",
+ "worker",
+]
+
+[[package]]
 name = "cesauth-core"
-version = "0.78.13"
+version = "0.79.0"
 dependencies = [
  "aes-gcm",
  "base64",
@@ -232,8 +254,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cesauth-frontend"
+version = "0.79.0"
+dependencies = [
+ "cesauth-core",
+ "time",
+]
+
+[[package]]
 name = "cesauth-migrate"
-version = "0.78.13"
+version = "0.79.0"
 dependencies = [
  "anyhow",
  "cesauth-core",
@@ -245,40 +275,10 @@ dependencies = [
 
 [[package]]
 name = "cesauth-migrate-test"
-version = "0.78.13"
+version = "0.79.0"
 dependencies = [
  "cesauth-core",
  "rusqlite",
-]
-
-[[package]]
-name = "cesauth-ui"
-version = "0.78.13"
-dependencies = [
- "cesauth-core",
- "time",
-]
-
-[[package]]
-name = "cesauth-worker"
-version = "0.78.13"
-dependencies = [
- "base64",
- "cesauth-adapter-cloudflare",
- "cesauth-adapter-test",
- "cesauth-core",
- "cesauth-ui",
- "getrandom 0.2.17",
- "hmac",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
- "time",
- "tokio",
- "url",
- "uuid",
- "worker",
 ]
 
 [[package]]

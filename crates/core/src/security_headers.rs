@@ -2,7 +2,7 @@
 //!
 //! See ADR-007 for the design rationale and decision summary.
 //! This module builds header name/value pairs; the Worker
-//! middleware in `cesauth-worker` calls these and writes the
+//! middleware in `cesauth-backend` calls these and writes the
 //! results to the outgoing `worker::Response`. By keeping the
 //! construction logic here, in pure Rust with no Worker
 //! dependencies, the load-bearing tests live alongside the
@@ -198,7 +198,7 @@ picture-in-picture=()";
 pub const DEFAULT_XFO: &str = "DENY";
 
 /// One header to apply: a `(name, value)` pair. The middleware
-/// in `cesauth-worker` walks this list and calls
+/// in `cesauth-backend` walks this list and calls
 /// `Response::headers_mut().set(name, value)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Header {
@@ -334,7 +334,7 @@ mod tests {
         // Tripwire: ADR-007 §Q3 specifies that the DEFAULT CSP
         // (used as fallback for HTML routes that don't set their
         // own) has no unsafe-inline / unsafe-eval. Per-route CSPs
-        // in cesauth-worker (login, authorize, admin console)
+        // in cesauth-backend (login, authorize, admin console)
         // currently DO use unsafe-inline due to inline <style>
         // and <script> blocks in templates; that's a known
         // limitation tracked for a future release. Those routes
@@ -580,7 +580,7 @@ mod tests {
         // function should not synthesize one. This test pins
         // the construction logic against accidental hardcoded
         // unsafe values. (Note: per-route CSPs in
-        // cesauth-worker DO use unsafe-inline currently; this
+        // cesauth-backend DO use unsafe-inline currently; this
         // test only covers the library defaults.)
         let c = SecurityHeadersConfig::default();
         for h in headers_for_response(&c, true, &[], None) {

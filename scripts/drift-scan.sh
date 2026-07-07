@@ -135,7 +135,7 @@ while IFS= read -r -d '' file; do
         /^mod tests/         { exit }
         { print fname ":" NR ":" $0 }
     ' "$file" | grep -E '"/(admin|me|oidc|auth|login|logout|magic-link|\.well-known)/' || true)
-done < <(find "${REPO_ROOT}/crates/ui/src" -name '*.rs' -print0)
+done < <(find "${REPO_ROOT}/crates/frontend/src" -name '*.rs' -print0)
 
 if [[ ${#ui_url_matches[@]} -gt 0 ]]; then
     echo "RFC 108: hardcoded URL paths in production UI templates"

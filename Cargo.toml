@@ -6,8 +6,8 @@ members = [
     "crates/adapter-test",
     "crates/migrate",
     "crates/migrate-test",
-    "crates/ui",
-    "crates/worker",
+    "crates/backend",
+    "crates/frontend",
 ]
 # `fuzz/` is intentionally NOT a workspace member. It uses nightly Rust and
 # cargo-fuzz infrastructure that should not influence the stable workspace
@@ -21,7 +21,7 @@ members = [
 # `[workspace.package].rust-version`) and the wasm32 target installed.
 
 [workspace.package]
-version      = "0.78.13"
+version      = "0.79.0"
 edition      = "2024"
 rust-version = "1.85"
 license      = "Apache-2.0"
@@ -118,7 +118,7 @@ proptest = { version = "1", default-features = false, features = ["std"] }
 cesauth-core                = { path = "crates/core" }
 cesauth-adapter-cloudflare  = { path = "crates/adapter-cloudflare" }
 cesauth-adapter-test        = { path = "crates/adapter-test" }
-cesauth-ui                  = { path = "crates/ui" }
+cesauth-frontend            = { path = "crates/frontend" }
 
 [profile.release]
 # Workers is size-sensitive. opt-level = "z" + lto + 1 codegen-unit shrinks the WASM.
