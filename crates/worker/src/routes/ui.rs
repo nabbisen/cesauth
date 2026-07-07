@@ -22,27 +22,6 @@ use crate::log::{self, Category, Level};
 use crate::routes::me::auth as me_auth;
 
 pub async fn login<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    // If the user already has a valid session cookie, send them straight to
-    // the security center rather than showing the login form again.  This
-    // is the standard behaviour for any IdP home page.
-    {
-        use cesauth_core::session::{self, SessionCookie};
-        use crate::config::load_session_cookie_key;
-        use time::OffsetDateTime;
-        let now = OffsetDateTime::now_utc().unix_timestamp();
-        if let Ok(Some(cookie_header)) = req.headers().get("cookie") {
-            if let Some(wire) = session::extract_from_cookie_header(&cookie_header) {
-                if let Ok(key) = load_session_cookie_key(&ctx.env) {
-                    if SessionCookie::verify(wire, &key, now).is_ok() {
-                        let mut resp = Response::empty()?.with_status(302);
-                        let _ = resp.headers_mut().set("location", "/me/security");
-                        return Ok(resp);
-                    }
-                }
-            }
-        }
-    }
-
     let cfg  = Config::from_env(&ctx.env)?;
     let csrf_token = match csrf::mint() {
         Ok(t) => t,

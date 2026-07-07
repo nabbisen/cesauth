@@ -26,6 +26,42 @@ split by minor-version range:
 
 ---
 
+## [0.78.12] - 2026-05-20
+
+Bug fix. After a successful magic-link login without an active OIDC
+authorize flow, the user was redirected back to the login page.
+
+### Root cause
+
+`GET /` always rendered the login form unconditionally — it did not
+check for an existing valid session cookie. `complete_auth`'s
+no-pending-AR fallback redirects to `/`, so a user who signed in
+directly (not via an OAuth client) landed at the login page again
+immediately after their session cookie was set.
+
+### Fix
+
+`routes::ui::login` now checks the `__Host-cesauth_session` cookie
+before rendering. If the cookie is present and HMAC-verifies
+successfully (same check used by all other authenticated routes),
+the handler returns `302 → /me/security` instead of the login form.
+
+This is standard IdP home-page behaviour: an already-authenticated
+user hitting `/` should land on an authenticated view, not be shown
+the sign-in form.
+
+The session check is intentionally lightweight — cookie signature
+verification only, no DO round-trip. The downstream route
+(`/me/security`) performs the full session resolution and renders
+an appropriate error if the session has been revoked since the cookie
+was issued.
+
+### Tests
+
+1,290 / 1,290 pass. 0 warnings.
+
+---
+
 ## [0.78.11] - 2026-05-20
 
 Migration fix. Magic-link login failed at runtime with

@@ -409,15 +409,15 @@ pub(crate) async fn complete_auth_post_gate(
 
         None => {
             // No AR was parked. Land at the validated next-target
-            // if one was stashed by the login GET handler, else
-            // at `/`. Either way, clear the login_next cookie so
-            // it's a one-shot — a stale next from a prior session
-            // shouldn't redirect a fresh login.
+            // if one was stashed by the login GET handler, else at
+            // `/me/security` (the security center is the natural
+            // post-login home for a direct magic-link sign-in).
+            // Either way, clear the login_next cookie.
             let landing = cookie_header
                 .and_then(|h| crate::routes::me::auth::extract_login_next(h)
                     .map(str::to_owned))
                 .and_then(|encoded| crate::routes::me::auth::decode_and_validate_next(&encoded))
-                .unwrap_or_else(|| "/".to_owned());
+                .unwrap_or_else(|| "/me/security".to_owned());
             let mut resp = Response::empty()?
                 .with_status(302);
             let h = resp.headers_mut();
