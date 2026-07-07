@@ -1,6 +1,6 @@
 //! `GET /admin/console/operations` — cron pass status (RFC 081).
 
-use worker::{Request, Response, RouteContext};
+use worker::{Request, Response, Result, RouteContext};
 
 use cesauth_core::admin::types::AdminAction;
 use cesauth_frontend::admin::operations::{operations_page, CronPassDisplay};

@@ -19,10 +19,10 @@ pub async fn page_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
         Err(_) => return Response::error("Unauthorized", 401),
     };
     // Return tenant count + basic system info for the operator overview.
-    use cesauth_cf::ports::repo::CloudflareTenantRepository;
+    use cesauth_cf::tenancy::CloudflareTenantRepository;
     use cesauth_core::tenancy::TenantRepository;
     let repo = CloudflareTenantRepository::new(&ctx.env);
-    let tenants = repo.list(200).await.unwrap_or_default();
+    let tenants = repo.list_active().await.unwrap_or_default();
     let mut resp = Response::from_json(&serde_json::json!({
         "tenant_count": tenants.len(),
     }))?;

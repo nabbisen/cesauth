@@ -14,18 +14,18 @@ use std::collections::HashMap;
 #[derive(Default)]
 struct StubIndex {
     rows: RefCell<Vec<SessionIndexRow>>,
-    deleted: RefCell<Vec<String>>,
-    marked: RefCell<Vec<(String, i64)>>,
-    delete_failures: RefCell<std::collections::HashSet<String>>,
-    mark_failures: RefCell<std::collections::HashSet<String>>,
+    deleted: RefCell<Vec<crate::types::SessionId>>,
+    marked: RefCell<Vec<(crate::types::SessionId, i64)>>,
+    delete_failures: RefCell<std::collections::HashSet<crate::types::SessionId>>,
+    mark_failures: RefCell<std::collections::HashSet<crate::types::SessionId>>,
     list_fails: RefCell<bool>,
 }
 
 impl StubIndex {
     fn install(&self, sid: &str, user: &str, revoked_at: Option<i64>) {
         self.rows.borrow_mut().push(SessionIndexRow {
-            session_id: sid.to_owned(),
-            user_id:    user.to_owned(),
+            session_id: crate::types::SessionId::from_storage(sid),
+            user_id:    crate::types::UserId::from_storage(user),
             created_at: 100,
             revoked_at,
         });
@@ -40,25 +40,25 @@ impl SessionIndexRepo for StubIndex {
         let rows = self.rows.borrow();
         Ok(rows.iter().filter(|r| r.revoked_at.is_none()).cloned().collect())
     }
-    async fn delete_row(&self, session_id: &str) -> PortResult<()> {
+    async fn delete_row(&self, session_id: &crate::types::SessionId) -> PortResult<()> {
         if self.delete_failures.borrow().contains(session_id) {
             return Err(PortError::Unavailable);
         }
-        self.deleted.borrow_mut().push(session_id.into());
+        self.deleted.borrow_mut().push(session_id.clone());
         // Mirror the actual mutation so subsequent
         // list_active reflects the change (idempotence).
-        self.rows.borrow_mut().retain(|r| r.session_id != session_id);
+        self.rows.borrow_mut().retain(|r| &r.session_id != session_id);
         Ok(())
     }
-    async fn mark_revoked(&self, session_id: &str, revoked_at: i64) -> PortResult<()> {
+    async fn mark_revoked(&self, session_id: &crate::types::SessionId, revoked_at: i64) -> PortResult<()> {
         if self.mark_failures.borrow().contains(session_id) {
             return Err(PortError::Unavailable);
         }
-        self.marked.borrow_mut().push((session_id.into(), revoked_at));
+        self.marked.borrow_mut().push((session_id.clone(), revoked_at));
         // The "WHERE revoked_at IS NULL" guard from the
         // D1 impl is mirrored here.
         for r in self.rows.borrow_mut().iter_mut() {
-            if r.session_id == session_id && r.revoked_at.is_none() {
+            if &r.session_id == session_id && r.revoked_at.is_none() {
                 r.revoked_at = Some(revoked_at);
             }
         }
@@ -68,48 +68,48 @@ impl SessionIndexRepo for StubIndex {
 
 #[derive(Default)]
 struct StubStore {
-    statuses: RefCell<HashMap<String, SessionStatus>>,
-    status_failures: RefCell<std::collections::HashSet<String>>,
+    statuses: RefCell<HashMap<crate::types::SessionId, SessionStatus>>,
+    status_failures: RefCell<std::collections::HashSet<crate::types::SessionId>>,
 }
 
 impl StubStore {
     fn set_active(&self, sid: &str, user: &str) {
         let s = SessionState {
-            session_id: sid.into(), user_id: user.into(),
-            client_id: "c".into(), scopes: vec![],
+            session_id: crate::types::SessionId::from_storage(sid), user_id: crate::types::UserId::from_storage(user),
+            client_id: crate::types::ClientId::from_storage("c"), scopes: vec![],
             auth_method: AuthMethod::Passkey,
             created_at: 100, last_seen_at: 200,
             revoked_at: None,
         };
-        self.statuses.borrow_mut().insert(sid.into(), SessionStatus::Active(s));
+        self.statuses.borrow_mut().insert(crate::types::SessionId::from_storage(sid), SessionStatus::Active(s));
     }
     fn set_revoked(&self, sid: &str, user: &str, revoked_at: i64) {
         let s = SessionState {
-            session_id: sid.into(), user_id: user.into(),
-            client_id: "c".into(), scopes: vec![],
+            session_id: crate::types::SessionId::from_storage(sid), user_id: crate::types::UserId::from_storage(user),
+            client_id: crate::types::ClientId::from_storage("c"), scopes: vec![],
             auth_method: AuthMethod::Passkey,
             created_at: 100, last_seen_at: 200,
             revoked_at: Some(revoked_at),
         };
-        self.statuses.borrow_mut().insert(sid.into(), SessionStatus::Revoked(s));
+        self.statuses.borrow_mut().insert(crate::types::SessionId::from_storage(sid), SessionStatus::Revoked(s));
     }
     fn set_not_started(&self, sid: &str) {
-        self.statuses.borrow_mut().insert(sid.into(), SessionStatus::NotStarted);
+        self.statuses.borrow_mut().insert(crate::types::SessionId::from_storage(sid), SessionStatus::NotStarted);
     }
 }
 
 impl ActiveSessionStore for StubStore {
     async fn start(&self, _: &SessionState) -> PortResult<()> { unimplemented!() }
-    async fn touch(&self, _: &str, _: i64, _: i64, _: i64) -> PortResult<SessionStatus> { unimplemented!() }
-    async fn status(&self, sid: &str) -> PortResult<SessionStatus> {
+    async fn touch(&self, _: &crate::types::SessionId, _: i64, _: i64, _: i64) -> PortResult<SessionStatus> { unimplemented!() }
+    async fn status(&self, sid: &crate::types::SessionId) -> PortResult<SessionStatus> {
         if self.status_failures.borrow().contains(sid) {
             return Err(PortError::Unavailable);
         }
         self.statuses.borrow().get(sid).cloned()
             .ok_or(PortError::NotFound)
     }
-    async fn revoke(&self, _: &str, _: i64) -> PortResult<SessionStatus> { unimplemented!() }
-    async fn list_for_user(&self, _: &str, _: bool, _: u32) -> PortResult<Vec<SessionState>> { unimplemented!() }
+    async fn revoke(&self, _: &crate::types::SessionId, _: i64) -> PortResult<SessionStatus> { unimplemented!() }
+    async fn list_for_user(&self, _: &crate::types::UserId, _: bool, _: u32) -> PortResult<Vec<SessionState>> { unimplemented!() }
 }
 
 // =====================================================================
@@ -157,7 +157,7 @@ async fn do_vanished_drift_is_repaired_when_enabled() {
     let outcome = run_repair_pass(&idx, &store, cfg_repair(), 1000).await.unwrap();
 
     assert_eq!(outcome.do_vanished_repaired, 1);
-    assert_eq!(*idx.deleted.borrow(), vec!["s_vanished".to_owned()]);
+    assert_eq!(*idx.deleted.borrow(), vec![crate::types::SessionId::from_storage("s_vanished")]);
     assert!(!outcome.dry_run);
 }
 
@@ -171,7 +171,7 @@ async fn do_newer_revoke_drift_is_repaired_with_do_timestamp() {
     let outcome = run_repair_pass(&idx, &store, cfg_repair(), 1000).await.unwrap();
 
     assert_eq!(outcome.do_newer_revoke_repaired, 1);
-    assert_eq!(*idx.marked.borrow(), vec![("s_drift".into(), 555)]);
+    assert_eq!(*idx.marked.borrow(), vec![(crate::types::SessionId::from_storage("s_drift"), 555)]);
 }
 
 #[tokio::test]
@@ -180,8 +180,8 @@ async fn anomalous_alert_only_is_never_repaired() {
     let idx = StubIndex::default();
     // D1 row marked revoked.
     idx.rows.borrow_mut().push(SessionIndexRow {
-        session_id: "s_anom".into(),
-        user_id:    "u1".into(),
+        session_id: crate::types::SessionId::from_storage("s_anom"),
+        user_id: crate::types::UserId::from_storage("u1"),
         created_at: 100,
         revoked_at: Some(200),
     });
@@ -197,8 +197,8 @@ async fn anomalous_alert_only_is_never_repaired() {
     // classify+anomalous path produces zero writes.
     idx.rows.borrow_mut().clear();
     idx.rows.borrow_mut().push(SessionIndexRow {
-        session_id: "s_anom".into(),
-        user_id:    "u1".into(),
+        session_id: crate::types::SessionId::from_storage("s_anom"),
+        user_id: crate::types::UserId::from_storage("u1"),
         created_at: 100,
         revoked_at: None,  // the listing surface keeps this; the test
                            // forces the anomalous classification by
@@ -214,8 +214,8 @@ async fn anomalous_alert_only_is_never_repaired() {
     // it, by overriding the test helper.
     idx.rows.borrow_mut().clear();
     idx.rows.borrow_mut().push(SessionIndexRow {
-        session_id: "s_anom".into(),
-        user_id:    "u1".into(),
+        session_id: crate::types::SessionId::from_storage("s_anom"),
+        user_id: crate::types::UserId::from_storage("u1"),
         created_at: 100,
         revoked_at: Some(200),  // D1 says revoked
     });
@@ -228,14 +228,14 @@ async fn anomalous_alert_only_is_never_repaired() {
     // we test classify behavior directly:
     use crate::session_index::{classify, D1SessionRow};
     let d1 = D1SessionRow {
-        session_id: "s_anom".into(),
-        user_id:    "u1".into(),
+        session_id: crate::types::SessionId::from_storage("s_anom"),
+        user_id: crate::types::UserId::from_storage("u1"),
         created_at: 100,
         revoked_at: Some(200),
     };
     let do_status = SessionStatus::Active(SessionState {
-        session_id: "s_anom".into(), user_id: "u1".into(),
-        client_id: "c".into(), scopes: vec![],
+        session_id: crate::types::SessionId::from_storage("s_anom"), user_id: crate::types::UserId::from_storage("u1"),
+        client_id: crate::types::ClientId::from_storage("c"), scopes: vec![],
         auth_method: AuthMethod::Passkey,
         created_at: 100, last_seen_at: 200, revoked_at: None,
     });
@@ -304,7 +304,7 @@ async fn per_row_status_failure_increments_errors_does_not_abort() {
     idx.install("s_v",   "u1", None);
     let store = StubStore::default();
     store.set_active("s_ok", "u1");
-    store.status_failures.borrow_mut().insert("s_bad".into());
+    store.status_failures.borrow_mut().insert(crate::types::SessionId::from_storage("s_bad"));
     store.set_not_started("s_v");
 
     let outcome = run_repair_pass(&idx, &store, cfg_repair(), 1000).await.unwrap();
@@ -321,7 +321,7 @@ async fn per_row_repair_failure_increments_errors_does_not_abort() {
     idx.install("s_v1", "u1", None);
     idx.install("s_v2", "u1", None);
     idx.install("s_v3", "u1", None);
-    idx.delete_failures.borrow_mut().insert("s_v2".into());
+    idx.delete_failures.borrow_mut().insert(crate::types::SessionId::from_storage("s_v2"));
     let store = StubStore::default();
     store.set_not_started("s_v1");
     store.set_not_started("s_v2");
@@ -378,11 +378,11 @@ async fn mark_revoked_idempotent_at_repo_level() {
     // Pin via the stub (mirrors the D1 SQL guard).
     let idx = StubIndex::default();
     idx.rows.borrow_mut().push(SessionIndexRow {
-        session_id: "s".into(), user_id: "u".into(),
+        session_id: crate::types::SessionId::from_storage("s"), user_id: crate::types::UserId::from_storage("u"),
         created_at: 100, revoked_at: Some(111),
     });
     // First mark — guard prevents overwrite of 111.
-    idx.mark_revoked("s", 222).await.unwrap();
+    idx.mark_revoked(&crate::types::SessionId::from_storage("s"), 222).await.unwrap();
     assert_eq!(idx.rows.borrow()[0].revoked_at, Some(111),
         "existing revoked_at must NOT be overwritten");
 }

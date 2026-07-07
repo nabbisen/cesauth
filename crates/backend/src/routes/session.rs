@@ -67,7 +67,7 @@ pub async fn logout<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
             if let Ok(key) = load_session_cookie_key(&ctx.env) {
                 if let Ok(cookie) = SessionCookie::verify(wire, &key, now) {
                     let sessions = CloudflareActiveSessionStore::new(&ctx.env);
-                    let _ = sessions.revoke(&cookie.session_id, now).await;
+                    let _ = sessions.revoke(&cesauth_core::types::SessionId::from_storage(&cookie.session_id), now).await;
                     subject = Some(cookie.user_id);
                 }
             }

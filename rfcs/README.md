@@ -44,6 +44,25 @@ the residual gaps. See ROADMAP.md "UI/UX finishing track" for grouping.
 | [112](./proposed/112-worker-auth-macro-batch-migration.md) | Worker auth macro batch migration (RFC 100 全面適用) | P2 | env-blocked |
 | [110a](./proposed/110a-rate-limit-summary.md) | Rate limit summary surface (RFC 110 sub-RFC) | P2 | v0.75.0+ (KV-heavy, env-blocked) |
 
+Security-critical assurance track. Source: architect instruction
+`security-critical-assurance-strategy-v0.80.2.md`; audit report at
+`docs/src/expert/security-assurance-audit-v0.80.2.md`. Implement in ID
+order (116 first — later RFCs consume its newtypes). Numbers 114/115 are
+consumed by the v0.79/v0.80 workspace-restructure and Leptos-migration
+work (see CHANGELOG); per RFC 019, numbers are never reused.
+
+| ID | Title | Tier | Category | Depends on |
+|----|-------|------|----------|------------|
+| [116](./proposed/116-security-type-modeling-baseline.md) | Security-critical type modeling baseline | P0 | A | — |
+| [117](./proposed/117-authorization-code-lifecycle-assurance.md) | Authorization code lifecycle assurance | P0 | A | 116 |
+| [118](./proposed/118-refresh-rotation-assurance.md) | Refresh token rotation & reuse-detection assurance | P0 | A | 116 |
+| [119](./proposed/119-tenant-scoped-repository-apis.md) | Tenant boundary & scoped repository APIs | P1 | B | 116 |
+| [120](./proposed/120-authz-core-sealing-and-property-tests.md) | Authorization core: sealing & property tests | P0/P1 | A/B | 116 |
+| [121](./proposed/121-security-state-machine-testing.md) | Security state-machine testing with proptest | P1 | B | 117, 118 |
+| [122](./proposed/122-fuzzing-untrusted-input-boundaries.md) | Fuzzing for untrusted input boundaries | P1 | B | 117 |
+| [123](./proposed/123-audit-event-completeness.md) | Audit event completeness for privileged operations | P1 | B | 116 |
+| [124](./proposed/124-formal-methods-pilot.md) | Lightweight formal/model-checking pilot | P2 | C | 118, 120 |
+
 ---
 
 ## Done

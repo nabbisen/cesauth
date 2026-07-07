@@ -8,6 +8,14 @@ regenerate the "Unchanged" list.
 
 ---
 
+## Added in v0.81.0 (RFC 116 — security-type baseline)
+
+| Crate | Version | Scope | Rationale |
+|---|---|---|---|
+| `zeroize` | 1.x | `cesauth-core` production | `RawSecret` zeroizes its heap buffer on drop. Zero transitive additions; the crate is `no_std`-compatible and widely reviewed. |
+
+---
+
 ## Applied in v0.80.1 — v0.80.2
 
 | Crate | Before | After | Notes |

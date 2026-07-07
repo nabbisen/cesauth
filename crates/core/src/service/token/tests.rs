@@ -5,10 +5,10 @@ use super::*;
 
 #[test]
 fn refresh_round_trip() {
-    let encoded = encode_refresh("fam", "jti-1", 3600, 1_000_000);
+    let encoded = encode_refresh(&crate::types::FamilyId::from_storage("fam"), &crate::types::Jti::from_storage("jti-1"), 3600, 1_000_000);
     let (fam, jti) = decode_refresh(&encoded).unwrap();
-    assert_eq!(fam, "fam");
-    assert_eq!(jti, "jti-1");
+    assert_eq!(fam.as_str(), "fam");
+    assert_eq!(jti.as_str(), "jti-1");
 }
 
 #[test]
@@ -109,20 +109,20 @@ mod id_token_tests {
 
     struct StubCodes(RefCell<HashMap<String, Challenge>>);
     impl AuthChallengeStore for StubCodes {
-        async fn put(&self, code: &str, ch: &Challenge) -> PortResult<()> {
-            self.0.borrow_mut().insert(code.to_owned(), ch.clone());
+        async fn put(&self, code: &crate::types::ChallengeHandle, ch: &Challenge) -> PortResult<()> {
+            self.0.borrow_mut().insert(code.as_str().to_owned(), ch.clone());
             Ok(())
         }
-        async fn peek(&self, code: &str) -> PortResult<Option<Challenge>> {
-            Ok(self.0.borrow().get(code).cloned())
+        async fn peek(&self, code: &crate::types::ChallengeHandle) -> PortResult<Option<Challenge>> {
+            Ok(self.0.borrow().get(code.as_str()).cloned())
         }
-        async fn take(&self, code: &str) -> PortResult<Option<Challenge>> {
-            Ok(self.0.borrow_mut().remove(code))
+        async fn take(&self, code: &crate::types::ChallengeHandle) -> PortResult<Option<Challenge>> {
+            Ok(self.0.borrow_mut().remove(code.as_str()))
         }
-        async fn bump_magic_link_attempts(&self, _: &str) -> PortResult<u32> { Ok(0) }
+        async fn bump_magic_link_attempts(&self, _: &crate::types::ChallengeHandle) -> PortResult<u32> { Ok(0) }
     }
 
-    struct StubFamilies(RefCell<HashMap<String, FamilyState>>);
+    struct StubFamilies(RefCell<HashMap<crate::types::FamilyId, FamilyState>>);
     impl RefreshTokenFamilyStore for StubFamilies {
         async fn init(&self, init: &FamilyInit) -> PortResult<()> {
             self.0.borrow_mut().insert(init.family_id.clone(), FamilyState {
@@ -142,27 +142,27 @@ mod id_token_tests {
             });
             Ok(())
         }
-        async fn rotate(&self, family_id: &str, presented_jti: &str, new_jti: &str, now: i64) -> PortResult<RotateOutcome> {
+        async fn rotate(&self, family_id: &crate::types::FamilyId, presented_jti: &crate::types::Jti, new_jti: &crate::types::Jti, now: i64) -> PortResult<RotateOutcome> {
             let mut m = self.0.borrow_mut();
             if let Some(fam) = m.get_mut(family_id) {
-                if fam.current_jti != presented_jti {
-                    return Ok(RotateOutcome::ReusedAndRevoked { reused_jti: presented_jti.to_owned(), was_retired: false });
+                if &fam.current_jti != presented_jti {
+                    return Ok(RotateOutcome::ReusedAndRevoked { reused_jti: presented_jti.clone(), was_retired: false });
                 }
                 fam.retired_jtis.push(fam.current_jti.clone());
-                fam.current_jti = new_jti.to_owned();
+                fam.current_jti = new_jti.clone();
                 fam.last_rotated_at = now;
-                Ok(RotateOutcome::Rotated { new_current_jti: new_jti.to_owned() })
+                Ok(RotateOutcome::Rotated { new_current_jti: new_jti.clone() })
             } else {
                 Ok(RotateOutcome::AlreadyRevoked)
             }
         }
-        async fn revoke(&self, family_id: &str, _: i64) -> PortResult<()> {
+        async fn revoke(&self, family_id: &crate::types::FamilyId, _: i64) -> PortResult<()> {
             if let Some(f) = self.0.borrow_mut().get_mut(family_id) {
                 f.revoked_at = Some(0);
             }
             Ok(())
         }
-        async fn peek(&self, family_id: &str) -> PortResult<Option<FamilyState>> {
+        async fn peek(&self, family_id: &crate::types::FamilyId) -> PortResult<Option<FamilyState>> {
             Ok(self.0.borrow().get(family_id).cloned())
         }
     }
@@ -214,9 +214,9 @@ mod id_token_tests {
 
         let codes = StubCodes(RefCell::new(HashMap::new()));
         let code_ch = Challenge::AuthCode {
-            client_id:             "c-1".to_owned(),
+            client_id: "c-1".to_owned(),
             redirect_uri:          "https://app.test/cb".to_owned(),
-            user_id:               "u-1".to_owned(),
+            user_id: "u-1".to_owned(),
             scopes:                Scopes(scopes.iter().map(|s| s.to_string()).collect()),
             nonce:                 None,
             code_challenge:        s256_challenge(verifier),
@@ -255,8 +255,9 @@ mod id_token_tests {
         let (clients, codes, families, grants, users) =
             stub_exchange_setup(scopes, auth_time, "test-verifier-padded-to-exactly-43chars-xxx");
         let signer = test_signer();
+        let _code_handle = crate::types::ChallengeHandle::from_storage("code-1");
         let input = ExchangeCodeInput {
-            code:          "code-1",
+            code:          &_code_handle,
             redirect_uri:  "https://app.test/cb",
             client_id:     "c-1",
             code_verifier: "test-verifier-padded-to-exactly-43chars-xxx",
@@ -311,16 +312,16 @@ mod id_token_tests {
         let orig_auth_time = 1_699_900_000i64;
         let families = StubFamilies(RefCell::new(HashMap::new()));
         let init = FamilyInit {
-            family_id: "fam-r".to_owned(),
-            user_id:   "u-r".to_owned(),
-            client_id: "c-r".to_owned(),
+            family_id: crate::types::FamilyId::from_storage("fam-r"),
+            user_id: crate::types::UserId::from_storage("u-r"),
+            client_id: crate::types::ClientId::from_storage("c-r"),
             scopes:    vec!["openid".to_owned()],
-            first_jti: "j-first".to_owned(),
+            first_jti: crate::types::Jti::from_storage("j-first"),
             now_unix:  1_700_000_000,
             auth_time: orig_auth_time,
         };
         families.init(&init).await.unwrap();
-        let rt = encode_refresh("fam-r", "j-first", 86400, 1_700_000_000);
+        let rt = encode_refresh(&crate::types::FamilyId::from_storage("fam-r"), &crate::types::Jti::from_storage("j-first"), 86400, 1_700_000_000);
         let input = RotateRefreshInput {
             refresh_token: &rt,
             client_id:     "c-r",
@@ -349,15 +350,15 @@ mod id_token_tests {
         let orig_auth_time = 1_699_900_000i64;
         let families = StubFamilies(RefCell::new(HashMap::new()));
         families.init(&FamilyInit {
-            family_id: "fam-at".to_owned(),
-            user_id:   "u-at".to_owned(),
-            client_id: "c-at".to_owned(),
+            family_id: crate::types::FamilyId::from_storage("fam-at"),
+            user_id: crate::types::UserId::from_storage("u-at"),
+            client_id: crate::types::ClientId::from_storage("c-at"),
             scopes:    vec!["openid".to_owned()],
-            first_jti: "j-at".to_owned(),
+            first_jti: crate::types::Jti::from_storage("j-at"),
             now_unix:  1_700_000_000,
             auth_time: orig_auth_time,
         }).await.unwrap();
-        let rt = encode_refresh("fam-at", "j-at", 86400, 1_700_000_000);
+        let rt = encode_refresh(&crate::types::FamilyId::from_storage("fam-at"), &crate::types::Jti::from_storage("j-at"), 86400, 1_700_000_000);
         let input = RotateRefreshInput {
             refresh_token:        &rt,
             client_id:            "c-at",
@@ -388,15 +389,15 @@ mod id_token_tests {
         user_map.insert("u-no".to_owned(), test_user("u-no"));
         let families = StubFamilies(RefCell::new(HashMap::new()));
         families.init(&FamilyInit {
-            family_id: "fam-no".to_owned(),
-            user_id:   "u-no".to_owned(),
-            client_id: "c-no".to_owned(),
+            family_id: crate::types::FamilyId::from_storage("fam-no"),
+            user_id: crate::types::UserId::from_storage("u-no"),
+            client_id: crate::types::ClientId::from_storage("c-no"),
             scopes:    vec!["profile".to_owned()],
-            first_jti: "j-no".to_owned(),
+            first_jti: crate::types::Jti::from_storage("j-no"),
             now_unix:  1_700_000_000,
             auth_time: 0,
         }).await.unwrap();
-        let rt = encode_refresh("fam-no", "j-no", 86400, 1_700_000_000);
+        let rt = encode_refresh(&crate::types::FamilyId::from_storage("fam-no"), &crate::types::Jti::from_storage("j-no"), 86400, 1_700_000_000);
         let input = RotateRefreshInput {
             refresh_token:        &rt,
             client_id:            "c-no",
@@ -431,9 +432,9 @@ mod id_token_tests {
         h.update(verifier.as_bytes());
         let challenge_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(h.finalize());
         codes.0.borrow_mut().insert("code-1".to_owned(), Challenge::AuthCode {
-            client_id:             "c-1".to_owned(),
+            client_id: "c-1".to_owned(),
             redirect_uri:          "https://app.test/cb".to_owned(),
-            user_id:               "u-1".to_owned(),
+            user_id: "u-1".to_owned(),
             scopes:                Scopes(vec!["openid".to_owned()]),
             nonce:                 Some(nonce_val.to_owned()),
             code_challenge:        challenge_b64,
@@ -444,8 +445,9 @@ mod id_token_tests {
         });
 
         let signer = test_signer();
+        let _code_handle = crate::types::ChallengeHandle::from_storage("code-1");
         let input = ExchangeCodeInput {
-            code:          "code-1",
+            code:          &_code_handle,
             redirect_uri:  "https://app.test/cb",
             client_id:     "c-1",
             code_verifier: verifier,

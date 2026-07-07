@@ -31,6 +31,7 @@
 - [Session cookies](./expert/sessions.md)
 - [Cookie inventory (v0.31.0)](./expert/cookies.md)
 - [Audit log hash chain (v0.32.0)](./expert/audit-log-hash-chain.md)
+- [Security assurance audit (v0.80.2)](./expert/security-assurance-audit-v0.80.2.md)
 - [CSRF model](./expert/csrf.md)
 - [CSRF audit (v0.24.0)](./expert/csrf-audit.md)
 - [Email verification audit (v0.25.0)](./expert/email-verification-audit.md)

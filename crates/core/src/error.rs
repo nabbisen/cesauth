@@ -43,7 +43,7 @@ pub enum CoreError {
     /// distinguish "jti unknown" from "jti retired" externally).
     #[error("refresh token reuse detected (was_retired={was_retired})")]
     RefreshTokenReuse {
-        reused_jti:  String,
+        reused_jti:  crate::types::Jti,
         was_retired: bool,
     },
 

@@ -52,6 +52,7 @@ use crate::ports::store::RefreshTokenFamilyStore;
 use crate::service::client_auth::{
     verify_client_credentials_optional, ClientAuthOutcome,
 };
+use crate::types::{ClientId, FamilyId};
 
 /// Outcome of a revocation attempt. The four variants
 /// distinguish reasons for the worker's audit + log
@@ -63,8 +64,8 @@ pub enum RevokeOutcome {
     /// Token decoded, client authentication policy
     /// satisfied, family DO revoked. The success case.
     Revoked {
-        family_id:   String,
-        client_id:   String,
+        family_id:   FamilyId,
+        client_id:   crate::types::ClientId,
         auth_mode:   RevokeAuthMode,
     },
 
@@ -208,7 +209,7 @@ where
     else {
         return Ok(RevokeOutcome::UnknownFamily);
     };
-    let token_cid = family_state.client_id.clone();
+    let token_cid = family_state.client_id.clone(); // ClientId
 
     // Step 3: authentication mode for the client
     // making the request. Per RFC 7009 §2:
@@ -267,7 +268,7 @@ where
             // For case (b): the cid binding gate
             // catches mismatches.
             if let Some(req_cid) = input.client_id {
-                if req_cid != token_cid {
+                if req_cid != token_cid.as_str() {
                     return Ok(RevokeOutcome::Unauthorized {
                         reason: UnauthorizedReason::ClientIdCidMismatch,
                     });
@@ -300,7 +301,7 @@ where
             // Some(_)).
             let req_client_id = input.client_id
                 .expect("Authenticated outcome implies client_id was supplied");
-            if req_client_id != token_cid {
+            if req_client_id != token_cid.as_str() {
                 return Ok(RevokeOutcome::Unauthorized {
                     reason: UnauthorizedReason::ClientIdCidMismatch,
                 });
@@ -316,7 +317,7 @@ where
 
     Ok(RevokeOutcome::Revoked {
         family_id,
-        client_id: token_cid,
+        client_id: token_cid.clone(),
         auth_mode,
     })
 }
@@ -329,12 +330,12 @@ where
 /// we know which DO to consult.
 ///
 /// Format (matching v0.27.0): `b64url(<family_id>.<jti>.<other>)`.
-fn decode_refresh_best_effort(token: &str) -> Option<(String, String)> {
+fn decode_refresh_best_effort(token: &str) -> Option<(FamilyId, String)> {
     use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     let bytes = URL_SAFE_NO_PAD.decode(token.as_bytes()).ok()?;
     let s     = std::str::from_utf8(&bytes).ok()?;
     let mut parts = s.split('.');
-    let family_id = parts.next()?.to_owned();
+    let family_id = FamilyId::from_storage(parts.next()?.to_owned());
     let jti       = parts.next()?.to_owned();
     Some((family_id, jti))
 }

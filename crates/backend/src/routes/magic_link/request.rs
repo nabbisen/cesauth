@@ -155,7 +155,7 @@ pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
         Ok(i)  => i,
         Err(e) => return oauth_error_response(&e),
     };
-    let handle = Uuid::new_v4().to_string();
+    let handle = cesauth_core::types::ChallengeHandle::mint();
 
     let store = CloudflareAuthChallengeStore::new(&ctx.env);
     let chal  = Challenge::MagicLink {
@@ -185,7 +185,7 @@ pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
     let mailer = mailer_factory::from_env(&ctx.env);
     let payload = MagicLinkPayload {
         recipient: &body.email,
-        handle:    &handle,
+        handle:    handle.as_str(),
         code:      &issued.delivery_payload,
         locale:    crate::i18n::locale_str(locale),
         tenant_id: None,
@@ -238,7 +238,7 @@ pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
     cesauth_frontend::set_render_nonce(csp_nonce.as_str());
 
     Response::from_html(
-        cesauth_frontend::templates::magic_link_sent_page_for(&handle, csrf_for_form, None, locale)
+        cesauth_frontend::templates::magic_link_sent_page_for(handle.as_str(), csrf_for_form, None, locale)
     )
 }
 

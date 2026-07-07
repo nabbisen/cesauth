@@ -13,8 +13,7 @@ async fn batch_with_no_queries_returns_empty_without_io() {
     let roles = StubRoles::default();
     let asgs  = StubAssignments::default();
 
-    let out = check_permissions_batch(
-        &asgs, &roles, "u", &[], 100,
+    let out = check_permissions_batch(&asgs, &roles, &crate::types::UserId::from_storage("u"), &[], 100,
     ).await.unwrap();
     assert!(out.is_empty(),
         "empty queries → empty results, no fall-through");
@@ -45,14 +44,12 @@ async fn batch_matches_per_query_check_permission_results() {
         (PermissionCatalog::TENANT_READ,         ScopeRef::Tenant { tenant_id: "other-tenant" }),
     ];
 
-    let batch_out = check_permissions_batch(
-        &asgs, &roles, "u", queries, 100,
+    let batch_out = check_permissions_batch(&asgs, &roles, &crate::types::UserId::from_storage("u"), queries, 100,
     ).await.unwrap();
 
     // Compare against per-call results.
     for (i, (slug, scope)) in queries.iter().enumerate() {
-        let single = check_permission(
-            &asgs, &roles, "u", slug, *scope, 100,
+        let single = check_permission(&asgs, &roles, &crate::types::UserId::from_storage("u"), slug, *scope, 100,
         ).await.unwrap();
         assert_eq!(batch_out[i], single,
             "batch result at index {i} must match per-query check");
@@ -80,7 +77,7 @@ async fn batch_no_assignments_denies_every_query_with_NoAssignments() {
         (PermissionCatalog::GROUP_CREATE,   ScopeRef::Tenant { tenant_id: "t" }),
         (PermissionCatalog::ROLE_ASSIGN,    ScopeRef::Tenant { tenant_id: "t" }),
     ];
-    let out = check_permissions_batch(&asgs, &roles, "u", queries, 100)
+    let out = check_permissions_batch(&asgs, &roles, &crate::types::UserId::from_storage("u"), queries, 100)
         .await.unwrap();
 
     assert_eq!(out.len(), 3);
@@ -105,7 +102,7 @@ async fn batch_with_dangling_role_id_denies_gracefully() {
     let queries: &[(&str, ScopeRef<'_>)] = &[
         (PermissionCatalog::TENANT_READ, ScopeRef::Tenant { tenant_id: "t" }),
     ];
-    let out = check_permissions_batch(&asgs, &roles, "u", queries, 100)
+    let out = check_permissions_batch(&asgs, &roles, &crate::types::UserId::from_storage("u"), queries, 100)
         .await.unwrap();
     assert_eq!(out[0], CheckOutcome::Denied(DenyReason::PermissionMissing));
 }
@@ -127,7 +124,7 @@ async fn batch_respects_expiration_per_query() {
     let queries: &[(&str, ScopeRef<'_>)] = &[
         (PermissionCatalog::TENANT_READ, ScopeRef::Tenant { tenant_id: "t" }),
     ];
-    let out = check_permissions_batch(&asgs, &roles, "u", queries, 100)
+    let out = check_permissions_batch(&asgs, &roles, &crate::types::UserId::from_storage("u"), queries, 100)
         .await.unwrap();
     // Expired → Denied(Expired), same as single check.
     assert_eq!(out[0], CheckOutcome::Denied(DenyReason::Expired));

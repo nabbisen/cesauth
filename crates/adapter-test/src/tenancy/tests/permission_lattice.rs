@@ -55,24 +55,21 @@ async fn tenant_admin_grants_tenant_scoped_permissions() {
     }).await.unwrap();
 
     // Alice has tenant:update on her tenant.
-    let out = check_permission(
-        &asgs, &roles, "u-alice",
+    let out = check_permission(&asgs, &roles, &cesauth_core::types::UserId::from_storage("u-alice"),
         PermissionCatalog::TENANT_UPDATE,
         ScopeRef::Tenant { tenant_id: "t-acme" }, 100,
     ).await.unwrap();
     assert!(out.is_allowed());
 
     // …but not on a different tenant.
-    let out = check_permission(
-        &asgs, &roles, "u-alice",
+    let out = check_permission(&asgs, &roles, &cesauth_core::types::UserId::from_storage("u-alice"),
         PermissionCatalog::TENANT_UPDATE,
         ScopeRef::Tenant { tenant_id: "t-other" }, 100,
     ).await.unwrap();
     assert!(!out.is_allowed());
 
     // …and not for a permission outside her role.
-    let out = check_permission(
-        &asgs, &roles, "u-alice",
+    let out = check_permission(&asgs, &roles, &cesauth_core::types::UserId::from_storage("u-alice"),
         PermissionCatalog::TENANT_DELETE,
         ScopeRef::Tenant { tenant_id: "t-acme" }, 100,
     ).await.unwrap();

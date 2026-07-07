@@ -5,8 +5,8 @@ use crate::ports::store::{AuthMethod, SessionState, SessionStatus};
 
 fn d1_active(revoked: Option<i64>) -> D1SessionRow {
     D1SessionRow {
-        session_id: "s1".into(),
-        user_id:    "u1".into(),
+        session_id: crate::types::SessionId::from_storage("s1"),
+        user_id: crate::types::UserId::from_storage("u1"),
         created_at: 100,
         revoked_at: revoked,
     }
@@ -14,9 +14,9 @@ fn d1_active(revoked: Option<i64>) -> D1SessionRow {
 
 fn do_state(revoked_at: Option<i64>) -> SessionState {
     SessionState {
-        session_id:   "s1".into(),
-        user_id:      "u1".into(),
-        client_id:    "c1".into(),
+        session_id: crate::types::SessionId::from_storage("s1"),
+        user_id: crate::types::UserId::from_storage("u1"),
+        client_id: crate::types::ClientId::from_storage("c1"),
         scopes:       vec!["openid".into()],
         auth_method:  AuthMethod::Passkey,
         created_at:   100,

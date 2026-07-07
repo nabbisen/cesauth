@@ -117,7 +117,7 @@ pub async fn revoke_session<D>(req: Request, ctx: RouteContext<D>) -> Result<Res
 
     let now   = OffsetDateTime::now_utc().unix_timestamp();
     let store = CloudflareActiveSessionStore::new(&ctx.env);
-    match store.revoke(session_id, now).await {
+    match store.revoke(&cesauth_core::types::SessionId::from_storage(session_id), now).await {
         Ok(_) => {
             audit::write_owned(
                 &ctx.env, EventKind::AdminSessionRevoked,

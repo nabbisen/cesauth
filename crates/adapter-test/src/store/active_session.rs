@@ -16,7 +16,7 @@ use cesauth_core::ports::{PortError, PortResult};
 
 #[derive(Debug, Default)]
 pub struct InMemoryActiveSessionStore {
-    map: Mutex<HashMap<String, SessionState>>,
+    map: Mutex<HashMap<cesauth_core::types::SessionId, SessionState>>,
 }
 
 impl ActiveSessionStore for InMemoryActiveSessionStore {
@@ -31,7 +31,7 @@ impl ActiveSessionStore for InMemoryActiveSessionStore {
 
     async fn touch(
         &self,
-        session_id:        &str,
+        session_id:        &cesauth_core::types::SessionId,
         now_unix:          i64,
         idle_timeout_secs: i64,
         absolute_ttl_secs: i64,
@@ -67,7 +67,7 @@ impl ActiveSessionStore for InMemoryActiveSessionStore {
         Ok(SessionStatus::Active(s.clone()))
     }
 
-    async fn status(&self, session_id: &str) -> PortResult<SessionStatus> {
+    async fn status(&self, session_id: &cesauth_core::types::SessionId) -> PortResult<SessionStatus> {
         let m = self.map.lock().map_err(|_| PortError::Unavailable)?;
         Ok(match m.get(session_id) {
             None => SessionStatus::NotStarted,
@@ -76,7 +76,7 @@ impl ActiveSessionStore for InMemoryActiveSessionStore {
         })
     }
 
-    async fn revoke(&self, session_id: &str, now_unix: i64) -> PortResult<SessionStatus> {
+    async fn revoke(&self, session_id: &cesauth_core::types::SessionId, now_unix: i64) -> PortResult<SessionStatus> {
         let mut m = self.map.lock().map_err(|_| PortError::Unavailable)?;
         match m.get_mut(session_id) {
             None => Ok(SessionStatus::NotStarted),
@@ -91,13 +91,13 @@ impl ActiveSessionStore for InMemoryActiveSessionStore {
 
     async fn list_for_user(
         &self,
-        user_id:         &str,
+        user_id:         &cesauth_core::types::UserId,
         include_revoked: bool,
         limit:           u32,
     ) -> PortResult<Vec<SessionState>> {
         let m = self.map.lock().map_err(|_| PortError::Unavailable)?;
         let mut out: Vec<SessionState> = m.values()
-            .filter(|s| s.user_id == user_id)
+            .filter(|s| s.user_id == *user_id)
             .filter(|s| include_revoked || s.revoked_at.is_none())
             .cloned()
             .collect();

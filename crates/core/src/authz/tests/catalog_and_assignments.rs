@@ -31,8 +31,7 @@ fn permission_catalog_includes_expected_staples() {
 async fn unassigned_user_is_denied_with_no_assignments() {
     let roles = StubRoles::default();
     let asgs  = StubAssignments::default();
-    let out = check_permission(
-        &asgs, &roles, "u-ghost",
+    let out = check_permission(&asgs, &roles, &crate::types::UserId::from_storage("u-ghost"),
         PermissionCatalog::TENANT_READ,
         ScopeRef::Tenant { tenant_id: "t-1" },
         100,

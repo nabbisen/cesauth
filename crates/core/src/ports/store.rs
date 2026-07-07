@@ -136,14 +136,14 @@ impl Challenge {
 ///   other caller will ever see that same value from `take` or `peek`.
 /// * Treat entries past `expires_at` as absent (`None`).
 pub trait AuthChallengeStore {
-    async fn put(&self, handle: &str, challenge: &Challenge) -> PortResult<()>;
-    async fn peek(&self, handle: &str) -> PortResult<Option<Challenge>>;
-    async fn take(&self, handle: &str) -> PortResult<Option<Challenge>>;
+    async fn put(&self, handle: &crate::types::ChallengeHandle, challenge: &Challenge) -> PortResult<()>;
+    async fn peek(&self, handle: &crate::types::ChallengeHandle) -> PortResult<Option<Challenge>>;
+    async fn take(&self, handle: &crate::types::ChallengeHandle) -> PortResult<Option<Challenge>>;
 
     /// Increment the attempt counter on a MagicLink challenge without
     /// consuming it. Returns the new attempt count, or `NotFound` if
     /// absent / expired / not a MagicLink variant.
-    async fn bump_magic_link_attempts(&self, handle: &str) -> PortResult<u32>;
+    async fn bump_magic_link_attempts(&self, handle: &crate::types::ChallengeHandle) -> PortResult<u32>;
 }
 
 // -------------------------------------------------------------------------
@@ -161,12 +161,12 @@ pub trait AuthChallengeStore {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FamilyState {
-    pub family_id:       String,
-    pub user_id:         String,
-    pub client_id:       String,
+    pub family_id:       crate::types::FamilyId,
+    pub user_id:         crate::types::UserId,
+    pub client_id:       crate::types::ClientId,
     pub scopes:          Vec<String>,
-    pub current_jti:     String,
-    pub retired_jtis:    Vec<String>,
+    pub current_jti:     crate::types::Jti,
+    pub retired_jtis:    Vec<crate::types::Jti>,
     pub created_at:      i64,
     pub last_rotated_at: i64,
     pub revoked_at:      Option<i64>,
@@ -177,7 +177,7 @@ pub struct FamilyState {
     /// only on a fresh family — never overwritten on a revoked family
     /// (the first reuse is the interesting one).
     #[serde(default)]
-    pub reused_jti:        Option<String>,
+    pub reused_jti:        Option<crate::types::Jti>,
     /// When the reuse was detected (Unix seconds). Note this is the
     /// detection timestamp, not when the token was leaked — those
     /// can be very different.
@@ -203,11 +203,11 @@ pub struct FamilyState {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FamilyInit {
-    pub family_id: String,
-    pub user_id:   String,
-    pub client_id: String,
+    pub family_id: crate::types::FamilyId,
+    pub user_id:   crate::types::UserId,
+    pub client_id: crate::types::ClientId,
     pub scopes:    Vec<String>,
-    pub first_jti: String,
+    pub first_jti: crate::types::Jti,
     pub now_unix:  i64,
     /// Authentication timestamp from `Challenge::AuthCode.auth_time`.
     /// `0` when the challenge was minted before RFC 001 shipped; the
@@ -225,7 +225,7 @@ pub struct FamilyInit {
 #[derive(Debug, Clone)]
 pub enum RotateOutcome {
     /// Happy path. `new_current_jti` is what the caller should now sign.
-    Rotated { new_current_jti: String },
+    Rotated { new_current_jti: crate::types::Jti },
     /// The family was already revoked before this rotation attempt.
     /// Carries the original revocation timestamp so the caller can
     /// decide whether to re-emit reuse-detection audit events (it
@@ -242,7 +242,7 @@ pub enum RotateOutcome {
     ReusedAndRevoked {
         /// The jti that was presented. Surfaced in audit so
         /// investigators can correlate against client logs.
-        reused_jti:  String,
+        reused_jti:  crate::types::Jti,
         /// Whether the presented jti was in the family's
         /// `retired_jtis` ring (= recognized) or wholly unknown
         /// (= forged / not previously seen by this family).
@@ -260,15 +260,15 @@ pub trait RefreshTokenFamilyStore {
     /// outcome is returned.
     async fn rotate(
         &self,
-        family_id:     &str,
-        presented_jti: &str,
-        new_jti:       &str,
+        family_id:     &crate::types::FamilyId,
+        presented_jti: &crate::types::Jti,
+        new_jti:       &crate::types::Jti,
         now_unix:      i64,
     ) -> PortResult<RotateOutcome>;
 
-    async fn revoke(&self, family_id: &str, now_unix: i64) -> PortResult<()>;
+    async fn revoke(&self, family_id: &crate::types::FamilyId, now_unix: i64) -> PortResult<()>;
 
-    async fn peek(&self, family_id: &str) -> PortResult<Option<FamilyState>>;
+    async fn peek(&self, family_id: &crate::types::FamilyId) -> PortResult<Option<FamilyState>>;
 }
 
 // -------------------------------------------------------------------------
@@ -285,9 +285,9 @@ pub enum AuthMethod {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionState {
-    pub session_id:   String,
-    pub user_id:      String,
-    pub client_id:    String,
+    pub session_id:   crate::types::SessionId,
+    pub user_id:      crate::types::UserId,
+    pub client_id:    crate::types::ClientId,
     pub scopes:       Vec<String>,
     pub auth_method:  AuthMethod,
     pub created_at:   i64,
@@ -346,14 +346,14 @@ pub trait ActiveSessionStore {
     /// transaction.
     async fn touch(
         &self,
-        session_id:        &str,
+        session_id:        &crate::types::SessionId,
         now_unix:          i64,
         idle_timeout_secs: i64,
         absolute_ttl_secs: i64,
     ) -> PortResult<SessionStatus>;
 
-    async fn status(&self, session_id: &str) -> PortResult<SessionStatus>;
-    async fn revoke(&self, session_id: &str, now_unix: i64) -> PortResult<SessionStatus>;
+    async fn status(&self, session_id: &crate::types::SessionId) -> PortResult<SessionStatus>;
+    async fn revoke(&self, session_id: &crate::types::SessionId, now_unix: i64) -> PortResult<SessionStatus>;
 
     /// **v0.35.0** — List active + recently-revoked sessions for a
     /// user. Used by `/me/security/sessions` to render the
@@ -372,7 +372,7 @@ pub trait ActiveSessionStore {
     /// surfaces may pass higher.
     async fn list_for_user(
         &self,
-        user_id:         &str,
+        user_id:         &crate::types::UserId,
         include_revoked: bool,
         limit:           u32,
     ) -> PortResult<Vec<SessionState>>;

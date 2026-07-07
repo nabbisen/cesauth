@@ -34,10 +34,10 @@ pub async fn page_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
         &ctx,
     ).await? { return Response::error("Forbidden", 403); }
     let orgs = {
-        use cesauth_cf::ports::repo::CloudflareOrganizationRepository;
+        use cesauth_cf::tenancy::CloudflareOrganizationRepository;
         use cesauth_core::tenancy::OrganizationRepository;
         let repo = CloudflareOrganizationRepository::new(&ctx.env);
-        repo.list_for_tenant(&ctx_ta.tenant.id, 200).await.unwrap_or_default()
+        repo.list_for_tenant(&ctx_ta.tenant.id).await.unwrap_or_default()
     };
     let mut resp = Response::from_json(&serde_json::json!({
         "tenant":        ctx_ta.tenant,

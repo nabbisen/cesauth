@@ -20,8 +20,7 @@ async fn cross_tenant_access_is_denied() {
         Scope::Tenant { tenant_id: "tenant-a".into() }))
         .await.unwrap();
 
-    let out = check_permission(
-        &asgs, &roles, "u",
+    let out = check_permission(&asgs, &roles, &crate::types::UserId::from_storage("u"),
         PermissionCatalog::TENANT_READ,
         ScopeRef::Tenant { tenant_id: "tenant-b" },  // ← different tenant
         100,
@@ -46,8 +45,7 @@ async fn system_scope_covers_any_tenant() {
         .await.unwrap();
 
     // System scope should cover a Tenant-scoped query.
-    let out = check_permission(
-        &asgs, &roles, "u",
+    let out = check_permission(&asgs, &roles, &crate::types::UserId::from_storage("u"),
         PermissionCatalog::TENANT_READ,
         ScopeRef::Tenant { tenant_id: "any-tenant" },
         100,
@@ -85,8 +83,7 @@ async fn tenant_scope_requires_org_assignment_for_org_query() {
         Scope::Organization { organization_id: "org-1".into() }))
         .await.unwrap();
 
-    let out = check_permission(
-        &asgs, &roles, "u",
+    let out = check_permission(&asgs, &roles, &crate::types::UserId::from_storage("u"),
         PermissionCatalog::ORGANIZATION_UPDATE,
         ScopeRef::Organization { organization_id: "org-1" },
         100,
@@ -107,8 +104,7 @@ async fn org_scope_does_not_cover_different_org() {
         Scope::Organization { organization_id: "org-1".into() }))
         .await.unwrap();
 
-    let out = check_permission(
-        &asgs, &roles, "u",
+    let out = check_permission(&asgs, &roles, &crate::types::UserId::from_storage("u"),
         PermissionCatalog::ORGANIZATION_UPDATE,
         ScopeRef::Organization { organization_id: "org-2" },
         100,
@@ -146,8 +142,7 @@ async fn system_admin_role_covers_user_write() {
         .await.unwrap();
 
     for perm in PermissionCatalog::ALL {
-        let out = check_permission(
-            &asgs, &roles, "u", perm,
+        let out = check_permission(&asgs, &roles, &crate::types::UserId::from_storage("u"), perm,
             ScopeRef::System,
             100,
         ).await.unwrap();
@@ -163,8 +158,7 @@ async fn user_with_no_assignments_is_denied() {
     let roles = StubRoles::default();
     let asgs  = StubAssignments::default();
     // No assignments created.
-    let out = check_permission(
-        &asgs, &roles, "u-nobody",
+    let out = check_permission(&asgs, &roles, &crate::types::UserId::from_storage("u-nobody"),
         PermissionCatalog::TENANT_READ,
         ScopeRef::System,
         100,

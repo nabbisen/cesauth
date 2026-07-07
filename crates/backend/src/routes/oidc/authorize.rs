@@ -102,7 +102,7 @@ pub async fn authorize<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
             } else {
                 log::emit(&cfg.log, Level::Debug, Category::Session,
                     &format!("session stale vs max_age={:?}", policy.max_age),
-                    Some(&s.user_id));
+                    Some(s.user_id.as_str()));
                 None
             }
         }
@@ -110,11 +110,11 @@ pub async fn authorize<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
 
     // --- Short-circuit: usable session -> mint code & 302. --------
     if let Some(s) = session_usable {
-        let code = Uuid::new_v4().to_string();
+        let code = cesauth_core::types::ChallengeHandle::mint();
         let code_chal = Challenge::AuthCode {
             client_id:             ar.client_id.clone(),
             redirect_uri:          ar.redirect_uri.clone(),
-            user_id:               s.user_id.clone(),
+            user_id:               s.user_id.to_string(),
             scopes:                ar.scope.as_deref()
                 .map(cesauth_core::types::Scopes::parse)
                 .unwrap_or_default(),
@@ -135,11 +135,11 @@ pub async fn authorize<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
                 &format!("auth-code put failed: {e:?}"), None);
             return oauth_error_response(&cesauth_core::CoreError::Internal);
         }
-        let location = build_redirect(&ar.redirect_uri, &code, ar.state.as_deref());
+        let location = build_redirect(&ar.redirect_uri, code.as_str(), ar.state.as_deref());
         let mut resp = Response::empty()?.with_status(302);
         resp.headers_mut().set("location", &location).ok();
         log::emit(&cfg.log, Level::Info, Category::Auth,
-            "authorize short-circuit - code issued", Some(&s.user_id));
+            "authorize short-circuit - code issued", Some(s.user_id.as_str()));
         return Ok(resp);
     }
 
@@ -157,7 +157,7 @@ pub async fn authorize<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
     }
 
     // --- Cold path: park the AR and render the login page. --------
-    let handle = Uuid::new_v4().to_string();
+    let handle = cesauth_core::types::ChallengeHandle::mint();
     let pending = Challenge::PendingAuthorize {
         client_id:             ar.client_id.clone(),
         redirect_uri:          ar.redirect_uri.clone(),
@@ -183,7 +183,7 @@ pub async fn authorize<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
     resp.headers_mut().set("location", "/login").ok();
     resp.headers_mut().append(
         "set-cookie",
-        &post_auth::set_pending_cookie_header(&handle, cfg.pending_authorize_ttl_secs),
+        &post_auth::set_pending_cookie_header(handle.as_str(), cfg.pending_authorize_ttl_secs),
     ).ok();
     resp.headers_mut().set("cache-control", "no-store").ok();
     log::emit(&cfg.log, Level::Debug, Category::Auth,
@@ -208,7 +208,7 @@ async fn read_active_session(
     let cookie = SessionCookie::verify(wire, &key, now_unix).ok()?;
 
     let sessions = CloudflareActiveSessionStore::new(env);
-    match sessions.status(&cookie.session_id).await {
+    match sessions.status(&cesauth_core::types::SessionId::from_storage(&cookie.session_id)).await {
         Ok(SessionStatus::Active(state)) => Some(state),
         _ => None,
     }

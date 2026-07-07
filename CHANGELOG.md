@@ -14,6 +14,86 @@ changes will always be called out here.
 
 ---
 
+## [0.81.0] - 2026-06-05
+
+### Security hardening — RFC 116 (type-modeling baseline, Phase 2)
+
+**RFC 116** is the foundational security-assurance release: identifier
+newtypes and secret-material types throughout the authentication core.
+
+#### RFC 116 Phase 1 — Identifier and secret newtypes (additive)
+
+New types in `cesauth_core::types`:
+
+- **`TenantId`, `UserId`, `ClientId`, `SessionId`, `FamilyId`, `Jti`,
+  `ChallengeHandle`, `RoleId`** — domain identifier newtypes with a
+  private inner field. Entry points: `parse()` (attacker-controlled
+  input, shape-validated), `from_storage()` (trusted storage reads,
+  validation bypassed), `mint()` (internal UUID generation).
+  `#[serde(transparent)]` — all wire formats, D1 rows, DO payloads,
+  and JWT claims are byte-identical to v0.80.x.
+
+- **`RawSecret`** — wraps live secret material (`client_secret`,
+  OTP material) in a `zeroize::Zeroizing<String>`. No `Clone`, no
+  `Serialize`. `Debug` prints `RawSecret(REDACTED)`. The only read
+  point is `.expose()` — greppable.
+
+- **`HashedSecret`** — a stored digest (sha-256 hex). No `PartialEq`
+  derived; equality is `ct_eq` (constant-time) only. `Debug` prints
+  `HashedSecret(REDACTED)`. `RawSecret::sha256()` is differential-
+  tested against the pre-existing `sha256_hex` helper to confirm
+  every existing `clients.client_secret_hash` row stays valid.
+
+- **`RedactedSecret`** — zero-size display placeholder for audit
+  `before`/`after` deltas.
+
+New dependency: `zeroize = "1"` (production, cesauth-core only).
+
+#### RFC 116 Phase 2 — RefreshTokenFamilyStore conversion
+
+Eliminates the three-adjacent-`&str` swappable-parameter hazard in
+`RefreshTokenFamilyStore::rotate`:
+
+```rust
+// Before (any two &str args silently transposable):
+async fn rotate(&self, family_id: &str, presented_jti: &str, new_jti: &str, …)
+
+// After (distinct types, transposition is a compile error):
+async fn rotate(&self, family_id: &FamilyId, presented_jti: &Jti, new_jti: &Jti, …)
+```
+
+`FamilyInit`, `FamilyState`, `RotateOutcome`, `RevokeOutcome` fields
+converted to `FamilyId`, `UserId`, `ClientId`, `Jti`. All adapters
+(`cesauth-adapter-test`, `cesauth-adapter-cloudflare`), all services
+(`token`, `revoke`, `introspect`), and all backends updated. 931 host-
+side tests + wasm32 `cargo check` remain green throughout.
+
+#### wasm32 build recovery
+
+Pre-existing wasm32 `cesauth-backend` breakage introduced during the
+v0.79/v0.80 RFC 115 migration is resolved:
+
+- `totp/enroll.rs`: orphaned post-handler block (dead code from the
+  template→Leptos migration) removed.
+- `totp/verify.rs`: `VerifyPostDecision` enum head (including
+  `CsrfFailure` variant) reconstructed from surviving enum body.
+- `backend`: stale import paths for `CloudflareTenantRepository` /
+  `CloudflareOrganizationRepository`; `ActiveSession` → `SessionState`;
+  duplicate `primary_method_for`; wrong `list()` / `list_for_tenant()`
+  arities — all corrected.
+
+`cargo check -p cesauth-backend --target wasm32-unknown-unknown` now
+passes cleanly for the first time at this version line.
+
+### Security assurance planning — RFCs 116–124 proposed
+
+Full RFC set for the security-critical assurance strategy deposited in
+`rfcs/proposed/` (RFCs 116–124) and indexed in `rfcs/README.md`.
+Codebase audit report at `docs/src/expert/security-assurance-audit-v0.80.2.md`.
+Security assurance track added to `ROADMAP.md`.
+
+---
+
 ## [0.80.2] - 2026-05-21
 
 ### Dependency upgrades

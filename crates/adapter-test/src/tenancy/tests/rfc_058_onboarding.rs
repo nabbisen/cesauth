@@ -70,8 +70,7 @@ async fn full_onboarding_create_tenant_grant_role_check_permission() {
     }).await.unwrap();
 
     // 4. Verify access control: admin can read the tenant.
-    let outcome = check_permission(
-        &asgs, &roles, "u-admin",
+    let outcome = check_permission(&asgs, &roles, &cesauth_core::types::UserId::from_storage("u-admin"),
         PermissionCatalog::TENANT_READ,
         ScopeRef::Tenant { tenant_id: &tenant.id },
         now + 100,
@@ -79,8 +78,7 @@ async fn full_onboarding_create_tenant_grant_role_check_permission() {
     assert!(outcome.is_allowed(), "tenant admin must be able to read tenant");
 
     // 5. Regular member has no role assignment → denied.
-    let member_outcome = check_permission(
-        &asgs, &roles, "u-member",
+    let member_outcome = check_permission(&asgs, &roles, &cesauth_core::types::UserId::from_storage("u-member"),
         PermissionCatalog::TENANT_READ,
         ScopeRef::Tenant { tenant_id: &tenant.id },
         now + 100,
@@ -213,8 +211,7 @@ async fn expired_role_assignment_is_denied() {
     }).await.unwrap();
 
     // Before expiry: allowed.
-    let before = check_permission(
-        &asgs, &roles, "u-x",
+    let before = check_permission(&asgs, &roles, &cesauth_core::types::UserId::from_storage("u-x"),
         PermissionCatalog::TENANT_READ,
         ScopeRef::System,
         now + 59,
@@ -222,8 +219,7 @@ async fn expired_role_assignment_is_denied() {
     assert!(before.is_allowed(), "valid assignment must be allowed before expiry");
 
     // After expiry: denied.
-    let after = check_permission(
-        &asgs, &roles, "u-x",
+    let after = check_permission(&asgs, &roles, &cesauth_core::types::UserId::from_storage("u-x"),
         PermissionCatalog::TENANT_READ,
         ScopeRef::System,
         now + 61,

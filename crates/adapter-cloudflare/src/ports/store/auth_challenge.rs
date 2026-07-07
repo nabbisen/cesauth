@@ -55,8 +55,8 @@ impl<'a> CloudflareAuthChallengeStore<'a> {
 }
 
 impl AuthChallengeStore for CloudflareAuthChallengeStore<'_> {
-    async fn put(&self, handle: &str, challenge: &Challenge) -> PortResult<()> {
-        let stub  = self.stub(handle)?;
+    async fn put(&self, handle: &cesauth_core::types::ChallengeHandle, challenge: &Challenge) -> PortResult<()> {
+        let stub  = self.stub(handle.as_str())?;
         let reply: ChallengeReply = rpc_call(&stub, &ChallengeCmd::Put { challenge }).await?;
         match reply {
             ChallengeReply::Ok       => Ok(()),
@@ -65,8 +65,8 @@ impl AuthChallengeStore for CloudflareAuthChallengeStore<'_> {
         }
     }
 
-    async fn peek(&self, handle: &str) -> PortResult<Option<Challenge>> {
-        let stub  = self.stub(handle)?;
+    async fn peek(&self, handle: &cesauth_core::types::ChallengeHandle) -> PortResult<Option<Challenge>> {
+        let stub  = self.stub(handle.as_str())?;
         let reply: ChallengeReply = rpc_call(&stub, &ChallengeCmd::Peek).await?;
         match reply {
             ChallengeReply::Value { challenge } => Ok(challenge),
@@ -74,8 +74,8 @@ impl AuthChallengeStore for CloudflareAuthChallengeStore<'_> {
         }
     }
 
-    async fn take(&self, handle: &str) -> PortResult<Option<Challenge>> {
-        let stub  = self.stub(handle)?;
+    async fn take(&self, handle: &cesauth_core::types::ChallengeHandle) -> PortResult<Option<Challenge>> {
+        let stub  = self.stub(handle.as_str())?;
         let reply: ChallengeReply = rpc_call(&stub, &ChallengeCmd::Take).await?;
         match reply {
             ChallengeReply::Value { challenge } => Ok(challenge),
@@ -83,8 +83,8 @@ impl AuthChallengeStore for CloudflareAuthChallengeStore<'_> {
         }
     }
 
-    async fn bump_magic_link_attempts(&self, handle: &str) -> PortResult<u32> {
-        let stub  = self.stub(handle)?;
+    async fn bump_magic_link_attempts(&self, handle: &cesauth_core::types::ChallengeHandle) -> PortResult<u32> {
+        let stub  = self.stub(handle.as_str())?;
         let reply: ChallengeReply = rpc_call(&stub, &ChallengeCmd::Bump).await?;
         match reply {
             ChallengeReply::Attempts { count }      => Ok(count),

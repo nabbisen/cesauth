@@ -1,13 +1,13 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
-    "crates/core",
     "crates/adapter-cloudflare",
     "crates/adapter-test",
+    "crates/backend",
+    "crates/core",
+    "crates/frontend",
     "crates/migrate",
     "crates/migrate-test",
-    "crates/backend",
-    "crates/frontend",
 ]
 # `fuzz/` is intentionally NOT a workspace member. It uses nightly Rust and
 # cargo-fuzz infrastructure that should not influence the stable workspace
@@ -21,31 +21,37 @@ members = [
 # `[workspace.package].rust-version`) and the wasm32 target installed.
 
 [workspace.package]
-version      = "0.80.2"
-edition      = "2024"
-rust-version = "1.85"
-license      = "Apache-2.0"
-repository   = "https://github.com/nabbisen/cesauth"
-authors      = ["nabbisen"]
+version = "0.81.0"
+edition                = "2024"
+rust-version           = "1.85"
+license                = "Apache-2.0"
+authors                = ["nabbisen"]
+repository             = "https://github.com/nabbisen/cesauth"
 
 [workspace.dependencies]
+# --- Internal crates ---
+cesauth-adapter-cloudflare  = { version = "0", path = "crates/adapter-cloudflare" }
+cesauth-adapter-test        = { version = "0", path = "crates/adapter-test" }
+cesauth-core                = { version = "0", path = "crates/core" }
+cesauth-frontend            = { version = "0", path = "crates/frontend" }
+
 # --- Cloudflare Workers ---
 # Bind once at workspace level so every crate sees the same version.
 # worker 0.8.x requires edition = "2024" through its transitive graph.
-worker      = { version = "0.8", features = ["d1", "http"] }
+worker                      = { version = "0.8", features = ["d1", "http"] }
 # workers-rs 0.8 no longer re-exports these transitively; adapter-cloudflare
 # depends on them directly (wasm_bindgen::JsValue, js_sys::Date). The version
 # ranges are pinned to match workers-rs 0.8's own transitive requirements.
-wasm-bindgen = "0.2"
-js-sys       = "0.3"
+wasm-bindgen                = "0.2"
+js-sys                      = "0.3"
 
 # --- Serde / JSON ---
-serde       = { version = "1", features = ["derive"] }
-serde_json  = "1"
+serde                       = { version = "1", features = ["derive"] }
+serde_json                  = "1"
 
 # --- Errors ---
-thiserror = "2"
-anyhow    = "1"
+thiserror                   = "2"
+anyhow                      = "1"
 
 # --- Crypto / Auth ---
 # **v0.44.0** — `jsonwebtoken` removed. v0.41.0 had to enable
@@ -69,56 +75,55 @@ anyhow    = "1"
 # recent releases push MSRV past what we want to pin.
 
 # --- Encoding / hashing ---
-base64     = "0.22"
-sha2       = "0.10"
-hex        = "0.4"
+base64                      = "0.22"
+sha2                        = "0.10"
+hex                         = "0.4"
 
 # --- TOTP (RFC 6238), v0.26.0 + ---
 # RustCrypto pattern matching `sha2` 0.10 above. SHA-1 is the only
 # hash supported (ADR-009 §Q1; locked because Google Authenticator
 # silently falls back to SHA-1 on SHA-256 secrets, producing wrong
 # codes — universal authenticator-app compatibility wins).
-sha1       = "0.10"
-hmac       = "0.12"
+sha1                        = "0.10"
+hmac                        = "0.12"
 # AES-GCM-256 for TOTP secret encryption at rest (ADR-009 §Q5).
 # AAD-bound to row primary key prevents D1-backup-swap attacks.
-aes-gcm    = "0.10"
+aes-gcm                     = "0.10"
 # base32 for the `otpauth://` URI's `secret=` parameter
 # (ADR-009 §Q8) and recovery codes (ADR-009 §Q6).
-data-encoding = "2"
+data-encoding               = "2"
 # QR code generation for the TOTP enrollment page (v0.28.0+).
 # Pure-Rust, no external image dep — emits SVG which we inline
 # into the HTML template. `default-features = false` drops the
 # image-rendering features we don't use; `svg` feature is what
 # lets us emit string SVG.
-qrcode     = { version = "0.14", default-features = false, features = ["svg"] }
+qrcode                      = { version = "0.14", default-features = false, features = ["svg"] }
 
 # Pin `getrandom` to the 0.2 line. 0.3 is also in the graph via ring, but we
 # only ask for 0.2 ourselves - the `js` feature is only relevant here.
-getrandom  = { version = "0.2", features = ["js"] }
-rand_core  = { version = "0.6", features = ["getrandom"] }
-uuid       = { version = "1", features = ["v4", "serde", "js"] }
+getrandom                   = { version = "0.2", features = ["js"] }
+rand_core                   = { version = "0.6", features = ["getrandom"] }
+uuid                        = { version = "1", features = ["v4", "serde", "js"] }
 
 # --- Time ---
 # `time` with `wasm-bindgen` gives us UTC inside Workers without std-time ops.
-time = { version = "0.3", features = ["serde", "wasm-bindgen", "formatting"] }
+time                        = { version = "0.3", features = ["serde", "wasm-bindgen", "formatting"] }
 
 # --- CLI tooling (migrate, v0.19.0+) ---
 # Used only by host-side binaries (`crates/migrate`). Workers crates
 # do not pull these in.
-clap  = { version = "4", features = ["derive"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "process"] }
+clap                        = { version = "4", features = ["derive"] }
+tokio                       = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "process"] }
 
 # --- Test utilities (dev-dep only) ---
 # RFC 003 (v0.51.1): property-based testing for crypto round-trips and
 # redirect_uri matcher. Never referenced by production code.
-proptest = { version = "1", default-features = false, features = ["std"] }
+proptest                    = { version = "1", default-features = false, features = ["std"] }
 
-# --- Internal crates ---
-cesauth-core                = { path = "crates/core" }
-cesauth-adapter-cloudflare  = { path = "crates/adapter-cloudflare" }
-cesauth-adapter-test        = { path = "crates/adapter-test" }
-cesauth-frontend            = { path = "crates/frontend" }
+# --- RFC 116: secret material hygiene ---
+# `RawSecret` zeroizes its buffer on drop. Tiny crate, no transitive
+# additions beyond itself. See DEPENDENCIES.md.
+zeroize                     = "1"
 
 [profile.release]
 # Workers is size-sensitive. opt-level = "z" + lto + 1 codegen-unit shrinks the WASM.

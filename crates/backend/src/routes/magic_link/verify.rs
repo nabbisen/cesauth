@@ -161,9 +161,9 @@ pub async fn verify<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     }
 
     let store = CloudflareAuthChallengeStore::new(&ctx.env);
-    let _ = store.bump_magic_link_attempts(&body.handle).await;
+    let _ = store.bump_magic_link_attempts(&cesauth_core::types::ChallengeHandle::from_storage(&body.handle)).await;
 
-    let chal = match store.peek(&body.handle).await {
+    let chal = match store.peek(&cesauth_core::types::ChallengeHandle::from_storage(&body.handle)).await {
         Ok(Some(c)) => c,
         _ => return if is_json {
             oauth_error_response(&cesauth_core::CoreError::MagicLinkMismatch)
@@ -208,7 +208,7 @@ pub async fn verify<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     }
 
     // Consume the challenge only on verified success.
-    let _ = store.take(&body.handle).await;
+    let _ = store.take(&cesauth_core::types::ChallengeHandle::from_storage(&body.handle)).await;
     audit::write_owned(
         &ctx.env, EventKind::MagicLinkVerified,
         Some(email.clone()), None, None,

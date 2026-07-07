@@ -239,7 +239,7 @@ async fn issue_promote_otp<D>(
         }
     };
 
-    let handle = Uuid::new_v4().to_string();
+    let handle = cesauth_core::types::ChallengeHandle::mint();
     let challenges = CloudflareAuthChallengeStore::new(&ctx.env);
     if let Err(e) = challenges.put(&handle, &Challenge::MagicLink {
         email_or_user: email.to_owned(),
@@ -256,9 +256,9 @@ async fn issue_promote_otp<D>(
     // ever" invariant). Real delivery is via MagicLinkMailer (RFC 010).
     audit::write_owned(
         &ctx.env, EventKind::MagicLinkIssued,
-        Some(session.user_id.clone()),
+        Some(session.user_id.to_string()),
         None,
-        Some(format!("via=anonymous-promote,handle={handle}")),
+        Some(format!("via=anonymous-promote,handle={}", handle.as_str())),
     ).await.ok();
 
     // **v0.51.0 (RFC 010)** — deliver via mailer port.
@@ -266,7 +266,7 @@ async fn issue_promote_otp<D>(
     let locale = crate::i18n::resolve_locale_str("ja"); // anonymous promote has no request locale
     let ml_payload = MagicLinkPayload {
         recipient: email,
-        handle:    &handle,
+        handle:    handle.as_str(),
         code:      &issued.delivery_payload,
         locale,
         tenant_id: Some(DEFAULT_TENANT_ID),
@@ -276,25 +276,25 @@ async fn issue_promote_otp<D>(
         Ok(receipt) => {
             audit::write_owned(
                 &ctx.env, EventKind::MagicLinkDelivered,
-                Some(session.user_id.clone()), None,
+                Some(session.user_id.to_string()), None,
                 Some(format!(
-                    "via=anonymous-promote,handle={handle} provider_msg_id={}",
-                    receipt.provider_message_id.as_deref().unwrap_or("-")
+                    "via=anonymous-promote,handle={} provider_msg_id={}",
+                    handle.as_str(), receipt.provider_message_id.as_deref().unwrap_or("-")
                 )),
             ).await.ok();
         }
         Err(e) => {
             audit::write_owned(
                 &ctx.env, EventKind::MagicLinkDeliveryFailed,
-                Some(session.user_id.clone()), None,
-                Some(format!("via=anonymous-promote,handle={handle} kind={}", e.audit_kind())),
+                Some(session.user_id.to_string()), None,
+                Some(format!("via=anonymous-promote,handle={} kind={}", handle.as_str(), e.audit_kind())),
             ).await.ok();
             // No user-visible error — same differential-response reasoning.
         }
     }
 
     json(200, &PromoteIssueBody {
-        handle,
+        handle: handle.to_string(),
         expires_at: issued.expires_at,
     })
 }
@@ -316,9 +316,9 @@ async fn apply_promotion<D>(
     // Deliberately not enforcing a hard ceiling here; the OTP
     // entropy + 10-minute TTL are the limiting controls. Mirrors
     // the existing /magic-link/verify behaviour.
-    let _ = challenges.bump_magic_link_attempts(handle).await;
+    let _ = challenges.bump_magic_link_attempts(&cesauth_core::types::ChallengeHandle::from_storage(handle)).await;
 
-    let challenge = match challenges.peek(handle).await {
+    let challenge = match challenges.peek(&cesauth_core::types::ChallengeHandle::from_storage(handle)).await {
         Ok(Some(Challenge::MagicLink { email_or_user, code_hash, expires_at, .. })) => {
             (email_or_user, code_hash, expires_at)
         }
@@ -339,7 +339,7 @@ async fn apply_promotion<D>(
     }
 
     // Consume the challenge so it can't be replayed.
-    let _ = challenges.take(handle).await;
+    let _ = challenges.take(&cesauth_core::types::ChallengeHandle::from_storage(handle)).await;
 
     // ---- Email-uniqueness check (in-tenant) -------------------------
     //
@@ -355,7 +355,7 @@ async fn apply_promotion<D>(
             // not the existing user being collided with.
             audit::write_owned(
                 &ctx.env, EventKind::MagicLinkFailed,
-                Some(session.user_id.clone()),
+                Some(session.user_id.to_string()),
                 None,
                 Some("via=anonymous-promote,reason=email_already_registered".into()),
             ).await.ok();
@@ -399,7 +399,7 @@ async fn apply_promotion<D>(
     // ---- Audit ------------------------------------------------------
     audit::write_owned(
         &ctx.env, EventKind::AnonymousPromoted,
-        Some(session.user_id.clone()),
+        Some(session.user_id.to_string()),
         None,
         Some(format!(
             "via=anonymous-promote,from=anonymous,to=human_user")),

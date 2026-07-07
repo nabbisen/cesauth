@@ -61,8 +61,8 @@ use crate::ports::store::SessionStatus;
 /// would not repair them even if they drifted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct D1SessionRow {
-    pub session_id: String,
-    pub user_id:    String,
+    pub session_id: crate::types::SessionId,
+    pub user_id:    crate::types::UserId,
     pub created_at: i64,
     /// `None` if D1 thinks the session is active; `Some(unix)`
     /// if D1 thinks it's revoked.

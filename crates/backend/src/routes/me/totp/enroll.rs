@@ -192,7 +192,7 @@ pub async fn get_json_handler(
         ),
     };
 
-    let email = match read_user_email(&env, &session.user_id).await? {
+    let email = match read_user_email(&env, session.user_id.as_str()).await? {
         Some(e) => e,
         None => return Response::error("Account inconsistent — no email", 500),
     };
@@ -206,7 +206,7 @@ pub async fn get_json_handler(
     let totp_repo = CloudflareTotpAuthenticatorRepository::new(&env);
 
     match decide_enroll_get(
-        &session.user_id, &email,
+        session.user_id.as_str(), &email,
         &secret, &row_id,
         &key, &key_id,
         &totp_repo, now_unix,
@@ -228,106 +228,6 @@ pub async fn get_json_handler(
                 &set_totp_enroll_cookie_header(&row_id, TOTP_ENROLL_TTL_SECS)).ok();
             h.append("set-cookie", &csrf::set_cookie_header(&csrf_token)).ok();
             h.set("cache-control", "no-store").ok();
-            Ok(resp)
-        }
-    }
-}
-    let csp_nonce = match cesauth_core::security_headers::CspNonce::generate() {
-        Ok(n) => n,
-        Err(_) => {
-            crate::audit::write_owned(
-                &env, crate::audit::EventKind::CsrfRngFailure,
-                None, None, Some("csp_nonce_failure".to_owned()),
-            ).await.ok();
-            return Response::error("service temporarily unavailable", 500);
-        }
-    };
-    cesauth_frontend::set_render_nonce(csp_nonce.as_str());
-
-    let session = match me_auth::resolve_or_redirect(&req, &env).await? {
-        Ok(s)  => s,
-        Err(r) => return Ok(r),
-    };
-
-    // Encryption key gate: refuse to start enrollment if the
-    // operator hasn't provisioned TOTP_ENCRYPTION_KEY. Otherwise
-    // we'd encrypt with `None` and the verify path would have no
-    // way to decrypt.
-    let key = match load_totp_encryption_key(&env)? {
-        Some(k) => k,
-        None    => return Response::error(
-            "TOTP is not configured by the operator (TOTP_ENCRYPTION_KEY missing)",
-            503,
-        ),
-    };
-    let key_id = match load_totp_encryption_key_id(&env) {
-        Some(id) => id,
-        None     => return Response::error(
-            "TOTP is not configured by the operator (TOTP_ENCRYPTION_KEY_ID missing)",
-            503,
-        ),
-    };
-
-    // Look up the user's email for the otpauth label.
-    let email = match read_user_email(&env, &session.user_id).await? {
-        Some(e) => e,
-        None    => return Response::error(
-            "Account state inconsistent — no email on file",
-            500,
-        ),
-    };
-
-    // Mint a fresh secret + row id.
-    let secret = match Secret::generate() {
-        Ok(s)  => s,
-        Err(_) => return Response::error("RNG unavailable", 503),
-    };
-    let row_id = Uuid::new_v4().to_string();
-    let now_unix = OffsetDateTime::now_utc().unix_timestamp();
-
-    let totp_repo = CloudflareTotpAuthenticatorRepository::new(&env);
-
-    let decision = decide_enroll_get(
-        &session.user_id, &email,
-        &secret, &row_id,
-        &key, &key_id,
-        &totp_repo, now_unix,
-    ).await;
-
-    match decision {
-        EnrollGetDecision::EncryptError   => Response::error("encryption failed", 500),
-        EnrollGetDecision::StoreError     => Response::error("totp authenticator create failed", 500),
-        EnrollGetDecision::QrRenderError  => Response::error("qr render failed", 500),
-        EnrollGetDecision::Success { secret_b32, qr_svg } => {
-            // CSRF token for the confirm POST.
-            let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
-            let existing = csrf::extract_from_cookie_header(&cookie_header).map(str::to_owned);
-            let (csrf_token, csrf_set_cookie) = match existing {
-                Some(t) if !t.is_empty() => (t, None),
-                _ => {
-                    let t = match csrf::mint() {
-            Ok(tok) => tok,
-            Err(_) => {
-                crate::audit::write_owned(
-                    &env, crate::audit::EventKind::CsrfRngFailure,
-                    None, None, Some("route=/me/security/totp/enroll".to_owned()),
-                ).await.ok();
-                return Response::error("service temporarily unavailable", 500);
-            }
-        };
-                    let h = csrf::set_cookie_header(&t);
-                    (t, Some(h))
-                }
-            };
-
-            let locale = crate::i18n::resolve_locale(&req);
-            let html = templates::totp_enroll_page_for(&qr_svg, &secret_b32, &csrf_token, None, locale);
-            let mut resp = Response::from_html(html)?;
-            let h = resp.headers_mut();
-            h.append("set-cookie", &set_totp_enroll_cookie_header(&row_id, TOTP_ENROLL_TTL_SECS)).ok();
-            if let Some(s) = csrf_set_cookie {
-                h.append("set-cookie", &s).ok();
-            }
             Ok(resp)
         }
     }
@@ -519,7 +419,7 @@ pub async fn post_confirm_handler(
     let now_unix      = OffsetDateTime::now_utc().unix_timestamp();
 
     let decision = decide_enroll_confirm_post(
-        &session.user_id, &enroll_id,
+        session.user_id.as_str(), &enroll_id,
         &csrf_form, csrf_cookie, &submitted,
         &key, &totp_repo, &recovery_repo, now_unix,
     ).await;
@@ -538,8 +438,8 @@ pub async fn post_confirm_handler(
             // Re-render the enroll page so the user can try
             // again with a fresh code from their authenticator.
             // We need email for the otpauth URI label.
-            let email = read_user_email(&env, &session.user_id).await?
-                .unwrap_or_else(|| session.user_id.clone());
+            let email = read_user_email(&env, session.user_id.as_str()).await?
+                .unwrap_or_else(|| session.user_id.to_string());
             // Re-build a Secret to feed otpauth_uri. We have the
             // base32 form; round-trip to bytes.
             let secret_for_uri = match Secret::from_base32(&secret_b32) {

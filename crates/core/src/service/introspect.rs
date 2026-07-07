@@ -44,6 +44,7 @@
 //! is the canonical audience policy point.
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use crate::types::{FamilyId, Jti};
 
 use crate::error::{CoreError, CoreResult};
 use crate::jwt::AccessTokenClaims;
@@ -369,7 +370,7 @@ where
         // shouldn't learn anything about the family's
         // internals).
         let (classification, current_jti_field) = if fam.retired_jtis.contains(&presented_jti) {
-            (FamilyClassification::Retired, Some(fam.current_jti.clone()))
+            (FamilyClassification::Retired, Some(fam.current_jti.to_string()))
         } else {
             // Mismatch with no retired-jti membership.
             // Treat as Unknown — same conflation as the
@@ -396,9 +397,9 @@ where
     // inactive responses.
     Ok(Some(IntrospectionResponse::active_refresh_with_ext(
         fam.scopes.join(" "),
-        fam.client_id,
-        fam.user_id,
-        presented_jti,
+        fam.client_id.to_string(),
+        fam.user_id.to_string(),
+        presented_jti.to_string(),
         fam.created_at,
         exp,
     )))
@@ -408,12 +409,12 @@ where
 /// without fate-sharing on the rotation path. The authoritative
 /// decoder lives there; this is a duplicate of the read-side
 /// to keep introspection independent.
-fn decode_refresh_token(token: &str) -> Option<(String, String, i64)> {
+fn decode_refresh_token(token: &str) -> Option<(FamilyId, Jti, i64)> {
     let bytes = URL_SAFE_NO_PAD.decode(token.as_bytes()).ok()?;
     let s = std::str::from_utf8(&bytes).ok()?;
     let mut parts = s.splitn(3, '.');
-    let family_id = parts.next()?.to_owned();
-    let jti       = parts.next()?.to_owned();
+    let family_id = FamilyId::from_storage(parts.next()?.to_owned());
+    let jti       = Jti::from_storage(parts.next()?.to_owned());
     let exp       = parts.next()?.parse::<i64>().ok()?;
     Some((family_id, jti, exp))
 }

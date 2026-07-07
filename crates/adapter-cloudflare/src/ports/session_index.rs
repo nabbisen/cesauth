@@ -48,8 +48,8 @@ struct DbRow {
 impl DbRow {
     fn into_domain(self) -> SessionIndexRow {
         SessionIndexRow {
-            session_id: self.session_id,
-            user_id:    self.user_id,
+            session_id: cesauth_core::types::SessionId::from_storage(self.session_id),
+            user_id:    cesauth_core::types::UserId::from_storage(self.user_id),
             created_at: self.created_at,
             revoked_at: self.revoked_at,
         }
@@ -78,18 +78,18 @@ impl SessionIndexRepo for CloudflareSessionIndexRepo<'_> {
         Ok(rows.into_iter().map(DbRow::into_domain).collect())
     }
 
-    async fn delete_row(&self, session_id: &str) -> PortResult<()> {
+    async fn delete_row(&self, session_id: &cesauth_core::types::SessionId) -> PortResult<()> {
         let db = db(self.env)?;
         let stmt = db.prepare(
             "DELETE FROM user_sessions WHERE session_id = ?1",
         )
-        .bind(&[worker::wasm_bindgen::JsValue::from_str(session_id)])
+        .bind(&[worker::wasm_bindgen::JsValue::from_str(session_id.as_str())])
         .map_err(|e| run_err("session_index.delete_row bind", e))?;
         stmt.run().await.map_err(|_| PortError::Unavailable)?;
         Ok(())
     }
 
-    async fn mark_revoked(&self, session_id: &str, revoked_at: i64) -> PortResult<()> {
+    async fn mark_revoked(&self, session_id: &cesauth_core::types::SessionId, revoked_at: i64) -> PortResult<()> {
         let db = db(self.env)?;
         // **Critical guard**: the WHERE clause includes
         // `revoked_at IS NULL` so a row that's already
@@ -106,7 +106,7 @@ impl SessionIndexRepo for CloudflareSessionIndexRepo<'_> {
         )
         .bind(&[
             d1_int(revoked_at),
-            worker::wasm_bindgen::JsValue::from_str(session_id),
+            worker::wasm_bindgen::JsValue::from_str(session_id.as_str()),
         ])
         .map_err(|e| run_err("session_index.mark_revoked bind", e))?;
         stmt.run().await.map_err(|_| PortError::Unavailable)?;

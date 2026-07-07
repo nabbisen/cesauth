@@ -113,7 +113,7 @@ where
     };
     cesauth_frontend::set_render_nonce(csp_nonce.as_str());
 
-    match challenges.peek(totp_handle).await {
+    match challenges.peek(&cesauth_core::types::ChallengeHandle::from_storage(totp_handle)).await {
         Ok(Some(Challenge::PendingTotp { .. })) => VerifyGetDecision::RenderPage,
         _ => VerifyGetDecision::StaleGate,
     }
@@ -178,6 +178,18 @@ pub async fn get_json_handler(
         }
     }
 }
+
+/// Outcome of [`decide_verify_post`].
+///
+/// Captures the full branch table for the TOTP gate verify flow:
+/// CSRF / challenge take / authenticator lookup / decrypt / verify /
+/// replay-state persistence / lockout.
+#[derive(Debug)]
+pub(crate) enum VerifyPostDecision {
+    /// CSRF token mismatch. 400. The challenge is NOT consumed —
+    /// the user can retry with a fresh form.
+    CsrfFailure,
+
     /// `take` returned None / wrong variant / store errored. The
     /// gate is unusable. Handler clears the
     /// `__Host-cesauth_totp` cookie and 302's to /login.
@@ -274,7 +286,7 @@ where
         return VerifyPostDecision::CsrfFailure;
     }
 
-    let challenge = match challenges.take(totp_handle).await {
+    let challenge = match challenges.take(&cesauth_core::types::ChallengeHandle::from_storage(totp_handle)).await {
         Ok(Some(c)) => c,
         _           => return VerifyPostDecision::NoChallenge,
     };
@@ -354,7 +366,7 @@ where
                 attempts:                 new_attempts,
                 expires_at:               now_unix + TOTP_GATE_TTL_SECS.min(expires_at - now_unix).max(60),
             };
-            if challenges.put(totp_handle, &bumped).await.is_err() {
+            if challenges.put(&cesauth_core::types::ChallengeHandle::from_storage(totp_handle), &bumped).await.is_err() {
                 return VerifyPostDecision::RepkFailed;
             }
             VerifyPostDecision::BadCode

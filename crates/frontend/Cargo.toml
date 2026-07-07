@@ -1,23 +1,23 @@
 [package]
 name        = "cesauth-frontend"
-version.workspace     = true
-edition.workspace     = true
-rust-version.workspace = true
-license.workspace     = true
-repository.workspace  = true
-authors.workspace     = true
 description = "Typed, accessible UI components and HTML templates for cesauth login flows."
+version.workspace       = true
+edition.workspace       = true
+rust-version.workspace  = true
+license.workspace       = true
+authors.workspace       = true
+repository.workspace    = true
 
 [lib]
 # cdylib  — Trunk builds this to WASM for the browser (--features csr).
 # rlib    — cargo/wrangler links this into cesauth-backend (no csr feature).
 # Both must be present so trunk and cargo can each use the right artifact.
-crate-type = ["cdylib", "rlib"]
-path = "src/lib.rs"
+crate-type  = ["cdylib", "rlib"]
+path        = "src/lib.rs"
 
 [features]
 default = []
-csr = [
+csr     = [
     "dep:leptos",
     "dep:leptos_router",
     "dep:gloo-net",
@@ -29,9 +29,10 @@ csr = [
 ]
 
 [dependencies]
-cesauth-core = { path = "../core" }
-time         = { workspace = true }
-serde        = { workspace = true }
+cesauth-core                = { workspace = true }
+
+time                        = { workspace = true }
+serde                       = { workspace = true }
 
 # Leptos — optional; only compiled when `csr` feature is active.
 # Pin history:
@@ -53,23 +54,27 @@ serde        = { workspace = true }
 #             verified in CI before shipping to production.
 # leptos_router follows an independent version cadence; latest stable
 # is 0.8.13 (compatible with leptos 0.8.x).
-leptos        = { version = "=0.8.19", optional = true }
-leptos_router = { version = "=0.8.13", optional = true }
+leptos                      = { version = "=0.8.19", optional = true }
+leptos_router               = { version = "=0.8.13", optional = true }
 
 # Browser HTTP client for Leptos components.
-gloo-net = { version = "0.6", optional = true }
+gloo-net                    = { version = "0.6", optional = true }
 
 # Browser DOM/Navigator/fetch APIs.
-web-sys = { version = "0.3", features = [
-    "Window", "Navigator", "Location",
-    "Request", "RequestInit", "RequestMode",
-    "Response", "Headers",
-], optional = true }
+web-sys                     = {
+    version = "0.3",
+    features = [
+        "Window", "Navigator", "Location",
+        "Request", "RequestInit", "RequestMode",
+        "Response", "Headers",
+    ],
+    optional = true
+}
 
 # Async bridge for Promises → Rust futures.
-wasm-bindgen-futures = { version = "0.4", optional = true }
+wasm-bindgen-futures        = { version = "0.4", optional = true }
 
 # Raw JS reflection for WebAuthn credential serialisation.
-js-sys = { workspace = true, optional = true }
+js-sys                      = { workspace = true, optional = true }
 
-console_error_panic_hook = { version = "0.1", optional = true }
+console_error_panic_hook    = { version = "0.1", optional = true }

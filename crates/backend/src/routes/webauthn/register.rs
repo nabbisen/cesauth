@@ -37,7 +37,7 @@ pub async fn register_start<D>(mut req: Request, ctx: RouteContext<D>) -> Result
         Err(e) => return oauth_error_response(&e),
     };
 
-    let handle = Uuid::new_v4().to_string();
+    let handle = cesauth_core::types::ChallengeHandle::mint();
     let now    = OffsetDateTime::now_utc().unix_timestamp();
 
     let store = CloudflareAuthChallengeStore::new(&ctx.env);
@@ -55,7 +55,7 @@ pub async fn register_start<D>(mut req: Request, ctx: RouteContext<D>) -> Result
         handle:     String,
         public_key: serde_json::Value,
     }
-    Response::from_json(&Reply { handle, public_key: challenge.public_key })
+    Response::from_json(&Reply { handle: handle.to_string(), public_key: challenge.public_key })
 }
 
 // -------------------------------------------------------------------------
@@ -87,7 +87,7 @@ pub async fn register_finish<D>(mut req: Request, ctx: RouteContext<D>) -> Resul
     // Consume the challenge. After this call, a replay of the same
     // handle returns None; this is the single-consumption guarantee.
     let store = CloudflareAuthChallengeStore::new(&ctx.env);
-    let chal  = match store.take(&body.handle).await {
+    let chal  = match store.take(&cesauth_core::types::ChallengeHandle::from_storage(&body.handle)).await {
         Ok(Some(c)) => c,
         _ => return oauth_error_response(&cesauth_core::CoreError::InvalidRequest("handle")),
     };

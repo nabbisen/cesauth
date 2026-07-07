@@ -14,7 +14,7 @@ use super::rpc_call;
 #[serde(tag = "op", rename_all = "snake_case")]
 enum FamilyCmd<'a> {
     Init   { init:          &'a FamilyInit },
-    Rotate { presented_jti: &'a str, new_jti: &'a str, now_unix: i64 },
+    Rotate { presented_jti: &'a cesauth_core::types::Jti, new_jti: &'a cesauth_core::types::Jti, now_unix: i64 },
     Peek,
     Revoke { now_unix:      i64 },
 }
@@ -23,12 +23,12 @@ enum FamilyCmd<'a> {
 #[serde(tag = "status", rename_all = "snake_case")]
 enum FamilyReply {
     Ok,
-    Rotated { new_current_jti: String },
+    Rotated { new_current_jti: cesauth_core::types::Jti },
     AlreadyRevoked,
     /// **v0.34.0**: carries forensic data so the worker can emit a
     /// distinct audit event (`refresh_token_reuse_detected`) and so
     /// `peek` results post-revocation surface the cause.
-    ReusedAndRevoked { reused_jti: String, was_retired: bool },
+    ReusedAndRevoked { reused_jti: cesauth_core::types::Jti, was_retired: bool },
     NotInitialized,
     Conflict,
     State { state: FamilyState },
@@ -62,7 +62,7 @@ impl<'a> CloudflareRefreshTokenFamilyStore<'a> {
 
 impl RefreshTokenFamilyStore for CloudflareRefreshTokenFamilyStore<'_> {
     async fn init(&self, init: &FamilyInit) -> PortResult<()> {
-        let stub  = self.stub(&init.family_id)?;
+        let stub  = self.stub(init.family_id.as_str())?;
         let reply: FamilyReply = rpc_call(&stub, &FamilyCmd::Init { init }).await?;
         match reply {
             FamilyReply::Ok       => Ok(()),
@@ -73,12 +73,12 @@ impl RefreshTokenFamilyStore for CloudflareRefreshTokenFamilyStore<'_> {
 
     async fn rotate(
         &self,
-        family_id:     &str,
-        presented_jti: &str,
-        new_jti:       &str,
+        family_id:     &cesauth_core::types::FamilyId,
+        presented_jti: &cesauth_core::types::Jti,
+        new_jti:       &cesauth_core::types::Jti,
         now_unix:      i64,
     ) -> PortResult<RotateOutcome> {
-        let stub  = self.stub(family_id)?;
+        let stub  = self.stub(family_id.as_str())?;
         let reply: FamilyReply = rpc_call(
             &stub,
             &FamilyCmd::Rotate { presented_jti, new_jti, now_unix },
@@ -94,8 +94,8 @@ impl RefreshTokenFamilyStore for CloudflareRefreshTokenFamilyStore<'_> {
         }
     }
 
-    async fn revoke(&self, family_id: &str, now_unix: i64) -> PortResult<()> {
-        let stub  = self.stub(family_id)?;
+    async fn revoke(&self, family_id: &cesauth_core::types::FamilyId, now_unix: i64) -> PortResult<()> {
+        let stub  = self.stub(family_id.as_str())?;
         let reply: FamilyReply = rpc_call(&stub, &FamilyCmd::Revoke { now_unix }).await?;
         match reply {
             FamilyReply::AlreadyRevoked => Ok(()),
@@ -104,8 +104,8 @@ impl RefreshTokenFamilyStore for CloudflareRefreshTokenFamilyStore<'_> {
         }
     }
 
-    async fn peek(&self, family_id: &str) -> PortResult<Option<FamilyState>> {
-        let stub  = self.stub(family_id)?;
+    async fn peek(&self, family_id: &cesauth_core::types::FamilyId) -> PortResult<Option<FamilyState>> {
+        let stub  = self.stub(family_id.as_str())?;
         let reply: FamilyReply = rpc_call(&stub, &FamilyCmd::Peek).await?;
         match reply {
             FamilyReply::State { state } => Ok(Some(state)),

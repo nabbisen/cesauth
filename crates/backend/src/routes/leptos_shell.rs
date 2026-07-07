@@ -47,7 +47,7 @@ const LEPTOS_WASM: &str = "cesauth_frontend_bg.wasm";
 ///
 /// Used by `poc_handler` now; will be used by all Leptos-backed route
 /// handlers once screens are migrated in Phase C.
-pub async fn leptos_html_shell<D>(
+pub async fn leptos_html_shell(
     _req: &Request,
     env: &worker::Env,
     title: &str,

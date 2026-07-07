@@ -6,9 +6,24 @@
 
 use serde::{Deserialize, Serialize};
 
+/// RFC 116 — security-critical identifier newtypes.
+pub mod ids;
+/// RFC 116 — secret-material newtypes.
+pub mod secret;
+
+pub use ids::{
+    ChallengeHandle, ClientId, FamilyId, IdParseError, Jti, RoleId, SessionId, TenantId, UserId,
+};
+pub use secret::{HashedSecret, RawSecret, RedactedSecret, REDACTION_MARKER};
+
 /// A stable string identifier used throughout the schema. Currently a
 /// UUIDv4 string, but the alias lets us swap representations later
 /// without thrashing call sites.
+///
+/// **RFC 116**: security-critical identifiers are migrating off this
+/// alias onto the newtypes in [`ids`]. `Id` remains for entities the
+/// assurance strategy does not cover (organisations, groups, plans,
+/// invitations, …).
 pub type Id = String;
 
 /// Unix epoch seconds. We use `i64` everywhere (not `u64`) because SQLite

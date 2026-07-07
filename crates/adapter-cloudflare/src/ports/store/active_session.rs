@@ -102,7 +102,7 @@ impl<'a> CloudflareActiveSessionStore<'a> {
 impl ActiveSessionStore for CloudflareActiveSessionStore<'_> {
     async fn start(&self, state: &SessionState) -> PortResult<()> {
         // 1. Authoritative DO write first.
-        let stub  = self.stub(&state.session_id)?;
+        let stub  = self.stub(state.session_id.as_str())?;
         let reply: SessionReply = rpc_call(&stub, &SessionCmd::Start { state }).await?;
         match reply {
             SessionReply::Ok       => {}
@@ -132,12 +132,12 @@ impl ActiveSessionStore for CloudflareActiveSessionStore<'_> {
 
     async fn touch(
         &self,
-        session_id:        &str,
+        session_id:        &cesauth_core::types::SessionId,
         now_unix:          i64,
         idle_timeout_secs: i64,
         absolute_ttl_secs: i64,
     ) -> PortResult<SessionStatus> {
-        let stub  = self.stub(session_id)?;
+        let stub  = self.stub(session_id.as_str())?;
         let reply: SessionReply = rpc_call(
             &stub,
             &SessionCmd::Touch { now_unix, idle_timeout_secs, absolute_ttl_secs },
@@ -149,7 +149,7 @@ impl ActiveSessionStore for CloudflareActiveSessionStore<'_> {
             SessionReply::IdleExpired     { state } |
             SessionReply::AbsoluteExpired { state } => {
                 if let Some(rev) = state.revoked_at {
-                    let _ = self.mirror_revoked(session_id, rev).await;
+                    let _ = self.mirror_revoked(session_id.as_str(), rev).await;
                 }
             }
             _ => {}
@@ -157,24 +157,24 @@ impl ActiveSessionStore for CloudflareActiveSessionStore<'_> {
         Ok(from_reply(reply))
     }
 
-    async fn status(&self, session_id: &str) -> PortResult<SessionStatus> {
-        let stub  = self.stub(session_id)?;
+    async fn status(&self, session_id: &cesauth_core::types::SessionId) -> PortResult<SessionStatus> {
+        let stub  = self.stub(session_id.as_str())?;
         let reply: SessionReply = rpc_call(&stub, &SessionCmd::Status).await?;
         Ok(from_reply(reply))
     }
 
-    async fn revoke(&self, session_id: &str, now_unix: i64) -> PortResult<SessionStatus> {
-        let stub  = self.stub(session_id)?;
+    async fn revoke(&self, session_id: &cesauth_core::types::SessionId, now_unix: i64) -> PortResult<SessionStatus> {
+        let stub  = self.stub(session_id.as_str())?;
         let reply: SessionReply = rpc_call(&stub, &SessionCmd::Revoke { now_unix }).await?;
         if matches!(reply, SessionReply::Revoked { .. }) {
-            let _ = self.mirror_revoked(session_id, now_unix).await;
+            let _ = self.mirror_revoked(session_id.as_str(), now_unix).await;
         }
         Ok(from_reply(reply))
     }
 
     async fn list_for_user(
         &self,
-        user_id:         &str,
+        user_id:         &cesauth_core::types::UserId,
         include_revoked: bool,
         limit:           u32,
     ) -> PortResult<Vec<SessionState>> {
@@ -192,7 +192,7 @@ impl ActiveSessionStore for CloudflareActiveSessionStore<'_> {
         };
 
         let stmt = db.prepare(sql)
-            .bind(&[user_id.into(), d1_int(limit_val)])
+            .bind(&[user_id.as_str().into(), d1_int(limit_val)])
             .map_err(|e| run_err("user_sessions.list bind", e))?;
         let result = stmt.all().await.map_err(|_| PortError::Unavailable)?;
         let rows = result.results::<DbRow>().map_err(|_| PortError::Serialization)?;
@@ -250,9 +250,9 @@ impl DbRow {
     /// look at it see "well-defined but stale".
     fn into_state(self) -> Option<SessionState> {
         Some(SessionState {
-            session_id:   self.session_id,
-            user_id:      self.user_id,
-            client_id:    self.client_id,
+            session_id:   cesauth_core::types::SessionId::from_storage(self.session_id),
+            user_id:      cesauth_core::types::UserId::from_storage(self.user_id),
+            client_id:    cesauth_core::types::ClientId::from_storage(self.client_id),
             scopes:       Vec::new(),
             auth_method:  auth_method_from_str(&self.auth_method)?,
             created_at:   self.created_at,

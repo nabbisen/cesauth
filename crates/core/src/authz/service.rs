@@ -84,7 +84,7 @@ pub enum DenyReason {
 pub async fn check_permission<RA, RR>(
     assignments: &RA,
     roles:       &RR,
-    user_id:      &str,
+    user_id:      &crate::types::UserId,
     permission:   &str,
     scope:        ScopeRef<'_>,
     now_unix:     UnixSeconds,
@@ -93,7 +93,7 @@ where
     RA: RoleAssignmentRepository,
     RR: RoleRepository,
 {
-    let raw = assignments.list_for_user(user_id).await?;
+    let raw = assignments.list_for_user(user_id.as_str()).await?;
     if raw.is_empty() {
         return Ok(CheckOutcome::Denied(DenyReason::NoAssignments));
     }
@@ -234,7 +234,7 @@ pub(crate) fn role_has_permission(role: &Role, permission: &str) -> bool {
 pub async fn check_permissions_batch<'a, RA, RR>(
     assignments: &RA,
     roles:       &RR,
-    user_id:     &str,
+    user_id:     &crate::types::UserId,
     queries:     &'a [(&'a str, ScopeRef<'a>)],
     now_unix:    UnixSeconds,
 ) -> PortResult<Vec<CheckOutcome>>
@@ -247,7 +247,7 @@ where
     }
 
     // 1. Load assignments once.
-    let raw = assignments.list_for_user(user_id).await?;
+    let raw = assignments.list_for_user(user_id.as_str()).await?;
     if raw.is_empty() {
         return Ok(queries.iter()
             .map(|_| CheckOutcome::Denied(DenyReason::NoAssignments))
@@ -471,8 +471,7 @@ mod tests {
     async fn check_permission_allowed_for_matching_role() {
         let (ra, rr) = setup("u-1", "r-1", &["tenant:read"], Scope::System, None).await;
         let now = 0i64;
-        let result = check_permission(
-            &ra, &rr, "u-1", "tenant:read", ScopeRef::System, now,
+        let result = check_permission(&ra, &rr, &crate::types::UserId::from_storage("u-1"), "tenant:read", ScopeRef::System, now,
         ).await.unwrap();
         assert!(result.is_allowed(), "system scope should allow tenant:read");
     }
@@ -481,8 +480,7 @@ mod tests {
     async fn check_permission_denied_no_assignments() {
         let ra = InMemoryRoleAssignmentRepository::default();
         let rr = InMemoryRoleRepository::default();
-        let result = check_permission(
-            &ra, &rr, "u-unknown", "any:perm", ScopeRef::System, 0,
+        let result = check_permission(&ra, &rr, &crate::types::UserId::from_storage("u-unknown"), "any:perm", ScopeRef::System, 0,
         ).await.unwrap();
         assert_eq!(result, CheckOutcome::Denied(DenyReason::NoAssignments));
     }
@@ -495,8 +493,7 @@ mod tests {
             None
         ).await;
         // Query for tenant t-2 — scope doesn't cover
-        let result = check_permission(
-            &ra, &rr, "u-1", "tenant:read",
+        let result = check_permission(&ra, &rr, &crate::types::UserId::from_storage("u-1"), "tenant:read",
             ScopeRef::Tenant { tenant_id: "t-2" }, 0,
         ).await.unwrap();
         assert_eq!(result, CheckOutcome::Denied(DenyReason::ScopeMismatch));
@@ -505,8 +502,7 @@ mod tests {
     #[tokio::test]
     async fn check_permission_denied_permission_missing() {
         let (ra, rr) = setup("u-1", "r-1", &["tenant:read"], Scope::System, None).await;
-        let result = check_permission(
-            &ra, &rr, "u-1", "tenant:write", ScopeRef::System, 0,
+        let result = check_permission(&ra, &rr, &crate::types::UserId::from_storage("u-1"), "tenant:write", ScopeRef::System, 0,
         ).await.unwrap();
         assert_eq!(result, CheckOutcome::Denied(DenyReason::PermissionMissing));
     }
@@ -516,8 +512,7 @@ mod tests {
         // Assignment expired 1 second ago
         let (ra, rr) = setup("u-1", "r-1", &["tenant:read"], Scope::System, Some(99)).await;
         let now = 100i64; // after expires_at=99
-        let result = check_permission(
-            &ra, &rr, "u-1", "tenant:read", ScopeRef::System, now,
+        let result = check_permission(&ra, &rr, &crate::types::UserId::from_storage("u-1"), "tenant:read", ScopeRef::System, now,
         ).await.unwrap();
         assert_eq!(result, CheckOutcome::Denied(DenyReason::Expired));
     }
@@ -526,8 +521,7 @@ mod tests {
     async fn check_permission_not_expired_at_boundary() {
         // expires_at == now → NOT yet expired (boundary: >= expires_at is expired)
         let (ra, rr) = setup("u-1", "r-1", &["tenant:read"], Scope::System, Some(100)).await;
-        let result = check_permission(
-            &ra, &rr, "u-1", "tenant:read", ScopeRef::System, 100,
+        let result = check_permission(&ra, &rr, &crate::types::UserId::from_storage("u-1"), "tenant:read", ScopeRef::System, 100,
         ).await.unwrap();
         // expires_at = 100, now = 100 → not expired (expired when now > expires_at)
         assert!(result.is_allowed() || result == CheckOutcome::Denied(DenyReason::Expired),
@@ -542,7 +536,7 @@ mod tests {
             ("write",   ScopeRef::System),
             ("delete",  ScopeRef::System),
         ];
-        let results = check_permissions_batch(&ra, &rr, "u-1", &queries, 0).await.unwrap();
+        let results = check_permissions_batch(&ra, &rr, &crate::types::UserId::from_storage("u-1"), &queries, 0).await.unwrap();
         assert_eq!(results.len(), 3);
         assert!(results[0].is_allowed(), "read should be allowed");
         assert!(results[1].is_allowed(), "write should be allowed");
@@ -554,7 +548,7 @@ mod tests {
         let ra = InMemoryRoleAssignmentRepository::default();
         let rr = InMemoryRoleRepository::default();
         let queries: Vec<(&str, ScopeRef<'_>)> = vec![];
-        let results = check_permissions_batch(&ra, &rr, "u-1", &queries, 0).await.unwrap();
+        let results = check_permissions_batch(&ra, &rr, &crate::types::UserId::from_storage("u-1"), &queries, 0).await.unwrap();
         assert!(results.is_empty());
     }
 }

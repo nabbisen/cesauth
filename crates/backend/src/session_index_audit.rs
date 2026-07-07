@@ -169,8 +169,8 @@ async fn fetch_active_rows(env: &Env, limit: i64) -> worker::Result<Vec<D1Sessio
     let rows: Vec<DbRow> = result.results()
         .map_err(|e| worker::Error::RustError(format!("session_index_audit deser: {e:?}")))?;
     Ok(rows.into_iter().map(|r| D1SessionRow {
-        session_id: r.session_id,
-        user_id:    r.user_id,
+        session_id: cesauth_core::types::SessionId::from_storage(r.session_id),
+        user_id:    cesauth_core::types::UserId::from_storage(r.user_id),
         created_at: r.created_at,
         revoked_at: r.revoked_at,
     }).collect())
@@ -214,7 +214,7 @@ async fn emit_drift_event_with_extra(
     };
     audit::write_owned(
         env, EventKind::SessionIndexDrift,
-        Some(row.user_id.clone()), None,
+        Some(row.user_id.to_string()), None,
         Some(payload.to_string()),
     ).await.ok();
 }

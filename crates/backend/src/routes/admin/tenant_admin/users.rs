@@ -37,7 +37,7 @@ pub async fn page_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
         use cesauth_cf::ports::repo::CloudflareUserRepository;
         use cesauth_core::ports::repo::UserRepository;
         let repo = CloudflareUserRepository::new(&ctx.env);
-        repo.list_for_tenant(&ctx_ta.tenant.id, 200).await.unwrap_or_default()
+        repo.list_by_tenant(&ctx_ta.tenant.id).await.unwrap_or_default()
     };
     let mut resp = Response::from_json(&serde_json::json!({
         "tenant": ctx_ta.tenant,

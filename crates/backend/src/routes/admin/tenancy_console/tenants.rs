@@ -18,10 +18,10 @@ pub async fn page_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
         Ok(a)  => a,
         Err(_) => return Response::error("Unauthorized", 401),
     };
-    use cesauth_cf::ports::repo::CloudflareTenantRepository;
+    use cesauth_cf::tenancy::CloudflareTenantRepository;
     use cesauth_core::tenancy::TenantRepository;
     let repo = CloudflareTenantRepository::new(&ctx.env);
-    let tenants = repo.list(200).await.unwrap_or_default();
+    let tenants = repo.list_active().await.unwrap_or_default();
     let mut resp = Response::from_json(&serde_json::json!({ "tenants": tenants }))?;
     resp.headers_mut().set("cache-control", "no-store").ok();
     Ok(resp)

@@ -114,6 +114,38 @@ started.
 
 ### Next minor releases
 
+- **Security-critical assurance track (RFCs 116–124).** Source:
+  architect instruction `security-critical-assurance-strategy-v0.80.2.md`;
+  codebase audit at `docs/src/expert/security-assurance-audit-v0.80.2.md`.
+  Sequencing (one RFC per release step; full host-side suite is the gate
+  between steps):
+  1. **RFC 116** — newtypes + secret types baseline (`TenantId`, `UserId`,
+     `ClientId`, `SessionId`, `FamilyId`, `Jti`, `ChallengeHandle`,
+     `RawSecret`/`HashedSecret`/`RedactedSecret`). Everything below
+     consumes these.
+  2. **RFC 117** — authorization-code exchange typestate pipeline +
+     challenge-store state-machine contract test.
+  3. **RFC 118** — refresh-family pure reference model + lockstep
+     generated conformance harness (ADR-011 invariants as executable
+     spec).
+  4. **RFC 119** — tenant-scoped repository APIs + explicit
+     `SystemScope` surface + cross-tenant denial matrix.
+  5. **RFC 120** — `Permission` sealing + authz deny-by-default /
+     monotonicity / lattice property tests (test phase may ship with
+     RFC 118).
+  6. **RFC 121** — shared state-machine harness extended to sessions,
+     all challenge kinds, membership-vs-access sequences.
+  7. **RFC 122** — fuzz expansion: 7 targets over redirect-URI, token
+     body, magic-link input, JWKS, authorize query, PKCE differential,
+     locale negotiation.
+  8. **RFC 123** — `Audited<T>` wrapper + route↔EventKind coverage
+     test + payload redaction property.
+  9. **RFC 124** — time-boxed Kani + TLA+ pilot (Category C; report
+     with adopt-narrowly / defer / reject verdict; nothing depends on
+     it).
+  Category D (recorded, no RFC): broad Verus, Flux-as-default,
+  UI typestate, policy-engine migration — per strategy §12.
+
 - ✅ **v0.67.0 — RFC 105 + 106 (UI/UX finishing — design tokens + Security Center i18n).**
   RFC 105: admin / tenant_admin / tenancy_console frame design-token unification —
   `DESIGN_TOKENS_FMT` is now the single source of truth; `SCOPE_TOKENS_FMT` added

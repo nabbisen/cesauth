@@ -95,8 +95,12 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
 
     match grant {
         TokenGrant::AuthorizationCode(g) => {
+            let _ch = match cesauth_core::types::ChallengeHandle::parse(g.code) {
+                Ok(h) => h,
+                Err(_) => return oauth_error_response(&cesauth_core::CoreError::InvalidGrant("invalid code format")),
+            };
             let input = token_service::ExchangeCodeInput {
-                code:          g.code,
+                code:          &_ch,
                 redirect_uri:  g.redirect_uri,
                 client_id:     g.client_id,
                 code_verifier: g.code_verifier,

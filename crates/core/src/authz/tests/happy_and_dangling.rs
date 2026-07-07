@@ -15,8 +15,7 @@ async fn tenant_admin_may_update_own_tenant() {
     asgs.create(&assignment("a", "u-alice", "r",
         Scope::Tenant { tenant_id: "t-1".into() })).await.unwrap();
 
-    let out = check_permission(
-        &asgs, &roles, "u-alice",
+    let out = check_permission(&asgs, &roles, &crate::types::UserId::from_storage("u-alice"),
         PermissionCatalog::TENANT_UPDATE,
         ScopeRef::Tenant { tenant_id: "t-1" },
         100,
@@ -43,8 +42,7 @@ async fn dangling_role_assignment_does_not_crash() {
     asgs.create(&assignment("a", "u", "missing",
         Scope::Tenant { tenant_id: "t".into() })).await.unwrap();
 
-    let out = check_permission(
-        &asgs, &roles, "u",
+    let out = check_permission(&asgs, &roles, &crate::types::UserId::from_storage("u"),
         PermissionCatalog::TENANT_READ,
         ScopeRef::Tenant { tenant_id: "t" },
         100,

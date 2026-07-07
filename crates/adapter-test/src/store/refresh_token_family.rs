@@ -13,7 +13,7 @@ const RETIRED_RING_SIZE: usize = 16;
 
 #[derive(Debug, Default)]
 pub struct InMemoryRefreshTokenFamilyStore {
-    map: Mutex<HashMap<String, FamilyState>>,
+    map: Mutex<HashMap<cesauth_core::types::FamilyId, FamilyState>>,
 }
 
 impl RefreshTokenFamilyStore for InMemoryRefreshTokenFamilyStore {
@@ -34,7 +34,7 @@ impl RefreshTokenFamilyStore for InMemoryRefreshTokenFamilyStore {
                 created_at:      init.now_unix,
                 last_rotated_at: init.now_unix,
                 revoked_at:      None,
-        auth_time: 0,
+                auth_time:       0,
                 reused_jti:        None,
                 reused_at:         None,
                 reuse_was_retired: None,
@@ -45,9 +45,9 @@ impl RefreshTokenFamilyStore for InMemoryRefreshTokenFamilyStore {
 
     async fn rotate(
         &self,
-        family_id:     &str,
-        presented_jti: &str,
-        new_jti:       &str,
+        family_id:     &cesauth_core::types::FamilyId,
+        presented_jti: &cesauth_core::types::Jti,
+        new_jti:       &cesauth_core::types::Jti,
         now_unix:      i64,
     ) -> PortResult<RotateOutcome> {
         let mut m = self.map.lock().map_err(|_| PortError::Unavailable)?;
@@ -57,15 +57,15 @@ impl RefreshTokenFamilyStore for InMemoryRefreshTokenFamilyStore {
             return Ok(RotateOutcome::AlreadyRevoked);
         }
 
-        if presented_jti == fam.current_jti {
+        if presented_jti == &fam.current_jti {
             // Rotation.
-            let old = std::mem::replace(&mut fam.current_jti, new_jti.to_owned());
+            let old = std::mem::replace(&mut fam.current_jti, new_jti.clone());
             fam.retired_jtis.push(old);
             if fam.retired_jtis.len() > RETIRED_RING_SIZE {
                 fam.retired_jtis.remove(0);
             }
             fam.last_rotated_at = now_unix;
-            Ok(RotateOutcome::Rotated { new_current_jti: new_jti.to_owned() })
+            Ok(RotateOutcome::Rotated { new_current_jti: new_jti.clone() })
         } else {
             // Reuse or unknown — burn the family. v0.34.0: capture
             // forensic fields before the put, so the post-revoke
@@ -80,18 +80,18 @@ impl RefreshTokenFamilyStore for InMemoryRefreshTokenFamilyStore {
             let was_retired = fam.retired_jtis.iter().any(|j| j == presented_jti);
 
             fam.revoked_at        = Some(now_unix);
-            fam.reused_jti        = Some(presented_jti.to_owned());
+            fam.reused_jti        = Some(presented_jti.clone());
             fam.reused_at         = Some(now_unix);
             fam.reuse_was_retired = Some(was_retired);
 
             Ok(RotateOutcome::ReusedAndRevoked {
-                reused_jti: presented_jti.to_owned(),
+                reused_jti: presented_jti.clone(),
                 was_retired,
             })
         }
     }
 
-    async fn revoke(&self, family_id: &str, now_unix: i64) -> PortResult<()> {
+    async fn revoke(&self, family_id: &cesauth_core::types::FamilyId, now_unix: i64) -> PortResult<()> {
         let mut m = self.map.lock().map_err(|_| PortError::Unavailable)?;
         let fam = m.get_mut(family_id).ok_or(PortError::NotFound)?;
         if fam.revoked_at.is_none() {
@@ -100,7 +100,7 @@ impl RefreshTokenFamilyStore for InMemoryRefreshTokenFamilyStore {
         Ok(())
     }
 
-    async fn peek(&self, family_id: &str) -> PortResult<Option<FamilyState>> {
+    async fn peek(&self, family_id: &cesauth_core::types::FamilyId) -> PortResult<Option<FamilyState>> {
         let m = self.map.lock().map_err(|_| PortError::Unavailable)?;
         Ok(m.get(family_id).cloned())
     }

@@ -46,6 +46,7 @@
 
 use crate::error::CoreResult;
 use crate::ports::store::{ActiveSessionStore, SessionStatus};
+use crate::types::{SessionId, UserId};
 
 /// Outcome of a bulk-revoke pass. Counts are
 /// surfaced to the worker so the flash banner can
@@ -96,8 +97,8 @@ pub struct BulkRevokeOutcome {
 /// are all the rows with revoked_at = T").
 pub async fn revoke_all_other_sessions<S>(
     store:              &S,
-    user_id:            &str,
-    current_session_id: &str,
+    user_id:            &UserId,
+    current_session_id: &SessionId,
     now_unix:           i64,
 ) -> CoreResult<BulkRevokeOutcome>
 where
@@ -123,7 +124,7 @@ where
         // Skip the current session. The string
         // comparison is exact — session_ids are
         // opaque tokens, no canonicalization needed.
-        if row.session_id == current_session_id {
+        if &row.session_id == current_session_id {
             out.skipped_current += 1;
             continue;
         }

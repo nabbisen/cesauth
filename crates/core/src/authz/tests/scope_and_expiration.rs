@@ -21,8 +21,7 @@ async fn system_admin_covers_every_scope() {
         ScopeRef::Group        { group_id:        "g-1" },
         ScopeRef::User         { user_id:         "u-other" },
     ] {
-        let out = check_permission(
-            &asgs, &roles, "u-op",
+        let out = check_permission(&asgs, &roles, &crate::types::UserId::from_storage("u-op"),
             PermissionCatalog::TENANT_UPDATE,
             scope, 100,
         ).await.unwrap();
@@ -43,8 +42,7 @@ async fn tenant_role_does_not_cover_other_tenant() {
     asgs.create(&assignment("a", "u", "r",
         Scope::Tenant { tenant_id: "t-A".into() })).await.unwrap();
 
-    let out = check_permission(
-        &asgs, &roles, "u",
+    let out = check_permission(&asgs, &roles, &crate::types::UserId::from_storage("u"),
         PermissionCatalog::TENANT_UPDATE,
         ScopeRef::Tenant { tenant_id: "t-B" },
         100,
@@ -66,8 +64,7 @@ async fn correct_scope_wrong_permission_is_permission_missing() {
     asgs.create(&assignment("a", "u", "r",
         Scope::Tenant { tenant_id: "t-1".into() })).await.unwrap();
 
-    let out = check_permission(
-        &asgs, &roles, "u",
+    let out = check_permission(&asgs, &roles, &crate::types::UserId::from_storage("u"),
         PermissionCatalog::TENANT_UPDATE,
         ScopeRef::Tenant { tenant_id: "t-1" },
         100,
@@ -90,8 +87,7 @@ async fn expired_assignment_is_classified_as_expired_not_scope_mismatch() {
     asgs.create(&a).await.unwrap();
 
     // now_unix = 100 > 50, so the assignment is expired.
-    let out = check_permission(
-        &asgs, &roles, "u",
+    let out = check_permission(&asgs, &roles, &crate::types::UserId::from_storage("u"),
         PermissionCatalog::TENANT_UPDATE,
         ScopeRef::Tenant { tenant_id: "t-1" },
         100,

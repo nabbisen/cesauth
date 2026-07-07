@@ -194,7 +194,7 @@ pub async fn post_handler(
     let recovery_repo = CloudflareTotpRecoveryCodeRepository::new(&env);
 
     let decision = decide_disable_post(
-        &session.user_id,
+        session.user_id.as_str(),
         &csrf_form,
         csrf_cookie,
         &auth_repo,

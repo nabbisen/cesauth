@@ -17,7 +17,7 @@ use crate::oidc::introspect::{
 fn mutate_family<F>(store: &StubFamilyStore, family_id: &str, f: F)
 where F: FnOnce(&mut FamilyState) {
     let mut m = store.map.lock().unwrap();
-    if let Some(state) = m.get_mut(family_id) {
+    if let Some(state) = m.get_mut(&crate::types::FamilyId::from_storage(family_id)) {
         f(state);
     }
 }
@@ -63,7 +63,7 @@ async fn revoked_family_returns_inactive_with_explicit_reason() {
     install_family(&store, "fam_rev", "user_a", "client_X",
                    "jti_curr", &["openid"]).await;
     // Revoke at t=500.
-    store.revoke("fam_rev", 500).await.unwrap();
+    store.revoke(&crate::types::FamilyId::from_storage("fam_rev"), 500).await.unwrap();
 
     let token = encode_token("fam_rev", "jti_curr", 999_999);
     let resp = introspect_token(
@@ -95,7 +95,7 @@ async fn reuse_detected_family_returns_inactive_with_reuse_reason() {
                    "jti_curr", &["openid"]).await;
     mutate_family(&store, "fam_reuse", |s| {
         s.revoked_at        = Some(600);
-        s.reused_jti        = Some("jti_old_retired".into());
+        s.reused_jti = Some(crate::types::Jti::from_storage("jti_old_retired"));
         s.reused_at         = Some(599);
         s.reuse_was_retired = Some(true);
     });
@@ -131,7 +131,7 @@ async fn retired_jti_returns_inactive_with_current_jti_hint() {
     install_family(&store, "fam_rot", "user_a", "client_X",
                    "jti_v2", &["openid"]).await;
     mutate_family(&store, "fam_rot", |s| {
-        s.retired_jtis = vec!["jti_v1".into()];
+        s.retired_jtis = vec![crate::types::Jti::from_storage("jti_v1")];
     });
 
     // Present the v1 (retired) jti.

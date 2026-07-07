@@ -18,7 +18,7 @@ use crate::ports::store::{FamilyInit, RefreshTokenFamilyStore};
 /// can't depend back on adapter-test for tests).
 #[derive(Default)]
 struct StubFamilyStore {
-    map: std::sync::Mutex<std::collections::HashMap<String, crate::ports::store::FamilyState>>,
+    map: std::sync::Mutex<std::collections::HashMap<crate::types::FamilyId, crate::ports::store::FamilyState>>,
 }
 
 use crate::ports::{PortError, PortResult};
@@ -49,17 +49,17 @@ impl RefreshTokenFamilyStore for StubFamilyStore {
     }
 
     async fn rotate(
-        &self, _family_id: &str, _presented_jti: &str, _new_jti: &str, _now_unix: i64,
+        &self, _family_id: &crate::types::FamilyId, _presented_jti: &crate::types::Jti, _new_jti: &crate::types::Jti, _now_unix: i64,
     ) -> PortResult<RotateOutcome> {
         unimplemented!("introspect_token must not call rotate")
     }
 
-    async fn peek(&self, family_id: &str) -> PortResult<Option<FamilyState>> {
+    async fn peek(&self, family_id: &crate::types::FamilyId) -> PortResult<Option<FamilyState>> {
         let m = self.map.lock().unwrap();
         Ok(m.get(family_id).cloned())
     }
 
-    async fn revoke(&self, family_id: &str, now_unix: i64) -> PortResult<()> {
+    async fn revoke(&self, family_id: &crate::types::FamilyId, now_unix: i64) -> PortResult<()> {
         let mut m = self.map.lock().unwrap();
         if let Some(f) = m.get_mut(family_id) {
             if f.revoked_at.is_none() {
@@ -105,11 +105,11 @@ async fn install_family(
     scopes: &[&str],
 ) {
     store.init(&FamilyInit {
-        family_id: family_id.into(),
-        user_id:   user_id.into(),
-        client_id: client_id.into(),
+        family_id: crate::types::FamilyId::from_storage(family_id),
+        user_id: crate::types::UserId::from_storage(user_id),
+        client_id: crate::types::ClientId::from_storage(client_id),
         scopes:    scopes.iter().map(|s| s.to_string()).collect(),
-        first_jti: first_jti.into(),
+        first_jti: crate::types::Jti::from_storage(first_jti),
         now_unix:  100,
         auth_time: 0,
     }).await.unwrap();
@@ -153,7 +153,7 @@ async fn refresh_token_with_retired_jti_is_inactive_with_no_other_claims() {
     // having happened.
     {
         let mut m = store.map.lock().unwrap();
-        m.get_mut("fam1").unwrap().retired_jtis.push("old_jti".into());
+        m.get_mut(&crate::types::FamilyId::from_storage("fam1")).unwrap().retired_jtis.push(crate::types::Jti::from_storage("old_jti"));
     }
 
     let token = encode_token("fam1", "old_jti", 999_999);
@@ -176,7 +176,7 @@ async fn refresh_token_with_retired_jti_is_inactive_with_no_other_claims() {
 async fn refresh_token_revoked_family_is_inactive() {
     let store = StubFamilyStore::default();
     install_family(&store, "fam_dead", "u", "c", "j1", &["openid"]).await;
-    store.revoke("fam_dead", 150).await.unwrap();
+    store.revoke(&crate::types::FamilyId::from_storage("fam_dead"), 150).await.unwrap();
 
     let token = encode_token("fam_dead", "j1", 999_999);
     let resp = introspect_token(

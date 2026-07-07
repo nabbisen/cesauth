@@ -61,7 +61,7 @@ pub async fn stage_auth_code<D>(mut req: Request, ctx: RouteContext<D>) -> Resul
     }
 
     let store = CloudflareAuthChallengeStore::new(&ctx.env);
-    match store.put(handle, &challenge).await {
+    match store.put(&cesauth_core::types::ChallengeHandle::from_storage(handle), &challenge).await {
         Ok(())  => Response::ok("staged"),
         Err(cesauth_core::ports::PortError::Conflict) =>
             Response::error("handle already in use", 409),

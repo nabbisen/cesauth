@@ -18,14 +18,14 @@ use std::collections::HashMap;
 // =====================================================================
 
 struct StubFamilyStore {
-    families:           RefCell<HashMap<String, FamilyState>>,
-    revoke_calls:       RefCell<Vec<String>>,
+    families:           RefCell<HashMap<crate::types::FamilyId, FamilyState>>,
+    revoke_calls:       RefCell<Vec<crate::types::FamilyId>>,
 }
 
 impl Default for StubFamilyStore {
     fn default() -> Self {
         Self {
-            families:     RefCell::new(HashMap::new()),
+            families:     RefCell::new(std::collections::HashMap::new()),
             revoke_calls: RefCell::new(Vec::new()),
         }
     }
@@ -33,12 +33,12 @@ impl Default for StubFamilyStore {
 
 impl StubFamilyStore {
     fn install(&self, family_id: &str, client_id: &str) {
-        self.families.borrow_mut().insert(family_id.to_owned(), FamilyState {
-            family_id:       family_id.to_owned(),
-            user_id:         "user_demo".into(),
-            client_id:       client_id.to_owned(),
+        self.families.borrow_mut().insert(crate::types::FamilyId::from_storage(family_id), FamilyState {
+            family_id:       crate::types::FamilyId::from_storage(family_id),
+            user_id: crate::types::UserId::from_storage("user_demo"),
+            client_id:       crate::types::ClientId::from_storage(client_id),
             scopes:          vec!["openid".into()],
-            current_jti:     "jti_curr".into(),
+            current_jti:     crate::types::Jti::from_storage("jti_curr"),
             retired_jtis:    Vec::new(),
             created_at:      100,
             last_rotated_at: 100,
@@ -55,14 +55,14 @@ impl RefreshTokenFamilyStore for StubFamilyStore {
     async fn init(&self, _: &FamilyInit) -> PortResult<()> {
         unimplemented!("revoke must not init")
     }
-    async fn rotate(&self, _: &str, _: &str, _: &str, _: i64) -> PortResult<RotateOutcome> {
+    async fn rotate(&self, _: &crate::types::FamilyId, _: &crate::types::Jti, _: &crate::types::Jti, _: i64) -> PortResult<RotateOutcome> {
         unimplemented!("revoke must not rotate")
     }
-    async fn peek(&self, family_id: &str) -> PortResult<Option<FamilyState>> {
+    async fn peek(&self, family_id: &crate::types::FamilyId) -> PortResult<Option<FamilyState>> {
         Ok(self.families.borrow().get(family_id).cloned())
     }
-    async fn revoke(&self, family_id: &str, _now: i64) -> PortResult<()> {
-        self.revoke_calls.borrow_mut().push(family_id.to_owned());
+    async fn revoke(&self, family_id: &crate::types::FamilyId, _now: i64) -> PortResult<()> {
+        self.revoke_calls.borrow_mut().push(family_id.clone());
         if let Some(s) = self.families.borrow_mut().get_mut(family_id) {
             s.revoked_at = Some(200);
         }
@@ -130,11 +130,11 @@ async fn public_client_revokes_with_just_token_possession() {
     }).await.unwrap();
 
     assert_eq!(outcome, RevokeOutcome::Revoked {
-        family_id: "fam_pub".into(),
-        client_id: "public_client".into(),
+        family_id: crate::types::FamilyId::from_storage("fam_pub"),
+        client_id: crate::types::ClientId::from_storage("public_client"),
         auth_mode: RevokeAuthMode::PublicClient,
     });
-    assert_eq!(store.revoke_calls.borrow().as_slice(), &["fam_pub".to_owned()]);
+    assert_eq!(store.revoke_calls.borrow().as_slice(), &[crate::types::FamilyId::from_storage("fam_pub")]);
 }
 
 #[tokio::test]
@@ -211,8 +211,8 @@ async fn confidential_client_with_correct_creds_revokes() {
     }).await.unwrap();
 
     assert_eq!(outcome, RevokeOutcome::Revoked {
-        family_id: "fam_conf".into(),
-        client_id: "conf_client".into(),
+        family_id: crate::types::FamilyId::from_storage("fam_conf"),
+        client_id: crate::types::ClientId::from_storage("conf_client"),
         auth_mode: RevokeAuthMode::ConfidentialClient,
     });
     assert_eq!(store.revoke_calls.borrow().len(), 1);
@@ -435,6 +435,5 @@ async fn already_revoked_family_revokes_again_idempotently() {
 
     assert!(matches!(outcome2, RevokeOutcome::Revoked { .. }),
         "second revoke must succeed idempotently, got {outcome2:?}");
-    assert_eq!(store.revoke_calls.borrow().as_slice(),
-               &["fam_2x".to_owned(), "fam_2x".to_owned()]);
+    assert_eq!(store.revoke_calls.borrow().as_slice(), &[crate::types::FamilyId::from_storage("fam_2x"), crate::types::FamilyId::from_storage("fam_2x")]);
 }

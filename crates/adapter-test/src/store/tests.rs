@@ -12,9 +12,9 @@ use cesauth_core::types::Scopes;
 
 fn sample_session(id: &str, user: &str, created_at: i64) -> SessionState {
     SessionState {
-        session_id:   id.to_owned(),
-        user_id:      user.to_owned(),
-        client_id:    "client_a".to_owned(),
+        session_id:   cesauth_core::types::SessionId::from_storage(id),
+        user_id:      cesauth_core::types::UserId::from_storage(user),
+        client_id:    cesauth_core::types::ClientId::from_storage("client_a"),
         scopes:       vec!["openid".to_owned()],
         auth_method:  AuthMethod::Passkey,
         created_at,
@@ -25,9 +25,9 @@ fn sample_session(id: &str, user: &str, created_at: i64) -> SessionState {
 
 fn sample_auth_code() -> Challenge {
     Challenge::AuthCode {
-        client_id:             "c".into(),
+        client_id: "c".to_owned(),
         redirect_uri:          "https://app/cb".into(),
-        user_id:               "u".into(),
+        user_id: "u".to_owned(),
         scopes:                Scopes(vec!["openid".into()]),
         nonce:                 None,
         code_challenge:        "x".into(),
@@ -41,19 +41,19 @@ fn sample_auth_code() -> Challenge {
 #[tokio::test]
 async fn auth_code_single_consumption() {
     let store = InMemoryAuthChallengeStore::default();
-    store.put("h", &sample_auth_code()).await.unwrap();
+    store.put(&cesauth_core::types::ChallengeHandle::from_storage("h"), &sample_auth_code()).await.unwrap();
     // First take wins.
-    assert!(store.take("h").await.unwrap().is_some());
+    assert!(store.take(&cesauth_core::types::ChallengeHandle::from_storage("h")).await.unwrap().is_some());
     // Second take sees empty. This is the single-consumption invariant.
-    assert!(store.take("h").await.unwrap().is_none());
+    assert!(store.take(&cesauth_core::types::ChallengeHandle::from_storage("h")).await.unwrap().is_none());
 }
 
 #[tokio::test]
 async fn auth_code_put_no_overwrite() {
     let store = InMemoryAuthChallengeStore::default();
-    store.put("h", &sample_auth_code()).await.unwrap();
+    store.put(&cesauth_core::types::ChallengeHandle::from_storage("h"), &sample_auth_code()).await.unwrap();
     assert!(matches!(
-        store.put("h", &sample_auth_code()).await,
+        store.put(&cesauth_core::types::ChallengeHandle::from_storage("h"), &sample_auth_code()).await,
         Err(PortError::Conflict)
     ));
 }
@@ -62,18 +62,18 @@ async fn auth_code_put_no_overwrite() {
 async fn refresh_reuse_burns_family() {
     let store = InMemoryRefreshTokenFamilyStore::default();
     let init = FamilyInit {
-        family_id: "f".into(),
-        user_id:   "u".into(),
-        client_id: "c".into(),
+        family_id: cesauth_core::types::FamilyId::from_storage("f"),
+        user_id: cesauth_core::types::UserId::from_storage("u"),
+        client_id: cesauth_core::types::ClientId::from_storage("c"),
         scopes:    vec!["openid".into()],
-        first_jti: "j1".into(),
+        first_jti: cesauth_core::types::Jti::from_storage("j1"),
         now_unix:  0,
         auth_time: 0,
     };
     store.init(&init).await.unwrap();
 
     // Rotate once legitimately.
-    let out = store.rotate("f", "j1", "j2", 10).await.unwrap();
+    let out = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("j1"), &cesauth_core::types::Jti::from_storage("j2"), 10).await.unwrap();
     assert!(matches!(out, RotateOutcome::Rotated { .. }));
 
     // Present the old jti - reuse detection must fire. v0.34.0:
@@ -83,10 +83,10 @@ async fn refresh_reuse_burns_family() {
     // distinguishes the recognized-retired case (= real but
     // rotated-out token) from an unknown-jti case (= forged or
     // shotgun).
-    let out = store.rotate("f", "j1", "j3", 20).await.unwrap();
+    let out = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("j1"), &cesauth_core::types::Jti::from_storage("j3"), 20).await.unwrap();
     match out {
         RotateOutcome::ReusedAndRevoked { reused_jti, was_retired } => {
-            assert_eq!(reused_jti, "j1");
+            assert_eq!(reused_jti.as_str(), "j1");
             assert!(was_retired,
                 "j1 was rotated out at step 1, so it should be in retired_jtis at the time of presentation");
         }
@@ -96,14 +96,14 @@ async fn refresh_reuse_burns_family() {
     // The post-revoke peek must surface the forensic fields too —
     // otherwise the admin UI's eventual "show me this family's
     // reuse history" view has nothing to render.
-    let fam = store.peek("f").await.unwrap().expect("family present");
-    assert_eq!(fam.reused_jti.as_deref(), Some("j1"));
+    let fam = store.peek(&cesauth_core::types::FamilyId::from_storage("f")).await.unwrap().expect("family present");
+    assert_eq!(fam.reused_jti.as_ref().map(|j| j.as_str()), Some("j1"));
     assert_eq!(fam.reused_at, Some(20));
     assert_eq!(fam.reuse_was_retired, Some(true));
     assert_eq!(fam.revoked_at, Some(20));
 
     // Even the legitimate new jti no longer rotates - family is dead.
-    let out = store.rotate("f", "j2", "j4", 30).await.unwrap();
+    let out = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("j2"), &cesauth_core::types::Jti::from_storage("j4"), 30).await.unwrap();
     assert!(matches!(out, RotateOutcome::AlreadyRevoked));
 }
 
@@ -117,11 +117,11 @@ async fn refresh_reuse_burns_family() {
 async fn refresh_reuse_with_unknown_jti_marks_was_retired_false() {
     let store = InMemoryRefreshTokenFamilyStore::default();
     let init = FamilyInit {
-        family_id: "f".into(),
-        user_id:   "u".into(),
-        client_id: "c".into(),
+        family_id: cesauth_core::types::FamilyId::from_storage("f"),
+        user_id: cesauth_core::types::UserId::from_storage("u"),
+        client_id: cesauth_core::types::ClientId::from_storage("c"),
         scopes:    vec!["openid".into()],
-        first_jti: "j1".into(),
+        first_jti: cesauth_core::types::Jti::from_storage("j1"),
         now_unix:  0,
         auth_time: 0,
     };
@@ -129,10 +129,10 @@ async fn refresh_reuse_with_unknown_jti_marks_was_retired_false() {
 
     // Present a jti the family has never seen (current is j1,
     // retired is empty).
-    let out = store.rotate("f", "totally-fake-jti", "j2", 10).await.unwrap();
+    let out = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("totally-fake-jti"), &cesauth_core::types::Jti::from_storage("j2"), 10).await.unwrap();
     match out {
         RotateOutcome::ReusedAndRevoked { reused_jti, was_retired } => {
-            assert_eq!(reused_jti, "totally-fake-jti");
+            assert_eq!(reused_jti.as_str(), "totally-fake-jti");
             assert!(!was_retired,
                 "an unknown jti should map to was_retired=false — \
                  the BCP signal that distinguishes 'real token leaked' \
@@ -141,9 +141,9 @@ async fn refresh_reuse_with_unknown_jti_marks_was_retired_false() {
         other => panic!("expected ReusedAndRevoked, got {other:?}"),
     }
 
-    let fam = store.peek("f").await.unwrap().unwrap();
+    let fam = store.peek(&cesauth_core::types::FamilyId::from_storage("f")).await.unwrap().unwrap();
     assert_eq!(fam.reuse_was_retired, Some(false));
-    assert_eq!(fam.reused_jti.as_deref(), Some("totally-fake-jti"));
+    assert_eq!(fam.reused_jti.as_ref().map(|j| j.as_str()), Some("totally-fake-jti"));
 }
 
 /// **v0.34.0** — Once a family is revoked (by reuse OR by
@@ -155,34 +155,34 @@ async fn refresh_reuse_with_unknown_jti_marks_was_retired_false() {
 async fn refresh_reuse_then_more_attempts_preserve_first_forensics() {
     let store = InMemoryRefreshTokenFamilyStore::default();
     let init = FamilyInit {
-        family_id: "f".into(),
-        user_id:   "u".into(),
-        client_id: "c".into(),
+        family_id: cesauth_core::types::FamilyId::from_storage("f"),
+        user_id: cesauth_core::types::UserId::from_storage("u"),
+        client_id: cesauth_core::types::ClientId::from_storage("c"),
         scopes:    vec!["openid".into()],
-        first_jti: "j1".into(),
+        first_jti: cesauth_core::types::Jti::from_storage("j1"),
         now_unix:  0,
         auth_time: 0,
     };
     store.init(&init).await.unwrap();
 
     // Rotate, then trigger reuse.
-    let _ = store.rotate("f", "j1", "j2", 10).await.unwrap();
-    let _ = store.rotate("f", "j1", "j3", 20).await.unwrap();
+    let _ = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("j1"), &cesauth_core::types::Jti::from_storage("j2"), 10).await.unwrap();
+    let _ = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("j1"), &cesauth_core::types::Jti::from_storage("j3"), 20).await.unwrap();
 
-    let fam_first = store.peek("f").await.unwrap().unwrap();
-    assert_eq!(fam_first.reused_jti.as_deref(), Some("j1"));
+    let fam_first = store.peek(&cesauth_core::types::FamilyId::from_storage("f")).await.unwrap().unwrap();
+    assert_eq!(fam_first.reused_jti.as_ref().map(|j| j.as_str()), Some("j1"));
     assert_eq!(fam_first.reused_at,             Some(20));
 
     // More attempts, all of which see AlreadyRevoked. The
     // forensic record must NOT mutate.
-    let out = store.rotate("f", "another-jti", "j4", 30).await.unwrap();
+    let out = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("another-jti"), &cesauth_core::types::Jti::from_storage("j4"), 30).await.unwrap();
     assert!(matches!(out, RotateOutcome::AlreadyRevoked));
 
-    let out = store.rotate("f", "j2", "j5", 40).await.unwrap();
+    let out = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("j2"), &cesauth_core::types::Jti::from_storage("j5"), 40).await.unwrap();
     assert!(matches!(out, RotateOutcome::AlreadyRevoked));
 
-    let fam_after = store.peek("f").await.unwrap().unwrap();
-    assert_eq!(fam_after.reused_jti.as_deref(), Some("j1"),
+    let fam_after = store.peek(&cesauth_core::types::FamilyId::from_storage("f")).await.unwrap().unwrap();
+    assert_eq!(fam_after.reused_jti.as_ref().map(|j| j.as_str()), Some("j1"),
         "first reuse jti must be preserved across later attempts");
     assert_eq!(fam_after.reused_at, Some(20),
         "first reuse timestamp must be preserved");
@@ -202,18 +202,18 @@ async fn refresh_reuse_then_more_attempts_preserve_first_forensics() {
 async fn admin_revoke_does_not_populate_reuse_forensics() {
     let store = InMemoryRefreshTokenFamilyStore::default();
     let init = FamilyInit {
-        family_id: "f".into(),
-        user_id:   "u".into(),
-        client_id: "c".into(),
+        family_id: cesauth_core::types::FamilyId::from_storage("f"),
+        user_id: cesauth_core::types::UserId::from_storage("u"),
+        client_id: cesauth_core::types::ClientId::from_storage("c"),
         scopes:    vec!["openid".into()],
-        first_jti: "j1".into(),
+        first_jti: cesauth_core::types::Jti::from_storage("j1"),
         now_unix:  0,
         auth_time: 0,
     };
     store.init(&init).await.unwrap();
-    store.revoke("f", 50).await.unwrap();
+    store.revoke(&cesauth_core::types::FamilyId::from_storage("f"), 50).await.unwrap();
 
-    let fam = store.peek("f").await.unwrap().unwrap();
+    let fam = store.peek(&cesauth_core::types::FamilyId::from_storage("f")).await.unwrap().unwrap();
     assert_eq!(fam.revoked_at, Some(50));
     assert!(fam.reused_jti.is_none(),
         "admin revoke must not look like a reuse detection");
@@ -248,7 +248,7 @@ async fn session_touch_active_bumps_last_seen() {
     store.start(&s).await.unwrap();
 
     // 30 sec later, with a 60-sec idle window — still active.
-    let out = store.touch("s1", 130, 60, 0).await.unwrap();
+    let out = store.touch(&cesauth_core::types::SessionId::from_storage("s1"), 130, 60, 0).await.unwrap();
     match out {
         SessionStatus::Active(state) => {
             assert_eq!(state.last_seen_at, 130,
@@ -266,7 +266,7 @@ async fn session_touch_idle_window_expired_revokes_atomically() {
 
     // 90 sec later, with a 60-sec idle window — last_seen_at
     // (100) + 60 = 160 <= 190; idle gate fires.
-    let out = store.touch("s1", 190, 60, 0).await.unwrap();
+    let out = store.touch(&cesauth_core::types::SessionId::from_storage("s1"), 190, 60, 0).await.unwrap();
     match out {
         SessionStatus::IdleExpired(state) => {
             assert_eq!(state.revoked_at, Some(190),
@@ -276,7 +276,7 @@ async fn session_touch_idle_window_expired_revokes_atomically() {
     }
 
     // Subsequent status() reads see Revoked.
-    let st = store.status("s1").await.unwrap();
+    let st = store.status(&cesauth_core::types::SessionId::from_storage("s1")).await.unwrap();
     assert!(matches!(st, SessionStatus::Revoked(_)));
 }
 
@@ -289,7 +289,7 @@ async fn session_touch_idle_disabled_when_zero() {
     store.start(&s).await.unwrap();
 
     // 1 hour later. Without an idle gate, still active.
-    let out = store.touch("s1", 100 + 3600, 0, 0).await.unwrap();
+    let out = store.touch(&cesauth_core::types::SessionId::from_storage("s1"), 100 + 3600, 0, 0).await.unwrap();
     assert!(matches!(out, SessionStatus::Active(_)),
         "idle_timeout_secs=0 must disable the idle gate");
 }
@@ -303,7 +303,7 @@ async fn session_touch_absolute_lifetime_expires_regardless_of_activity() {
     // Bump activity at t=1900 (30 min after start). Wide
     // idle window (3600) so the bump itself is active. After
     // the bump, last_seen_at = 1900.
-    let out1 = store.touch("s1", 1900, 3600, 7200).await.unwrap();
+    let out1 = store.touch(&cesauth_core::types::SessionId::from_storage("s1"), 1900, 3600, 7200).await.unwrap();
     assert!(matches!(out1, SessionStatus::Active(_)),
         "30-min-old session with 1-hr idle window must be active");
 
@@ -311,7 +311,7 @@ async fn session_touch_absolute_lifetime_expires_regardless_of_activity() {
     // last_seen_at = 1900 → idle delta = 1900, idle window
     // 3600 → idle gate would NOT fire. But created_at + 3600
     // = 3700 < 3800 → absolute gate fires.
-    let out2 = store.touch("s1", 3800, 3600, 3600).await.unwrap();
+    let out2 = store.touch(&cesauth_core::types::SessionId::from_storage("s1"), 3800, 3600, 3600).await.unwrap();
     match out2 {
         SessionStatus::AbsoluteExpired(state) => {
             assert_eq!(state.revoked_at, Some(3800));
@@ -332,7 +332,7 @@ async fn session_touch_absolute_takes_priority_over_idle() {
     // 7200 sec later: last_seen=0+60 idle window exceeded
     // (idle gate would fire), AND created_at + 3600 absolute
     // window exceeded.
-    let out = store.touch("s1", 7200, 60, 3600).await.unwrap();
+    let out = store.touch(&cesauth_core::types::SessionId::from_storage("s1"), 7200, 60, 3600).await.unwrap();
     assert!(matches!(out, SessionStatus::AbsoluteExpired(_)),
         "absolute gate must take priority over idle for forensic clarity");
 }
@@ -342,11 +342,11 @@ async fn session_touch_already_revoked_is_idempotent() {
     let store = InMemoryActiveSessionStore::default();
     let s = sample_session("s1", "u1", 100);
     store.start(&s).await.unwrap();
-    store.revoke("s1", 150).await.unwrap();
+    store.revoke(&cesauth_core::types::SessionId::from_storage("s1"), 150).await.unwrap();
 
     // Subsequent touch must not flip the revoked_at, must
     // not return IdleExpired, must just see Revoked.
-    let out = store.touch("s1", 200, 60, 0).await.unwrap();
+    let out = store.touch(&cesauth_core::types::SessionId::from_storage("s1"), 200, 60, 0).await.unwrap();
     match out {
         SessionStatus::Revoked(state) => {
             assert_eq!(state.revoked_at, Some(150),
@@ -359,7 +359,7 @@ async fn session_touch_already_revoked_is_idempotent() {
 #[tokio::test]
 async fn session_touch_unknown_returns_not_started() {
     let store = InMemoryActiveSessionStore::default();
-    let out = store.touch("never-started", 100, 60, 0).await.unwrap();
+    let out = store.touch(&cesauth_core::types::SessionId::from_storage("never-started"), 100, 60, 0).await.unwrap();
     assert!(matches!(out, SessionStatus::NotStarted));
 }
 
@@ -373,13 +373,13 @@ async fn session_list_for_user_returns_only_that_user_newest_first() {
     store.start(&sample_session("s_new",   "alice", 300)).await.unwrap();
     store.start(&sample_session("s_other", "bob",   250)).await.unwrap();
 
-    let out = store.list_for_user("alice", false, 50).await.unwrap();
+    let out = store.list_for_user(&cesauth_core::types::UserId::from_storage("alice"), false, 50).await.unwrap();
     assert_eq!(out.len(), 3);
-    assert_eq!(out[0].session_id, "s_new", "newest first");
-    assert_eq!(out[1].session_id, "s_mid");
-    assert_eq!(out[2].session_id, "s_old");
+    assert_eq!(out[0].session_id.as_str(), "s_new", "newest first");
+    assert_eq!(out[1].session_id.as_str(), "s_mid");
+    assert_eq!(out[2].session_id.as_str(), "s_old");
     // bob's session must not leak in.
-    assert!(out.iter().all(|s| s.user_id == "alice"));
+    assert!(out.iter().all(|s| s.user_id.as_str() == "alice"));
 }
 
 #[tokio::test]
@@ -387,13 +387,13 @@ async fn session_list_for_user_excludes_revoked_by_default() {
     let store = InMemoryActiveSessionStore::default();
     store.start(&sample_session("active", "alice", 100)).await.unwrap();
     store.start(&sample_session("dead",   "alice", 200)).await.unwrap();
-    store.revoke("dead", 250).await.unwrap();
+    store.revoke(&cesauth_core::types::SessionId::from_storage("dead"), 250).await.unwrap();
 
-    let active_only = store.list_for_user("alice", false, 50).await.unwrap();
+    let active_only = store.list_for_user(&cesauth_core::types::UserId::from_storage("alice"), false, 50).await.unwrap();
     assert_eq!(active_only.len(), 1);
-    assert_eq!(active_only[0].session_id, "active");
+    assert_eq!(active_only[0].session_id.as_str(), "active");
 
-    let with_revoked = store.list_for_user("alice", true, 50).await.unwrap();
+    let with_revoked = store.list_for_user(&cesauth_core::types::UserId::from_storage("alice"), true, 50).await.unwrap();
     assert_eq!(with_revoked.len(), 2,
         "include_revoked=true must surface revoked sessions for forensic UIs");
 }
@@ -404,7 +404,7 @@ async fn session_list_for_user_respects_limit() {
     for i in 0..5 {
         store.start(&sample_session(&format!("s{i}"), "alice", 100 + i)).await.unwrap();
     }
-    let out = store.list_for_user("alice", false, 2).await.unwrap();
+    let out = store.list_for_user(&cesauth_core::types::UserId::from_storage("alice"), false, 2).await.unwrap();
     assert_eq!(out.len(), 2,
         "limit must cap the result count");
 }
@@ -412,7 +412,7 @@ async fn session_list_for_user_respects_limit() {
 #[tokio::test]
 async fn session_list_for_user_empty_when_no_sessions() {
     let store = InMemoryActiveSessionStore::default();
-    let out = store.list_for_user("nobody", false, 50).await.unwrap();
+    let out = store.list_for_user(&cesauth_core::types::UserId::from_storage("nobody"), false, 50).await.unwrap();
     assert!(out.is_empty());
 }
 

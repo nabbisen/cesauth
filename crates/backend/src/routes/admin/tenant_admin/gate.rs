@@ -132,7 +132,7 @@ pub async fn check_action<D>(
     let outcome = check_permission(
         &assignments,
         &roles,
-        user_id,
+        &cesauth_core::types::UserId::from_storage(user_id),
         permission,
         scope,
         now,
@@ -225,7 +225,7 @@ pub async fn build_affordances<D>(
 
     let now = time::OffsetDateTime::now_utc().unix_timestamp();
     let outcomes = match check_permissions_batch(
-        &assignments, &roles, user_id, queries, now,
+        &assignments, &roles, &cesauth_core::types::UserId::from_storage(user_id), queries, now,
     ).await {
         Ok(v)  => v,
         Err(_) => return Ok(cesauth_frontend::tenant_admin::Affordances::default()),

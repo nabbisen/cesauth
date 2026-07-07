@@ -16,6 +16,7 @@ use crate::error::{CoreError, CoreResult};
 use crate::jwt::{AccessTokenClaims, JwtSigner};
 use crate::oidc::id_token::{build_id_token_claims, sign_id_token};
 use crate::oidc::pkce::{self, ChallengeMethod};
+use crate::types::{ClientId, FamilyId, Jti, UserId};
 use crate::oidc::token::TokenResponse;
 use crate::ports::repo::{ClientRepository, Grant, GrantRepository, UserRepository};
 use crate::ports::store::{
@@ -70,7 +71,7 @@ pub struct TokenConfig<'a> {
 /// request; the caller is responsible for parsing the HTTP form body.
 #[derive(Debug)]
 pub struct ExchangeCodeInput<'a> {
-    pub code:          &'a str,
+    pub code:          &'a crate::types::ChallengeHandle,
     pub redirect_uri:  &'a str,
     pub client_id:     &'a str,
     pub code_verifier: &'a str,
@@ -149,8 +150,8 @@ where
     pkce::verify(input.code_verifier, &code_challenge, method)?;
 
     // 4. Mint.
-    let family_id   = Uuid::new_v4().to_string();
-    let refresh_jti = Uuid::new_v4().to_string();
+    let family_id   = FamilyId::mint();
+    let refresh_jti = Jti::mint();
     let access_jti  = Uuid::new_v4().to_string();
 
     let claims = AccessTokenClaims {
@@ -169,8 +170,8 @@ where
     deps.families
         .init(&FamilyInit {
             family_id: family_id.clone(),
-            user_id:   user_id.clone(),
-            client_id: client.id.clone(),
+            user_id:   UserId::from_storage(user_id.clone()),
+            client_id: ClientId::from_storage(client.id.clone()),
             scopes:    scopes.0.clone(),
             first_jti: refresh_jti.clone(),
             now_unix:  input.now_unix,
@@ -181,7 +182,7 @@ where
 
     deps.grants
         .create(&Grant {
-            id:         family_id.clone(),
+            id:         family_id.to_string(),
             user_id:    user_id.clone(),
             client_id:  client.id.clone(),
             scopes:     scopes.0.clone(),
@@ -283,7 +284,7 @@ where
     //
     // threshold = 0 disables the gate (operator opt-out).
     if input.rate_limit_threshold > 0 {
-        let bucket = format!("refresh:{family_id}");
+        let bucket = format!("refresh:{}", family_id.as_str());
         let dec = deps.rates.hit(
             &bucket,
             input.now_unix,
@@ -306,7 +307,7 @@ where
         .map_err(|_| CoreError::Internal)?
         .ok_or(CoreError::InvalidClient)?;
 
-    let new_jti = Uuid::new_v4().to_string();
+    let new_jti = Jti::mint();
     let outcome = deps.families
         .rotate(&family_id, &presented_jti, &new_jti, input.now_unix)
         .await
@@ -340,7 +341,7 @@ where
 
             let claims = AccessTokenClaims {
                 iss:   signer.issuer().to_owned(),
-                sub:   fam.user_id.clone(),
+                sub:   fam.user_id.to_string(),
                 aud:   client.id.clone(),
                 exp:   input.now_unix + cfg.access_ttl_secs,
                 iat:   input.now_unix,
@@ -356,7 +357,7 @@ where
             // NOT the rotation moment.
             let id_token = if scopes.0.iter().any(|s| s == "openid") {
                 let user = deps.users
-                    .find_by_id(&fam.user_id)
+                    .find_by_id(fam.user_id.as_str())
                     .await
                     .map_err(|_| CoreError::Internal)?
                     .ok_or(CoreError::InvalidGrant("user deleted; cannot issue id_token"))?;
@@ -414,14 +415,14 @@ where
 // keeps `/token` stateless on the HTTP edge.
 // -------------------------------------------------------------------------
 
-fn encode_refresh(family_id: &str, jti: &str, ttl_secs: i64, now_unix: i64) -> String {
+fn encode_refresh(family_id: &FamilyId, jti: &Jti, ttl_secs: i64, now_unix: i64) -> String {
     use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     let expiry = now_unix.saturating_add(ttl_secs);
-    let raw = format!("{family_id}.{jti}.{expiry}");
+    let raw = format!("{}.{}.{expiry}", family_id.as_str(), jti.as_str());
     URL_SAFE_NO_PAD.encode(raw.as_bytes())
 }
 
-fn decode_refresh(token: &str) -> CoreResult<(String, String)> {
+fn decode_refresh(token: &str) -> CoreResult<(FamilyId, Jti)> {
     use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     let bytes = URL_SAFE_NO_PAD
         .decode(token.as_bytes())
@@ -433,7 +434,7 @@ fn decode_refresh(token: &str) -> CoreResult<(String, String)> {
     // We don't consult the third part (expiry) here; the DO is the
     // authority. It only exists for debugging / future eager rejection.
     let _expiry = parts.next();
-    Ok((family_id.to_owned(), jti.to_owned()))
+    Ok((FamilyId::from_storage(family_id), Jti::from_storage(jti)))
 }
 
 #[cfg(test)]

@@ -277,7 +277,7 @@ pub async fn resolve_or_redirect(
     let cfg      = Config::from_env(env)?;
     let sessions = cesauth_cf::ports::store::CloudflareActiveSessionStore::new(env);
     let outcome = sessions.touch(
-        &cookie.session_id,
+        &cesauth_core::types::SessionId::from_storage(&cookie.session_id),
         now,
         cfg.session_idle_timeout_secs,
         cfg.session_ttl_secs,
@@ -298,7 +298,7 @@ pub async fn resolve_or_redirect(
             }).to_string();
             crate::audit::write_owned(
                 env, crate::audit::EventKind::SessionIdleTimeout,
-                Some(state.user_id), Some(state.client_id),
+                Some(state.user_id.to_string()), Some(state.client_id.to_string()),
                 Some(payload),
             ).await.ok();
             Ok(Err(redirect_to_login_with_next(req)?))
@@ -312,7 +312,7 @@ pub async fn resolve_or_redirect(
             }).to_string();
             crate::audit::write_owned(
                 env, crate::audit::EventKind::SessionAbsoluteTimeout,
-                Some(state.user_id), Some(state.client_id),
+                Some(state.user_id.to_string()), Some(state.client_id.to_string()),
                 Some(payload),
             ).await.ok();
             Ok(Err(redirect_to_login_with_next(req)?))

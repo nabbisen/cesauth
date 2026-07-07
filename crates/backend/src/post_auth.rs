@@ -193,7 +193,7 @@ pub async fn complete_auth(
     let pending = match pending_handle {
         Some(h) if !h.is_empty() => {
             let store = CloudflareAuthChallengeStore::new(env);
-            match store.take(h).await {
+            match store.take(&cesauth_core::types::ChallengeHandle::from_storage(h)).await {
                 Ok(Some(Challenge::PendingAuthorize {
                     client_id, redirect_uri, scope, state, nonce,
                     code_challenge, code_challenge_method, ..
@@ -265,9 +265,9 @@ async fn park_totp_gate_and_redirect(
     pending:     Option<PendingAr>,
     now:         i64,
 ) -> Result<Response> {
-    let totp_handle = Uuid::new_v4().to_string();
+    let totp_handle = cesauth_core::types::ChallengeHandle::mint();
     let challenge = Challenge::PendingTotp {
-        user_id:                  user_id.to_owned(),
+        user_id:   user_id.to_owned(),
         auth_method,
         ar_client_id:             pending.as_ref().map(|p| p.client_id.clone()),
         ar_redirect_uri:          pending.as_ref().map(|p| p.redirect_uri.clone()),
@@ -284,7 +284,7 @@ async fn park_totp_gate_and_redirect(
     store.put(&totp_handle, &challenge).await
         .map_err(|_| worker::Error::RustError("totp challenge store failed".into()))?;
 
-    let totp_cookie    = set_totp_cookie_header(&totp_handle, TOTP_GATE_TTL_SECS);
+    let totp_cookie    = set_totp_cookie_header(totp_handle.as_str(), TOTP_GATE_TTL_SECS);
     let clear_pending  = clear_pending_cookie_header();
 
     let mut resp = Response::empty()?.with_status(302);
@@ -320,11 +320,11 @@ pub(crate) async fn complete_auth_post_gate(
     let now = OffsetDateTime::now_utc().unix_timestamp();
 
     // 2. Start the session.
-    let session_id = Uuid::new_v4().to_string();
+    let session_id = cesauth_core::types::SessionId::mint();
     let session = SessionState {
         session_id:   session_id.clone(),
-        user_id:      user_id.to_owned(),
-        client_id:    pending.as_ref().map(|p| p.client_id.clone()).unwrap_or_default(),
+        user_id:   cesauth_core::types::UserId::from_storage(user_id.to_owned()),
+        client_id: cesauth_core::types::ClientId::from_storage(pending.as_ref().map(|p| p.client_id.clone()).unwrap_or_default()),
         scopes:       pending.as_ref().and_then(|p| p.scope.clone())
                           .map(|s| Scopes::parse(&s).0).unwrap_or_default(),
         auth_method,
@@ -337,8 +337,8 @@ pub(crate) async fn complete_auth_post_gate(
         .map_err(|_| worker::Error::RustError("active session store unavailable".into()))?;
 
     let cookie = SessionCookie {
-        session_id:  session_id.clone(),
-        user_id:     user_id.to_owned(),
+        session_id:   session_id.to_string(),
+        user_id:   user_id.to_owned(),
         auth_method,
         issued_at:   now,
         expires_at:  now + cfg.session_ttl_secs,
@@ -355,7 +355,7 @@ pub(crate) async fn complete_auth_post_gate(
     match pending {
         Some(ar) => {
             // Mint the AuthCode handle and park the real Challenge.
-            let code = Uuid::new_v4().to_string();
+            let code = cesauth_core::types::ChallengeHandle::mint();
             let code_chal = Challenge::AuthCode {
                 client_id:             ar.client_id.clone(),
                 redirect_uri:          ar.redirect_uri.clone(),
@@ -384,7 +384,7 @@ pub(crate) async fn complete_auth_post_gate(
                 "{}{}code={}",
                 ar.redirect_uri,
                 sep,
-                URL_SAFE_NO_PAD.encode(code.as_bytes())
+                URL_SAFE_NO_PAD.encode(code.as_str().as_bytes())
             );
             // We URL-encode `state` since clients are known to pass
             // strings that contain '&' or '#'.

@@ -104,8 +104,8 @@ impl DurableObject for RefreshTokenFamily {
                     return Response::from_json(&Outcome::AlreadyRevoked);
                 }
 
-                if presented_jti == fam.current_jti {
-                    let old = std::mem::replace(&mut fam.current_jti, new_jti.clone());
+                if presented_jti.as_str() == fam.current_jti.as_str() {
+                    let old = std::mem::replace(&mut fam.current_jti, cesauth_core::types::Jti::from_storage(new_jti.clone()));
                     fam.retired_jtis.push(old);
                     if fam.retired_jtis.len() > RETIRED_RING_SIZE {
                         fam.retired_jtis.remove(0);
@@ -122,10 +122,10 @@ impl DurableObject for RefreshTokenFamily {
                     // surfaces the cause. `was_retired` distinguishes
                     // the recognized-retired-jti case from the
                     // unknown-jti case (= forged or shotgun attack).
-                    let was_retired = fam.retired_jtis.iter().any(|j| j == &presented_jti);
+                    let was_retired = fam.retired_jtis.iter().any(|j| j.as_str() == presented_jti.as_str());
 
                     fam.revoked_at        = Some(now_unix);
-                    fam.reused_jti        = Some(presented_jti.clone());
+                    fam.reused_jti        = Some(cesauth_core::types::Jti::from_storage(presented_jti.clone()));
                     fam.reused_at         = Some(now_unix);
                     fam.reuse_was_retired = Some(was_retired);
                     storage.put(KEY, &fam).await?;

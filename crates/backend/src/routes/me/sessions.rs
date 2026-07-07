@@ -28,7 +28,7 @@ use crate::routes::me::auth as me_auth;
 
 /// Build the session list for the current user.
 async fn build_items<D>(
-    session: &cesauth_core::ports::store::ActiveSession,
+    session: &cesauth_core::ports::store::SessionState,
     ctx:     &RouteContext<D>,
 ) -> Result<Vec<SessionListItem>> {
     let store = CloudflareActiveSessionStore::new(&ctx.env);
@@ -37,13 +37,13 @@ async fn build_items<D>(
 
     Ok(rows.into_iter().map(|s| SessionListItem {
         is_current:   s.session_id == session.session_id,
-        session_id:   s.session_id,
+        session_id:   s.session_id.to_string(),
         auth_method:  match s.auth_method {
             AuthMethod::Passkey   => "passkey",
             AuthMethod::MagicLink => "magic_link",
             AuthMethod::Admin     => "admin",
         }.to_owned(),
-        client_id:    s.client_id,
+        client_id:    s.client_id.to_string(),
         created_at:   s.created_at,
         last_seen_at: s.last_seen_at,
     }).collect())
@@ -114,7 +114,7 @@ pub async fn post_revoke<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Re
     // through the login screen instead of a clean logout
     // page). The UI's button is disabled for the current row,
     // so this branch is just defensive.
-    if target_id == session.session_id {
+    if target_id.as_str() == session.session_id.as_str() {
         return Response::error(
             "use the logout flow to end the current session",
             400,
@@ -131,7 +131,7 @@ pub async fn post_revoke<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Re
     // sessions, so the attacker would have to forge the id
     // (UUIDv4 search is cryptographically unlikely), but
     // defense in depth.
-    let target_state = match store.status(&target_id).await {
+    let target_state = match store.status(&cesauth_core::types::SessionId::from_storage(&target_id)).await {
         Ok(SessionStatus::Active(s))  => s,
         // Already revoked / never started: no-op success
         // (don't leak the existence-check by returning a
@@ -144,7 +144,7 @@ pub async fn post_revoke<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Re
     }
 
     let now = OffsetDateTime::now_utc().unix_timestamp();
-    let _ = store.revoke(&target_id, now).await
+    let _ = store.revoke(&cesauth_core::types::SessionId::from_storage(&target_id), now).await
         .map_err(|e| worker::Error::RustError(format!("session revoke: {e:?}")))?;
 
     // Audit. The kind distinguishes user-initiated revocation
@@ -158,8 +158,8 @@ pub async fn post_revoke<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Re
     }).to_string();
     audit::write_owned(
         &ctx.env, EventKind::SessionRevokedByUser,
-        Some(target_state.user_id),
-        Some(target_state.client_id),
+        Some(target_state.user_id.to_string()),
+        Some(target_state.client_id.to_string()),
         Some(payload),
     ).await.ok();
 
@@ -254,8 +254,8 @@ pub async fn post_revoke_others<D>(mut req: Request, ctx: RouteContext<D>) -> Re
     }).to_string();
     audit::write_owned(
         &ctx.env, EventKind::SessionRevokedByUser,
-        Some(session.user_id.clone()),
-        Some(session.client_id.clone()),
+        Some(session.user_id.to_string()),
+        Some(session.client_id.to_string()),
         Some(payload),
     ).await.ok();
 

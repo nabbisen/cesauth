@@ -47,8 +47,8 @@ use serde::{Deserialize, Serialize};
 /// (re-exported here for ergonomic use alongside the trait).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionIndexRow {
-    pub session_id: String,
-    pub user_id:    String,
+    pub session_id: crate::types::SessionId,
+    pub user_id:    crate::types::UserId,
     pub created_at: i64,
     /// `None` if D1 thinks the session is active;
     /// `Some(unix)` if D1 thinks it's revoked.
@@ -73,7 +73,7 @@ pub trait SessionIndexRepo {
     /// table once at the start of a pass, so concurrent
     /// writes between read and repair are possible; an
     /// already-deleted row produces no error.
-    async fn delete_row(&self, session_id: &str) -> PortResult<()>;
+    async fn delete_row(&self, session_id: &crate::types::SessionId) -> PortResult<()>;
 
     /// **v0.49.0** — Set the D1 row's `revoked_at` to the
     /// supplied timestamp. Used to repair `DoNewerRevoke`
@@ -89,5 +89,5 @@ pub trait SessionIndexRepo {
     /// surface this guard via a `WHERE revoked_at IS NULL`
     /// SQL clause (the v0.49.0 D1 adapter uses exactly
     /// this).
-    async fn mark_revoked(&self, session_id: &str, revoked_at: i64) -> PortResult<()>;
+    async fn mark_revoked(&self, session_id: &crate::types::SessionId, revoked_at: i64) -> PortResult<()>;
 }
