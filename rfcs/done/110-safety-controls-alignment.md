@@ -1,17 +1,17 @@
 # RFC 110 — Safety controls dashboard alignment audit
 
-**Status**: Implemented (v0.72.0 — verification + baseline doc + pin tests; gap-fill deferred to follow-up RFCs 110a–110e per the §"Open questions" Q1 closure)  
+**Status**: Verification implemented v0.72.0 (baseline doc + pin tests); 4 of 5 gap-fills shipped v0.74.0 (RFCs 110b/c/d/e); RFC 110a (rate-limit summary) remains deferred — env-blocked  
 **Tier**: P2  
 **Size**: Small (verification only); gap-fills are separate Small-Medium RFCs  
-**Target**: v0.70.0 (originally) → shipped v0.72.0 after v0.68.0–v0.71.0 batch shifts  
+**Target**: v0.70.0 (originally) → audit shipped v0.72.0, gap-fills shipped v0.74.0  
 **Phase**: Surface alignment audit (finishing track)  
-**Refs**: PDF v0.50.1 page 9 "Operations UX: Safety controls" / `crates/ui/src/admin/safety.rs` / RFC 081 (cron pass status) / `docs/src/expert/rfc-110-baseline.md` (audit findings)
+**Refs**: PDF v0.50.1 page 9 "Operations UX: Safety controls" / `crates/ui/src/admin/safety.rs` / RFC 081 (cron pass status) / `docs/src/expert/rfc-110-baseline.md` (audit findings) / sub-RFCs 110a–110e
 
 ## Implementation outcome (v0.72.0)
 
-Per the §"Open questions" Q1 resolution, this RFC closes with
-verification-only deliverables; the five PDF page-9 gaps are deferred
-to RFCs 110a–110e. The full audit is in
+Per the §"Open questions" Q1 resolution, the original RFC 110 closed
+with verification-only deliverables; the five PDF page-9 gaps were
+deferred to RFCs 110a–110e. The full audit is in
 `docs/src/expert/rfc-110-baseline.md`. Briefly:
 
 - **Console nav (PDF page 8)**: implementation is a **clean superset**
@@ -19,16 +19,63 @@ to RFCs 110a–110e. The full audit is in
   Alerts / Tokens`), plus two implementation-driven additions (`Cost`,
   `Operations`).
 - **Safety controls panel (PDF page 9, 4 items + runbook link)**: all
-  five items are **gaps**. The existing `/admin/console/safety` is the
+  five items were **gaps**. The existing `/admin/console/safety` is the
   Data Safety Dashboard (RFC 047), a different surface that happens to
   share the name.
 
-Pin tests in `crates/ui/src/admin/tests.rs::rfc_110` assert the current
-state (nav presence; gap items absent; secret material never leaks)
-so any follow-up RFC PR must update them in the same commit. The
-secret-leakage pin in particular is a forward-looking guardrail for
-when 110b (Turnstile) and 110d (TOTP key) land — both must surface a
-boolean indicator, never the secret bytes.
+Pin tests in `crates/ui/src/admin/tests.rs::rfc_110` asserted the
+v0.72.0 state (nav presence; gap items absent; secret material never
+leaks) so the v0.74.0 follow-up was forced to update them in the same
+commit.
+
+## Gap-fill outcome (v0.74.0)
+
+The four host-buildable gap-fills shipped together:
+
+- **RFC 110b — Turnstile configured indicator.** Worker-side
+  `env.var("TURNSTILE_SECRET_KEY")` check → bool → UI badge
+  (`configured` / `MISSING`). Secret bytes never enter the
+  `SafetyControlsReport` struct.
+- **RFC 110c — Refresh-token reuse alerts summary.** Service helper
+  `count_refresh_reuse_since(repo, now - 86400)` reads
+  `RefreshTokenReuseDetected` audit events with the existing
+  `AuditSearch::since` filter (RFC 109, v0.71.0). UI renders
+  `0 (clean)` or `N in 24h` (critical badge). 8 host-buildable
+  service tests cover the kind filter, lower-bound boundary, zero
+  case, and 24h-window integration.
+- **RFC 110d — TOTP key status indicator.** Same shape as RFC 110b
+  (`TOTP_SECRET_KEY` presence → bool → badge). The same
+  secret-leakage pin guards both env-var names.
+- **RFC 110e — Runbook link + Safety controls landing section.**
+  `RUNBOOK_URL` env var → optional anchor with `target="_blank"`
+  `rel="noopener noreferrer"`. Missing URL surfaces an informational
+  hint, not a broken link. This RFC also defines the "Safety controls"
+  landing section that gathers 110b–110d's indicators in one place
+  under `/admin/console/safety`.
+
+Pin tests flipped from negative to positive for these four; the
+forward-looking secret-leakage pin was **strengthened** to also catch
+the env-var names themselves (tighter privacy contract than the
+v0.72.0 baseline). The shipped state at
+`crates/ui/src/admin/tests.rs::rfc_110` has:
+
+- 2 positive nav-coverage pins (carried over from v0.72.0)
+- 1 Tab-enum count pin (carried over)
+- 8 new positive pins for 110b/c/d/e (configured + missing for the
+  bool indicators, zero + non-zero for the reuse count, present +
+  absent for the runbook link, omits-section-when-None)
+- 1 strengthened secret-leakage pin (now also catches env-var names)
+- 1 negative pin for RFC 110a (still deferred)
+
+## Deferred: RFC 110a
+
+The rate-limit summary stays deferred. The `SafetyControlsReport`
+struct already carries `rate_limit_status: Option<RateLimitStatus>`,
+and the UI renderer surfaces "— (RFC 110a deferred)" when None — so
+the v0.74.0 page already has the shape RFC 110a will populate. The
+remaining work is wasm32-only: enumerate active KV keys across the
+brute-force and token-endpoint rate-limit pools, aggregate, populate
+the field. See `rfcs/proposed/110a-rate-limit-summary.md`.
 
 ## Problem
 

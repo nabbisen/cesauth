@@ -42,12 +42,13 @@ the residual gaps. See ROADMAP.md "UI/UX finishing track" for grouping.
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
 | [112](./proposed/112-worker-auth-macro-batch-migration.md) | Worker auth macro batch migration (RFC 100 全面適用) | P2 | env-blocked |
+| [110a](./proposed/110a-rate-limit-summary.md) | Rate limit summary surface (RFC 110 sub-RFC) | P2 | v0.75.0+ (KV-heavy, env-blocked) |
 
 ---
 
 ## Done
 
-110 RFCs (001–106, 107, 108–111, 113) shipped between v0.50.3 and v0.73.0. Full
+114 RFCs (001–106, 107, 108–111, 110b–110d (with 110e), 113) shipped between v0.50.3 and v0.74.0. Full
 list with shipped-in versions: see ROADMAP.md "Shipped" section and
 CHANGELOG.md release entries. Selected highlights only listed here; the
 canonical catalogue is the filesystem at `done/`.
@@ -68,7 +69,11 @@ canonical catalogue is the filesystem at `done/`.
 | [107](./done/107-recovery-code-pluralization.md) | Recovery code pluralization (ADR-013 §Q4 plural side) | v0.73.0 |
 | [108](./done/108-ui-template-route-catalog-migration.md) | UI template route-catalog migration (closed v0.70.0) | v0.68.0–v0.70.0 |
 | [109](./done/109-audit-log-viewer-ui.md) | Audit log viewer UI surface | v0.71.0 |
-| [110](./done/110-safety-controls-alignment.md) | Safety controls dashboard alignment audit (verification + pin tests; gap-fills 110a–110e deferred) | v0.72.0 |
+| [110](./done/110-safety-controls-alignment.md) | Safety controls dashboard alignment audit (verification + pin tests; gap-fills 110a–110e split) | v0.72.0 + v0.74.0 |
+| [110b](./done/110b-turnstile-configured-indicator.md) | Turnstile configured indicator | v0.74.0 |
+| [110c](./done/110c-refresh-reuse-summary.md) | Refresh-token reuse alerts summary | v0.74.0 |
+| [110d](./done/110d-totp-key-status-indicator.md) | TOTP key status indicator | v0.74.0 |
+| [110e](./done/110e-safety-controls-landing-section.md) | Open-runbook hyperlink + Safety controls landing section | v0.74.0 |
 | [111](./done/111-date-rendering-policy.md) | Date rendering policy (ADR-013 §Q4 date side) | v0.73.0 |
 | [113](./done/113-ui-rendering-acceptance-harness.md) | UI rendering acceptance harness | v0.72.0 |
 
@@ -124,7 +129,8 @@ Actual shipping order:
 | v0.71.0 | 109 | Audit log viewer (new surface) |
 | v0.72.0 | 110, 113 | Safety alignment audit + acceptance harness |
 | v0.73.0 | 107, 111 | ADR-013 §Q4 closure (plural-aware lookup + UTC ISO-8601 policy) |
-| v0.74.0+ (planned) | 110a–110e | Safety controls panel gap-fills |
+| v0.74.0 | 110b, 110c, 110d, 110e | Safety controls panel gap-fills (4 of 5) |
+| v0.75.0+ (planned) | 110a | Rate limit summary (KV-heavy, env-blocked) |
 | Pending env | 112 | Worker auth macro batch (rustup/wasm32 required) |
 
 Dependencies between RFCs are minimal:

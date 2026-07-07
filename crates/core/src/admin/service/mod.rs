@@ -338,3 +338,8 @@ pub use audit_export::{export_audit, ExportFormat, ExportResult};
 
 pub mod audit_pagination;
 pub use audit_pagination::{decode_cursor, encode_cursor, parse_rfc3339_to_unix};
+
+// ─── Safety controls report assembly (RFC 110b/c/d/e) ──────────────────────
+
+pub mod safety_controls;
+pub use safety_controls::{compute_safety_controls, count_refresh_reuse_since};

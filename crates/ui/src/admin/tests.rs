@@ -252,7 +252,7 @@ fn admin_frame_carries_dark_mode_override() {
 
 mod rfc_110 {
     use super::*;
-    use cesauth_core::admin::types::DataSafetyReport;
+    use cesauth_core::admin::types::{DataSafetyReport, SafetyControlsReport};
     use crate::admin::frame::Tab;
 
     fn empty_report() -> DataSafetyReport {
@@ -269,7 +269,7 @@ mod rfc_110 {
         // PDF page 8: Overview / Safety / Audit / Config / Alerts / Tokens.
         // The implementation has these six plus Cost and Operations
         // (documented superset in rfc-110-baseline.md).
-        let html = safety_page(&principal(Role::Super), &empty_report());
+        let html = safety_page(&principal(Role::Super), &empty_report(), None);
         for label in ["Overview", "Safety", "Audit", "Config", "Alerts", "Tokens"] {
             assert!(html.contains(label),
                 "admin nav must include PDF page-8 tab '{label}'; \
@@ -280,7 +280,7 @@ mod rfc_110 {
     #[test]
     fn nav_carries_implementation_superset_tabs() {
         // Cost and Operations are the documented superset additions.
-        let html = safety_page(&principal(Role::Super), &empty_report());
+        let html = safety_page(&principal(Role::Super), &empty_report(), None);
         assert!(html.contains("Cost"),
             "admin nav superset tab 'Cost' must be present (baseline §page 8)");
         assert!(html.contains("Operations"),
@@ -300,72 +300,154 @@ mod rfc_110 {
             "Tab enum count drifted — update docs/src/expert/rfc-110-baseline.md");
     }
 
-    // --- PDF page 9 "Safety controls" gap pins ---------------------------
+    // --- PDF page 9 "Safety controls" pins (v0.74.0 mixed state) --------
     //
-    // Each gap pin is a negative assertion: the surface does NOT yet
-    // carry the item. A follow-up RFC (110a–110e) will flip these to
-    // positive assertions.
+    // RFC 110b/c/d/e shipped in v0.74.0 — positive pins assert the
+    // indicators appear when `Some(SafetyControlsReport)` is passed.
+    // RFC 110a (rate-limit summary) is still deferred — its pin stays
+    // negative until that gap-fill lands.
+    //
+    // Each test passes `controls: Some(&report)` to exercise the
+    // shipped section; the `None` path (omits the section entirely)
+    // is exercised by `safety_page_does_not_yet_show_rate_limit_status`
+    // and the non-rfc_110 tests.
+
+    fn full_controls() -> SafetyControlsReport {
+        SafetyControlsReport {
+            turnstile_configured:    true,
+            totp_key_configured:     true,
+            refresh_reuse_count_24h: 0,
+            runbook_url:             Some("https://runbook.example/cesauth".to_owned()),
+            rate_limit_status:       None,  // RFC 110a deferred
+        }
+    }
 
     #[test]
     fn safety_page_does_not_yet_show_rate_limit_status() {
-        // RFC 110a deferred.
-        let html = safety_page(&principal(Role::Super), &empty_report());
-        assert!(!html.contains("レート制限"),
+        // RFC 110a deferred. The page renders the indicator slot as
+        // "— (RFC 110a deferred)" when rate_limit_status is None.
+        let html = safety_page(&principal(Role::Super), &empty_report(), Some(&full_controls()));
+        // Once the rate-limit summary lands, replace this assertion
+        // with a positive check on the rendered count.
+        assert!(html.contains("RFC 110a deferred"),
             "rate-limit summary not yet implemented (RFC 110a); \
-             when it lands, flip this pin to a positive assertion");
-        assert!(!html.contains("Rate limit") || html.contains("Data safety"),
-            "the only 'Rate limit' string allowed today is a coincidental \
-             nav/heading match; gap-fill RFC 110a must update this pin");
+             when it lands, populate rate_limit_status and flip this pin");
     }
 
     #[test]
-    fn safety_page_does_not_yet_show_turnstile_indicator() {
-        // RFC 110b deferred.
-        let html = safety_page(&principal(Role::Super), &empty_report());
-        assert!(!html.contains("Turnstile"),
-            "Turnstile configured indicator not yet implemented (RFC 110b)");
+    fn safety_page_shows_turnstile_indicator_when_configured() {
+        // RFC 110b shipped v0.74.0.
+        let html = safety_page(&principal(Role::Super), &empty_report(), Some(&full_controls()));
+        assert!(html.contains("Turnstile configured"),
+            "Turnstile indicator row label must appear (RFC 110b)");
+        assert!(html.contains("configured") && !html.contains("MISSING"),
+            "Turnstile=true should render as `configured`, not `MISSING`");
     }
 
     #[test]
-    fn safety_page_does_not_yet_show_refresh_reuse_summary() {
-        // RFC 110c deferred.
-        let html = safety_page(&principal(Role::Super), &empty_report());
-        assert!(!html.contains("RefreshTokenReuse") && !html.contains("refresh reuse"),
-            "refresh-reuse summary not yet implemented (RFC 110c)");
+    fn safety_page_shows_turnstile_missing_when_not_configured() {
+        let controls = SafetyControlsReport {
+            turnstile_configured: false,
+            ..full_controls()
+        };
+        let html = safety_page(&principal(Role::Super), &empty_report(), Some(&controls));
+        assert!(html.contains("MISSING"),
+            "Turnstile=false should render as `MISSING` (RFC 110b)");
     }
 
     #[test]
-    fn safety_page_does_not_yet_show_totp_key_indicator() {
-        // RFC 110d deferred.
-        let html = safety_page(&principal(Role::Super), &empty_report());
-        assert!(!html.contains("TOTP_SECRET_KEY") && !html.contains("TOTP key"),
-            "TOTP key status indicator not yet implemented (RFC 110d)");
+    fn safety_page_shows_refresh_reuse_zero_as_clean() {
+        // RFC 110c shipped v0.74.0.
+        let html = safety_page(&principal(Role::Super), &empty_report(), Some(&full_controls()));
+        assert!(html.contains("Refresh-token reuse (24h)"),
+            "refresh-reuse row label must appear (RFC 110c)");
+        assert!(html.contains("0 (clean)"),
+            "refresh-reuse=0 should render as `0 (clean)` badge");
     }
 
     #[test]
-    fn safety_page_does_not_yet_link_to_runbook() {
-        // RFC 110e deferred.
-        let html = safety_page(&principal(Role::Super), &empty_report());
-        assert!(!html.contains("day-2-runbook") && !html.contains("ランブック"),
-            "runbook link not yet implemented (RFC 110e)");
+    fn safety_page_shows_refresh_reuse_count_as_critical() {
+        let controls = SafetyControlsReport {
+            refresh_reuse_count_24h: 3,
+            ..full_controls()
+        };
+        let html = safety_page(&principal(Role::Super), &empty_report(), Some(&controls));
+        assert!(html.contains("3 in 24h"),
+            "refresh-reuse=3 should render as `3 in 24h` (RFC 110c)");
+        assert!(html.contains("critical"),
+            "non-zero refresh reuse must render as a critical badge");
+    }
+
+    #[test]
+    fn safety_page_shows_totp_key_indicator() {
+        // RFC 110d shipped v0.74.0.
+        let html = safety_page(&principal(Role::Super), &empty_report(), Some(&full_controls()));
+        assert!(html.contains("TOTP key configured"),
+            "TOTP key row label must appear (RFC 110d)");
+    }
+
+    #[test]
+    fn safety_page_renders_runbook_link_when_url_present() {
+        // RFC 110e shipped v0.74.0.
+        let html = safety_page(&principal(Role::Super), &empty_report(), Some(&full_controls()));
+        assert!(html.contains("Open runbook"),
+            "runbook link text must appear when RUNBOOK_URL is set (RFC 110e)");
+        assert!(html.contains("https://runbook.example/cesauth"),
+            "runbook URL must appear as href value");
+        assert!(html.contains(r#"target="_blank""#),
+            "runbook link must open in a new tab (operator is mid-incident)");
+        assert!(html.contains(r#"rel="noopener noreferrer""#),
+            "runbook link must carry rel=noopener noreferrer for security");
+    }
+
+    #[test]
+    fn safety_page_omits_runbook_link_when_url_missing() {
+        let controls = SafetyControlsReport {
+            runbook_url: None,
+            ..full_controls()
+        };
+        let html = safety_page(&principal(Role::Super), &empty_report(), Some(&controls));
+        // The page shows a hint message instead of a broken anchor.
+        assert!(html.contains("Runbook URL not configured"),
+            "missing runbook URL should surface a hint, not a broken link");
+        assert!(!html.contains(r#"href="""#),
+            "no empty href= attribute should be emitted when runbook URL is None");
+    }
+
+    #[test]
+    fn safety_page_omits_controls_section_when_none() {
+        // The None path is the v0.73.0 baseline behaviour: just the
+        // Data Safety Dashboard, no Safety controls section.
+        let html = safety_page(&principal(Role::Super), &empty_report(), None);
+        assert!(!html.contains("Safety controls"),
+            "controls section must be omitted entirely when controls=None");
     }
 
     // --- Crucial invariant: secrets never leak via this surface ---------
     //
-    // Even after gap-fills (110b, 110d) land, the rendered HTML must NEVER
-    // contain the secret material itself — only a presence indicator. We
-    // pin a sentinel negative now so any future PR that accidentally
-    // includes the secret bytes is caught.
+    // Even after gap-fills (110b, 110d) shipped, the rendered HTML must
+    // NEVER contain the secret material itself — only a presence
+    // indicator. We pin a sentinel negative now so any future PR that
+    // accidentally includes the secret bytes is caught. This pin is
+    // load-bearing: it protects the privacy contract that lets us
+    // surface env-var presence on a public-ish admin page.
 
     #[test]
     fn safety_page_never_exposes_secret_material() {
-        let html = safety_page(&principal(Role::Super), &empty_report());
+        let html = safety_page(&principal(Role::Super), &empty_report(), Some(&full_controls()));
         // Sentinels that would be present if someone accidentally embedded
         // PEM-encoded key material or base64 secrets.
         assert!(!html.contains("BEGIN PRIVATE KEY"),
             "secret material must never appear in safety page");
         assert!(!html.contains("BEGIN ENCRYPTED"),
             "secret material must never appear in safety page");
+        // Also assert that env-var *names* don't appear in the rendered
+        // page — they shouldn't be needed because the indicators are
+        // bools, not env-var dumps.
+        assert!(!html.contains("TURNSTILE_SECRET_KEY"),
+            "env var name must not leak into rendered page");
+        assert!(!html.contains("TOTP_SECRET_KEY"),
+            "env var name must not leak into rendered page");
     }
 }
 

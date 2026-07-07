@@ -26,6 +26,146 @@ split by minor-version range:
 
 ---
 
+## [0.74.0] - 2026-05-14
+
+Ships 4 of 5 PDF v0.50.1 page 9 "Safety controls" gap-fills as new
+sub-RFCs: 110b (Turnstile configured indicator), 110c (refresh-token
+reuse alerts summary), 110d (TOTP key status indicator), 110e
+(Open-runbook hyperlink + Safety controls landing section). RFC 110a
+(rate-limit summary) remains deferred — its data source is wasm32-only
+KV enumeration, which the current sandbox cannot compile-verify. The
+`SafetyControlsReport::rate_limit_status: Option<RateLimitStatus>`
+field and "— (RFC 110a deferred)" placeholder rendering are wired now
+so 110a is a single-PR finish when an environment with rustup/wasm32
+is available.
+
+### RFC 110b — Turnstile configured indicator
+
+Boolean indicator surfaced as an OK / MISSING badge. Worker handler
+checks `env.var("TURNSTILE_SECRET_KEY")` and forwards a `bool` through
+`SafetyControlsReport::turnstile_configured`. The secret bytes never
+enter the report struct; the env-var name itself doesn't appear in
+rendered HTML either (the strengthened secret-leakage pin enforces
+this).
+
+### RFC 110c — Refresh-token reuse alerts summary
+
+New core service helper
+`crates/core/src/admin/service/safety_controls.rs::count_refresh_reuse_since(repo, since_unix)`
+reads `RefreshTokenReuseDetected` audit events via the existing
+`AuditSearch::since` filter (RFC 109, v0.71.0). Window: 24h (any reuse
+in the last day is operator-attention-grabbing; longer windows would
+need pagination). 1000-row soft cap — at that scale "many" is the
+correct signal anyway. UI renders `0 (clean)` (OK badge) or
+`N in 24h` (critical badge). 8 host-buildable service tests cover
+the kind filter, lower-bound inclusivity, zero case, and 24h-window
+boundary integration with `compute_safety_controls`.
+
+### RFC 110d — TOTP key status indicator
+
+Same shape as RFC 110b — `env.var("TOTP_SECRET_KEY")` presence →
+bool → badge. The same secret-leakage pin guards both env-var names.
+
+### RFC 110e — Open-runbook hyperlink + Safety controls landing section
+
+`RUNBOOK_URL` env var → optional anchor:
+`<a class="action" href="…" target="_blank" rel="noopener noreferrer">Open runbook ↗</a>`.
+Missing URL surfaces an informational hint ("Runbook URL not
+configured. Set `RUNBOOK_URL` in the worker env…"), not a broken
+link. `rel="noopener noreferrer"` is mandatory: prevents the runbook
+page from getting a `window.opener` reference back to the admin
+console.
+
+This RFC also defines the broader **"Safety controls" landing section**
+that gathers 110b–110d's indicators in one place under
+`/admin/console/safety`. The two surfaces (Data Safety Dashboard +
+Safety controls) share the page because operators reach for both
+from the same nav tab.
+
+### Service composition
+
+New helper
+`crates/core/src/admin/service/safety_controls.rs::compute_safety_controls(repo, now_unix, turnstile_configured, totp_key_configured, runbook_url)`
+gathers the four indicators into a single `SafetyControlsReport`. The
+worker-side env-var lookups (RFC 110b/d/e) are wasm32-shaped and
+untestable in the current sandbox; pulling them out of the service
+layer lets us ship 110b/d/e as straight-pipe wiring with no host-side
+data dependencies, while 110c (which needs `AuditEventRepository`)
+gets a proper service function + adapter-test coverage.
+
+### Data model changes
+
+New types in `crates/core/src/admin/types.rs`:
+
+- `pub struct SafetyControlsReport { turnstile_configured: bool, totp_key_configured: bool, refresh_reuse_count_24h: u64, runbook_url: Option<String>, rate_limit_status: Option<RateLimitStatus> }`
+- `pub struct RateLimitStatus { throttled_buckets: u32, tripped_clients: u32 }` (placeholder for RFC 110a)
+
+UI signature change:
+
+```rust
+// Before (v0.73.0):
+pub fn safety_page(principal: &AdminPrincipal, report: &DataSafetyReport) -> String
+
+// After (v0.74.0):
+pub fn safety_page(principal: &AdminPrincipal, report: &DataSafetyReport, controls: Option<&SafetyControlsReport>) -> String
+```
+
+Backward-compat: `controls = None` reproduces the v0.73.0 page (Data
+Safety Dashboard only, no Safety controls section).
+
+### Pin tests (v0.74.0 mixed state)
+
+`crates/ui/src/admin/tests.rs::rfc_110` reflects the post-shipment state:
+
+- 2 positive nav-coverage pins (carried over from v0.72.0)
+- 1 Tab-enum count pin (carried over)
+- 8 new positive pins for 110b/c/d/e
+- 1 strengthened secret-leakage pin (now also catches env-var names)
+- 1 negative pin for RFC 110a (still deferred — replaced
+  "RFC 110a not yet" check with "— (RFC 110a deferred)" placeholder
+  check)
+
+### Tests
+
+1,290 / 1,290 pass (767 core + 133 adapter-test + 355 ui lib + 4 ui
+integration + 31 migrate-test). **+12** over the v0.73.0 baseline:
+
+- core: +8 (safety_controls service helpers — kind filter,
+  lower-bound, integration, 24h window, defensive)
+- ui lib: +4 (controls section rendering: turnstile, refresh-reuse,
+  totp-key, runbook-link variants)
+
+### Warnings
+
+0 production lib warnings on
+`cargo-1.91 check -p cesauth-core -p cesauth-ui -p cesauth-adapter-test`.
+
+### Drift-scan
+
+Clean.
+
+### Worker-side verification (env-blocked)
+
+Worker handler `crates/worker/src/routes/admin/console/safety.rs`
+edits are mechanical (4 env-var lookups + 1 service call + struct
+construction). Sandbox cannot install rustup/wasm32 so compile-verify
+falls to CI on a rustup-enabled environment. Same posture as RFC 112
+and RFC 110a.
+
+### Contract invariants reaffirmed
+
+- **Secret-leakage invariant** (RFC 110b/d): pin asserts neither
+  secret bytes nor env-var names appear in rendered HTML. Tighter
+  than v0.72.0 baseline.
+- **Catalog mirrors worker reality** (RFC 108): no new routes added;
+  the Safety controls section lives at the existing
+  `/admin/console/safety` path.
+- **Tests-as-drift-detectors**: the negative RFC 110a pin
+  (`safety_page_does_not_yet_show_rate_limit_status`) requires a
+  follow-up PR to update when 110a ships.
+
+---
+
 ## [0.73.0] - 2026-05-14
 
 Closes RFC 107 (Recovery code pluralization) and RFC 111 (Date rendering

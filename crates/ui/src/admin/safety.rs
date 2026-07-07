@@ -1,21 +1,39 @@
-//! Data Safety Dashboard page (§4.3).
+//! Data Safety Dashboard page (§4.3) — plus the "Safety controls"
+//! sub-section that surfaces PDF v0.50.1 page 9 indicators (RFC 110b/c/d/e,
+//! v0.74.0). The two surfaces share the page because operators reach for
+//! both from the same nav tab.
 
 use crate::escape;
 use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::policy::role_allows;
-use cesauth_core::admin::types::{AdminAction, AdminPrincipal, BucketSafetyState, DataSafetyReport};
+use cesauth_core::admin::types::{
+    AdminAction, AdminPrincipal, BucketSafetyState, DataSafetyReport,
+    SafetyControlsReport,
+};
 use cesauth_core::routes::admin as routes;
 
 use super::frame::{admin_frame, Tab};
 
+/// Render the safety page.
+///
+/// `controls` is `Some(report)` when the worker has assembled the
+/// Safety controls panel (RFC 110b/c/d/e). It's `None` while the worker
+/// handler is still env-blocked or for tests that exercise only the
+/// data-safety surface. When `None`, the controls section is omitted
+/// entirely.
 pub fn safety_page(
     principal: &AdminPrincipal,
     report:    &DataSafetyReport,
+    controls:  Option<&SafetyControlsReport>,
 ) -> String {
     let body = format!(
-        "{summary}\n{table}",
-        summary = render_summary(report),
-        table   = render_table(principal, &report.buckets),
+        "{summary}\n{controls_section}\n{table}",
+        summary  = render_summary(report),
+        controls_section = match controls {
+            Some(c) => render_safety_controls(c),
+            None    => String::new(),
+        },
+        table    = render_table(principal, &report.buckets),
     );
     admin_frame(
         "Data safety",
@@ -24,6 +42,77 @@ pub fn safety_page(
         Tab::Safety,
         &ScopeBadge::System,
         &body,
+    )
+}
+
+/// Render the PDF v0.50.1 page 9 "Safety controls" panel.
+///
+/// The four indicators (RFC 110b/c/d/e) are rendered as a compact
+/// table; the runbook link surfaces below as a button-styled anchor
+/// when the deployment has set `RUNBOOK_URL`. RFC 110a's
+/// `rate_limit_status` is rendered as "—" when None.
+///
+/// **Secret-leakage invariant** (pin: `safety_page_never_exposes_secret_material`):
+/// this surface only ever renders the *boolean* indicators
+/// `turnstile_configured` / `totp_key_configured` — never the secret
+/// bytes those env vars carry. A PR that surfaces the secret would
+/// trip the negative pin in `tests.rs::rfc_110`.
+fn render_safety_controls(c: &SafetyControlsReport) -> String {
+    let badge = |configured: bool, label_ok: &str, label_missing: &str| {
+        if configured {
+            format!(r#"<span class="badge ok">{}</span>"#, escape(label_ok))
+        } else {
+            format!(r#"<span class="badge critical">{}</span>"#, escape(label_missing))
+        }
+    };
+    let reuse_badge = if c.refresh_reuse_count_24h == 0 {
+        r#"<span class="badge ok">0 (clean)</span>"#.to_owned()
+    } else {
+        // Any reuse event in 24h is an operator-attention-grabbing
+        // signal. Refresh-token reuse means either a session got
+        // stolen or replayed (RFC 9700 §4.14.2).
+        format!(
+            r#"<span class="badge critical">{} in 24h</span>"#,
+            c.refresh_reuse_count_24h,
+        )
+    };
+    let rate_limit_cell = match &c.rate_limit_status {
+        Some(s) => format!(
+            "{} throttled bucket(s), {} tripped client(s)",
+            s.throttled_buckets, s.tripped_clients,
+        ),
+        None => r#"<span class="muted">— (RFC 110a deferred)</span>"#.to_owned(),
+    };
+    let runbook_link = match c.runbook_url.as_deref() {
+        Some(url) => format!(
+            // Open runbook in a new tab (operator is mid-incident — keep
+            // the safety dashboard pinned).
+            r##"<p><a class="action" href="{url}" target="_blank" rel="noopener noreferrer">Open runbook ↗</a></p>"##,
+            url = escape(url),
+        ),
+        None => r#"<p class="muted">Runbook URL not configured. Set <code>RUNBOOK_URL</code> in the worker env to surface a quick link here.</p>"#.to_owned(),
+    };
+    format!(
+        r##"<section aria-label="Safety controls">
+  <h2>Safety controls</h2>
+  <table>
+    <tbody>
+      <tr><th scope="row">Rate limit status</th>     <td>{rate_limit_cell}</td></tr>
+      <tr><th scope="row">Turnstile configured</th>  <td>{turnstile}</td></tr>
+      <tr><th scope="row">Refresh-token reuse (24h)</th><td>{reuse_badge}</td></tr>
+      <tr><th scope="row">TOTP key configured</th>   <td>{totp_key}</td></tr>
+    </tbody>
+  </table>
+  {runbook_link}
+  <p class="note">Indicators reflect runtime state at the moment this
+     page was loaded. Re-load to refresh. Secrets are never rendered —
+     only their presence.</p>
+</section>"##,
+        rate_limit_cell = rate_limit_cell,
+        turnstile       = badge(c.turnstile_configured, "configured", "MISSING"),
+        reuse_badge     = reuse_badge,
+        totp_key        = badge(c.totp_key_configured, "configured", "MISSING"),
+        runbook_link    = runbook_link,
     )
 }
 

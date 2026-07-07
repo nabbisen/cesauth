@@ -307,6 +307,59 @@ pub struct DataSafetyReport {
     pub staleness_threshold_days: u32,
 }
 
+/// PDF v0.50.1 page 9 "Safety controls" panel report (RFC 110, v0.74.0).
+///
+/// Gathers indicators for the operational safety items the deck lists:
+/// rate limit status, Turnstile configured, refresh-reuse alerts, TOTP
+/// key status. Rendered as a sub-section of `/admin/console/safety`
+/// alongside the existing Data Safety Dashboard (buckets).
+///
+/// **Critical invariant**: this struct carries **indicators**, not
+/// secrets. `turnstile_configured` and `totp_key_configured` are
+/// booleans derived from env-var presence; the secret bytes themselves
+/// never enter this struct. The forward-looking pin in
+/// `crates/ui/src/admin/tests.rs::rfc_110::safety_page_never_exposes_secret_material`
+/// guards this contract at the rendered-HTML level.
+///
+/// **Optional field — RFC 110a deferred.** `rate_limit_status` is
+/// `None` because that gap-fill requires KV bucket reads (RFC 110a,
+/// future work). When 110a lands, populate this field; the renderer
+/// surfaces "—" when None.
+#[derive(Debug, Clone, Serialize)]
+pub struct SafetyControlsReport {
+    /// `TURNSTILE_SECRET_KEY` env var presence (RFC 110b). Surfaces as
+    /// a boolean indicator only; the secret itself never crosses this
+    /// boundary.
+    pub turnstile_configured: bool,
+    /// `TOTP_SECRET_KEY` env var presence (RFC 110d). Same secret-leak
+    /// posture as `turnstile_configured`.
+    pub totp_key_configured: bool,
+    /// Count of `RefreshTokenReuseDetected` audit events observed in
+    /// the last 24h window (RFC 110c). Bounded by the audit log
+    /// retention; bigger windows would need pagination.
+    pub refresh_reuse_count_24h: u64,
+    /// Hyperlink target for the "Open runbook" link (RFC 110e). Most
+    /// deployments will set this to their internal day-2 runbook URL;
+    /// when unset, the renderer omits the link.
+    pub runbook_url: Option<String>,
+    /// **RFC 110a (deferred)**: rate-limit summary. `None` until a
+    /// future release wires KV bucket reads. The renderer surfaces
+    /// "—" for missing values rather than failing.
+    pub rate_limit_status: Option<RateLimitStatus>,
+}
+
+/// Placeholder for RFC 110a — kept narrow on purpose so the field
+/// presence in `SafetyControlsReport` is stable while the rate-limit
+/// adapter work is deferred.
+#[derive(Debug, Clone, Serialize)]
+pub struct RateLimitStatus {
+    /// Number of distinct rate-limit buckets currently throttling
+    /// at least one client. Operator-facing summary value.
+    pub throttled_buckets: u32,
+    /// Number of clients currently in "trip" state across all buckets.
+    pub tripped_clients: u32,
+}
+
 // -------------------------------------------------------------------------
 // Alerts
 // -------------------------------------------------------------------------

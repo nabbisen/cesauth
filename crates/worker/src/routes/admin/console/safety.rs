@@ -8,7 +8,8 @@
 //! values. The console audits the stamp.
 
 use cesauth_cf::admin::{CloudflareBucketSafetyRepository, CloudflareThresholdRepository};
-use cesauth_core::admin::service::{build_safety_report, verify_bucket_safety};
+use cesauth_cf::ports::audit::CloudflareAuditEventRepository;
+use cesauth_core::admin::service::{build_safety_report, compute_safety_controls, verify_bucket_safety};
 use cesauth_core::admin::types::AdminAction;
 use cesauth_ui as ui;
 use time::OffsetDateTime;
@@ -35,16 +36,41 @@ pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
         .await
         .map_err(|e| worker::Error::RustError(format!("safety: {e}")))?;
 
+    // RFC 110b/c/d/e (v0.74.0): assemble the Safety controls panel.
+    //
+    // - 110b: TURNSTILE_SECRET_KEY presence
+    // - 110c: refresh-token reuse count in last 24h (via core service)
+    // - 110d: TOTP_SECRET_KEY presence
+    // - 110e: RUNBOOK_URL (optional config)
+    //
+    // Env-var lookups are wasm32-only and not unit-testable in the
+    // current sandbox; the service-side count_refresh_reuse_since is
+    // covered by 8 host-buildable tests.
+    let turnstile_configured = ctx.env.var("TURNSTILE_SECRET_KEY")
+        .map(|v| !v.to_string().is_empty()).unwrap_or(false);
+    let totp_key_configured  = ctx.env.var("TOTP_SECRET_KEY")
+        .map(|v| !v.to_string().is_empty()).unwrap_or(false);
+    let runbook_url = ctx.env.var("RUNBOOK_URL").ok()
+        .map(|v| v.to_string())
+        .filter(|s| !s.is_empty());
+    let audit_repo = CloudflareAuditEventRepository::new(&ctx.env);
+    let controls = compute_safety_controls(
+        &audit_repo, now,
+        turnstile_configured, totp_key_configured, runbook_url,
+    ).await.map_err(|e| worker::Error::RustError(format!("safety_controls: {e}")))?;
+
     audit::write_owned(
         &ctx.env, EventKind::AdminConsoleViewed,
         Some(principal.id.clone()), None, Some("safety".into()),
     ).await.ok();
 
     if render::prefers_json(&req) {
-        render::json_response(&serde_json::to_value(&report)
-            .unwrap_or(serde_json::Value::Null))
+        render::json_response(&serde_json::json!({
+            "data_safety": report,
+            "controls":    controls,
+        }))
     } else {
-        render::html_response(ui::admin::safety_page(&principal, &report))
+        render::html_response(ui::admin::safety_page(&principal, &report, Some(&controls)))
     }
 }
 

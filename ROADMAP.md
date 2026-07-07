@@ -93,6 +93,7 @@ full narrative is in the [archive](docs/changelog-archive/README.md).
 | RFC 109 — Audit log viewer UI surface (with scope amendments) | v0.71.0 | [CHANGELOG](CHANGELOG.md) |
 | RFC 110 + 113 — Safety controls audit + UI rendering acceptance harness | v0.72.0 | [CHANGELOG](CHANGELOG.md) |
 | RFC 107 + 111 — ADR-013 §Q4 closure (plural-aware lookup + UTC ISO-8601 policy) | v0.73.0 | [CHANGELOG](CHANGELOG.md) |
+| RFC 110b/c/d/e — Safety controls panel gap-fills (Turnstile/refresh-reuse/TOTP-key/runbook-link); 110a still deferred | v0.74.0 | [CHANGELOG](CHANGELOG.md) |
 
 ---
 
@@ -217,15 +218,42 @@ started.
   1,278 tests (+13 vs v0.72.0 baseline: +8 core plural rules,
   +5 ui plural-variants + RFC 111 pins). 0 warnings.
 
-- 📅 **v0.74.0+ — RFC 110a–110e gap-fills** (Safety controls
-  panel: rate-limit summary, Turnstile indicator, refresh-reuse
-  summary, TOTP key status, runbook link). Each touches a different
-  worker data source; several need rustup/wasm32-blocked
-  verification of the worker handler.
+- ✅ **v0.74.0 — RFC 110b/c/d/e (Safety controls panel gap-fills).**
+  Four of the five PDF v0.50.1 page 9 gap items identified in v0.72.0
+  baseline shipped together. RFC 110b: Turnstile env-var presence
+  → boolean indicator badge; never the secret bytes. RFC 110c:
+  refresh-token reuse alerts summary — new service helper
+  `count_refresh_reuse_since(repo, now - 86400)` reads
+  `RefreshTokenReuseDetected` audit events via existing
+  `AuditSearch::since` filter (RFC 109). UI renders `0 (clean)` or
+  `N in 24h` (critical badge). RFC 110d: TOTP_SECRET_KEY presence
+  → same shape as 110b. RFC 110e: `RUNBOOK_URL` env var → anchor
+  with `target="_blank" rel="noopener noreferrer"`; missing URL
+  surfaces an informational hint, not a broken link. New service
+  composition helper `compute_safety_controls(...)` assembles the
+  `SafetyControlsReport`. UI signature change:
+  `safety_page(principal, report)` →
+  `safety_page(principal, report, controls: Option<&SafetyControlsReport>)`
+  — backward-compat via None. Pin tests flipped from negative to
+  positive (8 new positive pins) and the forward-looking
+  secret-leakage pin strengthened to catch env-var names. RFC 110a
+  (rate-limit summary, KV-heavy) stays deferred — the
+  `Option<RateLimitStatus>` field + "— (RFC 110a deferred)"
+  placeholder rendering are wired now, so 110a is a single-PR finish
+  when an environment with rustup/wasm32 is available.
+  1,290 tests (+12 vs v0.73.0 baseline: +8 core safety_controls,
+  +4 ui controls-section rendering). 0 warnings.
+
+- 📅 **v0.75.0+ — RFC 110a (Rate limit summary, env-blocked).**
+  KV-backed bucket enumeration across the brute-force and
+  token-endpoint rate-limit pools. The `RateLimitStatus` struct,
+  `Option<RateLimitStatus>` field, and "— (RFC 110a deferred)"
+  placeholder are already in place — landing 110a is wiring the
+  worker-side KV reads (wasm32-only).
 
 - ⏸ **RFC 112 — Worker auth macro batch (environment-blocked).**
   Mechanical RFC 100 macro adoption across remaining admin handlers
-  (~800 LOC reduction). Sandbox where v0.66.0–v0.73.0 were prepared
+  (~800 LOC reduction). Sandbox where v0.66.0–v0.74.0 were prepared
   cannot install rustup + wasm32 target. Ships once an
   environment with worker compile-verify is available.
 
