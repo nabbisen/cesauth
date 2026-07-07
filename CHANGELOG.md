@@ -26,6 +26,126 @@ split by minor-version range:
 
 ---
 
+## [0.77.0] - 2026-05-14
+
+Maintenance release closing out the test-file modularization track
+started in v0.75.0. Splits the three remaining largest test files
+(`migrate/tests.rs` 1,154 lines, `tenant_admin/tests.rs` 895 lines,
+`migration_chain.rs` 881 lines) into 22 sibling files across the
+three crates, plus 3 shared `common.rs` files. Every test file now
+under the 500-ELOC dev-guideline threshold; 1,290 tests still pass
+identically.
+
+### Three splits in one release
+
+**`crates/core/src/migrate/tests.rs`** (1,154 → 247 entry + 6 siblings):
+
+- `redaction.rs` (98), `export_verify.rs` (268), `import_invariants.rs`
+  (109), `import_pipeline.rs` (281), `email_uniqueness.rs` (128),
+  `manifest_tenant.rs` (80).
+- Also de-wrapped a redundant inline `mod tests { ... }` block that
+  was double-nesting the module path as `migrate::tests::tests`.
+  The file is already the tests module (declared in migrate.rs via
+  `#[cfg(test)] mod tests;`); the inline wrapper served no purpose
+  and prevented nested submodule resolution.
+- Cross-submodule helpers (`make_spec`, `build_dump`, `run_import`,
+  `VecSink`) made `pub(super)` and imported via
+  `use super::export_verify::make_spec;` etc. — same pattern as the
+  v0.75.0 templates split.
+
+**`crates/ui/src/tenant_admin/tests.rs`** (895 → 27 entry + common + 6 siblings):
+
+- `common.rs` (51 — shared `principal`, `sample_tenant`,
+  `affordances`, `sample_user` fixtures).
+- `frame_invariants.rs` (123), `page_level.rs` (129),
+  `mutation_forms.rs` (196), `affordance_gating.rs` (209),
+  `membership_forms.rs` (220), `design_tokens.rs` (57).
+- Each submodule imports types via individual `use cesauth_core::...`
+  statements rather than a glob — explicit imports are more grep-able.
+
+**`crates/migrate-test/tests/migration_chain.rs`** (881 → 30 entry +
+common + 6 siblings):
+
+- `common.rs` (80 — `migrations_dir`, `apply_all_migrations`,
+  `expected_schema_version`).
+- `foundation.rs` (237), `rfc_023_cross_tenant.rs` (81),
+  `rfc_024_indexes.rs` (75), `repair_and_fks.rs` (158),
+  `rfc_050_sql.rs` (234), `rfc_051_authenticators.rs` (41).
+- **Integration-test wrinkle**: cargo's `tests/` directory uses
+  older module resolution. `mod foo;` declarations in
+  `tests/migration_chain.rs` need explicit
+  `#[path = "migration_chain/foo.rs"]` attributes to resolve to the
+  sibling subdirectory. Documented in the entry-point file's
+  comments so future test-file splits in `tests/` know to expect this.
+
+### Remaining oversize test files (for future maintenance)
+
+Three test files are still just over the 500-ELOC threshold:
+
+- `crates/adapter-test/src/tenancy/tests.rs` — 664 lines
+- `crates/core/src/authz/tests.rs` — 606 lines
+- `crates/core/src/totp/tests.rs` — 602 lines
+
+These are small overages compared to v0.75.0–v0.77.0's targets (each
+of which was 2–4x the threshold) and can be handled in a follow-up
+release if priorities warrant.
+
+### Production source files over threshold (separate track)
+
+Unchanged from v0.76.0's list. These are out of scope for the
+test-file modularization track but flagged for separate refactor work:
+
+- `crates/core/src/i18n/mod.rs` — 1,475 lines (already split
+  internally into 8 `lookup_*` groups per RFC 097; wrapper file is
+  large but the internal structure is fine)
+- `crates/migrate/src/main.rs` — 1,024 lines
+- `crates/core/src/security_headers.rs` — 847 lines
+- `crates/core/src/totp.rs` — 635 lines
+- `crates/core/src/admin/types.rs` — 630 lines
+
+### Tests
+
+1,290 / 1,290 pass — **identical** to v0.75.0/v0.76.0. Three releases
+shipping pure mechanical refactors with no behaviour delta and the
+test count steady across all three.
+
+### Warnings
+
+0 production lib warnings.
+
+### Drift-scan
+
+Clean. The `*/tests/*.rs` exemption added in v0.75.0 continues to
+cover the new layouts without script changes (the new submodule
+directories sit under `tests/` so they match the existing pattern).
+
+### Contract invariants reaffirmed
+
+- **De-wrapping inline `mod tests` blocks is safe** when the file is
+  already declared as the tests module by its parent. The cleanup
+  removes one nesting level without changing what's tested.
+- **Cargo `tests/` directory needs `#[path]` attributes** for
+  subdirectory submodules in integration tests — this is the only
+  shape difference from `src/` splits.
+
+### Test-file modularization track summary
+
+Three releases (v0.75.0, v0.76.0, v0.77.0) closing out the dev-guideline
+500-ELOC threshold for the four biggest test files:
+
+| Release | File | Pre | Post layout |
+|---------|------|-----|-------------|
+| v0.75.0 | `ui/src/templates/tests.rs` | 2,057 | 34 entry + common + 6 siblings |
+| v0.76.0 | `core/src/service/introspect/tests.rs` | 1,519 | 348 entry + 6 siblings |
+| v0.77.0 | `core/src/migrate/tests.rs` | 1,154 | 247 entry + 6 siblings |
+| v0.77.0 | `ui/src/tenant_admin/tests.rs` | 895 | 27 entry + common + 6 siblings |
+| v0.77.0 | `migrate-test/tests/migration_chain.rs` | 881 | 30 entry + common + 6 siblings |
+
+Across the four files, ~6,500 lines of test code reorganized into
+~30 focused files, every one under 500 lines.
+
+---
+
 ## [0.76.0] - 2026-05-14
 
 Maintenance release continuing v0.75.0's test-file modularization

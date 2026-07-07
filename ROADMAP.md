@@ -96,6 +96,7 @@ full narrative is in the [archive](docs/changelog-archive/README.md).
 | RFC 110b/c/d/e — Safety controls panel gap-fills (Turnstile/refresh-reuse/TOTP-key/runbook-link); 110a still deferred | v0.74.0 | [CHANGELOG](CHANGELOG.md) |
 | Test file modularization — `templates/tests.rs` (2,057 lines) split into 7 per-feature submodules (dev-guideline compliance, no behaviour change) | v0.75.0 | [CHANGELOG](CHANGELOG.md) |
 | Test file modularization continued — `service/introspect/tests.rs` (1,519 lines) split into 6 sibling files (low-disruption unwrap-mod-block pattern) | v0.76.0 | [CHANGELOG](CHANGELOG.md) |
+| Test file modularization closure — three more splits (`migrate/tests.rs` 1,154 lines, `tenant_admin/tests.rs` 895 lines, `migration_chain.rs` 881 lines) | v0.77.0 | [CHANGELOG](CHANGELOG.md) |
 
 ---
 
@@ -245,6 +246,18 @@ started.
   when an environment with rustup/wasm32 is available.
   1,290 tests (+12 vs v0.73.0 baseline: +8 core safety_controls,
   +4 ui controls-section rendering). 0 warnings.
+
+- ✅ **v0.77.0 — Test file modularization closure (maintenance release).**
+  Three splits in one release closing out the dev-guideline 500-ELOC
+  threshold for the four biggest test files. `migrate/tests.rs`
+  (1,154 → 247 + 6 siblings), `tenant_admin/tests.rs`
+  (895 → 27 + common + 6 siblings), `migration_chain.rs`
+  (881 → 30 + common + 6 siblings). Documented the
+  cargo `tests/` directory wrinkle: integration tests need explicit
+  `#[path]` attributes for subdirectory submodules.
+  Three small overages remain (`tenancy/tests.rs` 664,
+  `authz/tests.rs` 606, `totp/tests.rs` 602) — flagged as
+  follow-up work. 1,290 tests pass identically across v0.75.0→v0.77.0.
 
 - ✅ **v0.76.0 — Test file modularization continued (maintenance release).**
   Split the second-largest test file
