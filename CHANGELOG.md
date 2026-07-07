@@ -26,6 +26,68 @@ split by minor-version range:
 
 ---
 
+## [0.78.10] - 2026-05-20
+
+Migration fix. `wrangler d1 migrations apply cesauth --local` failed
+at migration 0016 with `no such table: main.groups_pre_0013`.
+
+### Root cause
+
+Two migrations (0013 and 0017) rebuild the `groups` table using the
+pattern `ALTER TABLE groups RENAME TO groups_pre_N; CREATE TABLE groups
+(...); DROP TABLE groups_pre_N`. SQLite 3.26.0+ automatically updates
+FK references in other tables when a table is renamed, so after the
+rename, `user_group_memberships.group_id`'s FK target changes from
+`groups` to `groups_pre_N`. After `DROP TABLE groups_pre_N`, that
+reference becomes dangling.
+
+Two different SQLite builds react differently to dangling FK targets in
+`PRAGMA foreign_key_check`:
+
+- **rusqlite bundled SQLite** (used by `cesauth-migrate-test`): silently
+  ignores FK references to non-existent tables — reports 0 violations.
+  This is why all 31 migration chain tests passed.
+- **Wrangler's SQLite** (used by `wrangler dev`): treats a FK pointing at
+  a non-existent table as a hard `SQLITE_ERROR`, surfaced at the first
+  `PRAGMA foreign_key_check` in a later migration (0016 in this case).
+
+The same root cause also caused `error[E0599]: foreign key mismatch`
+for the self-referential `(tenant_id, parent_group_id) → groups(tenant_id,
+id)` FK in migrations 0013 and 0017: the `UNIQUE (tenant_id, id)` index
+was created *after* the `CREATE TABLE`, so Wrangler's SQLite couldn't
+resolve the composite FK target at table-creation time.
+
+### Fixes
+
+**Migration 0013** (`0013_tenant_composite_keys.sql`) — already had the
+`UNIQUE (tenant_id, id)` inline fix from v0.78.8. Now also rebuilds
+`user_group_memberships` immediately after the groups rebuild (before
+`PRAGMA foreign_key_check`) to re-point its FK at the new `groups` table.
+
+**Migration 0017** (`0017_groups_fk_restrict.sql`) — same two fixes:
+added `UNIQUE (tenant_id, id)` inline to the `CREATE TABLE groups`
+body, and added a `user_group_memberships` rebuild block after the
+groups rebuild.
+
+### Verification
+
+Both fixes verified by:
+1. A Python script reproducing the rename-rebuild-check cycle with
+   SQLite 3.45.1 (which has 3.26.0+ FK-rename behavior). After the
+   fix, `PRAGMA foreign_key_check` returns clean and
+   `user_group_memberships` references `groups`, not `groups_pre_N`.
+2. All 31 `cesauth-migrate-test` migration chain tests still pass.
+
+### Why `user_group_memberships` and not other tables?
+
+The only table with a `REFERENCES groups(...)` simple FK (besides the
+self-referential `parent_group_id` inside `groups` itself) is
+`user_group_memberships.group_id`. All other cross-table FK references
+to group identifiers use composite `(tenant_id, group_id)` form which
+was introduced in a later migration and is not subject to this issue.
+
+---
+
 ## [0.78.9] - 2026-05-20
 
 Documents the three secrets required for local login. No code changes.

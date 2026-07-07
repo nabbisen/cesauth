@@ -135,6 +135,144 @@ DROP TABLE grants_pre_0016;
 CREATE INDEX IF NOT EXISTS idx_grants_user_client ON grants(user_id, client_id);
 CREATE INDEX IF NOT EXISTS idx_grants_active      ON grants(revoked_at) WHERE revoked_at IS NULL;
 
+-- ========================================================================
+-- Rebuild remaining tables with REFERENCES users(id).
+--
+-- When `ALTER TABLE users RENAME TO users_pre_0016` runs above, SQLite
+-- 3.26.0+ rewrites FK references in every other table to point at
+-- `users_pre_0016`.  After `DROP TABLE users_pre_0016` those references
+-- become dangling.  PRAGMA foreign_key_check only validates row-level
+-- integrity and passes on an empty DB; the dangling FK causes a hard
+-- error at runtime when an INSERT is attempted with foreign_keys=ON.
+-- Rebuilding each affected table here re-points its FK at `users`.
+--
+-- Tables already handled above: authenticators, consent, grants.
+-- ========================================================================
+
+-- user_sessions
+ALTER TABLE user_sessions RENAME TO user_sessions_pre_0016;
+CREATE TABLE user_sessions (
+    session_id   TEXT    PRIMARY KEY,
+    user_id      TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at   INTEGER NOT NULL,
+    revoked_at   INTEGER,
+    auth_method  TEXT    NOT NULL,
+    client_id    TEXT    NOT NULL
+);
+INSERT INTO user_sessions SELECT * FROM user_sessions_pre_0016;
+DROP TABLE user_sessions_pre_0016;
+CREATE INDEX IF NOT EXISTS user_sessions_user_idx
+    ON user_sessions(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_active_created
+    ON user_sessions(created_at ASC) WHERE revoked_at IS NULL;
+
+-- user_tenant_memberships
+ALTER TABLE user_tenant_memberships RENAME TO user_tenant_memberships_pre_0016;
+CREATE TABLE user_tenant_memberships (
+    tenant_id  TEXT NOT NULL REFERENCES tenants(id),
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role       TEXT NOT NULL CHECK (role IN ('owner', 'admin', 'member')),
+    joined_at  INTEGER NOT NULL,
+    PRIMARY KEY (tenant_id, user_id)
+);
+INSERT INTO user_tenant_memberships SELECT * FROM user_tenant_memberships_pre_0016;
+DROP TABLE user_tenant_memberships_pre_0016;
+CREATE INDEX IF NOT EXISTS idx_utm_user ON user_tenant_memberships(user_id);
+
+-- user_organization_memberships
+ALTER TABLE user_organization_memberships RENAME TO user_org_mbr_pre_0016;
+CREATE TABLE user_organization_memberships (
+    organization_id  TEXT NOT NULL REFERENCES organizations(id),
+    user_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role             TEXT NOT NULL CHECK (role IN ('admin', 'member')),
+    joined_at        INTEGER NOT NULL,
+    PRIMARY KEY (organization_id, user_id)
+);
+INSERT INTO user_organization_memberships SELECT * FROM user_org_mbr_pre_0016;
+DROP TABLE user_org_mbr_pre_0016;
+CREATE INDEX IF NOT EXISTS idx_uom_user ON user_organization_memberships(user_id);
+
+-- user_group_memberships
+ALTER TABLE user_group_memberships RENAME TO user_group_mbr_pre_0016;
+CREATE TABLE user_group_memberships (
+    group_id   TEXT NOT NULL REFERENCES groups(id),
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    joined_at  INTEGER NOT NULL,
+    PRIMARY KEY (group_id, user_id)
+);
+INSERT INTO user_group_memberships SELECT * FROM user_group_mbr_pre_0016;
+DROP TABLE user_group_mbr_pre_0016;
+CREATE INDEX IF NOT EXISTS idx_ugm_user ON user_group_memberships(user_id);
+
+-- role_assignments
+ALTER TABLE role_assignments RENAME TO role_assignments_pre_0016;
+CREATE TABLE role_assignments (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role_id    TEXT NOT NULL REFERENCES roles(id),
+    scope_type TEXT NOT NULL
+               CHECK (scope_type IN ('system','tenant','organization','group','user')),
+    scope_id   TEXT,
+    granted_by TEXT NOT NULL,
+    granted_at INTEGER NOT NULL,
+    expires_at INTEGER,
+    CHECK (
+        (scope_type = 'system' AND scope_id IS NULL) OR
+        (scope_type != 'system' AND scope_id IS NOT NULL)
+    )
+);
+INSERT INTO role_assignments SELECT * FROM role_assignments_pre_0016;
+DROP TABLE role_assignments_pre_0016;
+CREATE INDEX IF NOT EXISTS idx_ra_user  ON role_assignments(user_id);
+CREATE INDEX IF NOT EXISTS idx_ra_scope ON role_assignments(scope_type, scope_id);
+
+-- totp_authenticators
+ALTER TABLE totp_authenticators RENAME TO totp_authenticators_pre_0016;
+CREATE TABLE totp_authenticators (
+    id                TEXT    PRIMARY KEY,
+    user_id           TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    secret_ciphertext BLOB    NOT NULL,
+    secret_nonce      BLOB    NOT NULL,
+    secret_key_id     TEXT    NOT NULL,
+    last_used_step    INTEGER NOT NULL DEFAULT 0,
+    name              TEXT,
+    created_at        INTEGER NOT NULL,
+    last_used_at      INTEGER,
+    confirmed_at      INTEGER
+);
+INSERT INTO totp_authenticators SELECT * FROM totp_authenticators_pre_0016;
+DROP TABLE totp_authenticators_pre_0016;
+CREATE INDEX IF NOT EXISTS idx_totp_authenticators_user
+    ON totp_authenticators(user_id);
+CREATE INDEX IF NOT EXISTS idx_totp_authenticators_unconfirmed
+    ON totp_authenticators(created_at) WHERE confirmed_at IS NULL;
+
+-- totp_recovery_codes
+ALTER TABLE totp_recovery_codes RENAME TO totp_recovery_codes_pre_0016;
+CREATE TABLE totp_recovery_codes (
+    id          TEXT    PRIMARY KEY,
+    user_id     TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code_hash   TEXT    NOT NULL,
+    redeemed_at INTEGER,
+    created_at  INTEGER NOT NULL
+);
+INSERT INTO totp_recovery_codes SELECT * FROM totp_recovery_codes_pre_0016;
+DROP TABLE totp_recovery_codes_pre_0016;
+CREATE INDEX IF NOT EXISTS idx_totp_recovery_codes_user
+    ON totp_recovery_codes(user_id);
+
+-- anonymous_sessions
+ALTER TABLE anonymous_sessions RENAME TO anonymous_sessions_pre_0016;
+CREATE TABLE anonymous_sessions (
+    token_hash  TEXT    NOT NULL PRIMARY KEY,
+    user_id     TEXT    NOT NULL REFERENCES users(id)   ON DELETE CASCADE,
+    created_at  INTEGER NOT NULL,
+    expires_at  INTEGER NOT NULL,
+    tenant_id   TEXT    NOT NULL REFERENCES tenants(id) ON DELETE CASCADE
+);
+INSERT INTO anonymous_sessions SELECT * FROM anonymous_sessions_pre_0016;
+DROP TABLE anonymous_sessions_pre_0016;
+
 PRAGMA foreign_key_check;
 
 PRAGMA foreign_keys = ON;
