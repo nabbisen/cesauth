@@ -15,6 +15,9 @@ path = "src/lib.rs"
 
 [dependencies]
 worker       = { workspace = true }
+# Required explicitly since workers-rs 0.8 no longer re-exports these.
+wasm-bindgen = { workspace = true }
+js-sys       = { workspace = true }
 serde        = { workspace = true }
 serde_json   = { workspace = true }
 sha2         = { workspace = true }

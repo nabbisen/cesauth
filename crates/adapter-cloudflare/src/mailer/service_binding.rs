@@ -88,15 +88,21 @@ impl MagicLinkMailer for ServiceBindingMailer<'_> {
             .await
             .map_err(|e| MailerError::Transient(e.to_string()))?;
 
-        let status = resp.status_code();
+        // workers-rs 0.8 with `http` feature: Response wraps http::Response;
+        // use `.status().as_u16()` rather than the removed `.status_code()`.
+        let status = resp.status().as_u16();
         if status >= 200 && status < 300 {
             let now = worker::Date::now().as_millis() as i64 / 1000;
             // Provider message ID from response header if present.
+            // workers-rs 0.8 `http` feature: `resp.headers()` returns
+            // `&http::HeaderMap`; `.get()` returns `Option<&HeaderValue>`
+            // (not the old `Result<Option<String>>`).  Convert via
+            // `HeaderValue::to_str()` to get a lossless `&str` slice.
             let provider_msg_id = resp
                 .headers()
                 .get("X-Message-Id")
-                .ok()
-                .flatten();
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned);
             Ok(DeliveryReceipt {
                 provider_message_id: provider_msg_id,
                 queued_at_unix: now,

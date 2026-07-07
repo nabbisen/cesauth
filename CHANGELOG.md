@@ -26,6 +26,85 @@ split by minor-version range:
 
 ---
 
+## [0.78.1] - 2026-05-19
+
+Patch release. Fixes `wrangler dev` build failure reported against
+v0.78.0 (and all earlier releases since v0.66.0). The errors were
+pre-existing in `crates/adapter-cloudflare`; they were exposed when
+the user ran `wrangler dev` with **wrangler 4.84.0**, which pulled in
+a newer toolchain that made a previously-latent `workers-rs 0.8`
+API incompatibility surface.
+
+**The test-file modularization releases (v0.75.0–v0.78.0) did not
+cause these errors.** The adapter-cloudflare source files were never
+touched during that track. The breakage was present from the first
+time the `http` feature was enabled on `worker = "0.8"`.
+
+### Root cause
+
+`workers-rs` 0.8 with the `http` feature enabled migrates `Response`
+from a Cloudflare-custom type to a thin wrapper around `http::Response`.
+That change has three downstream effects, all of which are now fixed:
+
+**Effect 1 — `wasm_bindgen` and `js_sys` no longer re-exported.**
+Old workers-rs versions re-exported `wasm_bindgen` and `js_sys`
+transitively. From 0.8 they must be declared as direct dependencies.
+
+Files: `crates/adapter-cloudflare/src/mailer/https_provider.rs` and
+`src/mailer/service_binding.rs` both use `wasm_bindgen::JsValue::from_str`.
+`crates/adapter-cloudflare/src/ports/audit.rs` uses
+`js_sys::Date::now()`.
+
+Fix: added `wasm-bindgen = "0.2"` and `js-sys = "0.3"` to the
+workspace `[dependencies]` and as explicit deps of
+`cesauth-adapter-cloudflare`.
+
+**Effect 2 — `resp.status_code()` removed.**
+`worker::Response::status_code() → u16` was the Cloudflare-specific
+accessor. The `http` feature replaces it with `resp.status() →
+http::StatusCode`; call `.as_u16()` for numeric comparisons.
+
+Files: `https_provider.rs:146` and `service_binding.rs:91`.
+
+Fix: `resp.status_code()` → `resp.status().as_u16()`.
+
+**Effect 3 — `resp.headers().get(name)` returns `Option`, not `Result`.**
+Old `worker::Headers::get(name) → worker::Result<Option<String>>`.
+`http::HeaderMap::get(name) → Option<&HeaderValue>`. Calling `.ok()`
+on an `Option` is a type error (`.ok()` belongs to `Result`).
+
+Files: `https_provider.rs:150-153` and `service_binding.rs:98-101`.
+
+Fix: replaced `.ok().flatten()` with the correct `http::HeaderMap`
+chain:
+```rust
+// Before (worker::Headers):
+resp.headers().get("X-Message-Id").ok().flatten()
+// After (http::HeaderMap):
+resp.headers().get("X-Message-Id")
+    .and_then(|v| v.to_str().ok())
+    .map(str::to_owned)
+```
+
+### Tests
+
+1,290 / 1,290 pass (host-buildable crates; adapter-cloudflare and
+worker are wasm32-only and compile-verified on the user's machine via
+`wrangler dev`). 0 production warnings.
+
+### What to do if wrangler dev still fails
+
+These were the only errors in the log. If a new error appears after
+applying v0.78.1:
+
+1. Re-run `wrangler dev` and attach the new log.
+2. If the error is in another `crates/adapter-cloudflare` file, the
+   same `workers-rs 0.8 http` migration may apply — check for
+   `.status_code()`, `.headers().get(name).ok()`, or bare
+   `wasm_bindgen::`/`js_sys::` usage.
+
+---
+
 ## [0.78.0] - 2026-05-14
 
 Closes out the host-buildable test-file modularization track. Splits

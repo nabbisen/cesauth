@@ -143,14 +143,17 @@ impl MagicLinkMailer for HttpsProviderMailer {
             .await
             .map_err(|e| MailerError::Transient(e.to_string()))?;
 
-        let status = resp.status_code();
+        // workers-rs 0.8 with `http` feature: same API migration as
+        // service_binding.rs — status_code() → status().as_u16(),
+        // headers().get() returns Option<&HeaderValue> not Result.
+        let status = resp.status().as_u16();
         if status >= 200 && status < 300 {
             let now = worker::Date::now().as_millis() as i64 / 1000;
             let provider_msg_id = resp
                 .headers()
                 .get("X-Message-Id")
-                .ok()
-                .flatten();
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned);
             Ok(DeliveryReceipt {
                 provider_message_id: provider_msg_id,
                 queued_at_unix: now,
