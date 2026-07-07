@@ -14,6 +14,48 @@ changes will always be called out here.
 
 ---
 
+## [0.80.2] - 2026-05-21
+
+### Dependency upgrades
+
+Applied from `cargo update --dry-run --verbose` audit (see `DEPENDENCIES.md`).
+
+**Applied (compatible minor/patch):** `either 1.16.0`, `num-conv 0.2.2`,
+`pin-project 1.1.13`, `worker + macros + sys 0.8.3`, `zerofrom 0.1.8`.
+
+**Leptos upgraded:** `=0.8.2` → `=0.8.19` (with `leptos_router =0.8.13`).
+Host-side `cargo check` passes. The original hold (RFC 115 §2 — getrandom
+0.3/uuid 1.18 on Workers wasm32) is considered resolved because the workspace
+already carries `getrandom 0.4.2` via `uuid = { features = ["js"] }`, making
+the `wasm_js` feature globally available. Full wasm32 / Trunk build
+verification required in CI before production use.
+
+**RustCrypto suite — blocked:** `sha2`, `sha1`, `hmac`, `crypto-common`,
+`pkcs8`, `rand_core` are all pinned by `ed25519-dalek 2.2.0`.
+`ed25519-dalek 3.0.0` (in pre-release) unblocks the suite; upgrade as
+a coordinated batch when it ships. See `DEPENDENCIES.md`.
+
+**`rusqlite` — deferred:** 0.32.1 → 0.39.0 (7 major versions); test-only
+crate; upgrade separately. See `DEPENDENCIES.md`.
+
+**New file:** `DEPENDENCIES.md` — living document tracking held
+dependencies, upgrade blockers, and upgrade procedures.
+
+1,211 / 1,211 tests pass.
+
+---
+
+## [0.80.1] - 2026-05-21
+
+### Dependency update patch
+
+Applied compatible updates from `cargo update --dry-run`:
+`either 1.16.0`, `num-conv 0.2.2`, `pin-project 1.1.13`,
+`worker + macros + sys 0.8.3`, `zerofrom 0.1.8`.
+
+---
+
+
 ## [0.80.0] - 2026-05-20
 
 ### RFC 115 — Phase C complete: old string templates removed

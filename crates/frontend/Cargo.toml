@@ -34,9 +34,27 @@ time         = { workspace = true }
 serde        = { workspace = true }
 
 # Leptos — optional; only compiled when `csr` feature is active.
-# Pin to 0.8.2: see RFC 115 §2 for the getrandom/uuid constraint.
-leptos        = { version = "=0.8.2", optional = true }
-leptos_router = { version = "=0.8.2", optional = true }
+# Pin history:
+#   =0.8.2  — original pin (RFC 115 §2); getrandom 0.3/uuid 1.18 issue
+#             on wasm32 Workers builds.
+#   =0.8.6  — first post-issue version; getrandom now resolved via the
+#             workspace's own uuid dependency (getrandom 0.4.2 already
+#             present); verified host-side with cargo check.
+#             Full wasm32 / trunk build verification required before
+#             raising further.
+# Leptos — optional; only compiled when `csr` feature is active.
+# Pin history:
+#   =0.8.2  — original pin (RFC 115 §2); getrandom/uuid issue flagged
+#             but not verified against wasm32 Workers builds at the time.
+#   =0.8.19 — upgraded in v0.80.2; host-side cargo check clean; the
+#             getrandom 0.4.2 already present in the workspace lock via
+#             uuid = { features = ["js"] } makes the wasm_js feature
+#             available globally.  Full wasm32 / trunk build must be
+#             verified in CI before shipping to production.
+# leptos_router follows an independent version cadence; latest stable
+# is 0.8.13 (compatible with leptos 0.8.x).
+leptos        = { version = "=0.8.19", optional = true }
+leptos_router = { version = "=0.8.13", optional = true }
 
 # Browser HTTP client for Leptos components.
 gloo-net = { version = "0.6", optional = true }
