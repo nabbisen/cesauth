@@ -97,6 +97,7 @@ full narrative is in the [archive](docs/changelog-archive/README.md).
 | Test file modularization — `templates/tests.rs` (2,057 lines) split into 7 per-feature submodules (dev-guideline compliance, no behaviour change) | v0.75.0 | [CHANGELOG](CHANGELOG.md) |
 | Test file modularization continued — `service/introspect/tests.rs` (1,519 lines) split into 6 sibling files (low-disruption unwrap-mod-block pattern) | v0.76.0 | [CHANGELOG](CHANGELOG.md) |
 | Test file modularization closure — three more splits (`migrate/tests.rs` 1,154 lines, `tenant_admin/tests.rs` 895 lines, `migration_chain.rs` 881 lines) | v0.77.0 | [CHANGELOG](CHANGELOG.md) |
+| Test file modularization 100% closure — four more splits (`tenancy/tests.rs` 664, `authz/tests.rs` 606, `totp/tests.rs` 602, `i18n/tests.rs` 530); every host-buildable test file now under 500 ELOC | v0.78.0 | [CHANGELOG](CHANGELOG.md) |
 
 ---
 
@@ -246,6 +247,21 @@ started.
   when an environment with rustup/wasm32 is available.
   1,290 tests (+12 vs v0.73.0 baseline: +8 core safety_controls,
   +4 ui controls-section rendering). 0 warnings.
+
+- ✅ **v0.78.0 — Test file modularization 100% closure (maintenance release).**
+  Four splits closing out every host-buildable oversize test file.
+  `tenancy/tests.rs` (664 → 27 + common + 6 siblings) using
+  `pub(super) use` re-export pattern for cesauth-core types.
+  `authz/tests.rs` (606 → 22 + common + 5 siblings) same pattern.
+  `totp/tests.rs` (602 → 27 + 8 siblings) using
+  sibling-helper-import pattern for `rfc6238_vectors::rfc_secret`.
+  `i18n/tests.rs` (530 → 60 + 3 siblings).
+  Total v0.75.0–v0.78.0: 9 test files (8,908 lines) reorganized
+  into 63 focused files, every one under 500 ELOC. 1,290 tests
+  pass identically across all four releases — zero-behaviour-delta
+  refactor track confirmed.
+  Only `worker/flash/tests.rs` (560 lines) remains over threshold,
+  env-blocked (wasm32-only); ships when rustup/wasm32 is available.
 
 - ✅ **v0.77.0 — Test file modularization closure (maintenance release).**
   Three splits in one release closing out the dev-guideline 500-ELOC

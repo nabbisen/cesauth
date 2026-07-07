@@ -26,6 +26,128 @@ split by minor-version range:
 
 ---
 
+## [0.78.0] - 2026-05-14
+
+Closes out the host-buildable test-file modularization track. Splits
+the four remaining oversize test files (all just slightly over the
+500-ELOC dev-guideline threshold) into themed submodules. Every
+host-buildable test file in the workspace is now under the
+threshold. 1,290 tests still pass identically — fourth straight
+maintenance release with zero behaviour delta.
+
+### Four splits in one release
+
+**`crates/adapter-test/src/tenancy/tests.rs`** (664 → 27 entry + common + 6 siblings):
+
+- `common.rs` (53 — re-exported core types via `pub(super) use ...`
+  so submodules' `use super::common::*` brings them in)
+- `end_to_end.rs` (118 — §16.1/§16.2 tenant → org → group → user)
+- `permission_lattice.rs` (97 — §16.3 permission checks)
+- `billing.rs` (76 — billing round-trip + history append)
+- `membership_negative.rs` (44)
+- `rfc_056_soft_delete.rs` (86)
+- `rfc_058_onboarding.rs` (232)
+
+**`crates/core/src/authz/tests.rs`** (606 → 22 entry + common + 5 siblings):
+
+- `common.rs` (90 — stubs + helpers + `pub(super) use` re-exports)
+- `catalog_and_assignments.rs` (43)
+- `scope_and_expiration.rs` (102)
+- `happy_and_dangling.rs` (60)
+- `batch_permissions.rs` (136 — v0.15.0)
+- `rfc_052_hardening.rs` (200)
+
+**`crates/core/src/totp/tests.rs`** (602 → 27 entry + 8 siblings):
+
+- `rfc6238_vectors.rs` (72 — canonical RFC 6238 Appendix B vectors)
+- `step_for_unix.rs` (31)
+- `secret_round_trip.rs` (94)
+- `format_parse_code.rs` (46)
+- `verify_replay.rs` (121)
+- `otpauth_uri.rs` (58 — imports `rfc_secret` from `rfc6238_vectors`)
+- `recovery_codes.rs` (97)
+- `encryption.rs` (111)
+
+**`crates/core/src/i18n/tests.rs`** (530 → 60 entry + 3 siblings):
+
+- Base file keeps the `Locale` tests (57 lines + mod declarations)
+- `lookup_completeness.rs` (291)
+- `accept_language.rs` (114)
+- `plural.rs` (83 — RFC 107)
+
+### Patterns refined
+
+Two patterns from v0.75.0–v0.77.0 prove well-suited to different
+shapes:
+
+1. **`pub(super) use` re-exports** (used in v0.78.0's tenancy + authz):
+   when submodules need many cesauth-core types, `common.rs` becomes
+   a re-export module — `use super::common::*` then brings them
+   into the sibling files via a single line. Cleaner than per-file
+   import duplication.
+
+2. **Sibling-helper imports** (used in v0.78.0's totp): when one
+   submodule's helper is needed by another (e.g.
+   `rfc6238_vectors::rfc_secret` used by `otpauth_uri`), make the
+   helper `pub(super)` and add an explicit
+   `use super::rfc6238_vectors::rfc_secret;` in the consumer.
+
+### Track summary (v0.75.0 → v0.78.0)
+
+Four maintenance releases shipping pure mechanical refactors:
+
+| Release | Files split | Lines reorganized |
+|---------|-------------|-------------------|
+| v0.75.0 | `ui/src/templates/tests.rs` | 2,057 → 7 files |
+| v0.76.0 | `core/src/service/introspect/tests.rs` | 1,519 → 7 files |
+| v0.77.0 | `migrate/tests.rs` + `tenant_admin/tests.rs` + `migration_chain.rs` | 2,930 → 22 files |
+| v0.78.0 | `tenancy/tests.rs` + `authz/tests.rs` + `totp/tests.rs` + `i18n/tests.rs` | 2,402 → 27 files |
+
+**Total**: 9 test files (8,908 lines combined) reorganized into 63
+focused files, every host-buildable test file now under the
+500-ELOC threshold. 1,290 tests passed identically across all four
+releases — true zero-behaviour-delta refactor track.
+
+### Remaining oversize file (env-blocked)
+
+`crates/worker/src/flash/tests.rs` — 560 lines. Lives in the worker
+crate (wasm32-only); cannot compile-verify a split in the current
+sandbox. Same env-blocked posture as RFC 110a and RFC 112; ships
+once an environment with rustup/wasm32 is available.
+
+### Production source files over threshold (separate track)
+
+Unchanged from prior releases:
+
+- `crates/core/src/i18n/mod.rs` — 1,475 lines (already split
+  internally into 8 `lookup_*` groups per RFC 097)
+- `crates/migrate/src/main.rs` — 1,024 lines
+- `crates/core/src/security_headers.rs` — 847 lines
+- `crates/core/src/totp.rs` — 635 lines
+- `crates/core/src/admin/types.rs` — 630 lines
+- `crates/worker/src/lib.rs` — 597 lines (env-blocked)
+- Several worker/UI files in the 540–595 range
+
+The production-source refactor is a separate track from this
+test-file modularization. Some are env-blocked (worker), some are
+trade-offs (admin/types.rs is a single struct catalogue — splitting
+into per-domain submodules is reasonable but cross-cuts naturally).
+
+### Tests
+
+1,290 / 1,290 pass — **identical** to v0.75.0/v0.76.0/v0.77.0.
+
+### Warnings
+
+0 production lib warnings.
+
+### Drift-scan
+
+Clean. The v0.75.0 `*/tests/*.rs` exemption continues to cover all
+the new layouts.
+
+---
+
 ## [0.77.0] - 2026-05-14
 
 Maintenance release closing out the test-file modularization track
