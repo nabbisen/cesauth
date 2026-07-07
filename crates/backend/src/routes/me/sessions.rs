@@ -16,8 +16,8 @@
 //! defensively.
 
 use cesauth_cf::ports::store::CloudflareActiveSessionStore;
-use cesauth_core::ports::store::{ActiveSessionStore, SessionStatus};
-use cesauth_frontend::templates::{sessions_page_for, SessionListItem};
+use cesauth_core::ports::store::{ActiveSessionStore, AuthMethod, SessionStatus};
+use cesauth_frontend::templates::SessionListItem;
 use time::OffsetDateTime;
 use worker::{Request, Response, Result, RouteContext};
 
@@ -26,9 +26,64 @@ use crate::csrf;
 use crate::flash;
 use crate::routes::me::auth as me_auth;
 
-/// `GET /me/security/sessions` — list active sessions for the
-/// signed-in user.
+/// Build the session list for the current user.
+async fn build_items<D>(
+    session: &cesauth_core::ports::store::ActiveSession,
+    ctx:     &RouteContext<D>,
+) -> Result<Vec<SessionListItem>> {
+    let store = CloudflareActiveSessionStore::new(&ctx.env);
+    let rows = store.list_for_user(&session.user_id, false, 50).await
+        .map_err(|e| worker::Error::RustError(format!("session list: {e:?}")))?;
+
+    Ok(rows.into_iter().map(|s| SessionListItem {
+        is_current:   s.session_id == session.session_id,
+        session_id:   s.session_id,
+        auth_method:  match s.auth_method {
+            AuthMethod::Passkey   => "passkey",
+            AuthMethod::MagicLink => "magic_link",
+            AuthMethod::Admin     => "admin",
+        }.to_owned(),
+        client_id:    s.client_id,
+        created_at:   s.created_at,
+        last_seen_at: s.last_seen_at,
+    }).collect())
+}
+
+/// `GET /me/security/sessions` — Leptos HTML shell (v0.79.3).
 pub async fn get_handler<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let _session = match me_auth::resolve_or_redirect(&req, &ctx.env).await? {
+        Ok(s)  => s,
+        Err(r) => return Ok(r),
+    };
+    crate::routes::leptos_shell::leptos_html_shell(
+        &req, &ctx.env, "Sessions — cesauth", "en",
+    ).await
+}
+
+/// `GET /me/security/sessions.json` — JSON list of active sessions.
+pub async fn get_json_handler<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let session = match me_auth::resolve_or_redirect(&req, &ctx.env).await? {
+        Ok(s)  => s,
+        Err(_) => return Response::error("Unauthorized", 401),
+    };
+    let items = build_items(&session, &ctx).await?;
+
+    // Mint a fresh CSRF token for the revoke forms the component renders.
+    let csrf_token = match csrf::mint() {
+        Ok(t) => t,
+        Err(_) => return Response::error("service temporarily unavailable", 500),
+    };
+    let set_cookie = csrf::set_cookie_header(&csrf_token);
+
+    let mut resp = Response::from_json(&serde_json::json!({
+        "sessions":           items,
+        "current_session_id": session.session_id,
+        "csrf_token":         csrf_token,
+    }))?;
+    resp.headers_mut().set("cache-control", "no-store").ok();
+    resp.headers_mut().append("set-cookie", &set_cookie).ok();
+    Ok(resp)
+}
     let session = match me_auth::resolve_or_redirect(&req, &ctx.env).await? {
         Ok(s)  => s,
         Err(r) => return Ok(r),

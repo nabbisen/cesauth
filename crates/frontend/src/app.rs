@@ -24,6 +24,7 @@ use leptos::prelude::*;
 use leptos_router::components::{Router, Routes, Route};
 
 use crate::pages::security_center::SecurityCenter;
+use crate::pages::sessions::Sessions;
 
 // ─── Root component ──────────────────────────────────────────────────────────
 
@@ -34,7 +35,8 @@ pub fn App() -> impl IntoView {
         <Router>
             <Routes fallback=|| view! { <NotFound/> }>
                 // ── Migrated screens (Phase C) ───────────────────────
-                <Route path="/me/security" view=SecurityCenter />
+                <Route path="/me/security"          view=SecurityCenter />
+                <Route path="/me/security/sessions" view=Sessions />
 
                 // ── Phase B PoC (remove in v0.80.0) ─────────────────
                 <Route path="/__leptos" view=PocCounter />

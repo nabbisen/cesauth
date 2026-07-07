@@ -26,6 +26,64 @@ split by minor-version range:
 
 ---
 
+## [0.79.2] - 2026-05-20
+
+### RFC 115 — Phase C, Screen 1: Security Centre migrated to Leptos
+
+`GET /me/security` now serves the Leptos CSR shell instead of a
+server-rendered string template.
+
+#### Data flow
+
+```
+Browser
+  1. GET /me/security        → verify session; return HTML shell
+  2. Leptos bundle mounts
+  3. GET /me/security.json   → verify session; return SecurityCenterState JSON
+  4. SecurityCenter component renders
+```
+
+#### Frontend changes (`crates/frontend`)
+
+- `PrimaryAuthMethod` and `SecurityCenterState` gain
+  `serde::Serialize` + `serde::Deserialize` derives so they can
+  be returned from the JSON endpoint and parsed by the component.
+- `[features] csr` expanded: `dep:leptos_router`, `dep:gloo-net`.
+- New `src/pages/` module directory.
+  - `pages/mod.rs` — declares migrated screen modules.
+  - `pages/security_center.rs` — `SecurityCenter` Leptos component:
+    uses `Resource` + `Suspense` to fetch `/me/security.json`,
+    renders TOTP status, recovery-code warnings, session count,
+    and sign-out form. Handles 401 (session expired) by showing
+    a "sign in again" notice.
+- `app.rs` updated: `<Router>` with `<Routes>`; `GET /me/security`
+  → `SecurityCenter`; `GET /__leptos` → `PocCounter` (still present,
+  removed in v0.80.0).
+
+#### Backend changes (`crates/backend`)
+
+- `routes/me/security.rs` refactored:
+  - `get_handler` now returns the Leptos HTML shell after session
+    verification (replaces the old string-template render).
+  - New `get_json_handler` — extracts state-building into a shared
+    `build_state` helper and returns `SecurityCenterState` as JSON
+    with `Cache-Control: no-store`.
+- New route `GET /me/security.json` registered in `lib.rs`.
+
+#### Old template
+
+`security_center_page_for` and `security_center_page` remain in
+`crates/frontend/src/templates/security_center.rs` for now; they
+will be deleted in v0.80.0 when the full Phase C migration completes.
+
+#### Tests
+
+1,290 / 1,290 pass. The `csr` feature is off during cargo test;
+all Leptos, leptos_router, and gloo-net code is excluded from the
+host-side compilation.
+
+---
+
 ## [0.79.1] - 2026-05-20
 
 ### RFC 115 — Phase B: Leptos v0.8 foundation

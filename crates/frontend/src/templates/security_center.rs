@@ -369,7 +369,7 @@ fn recovery_status_html_for(n: u32, locale: cesauth_core::i18n::Locale) -> Strin
 /// `SessionState` directly) so the template's contract is
 /// surface-stable: future changes to `SessionState` shape won't
 /// silently change what the user sees.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionListItem {
     pub session_id:    String,
     pub auth_method:   String,   // "passkey" | "magic_link" | "admin"
