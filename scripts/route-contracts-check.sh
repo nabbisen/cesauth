@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
-# route-contracts-check.sh — RFC 027
+# route-contracts-check.sh — RFC 027, path/diagnostic fix RFC 125 (T4/T5)
 #
-# Verifies that every route registered in crates/worker/src/lib.rs has a
+# Verifies that every route registered in crates/backend/src/lib.rs has a
 # corresponding row in docs/src/expert/route-contracts.md.
 #
 # Run from the repository root:
 #   bash scripts/route-contracts-check.sh
 #
 # Exit codes:
-#   0 — all routes documented
-#   1 — routes missing from the contracts table
+#   0 — all routes documented, and at least one route was found
+#   1 — routes missing from the contracts table, or the extraction found
+#       zero registered routes (RFC 125 T5: a zero count is a failure,
+#       not a vacuous pass)
+#   2 — the expected input file does not exist (named diagnostic instead
+#       of a raw `grep:` error, so a future crate rename fails loudly)
 #
 # The check is intentionally simple: it does NOT validate the content of
 # each row — that is a code-review responsibility.  It only enforces that
@@ -18,8 +22,20 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-LIB_RS="$REPO_ROOT/crates/worker/src/lib.rs"
+LIB_RS="$REPO_ROOT/crates/backend/src/lib.rs"
 CONTRACTS_MD="$REPO_ROOT/docs/src/expert/route-contracts.md"
+
+if [ ! -f "$LIB_RS" ]; then
+  echo "❌  Expected route registration file not found: $LIB_RS" >&2
+  echo "    (route-contracts-check.sh's LIB_RS path is stale — the Worker" >&2
+  echo "    entrypoint crate was renamed and this script was not updated)" >&2
+  exit 2
+fi
+
+if [ ! -f "$CONTRACTS_MD" ]; then
+  echo "❌  Expected route contracts table not found: $CONTRACTS_MD" >&2
+  exit 2
+fi
 
 # ── extract registered routes from lib.rs ────────────────────────────
 # Pattern: .(get|post|put|delete)_async("/path/...",
@@ -63,9 +79,18 @@ if [ -n "$extra" ]; then
   exit_code=1
 fi
 
+registered_count=$(printf '%s\n' "$registered" | grep -c . || true)
+
 if [ "$exit_code" -eq 0 ]; then
-  registered_count=$(echo "$registered" | grep -c .) 2>/dev/null || true
-  echo "✅  All ${registered_count} routes are documented in route-contracts.md"
+  if [ "$registered_count" -eq 0 ]; then
+    echo "❌  Extracted 0 registered routes from $LIB_RS." >&2
+    echo "    This is a failure, not a pass — either the file has no" >&2
+    echo "    routes (unexpected) or the extraction pattern no longer" >&2
+    echo "    matches the route-registration idiom used there." >&2
+    exit_code=1
+  else
+    echo "✅  All ${registered_count} routes are documented in route-contracts.md"
+  fi
 fi
 
 exit "$exit_code"

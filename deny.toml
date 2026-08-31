@@ -1,6 +1,6 @@
 [graph]
 # Only check host-compilable crates; skip WASM-only crates.
-exclude = ["cesauth-adapter-cloudflare", "cesauth-worker"]
+exclude = ["cesauth-adapter-cloudflare", "cesauth-backend"]
 
 [advisories]
 version = 2

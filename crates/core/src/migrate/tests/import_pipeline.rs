@@ -84,13 +84,16 @@ fn block_on<F: std::future::Future>(f: F) -> F::Output {
     let mut f = std::pin::pin!(f);
     let waker = Waker::noop();
     let mut cx = Context::from_waker(waker);
-    loop {
-        match f.as_mut().poll(&mut cx) {
-            Poll::Ready(v) => return v,
-            Poll::Pending  => panic!(
-                "test future returned Pending; ImportSink impls in tests \
-                 must complete synchronously"),
-        }
+    // RFC 125 T7: a single poll, not a loop — every `ImportSink` impl in
+    // this file completes synchronously (see the doc comment above), so
+    // both match arms already exit the function on the first poll.
+    // `clippy::never_loop` is correct that the former `loop { match ... }`
+    // never looped; it wasn't a latent bug, but the loop was misleading.
+    match f.as_mut().poll(&mut cx) {
+        Poll::Ready(v) => v,
+        Poll::Pending  => panic!(
+            "test future returned Pending; ImportSink impls in tests \
+             must complete synchronously"),
     }
 }
 

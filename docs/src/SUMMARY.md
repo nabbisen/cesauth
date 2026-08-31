@@ -19,6 +19,7 @@
 
 - [Architecture overview](./expert/architecture.md)
 - [Crate layout](./expert/crate-layout.md)
+- [Code style: hand-aligned columns](./expert/code-style.md)
 - [Storage responsibilities](./expert/storage.md)
 - [Ports & adapters pattern](./expert/ports-adapters.md)
 - [Data model & ER diagram](./expert/data-model.md)

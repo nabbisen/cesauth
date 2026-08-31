@@ -12,11 +12,12 @@ members = [
 # `fuzz/` is intentionally NOT a workspace member. It uses nightly Rust and
 # cargo-fuzz infrastructure that should not influence the stable workspace
 # lockfile or build graph. See RFC 005 (v0.51.2) and fuzz/Cargo.toml.
-# Cloudflare-facing crates (adapter-cloudflare, worker) require
+# Cloudflare-facing crates (adapter-cloudflare, backend) require
 # wasm32-unknown-unknown and the `worker-build` toolchain. When working
 # on the host-only portion of the codebase you can target the portable
 # crates explicitly:
-#     cargo test -p cesauth-core -p cesauth-adapter-test -p cesauth-ui
+#     cargo test -p cesauth-core -p cesauth-adapter-test -p cesauth-frontend \
+#                -p cesauth-migrate-test
 # A full `cargo check --workspace` needs Rust 1.85+ (declared in
 # `[workspace.package].rust-version`) and the wasm32 target installed.
 

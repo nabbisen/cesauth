@@ -32,7 +32,7 @@ cargo check --workspace
 cargo test --workspace --lib
 
 # Build for wasm32 to confirm the worker still compiles.
-cd crates/worker
+cd crates/backend
 wrangler dev --local
 ```
 

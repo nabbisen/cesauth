@@ -13,49 +13,55 @@ documentation to cesauth.  For project philosophy and architecture, see
 
 ## Code formatting
 
-cesauth uses `rustfmt` defaults for the Rust 2024 edition.
+**There is no `rustfmt.toml`, and there is no `cargo fmt` CI gate.**
+Hand-aligned columns in security-sensitive signatures are house style —
+see [Code style: hand-aligned columns](code-style.md) for the full
+rationale (RFC 125 §5, amending RFC 029).
 
-**There is no `rustfmt.toml`** (RFC 029 confirmed the codebase formats
-cleanly under defaults; the config file was removed).
-
-Run before each PR:
-
-```bash
-cargo fmt --all
-```
-
-CI verifies this via `cargo fmt --all -- --check` (`.github/workflows/fmt.yml`).
-
-If your editor's rustfmt integration produces different output, ensure it
-is using the same edition.  In VS Code / rust-analyzer the workspace
-edition is read from `Cargo.toml`; no extra configuration is needed.
-
-> **Note on hand-aligned columns** — some struct initializers, match arms,
-> and `use` lists use deliberate column alignment for readability alongside
-> per-column comments.  `cargo fmt` at default settings preserves this
-> alignment (that was validated in RFC 029).  If you add code in an
-> alignment-sensitive block, eyeball `git diff` before committing to
-> ensure `cargo fmt` didn't collapse the alignment.
+Do not run `cargo fmt --all` across the tree; it will collapse the
+hand-alignment. If your editor format-on-saves a file you touch, check
+`git diff` before committing and restore any alignment it destroyed.
 
 ## Running tests
 
 ```bash
 # Host-compilable crates (fastest, no WASM toolchain needed)
-cargo-1.91 test -p cesauth-core -p cesauth-adapter-test -p cesauth-ui --lib
+cargo-1.91 test -p cesauth-core -p cesauth-adapter-test -p cesauth-frontend --lib
 
 # Migration chain integration tests
 cargo-1.91 test -p cesauth-migrate-test --test migration_chain
 
-# All host tests (excludes adapter-cloudflare and worker which need WASM)
+# All host tests (excludes adapter-cloudflare and backend, which need WASM)
 cargo-1.91 test -p cesauth-core \
                 -p cesauth-adapter-test \
-                -p cesauth-ui \
+                -p cesauth-frontend \
                 -p cesauth-migrate-test
+```
+
+Expect **1,233 passed, 0 failed** (RFC 125; `cesauth-frontend`'s 280
+tests were uncounted and had no CI coverage before this release — see
+`rfcs/proposed/125-release-gate-integrity-restoration.md` for how that
+was found).
+
+```bash
+# wasm32 backend check (the only validation of the Worker build)
+cargo check -p cesauth-backend --target wasm32-unknown-unknown
+
+# Clippy — correctness lints are blocking; style is advisory
+cargo clippy -p cesauth-core -p cesauth-adapter-test -p cesauth-migrate-test \
+             -p cesauth-frontend --all-targets -- -D clippy::correctness
+
+# Dependency advisories, licenses, bans, sources
+cargo deny check
+
+# Route-contract and stale-phrase checks (no Rust toolchain required)
+bash scripts/route-contracts-check.sh
+bash scripts/drift-scan.sh
 ```
 
 ## Adding a new route
 
-When adding a route to `crates/worker/src/lib.rs`, also update
+When adding a route to `crates/backend/src/lib.rs`, also update
 `docs/src/expert/route-contracts.md` with a row covering the six required
 fields (actor, audit kind, view, rendering test, CSRF).  The CI check
 `scripts/route-contracts-check.sh` (`.github/workflows/route-contracts.yml`)

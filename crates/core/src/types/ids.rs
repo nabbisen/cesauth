@@ -8,9 +8,11 @@
 //!
 //! ## Construction rules
 //!
-//! * [`mint()`](TenantId::mint) — `pub(crate)`. Only cesauth mints
+//! * [`mint()`](TenantId::mint) — `pub`. Only cesauth mints
 //!   identifiers; minted ids are UUIDv4 strings, matching every
-//!   pre-RFC 116 row in D1 and every DO key.
+//!   pre-RFC 116 row in D1 and every DO key. Public because
+//!   `crates/backend` route handlers — a separate crate from
+//!   `crates/core` — mint fresh ids at request time.
 //! * [`parse()`](TenantId::parse) — the **single** entry point for
 //!   attacker-controlled input (route params, cookie bodies, token
 //!   claims, form fields). Validation is shape-only and deliberately
@@ -19,11 +21,17 @@
 //!   ids), so the rule is "non-empty, bounded length, ASCII-graphic"
 //!   rather than strict UUID. Existence checks remain the
 //!   repositories' job.
-//! * [`from_storage()`](TenantId::from_storage) — `pub(crate)`
-//!   trusted re-hydration for values read back from D1 / DO storage,
-//!   which cesauth itself wrote. Skips validation (storage rows may
-//!   predate any future tightening of `parse`); adapters use this at
-//!   the read boundary.
+//! * [`from_storage()`](TenantId::from_storage) — `pub`. Trusted
+//!   re-hydration for values read back from D1 / DO storage, which
+//!   cesauth itself wrote. **Skips validation** (storage rows may
+//!   predate any future tightening of `parse`). Public — not
+//!   `pub(crate)` — because the adapter crates
+//!   (`cesauth-adapter-cloudflare`, `cesauth-adapter-test`) call it
+//!   at the storage read boundary, and adapters live outside
+//!   `cesauth-core`. Because this constructor bypasses validation, it
+//!   must be called only on values cesauth itself previously wrote —
+//!   never on attacker-controlled input; use [`parse()`](Self::parse)
+//!   for that.
 //!
 //! ## What is deliberately NOT here
 //!

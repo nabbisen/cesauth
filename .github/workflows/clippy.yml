@@ -1,7 +1,9 @@
 name: Clippy lint
 
-# RFC 035: Deny all clippy warnings on host-compilable crates.
-# WASM crates (adapter-cloudflare, worker) are excluded; they require
+# RFC 125: Deny clippy::correctness lints on host-compilable crates.
+# Style-level clippy is advisory (RFC 125 D4); correctness lints are
+# defects, not style, and remain blocking.
+# WASM crates (adapter-cloudflare, backend) are excluded; they require
 # the wasm32 target and cannot be linted on a standard Ubuntu runner
 # without worker-build toolchain setup.
 
@@ -28,7 +30,7 @@ jobs:
           cargo-1.91 clippy \
             -p cesauth-core \
             -p cesauth-adapter-test \
-            -p cesauth-ui \
+            -p cesauth-frontend \
             -p cesauth-migrate-test \
             --all-targets \
-            -- -D warnings
+            -- -D clippy::correctness

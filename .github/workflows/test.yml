@@ -1,7 +1,7 @@
 name: Host tests
 
 # RFC 035: Run all host-compilable tests on every PR.
-# Excludes cesauth-adapter-cloudflare and cesauth-worker which require
+# Excludes cesauth-adapter-cloudflare and cesauth-backend which require
 # the wasm32-unknown-unknown target and worker-build toolchain.
 
 on:
@@ -24,7 +24,7 @@ jobs:
         run: |
           cargo-1.91 test -p cesauth-core \
                           -p cesauth-adapter-test \
-                          -p cesauth-ui \
+                          -p cesauth-frontend \
                           --lib
 
       - name: Run migration integration tests

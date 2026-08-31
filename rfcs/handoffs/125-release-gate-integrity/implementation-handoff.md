@@ -101,6 +101,7 @@ cargo test -p cesauth-core -p cesauth-adapter-test \
            -p cesauth-migrate-test -p cesauth-frontend  > evidence/cargo-test.log 2>&1
 cargo check -p cesauth-backend --target wasm32-unknown-unknown > evidence/wasm32-check.log 2>&1
 cargo clippy -p cesauth-core -p cesauth-adapter-test -p cesauth-migrate-test \
+             -p cesauth-frontend \
              --all-targets -- -D clippy::correctness      > evidence/cargo-clippy.log 2>&1
 cargo deny check                                          > evidence/cargo-deny.log 2>&1
 bash scripts/route-contracts-check.sh                     > evidence/route-contracts.log 2>&1
