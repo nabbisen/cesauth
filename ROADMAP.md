@@ -114,7 +114,24 @@ started.
 
 ### Next minor releases
 
-- **Security-critical assurance track (RFCs 116–124).** Source:
+- 🔧 **v0.81.1 — RFC 125 (release-gate integrity restoration). In flight;
+  authorized 2026-08-31.** Patch release, internal-only, no consumer-visible
+  change. Repairs the CI gates broken by the RFC 114 crate rename: four of
+  nine workflows currently fail at invocation or enforce a rule the tree has
+  never satisfied, so the "full host suite green" gate that every assurance
+  RFC below names as its step boundary is not actually running. Also adds
+  `cesauth-frontend` (280 tests) to the gate set — it has had no CI coverage
+  since the rename, making the real host suite 1,233 tests rather than the
+  953 previously reported. Owner decision recorded in RFC 125 §13 Q1:
+  `fmt.yml` is dropped and hand-alignment is house style; RFC 029's
+  conclusion is amended accordingly. **Exit criteria:** RFC 125 §12.
+  **Blocks:** RFC 117 and the rest of the track.
+
+- **Security-critical assurance track (RFCs 116–124).** RFC 116 shipped in
+  v0.81.0 (`rfcs/done/`), with two carve-outs deferred: secret-newtype
+  adoption at the remaining credential call sites, and `ports::repo`, which
+  RFC 116 never reached — it remains entirely `&str` and un-scoped, and is
+  folded into RFC 119. Source:
   architect instruction `security-critical-assurance-strategy-v0.80.2.md`;
   codebase audit at `docs/src/expert/security-assurance-audit-v0.80.2.md`.
   Sequencing (one RFC per release step; full host-side suite is the gate
