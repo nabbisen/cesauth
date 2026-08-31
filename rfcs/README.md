@@ -44,6 +44,14 @@ the residual gaps. See ROADMAP.md "UI/UX finishing track" for grouping.
 | [112](./proposed/112-worker-auth-macro-batch-migration.md) | Worker auth macro batch migration (RFC 100 全面適用) | P2 | env-blocked |
 | [110a](./proposed/110a-rate-limit-summary.md) | Rate limit summary surface (RFC 110 sub-RFC) | P2 | v0.75.0+ (KV-heavy, env-blocked) |
 
+Release-gate integrity. Blocks the assurance track below: RFCs 117–124 all
+name "full host suite green" as the gate between steps, and that gate is not
+currently running in CI.
+
+| ID | Title | Tier | Category | Depends on |
+|----|-------|------|----------|------------|
+| [125](./proposed/125-release-gate-integrity-restoration.md) | Release-gate integrity restoration | P0 | A | — |
+
 Security-critical assurance track. Source: architect instruction
 `security-critical-assurance-strategy-v0.80.2.md`; audit report at
 `docs/src/expert/security-assurance-audit-v0.80.2.md`. Implement in ID
@@ -51,9 +59,15 @@ order (116 first — later RFCs consume its newtypes). Numbers 114/115 are
 consumed by the v0.79/v0.80 workspace-restructure and Leptos-migration
 work (see CHANGELOG); per RFC 019, numbers are never reused.
 
+RFC 116 shipped in v0.81.0 and now lives in
+[`done/`](./done/116-security-type-modeling-baseline.md). Two carve-outs
+were deferred out of it and are tracked as follow-ups: secret-newtype
+adoption at the remaining credential call sites (handoff RISK-001), and
+`ports::repo`, which RFC 116 did not reach — it remains entirely `&str`
+and un-scoped, and is folded into RFC 119.
+
 | ID | Title | Tier | Category | Depends on |
 |----|-------|------|----------|------------|
-| [116](./proposed/116-security-type-modeling-baseline.md) | Security-critical type modeling baseline | P0 | A | — |
 | [117](./proposed/117-authorization-code-lifecycle-assurance.md) | Authorization code lifecycle assurance | P0 | A | 116 |
 | [118](./proposed/118-refresh-rotation-assurance.md) | Refresh token rotation & reuse-detection assurance | P0 | A | 116 |
 | [119](./proposed/119-tenant-scoped-repository-apis.md) | Tenant boundary & scoped repository APIs | P1 | B | 116 |
@@ -95,6 +109,7 @@ canonical catalogue is the filesystem at `done/`.
 | [110e](./done/110e-safety-controls-landing-section.md) | Open-runbook hyperlink + Safety controls landing section | v0.74.0 |
 | [111](./done/111-date-rendering-policy.md) | Date rendering policy (ADR-013 §Q4 date side) | v0.73.0 |
 | [113](./done/113-ui-rendering-acceptance-harness.md) | UI rendering acceptance harness | v0.72.0 |
+| [116](./done/116-security-type-modeling-baseline.md) | Security-critical type modeling baseline (Phases 1–3; carve-outs deferred) | v0.81.0 |
 
 For the full mapping (every shipped RFC with its release tag), the
 authoritative record is each file's own `**Status**: Implemented (vX.Y.Z)`

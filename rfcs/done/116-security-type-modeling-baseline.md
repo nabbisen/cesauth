@@ -1,6 +1,9 @@
 # RFC 116 — Security-critical type modeling baseline
 
-**Status.** Proposed
+**Status.** Implemented (v0.81.0) — Phases 1–3. Deferred: secret-newtype
+adoption at `service::client_auth` and `Challenge::MagicLink.code_hash`
+(handoff RISK-001), and `ports::repo` conversion, which remains entirely
+`&str` and is folded into RFC 119.
 **Tier.** P0 · Category A (strategy §6: must implement now)
 **Size.** Large (mechanical, wide)
 **Tracks.** Security-Critical Assurance Strategy §5.6, §8 (RFC theme 1);
