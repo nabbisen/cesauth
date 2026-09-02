@@ -1,6 +1,6 @@
 # RFC 127 — CSR bundle buildability and its missing gate
 
-**Status.** Implemented — on `main`, pending the `0.81.2` tag. R1–R5 landed.
+**Status.** Implemented — on `main`, pending the `0.81.1` tag. R1–R5 landed.
 **Acceptance criterion 3 was NOT met**: `trunk build --release` still fails and
 the backend cannot locate the artifacts. Continued by RFC 130 — the frontend
 screens remain non-functional until that ships.
@@ -12,7 +12,7 @@ bump both deferred; `DEPENDENCIES.md` predicted this explicitly.
 **Touches.** `crates/frontend/Cargo.toml`, `crates/frontend/src/app.rs`,
 `crates/frontend/index.html`, `.github/workflows/` (new gate), `Makefile`.
 **Depends on.** RFC 125 (gate discipline). **Sequenced before RFC 126.**
-**Target release.** v0.81.2 (immediately after RFC 125 / v0.81.1).
+**Target release.** Shipped in 0.81.1 (see Status).
 
 ## 1. Summary
 

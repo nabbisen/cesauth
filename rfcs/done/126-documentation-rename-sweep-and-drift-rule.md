@@ -1,7 +1,7 @@
 # RFC 126 — Documentation rename sweep and drift-scan crate-name rule
 
-**Status.** Implemented — on `main`, pending the `0.81.2` tag (rode along with
-RFC 127). D5 deliberately **not** landed: adding `ROADMAP.md` to `SCAN_PATHS`
+**Status.** Implemented — on `main`, pending the `0.81.1` tag (one release with
+RFC 125 and RFC 127). D5 deliberately **not** landed: adding `ROADMAP.md` to `SCAN_PATHS`
 awaits the owner's Management-GUI scope ruling. Acceptance criteria 1 and 4
 amended for `tenancy.md`'s changelog section; two follow-ups open (narrow the
 `tenancy.md` exclusion; name RFC 129 in the `crates/` exclusion comment).
@@ -14,7 +14,9 @@ RFC 012 (drift-scanner). Completes the RFC 114 workspace rename.
 `.github/CONTRIBUTING.md`, `scripts/drift-scan.sh`.
 **Depends on.** RFC 125 (C1 touches `route-contracts.md`; avoid the collision).
 **Sequenced after.** RFC 127 (P0; the CSR bundle cannot be built).
-**Target release.** v0.81.3 (patch; documentation and tooling only).
+**Target release.** Shipped in 0.81.1 (see Status) — the planned v0.81.3 was
+collapsed when 125/126/127 turned out to be one release; see the release
+readiness report.
 
 ## 1. Summary
 
@@ -163,7 +165,7 @@ None. Documentation and one shell script.
 
 ## 9. Migration / rollout
 
-Single patch release **v0.81.3**, after RFC 127 / v0.81.2 ships. Documentation-only;
+Shipped in **0.81.1** alongside RFC 125 and RFC 127. Documentation-only;
 nothing for consumers to do.
 
 Order: D3 (mechanism) → D4 (rules, which will then fail) → D1/D2 (sweep until

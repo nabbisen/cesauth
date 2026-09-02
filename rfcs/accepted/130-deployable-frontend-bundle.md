@@ -12,7 +12,7 @@ dispatched. Not yet started.
 **Depends on.** RFC 127 (the crate must compile before the bundle can ship).
 **Sequenced before.** RFC 128 and RFC 129 — numbers are assignment order, not
 priority (RFC 000: never reused, never renumbered).
-**Target release.** v0.81.4.
+**Target release.** v0.81.2 (the next release after 0.81.1).
 
 ## 1. Summary
 

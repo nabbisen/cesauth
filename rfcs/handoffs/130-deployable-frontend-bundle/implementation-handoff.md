@@ -1,7 +1,7 @@
 # Developer Handoff — RFC 130, Deployable frontend bundle
 
 **Governing RFC.** [`rfcs/accepted/130-deployable-frontend-bundle.md`](../../accepted/130-deployable-frontend-bundle.md)
-**Target release.** v0.81.4
+**Target release.** v0.81.2
 **Prepared by.** Architect · **Implemented by.** Mid-capability model
 **Blocked on.** Nothing, but see §3 — this task has **two report-and-stop
 points** before its design work begins.
