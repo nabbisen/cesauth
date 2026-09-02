@@ -51,12 +51,18 @@ currently running in CI.
 | ID | Title | Tier | Category | Depends on |
 |----|-------|------|----------|------------|
 | [125](./proposed/125-release-gate-integrity-restoration.md) | Release-gate integrity restoration | P0 | A | — |
+| [130](./proposed/130-deployable-frontend-bundle.md) | Deployable frontend bundle (Trunk release build + artifact naming + toolchain pin) | **P0** | A | 127 |
 | [127](./proposed/127-csr-bundle-buildability.md) | CSR bundle buildability and its missing gate | **P0** | A | 125 |
 | [126](./proposed/126-documentation-rename-sweep-and-drift-rule.md) | Documentation rename sweep + drift-scan crate-name rule | P1 | A | 125 |
 
-127 is listed before 126 deliberately: it is sequenced first. The Leptos CSR
-bundle cannot be built, and live `/me/security*` routes serve a shell that
-loads it with no server-rendered fallback.
+Rows above are in **sequencing** order, not numeric order. Numbers are
+assignment order and are never reused or renumbered (RFC 019 / RFC 000), so a
+higher number can be earlier work: 130 continues 127 and runs before 126.
+
+127 shipped the crate's *buildability* and a CI gate. 130 is what makes the
+bundle *deployable* — `trunk build --release` still fails and the backend
+cannot locate the artifacts, so `/me/security*` continues to serve an empty
+root div with no server-rendered fallback.
 
 Security-critical assurance track. Source: architect instruction
 `security-critical-assurance-strategy-v0.80.2.md`; audit report at
@@ -87,7 +93,7 @@ and un-scoped, and is folded into RFC 119.
 
 ## Done
 
-114 RFCs (001–106, 107, 108–111, 110b–110d (with 110e), 113) shipped between v0.50.3 and v0.74.0. Full
+115 RFCs (001–106, 107, 108–111, 110b–110d (with 110e), 113, 116) shipped between v0.50.3 and v0.81.0. Full
 list with shipped-in versions: see ROADMAP.md "Shipped" section and
 CHANGELOG.md release entries. Selected highlights only listed here; the
 canonical catalogue is the filesystem at `done/`.
@@ -131,7 +137,7 @@ field plus ROADMAP.md.
 
 ## Adding a new RFC
 
-Next number: **114**. Create `rfcs/proposed/114-slug.md`, set `**Status**: Proposed`,
+Next number: **131**. Create `rfcs/proposed/131-slug.md`, set `**Status**: Proposed`,
 add a row above, and update in the same commit. When shipped: move to `done/`,
 update Status to `Implemented (vX.Y.Z)`, update README row. Numbers are permanent.
 
