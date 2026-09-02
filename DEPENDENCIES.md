@@ -30,6 +30,28 @@ regenerate the "Unchanged" list.
 
 ---
 
+## Accepted advisories
+
+Recorded in `.cargo/audit.toml` with per-entry justification. Owner-accepted
+2026-09-02. Both are `unmaintained` advisories, not vulnerabilities.
+
+| Advisory | Crate | Why accepted | Revisit when |
+|---|---|---|---|
+| RUSTSEC-2024-0436 | `paste` 1.0.15 | Leptos-internal; `paste` is itself a `proc-macro` crate, so it runs at compile time and never links into the wasm32 artifact. No upgrade path of ours — `pastey` would have to be adopted by Leptos upstream. | Leptos 0.9.x adoption, or reclassification as a vulnerability |
+| RUSTSEC-2026-0173 | `proc-macro-error2` 2.0.1 | Leptos-internal. Not itself a proc-macro crate, but every dependency path to it terminates in one (`leptos_macro`, `leptos_router_macro`, `reactive_stores_macro`, `syn_derive`) — verified with `cargo tree -i`. Links into host-side macro expansion only. | Leptos 0.9.x adoption, or reclassification |
+
+Both reach the tree only through `cesauth-frontend`'s `csr` feature, which is
+off by default. This is why `cargo deny check` passes while `cargo audit`
+flagged them: `deny` walks the workspace dependency graph, `audit` reads the
+`Cargo.lock` union across all targets and features.
+
+**Fixed rather than accepted:** RUSTSEC-2026-0190 (`anyhow` → 1.0.104, RFC 125
+T8) and RUSTSEC-2026-0221 (`event-listener` → 5.4.2). The latter arrived via
+the same Leptos subtree but had a published patched version, so it needed no
+ignore entry — check for one before accepting any future advisory.
+
+---
+
 ## Held dependencies
 
 ### Leptos (partially resolved)

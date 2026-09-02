@@ -1,0 +1,56 @@
+# cargo-audit configuration.
+#
+# Created per the process documented in `.github/workflows/audit.yml`:
+# a finding that "doesn't apply to our usage" is recorded here with a
+# justification rather than silently tolerated in a red workflow.
+#
+# Every entry below must state: what the advisory is, why it does not
+# apply to cesauth specifically, and what would make us revisit it.
+# An ignore without a review trigger is technical debt with no exit.
+#
+# Owner-accepted 2026-09-02. Both entries are `unmaintained` advisories
+# (not vulnerabilities) reachable only at compile time.
+
+[advisories]
+ignore = [
+    # ── RUSTSEC-2024-0436 — `paste` 1.0.15, unmaintained ──────────────
+    #
+    # Reached only through the Leptos CSR subtree, behind
+    # `cesauth-frontend`'s `csr` feature (off by default):
+    #   paste (proc-macro) <- either_of / leptos / reactive_graph / tachys
+    #
+    # `paste` is itself a `proc-macro` crate. Its code executes on the
+    # host during compilation and is never linked into the
+    # wasm32-unknown-unknown artifact. There is no runtime exposure in
+    # either the Worker binary or the browser bundle.
+    #
+    # No upgrade path of our own: the dependency is internal to Leptos
+    # 0.8.x. `pastey` / `with_builtin_macros` would have to be adopted
+    # upstream by Leptos, not by us.
+    #
+    # Revisit when: Leptos 0.9.x is adopted (see DEPENDENCIES.md
+    # "Leptos"), or if this advisory is ever reclassified from
+    # `unmaintained` to a concrete vulnerability.
+    "RUSTSEC-2024-0436",
+
+    # ── RUSTSEC-2026-0173 — `proc-macro-error2` 2.0.1, unmaintained ───
+    #
+    # Same subtree, same conclusion, slightly different mechanism.
+    # `proc-macro-error2` is an ordinary library, not a proc-macro
+    # crate — but every path to it passes through one:
+    #   proc-macro-error2 <- leptos_macro (proc-macro)
+    #                     <- leptos_router_macro (proc-macro)
+    #                     <- reactive_stores_macro (proc-macro)
+    #                     <- syn_derive (proc-macro)
+    # Verified with `cargo tree -i proc-macro-error2 -p cesauth-frontend
+    # --features csr --target wasm32-unknown-unknown`: there is no path
+    # that does not terminate in a proc-macro crate, so it links into
+    # host-side macro expansion only and never into the target binary.
+    #
+    # No upgrade path of our own: internal to Leptos 0.8.x macro crates.
+    # Both `proc-macro-error` and this fork are now unmaintained
+    # (RUSTSEC-2024-0370 covers the original).
+    #
+    # Revisit when: Leptos 0.9.x is adopted, or on reclassification.
+    "RUSTSEC-2026-0173",
+]
