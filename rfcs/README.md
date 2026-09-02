@@ -51,7 +51,12 @@ currently running in CI.
 | ID | Title | Tier | Category | Depends on |
 |----|-------|------|----------|------------|
 | [125](./proposed/125-release-gate-integrity-restoration.md) | Release-gate integrity restoration | P0 | A | — |
+| [127](./proposed/127-csr-bundle-buildability.md) | CSR bundle buildability and its missing gate | **P0** | A | 125 |
 | [126](./proposed/126-documentation-rename-sweep-and-drift-rule.md) | Documentation rename sweep + drift-scan crate-name rule | P1 | A | 125 |
+
+127 is listed before 126 deliberately: it is sequenced first. The Leptos CSR
+bundle cannot be built, and live `/me/security*` routes serve a shell that
+loads it with no server-rendered fallback.
 
 Security-critical assurance track. Source: architect instruction
 `security-critical-assurance-strategy-v0.80.2.md`; audit report at
