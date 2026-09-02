@@ -206,7 +206,9 @@ the full set *before* the pin lands. If the candidate fails something outside
 this scope, **stop and report** — choosing between "pin an older version" and
 "fix the failure" is a scoping decision, and it is mine.
 
-## 13. Review request must include
+## 13. Review request
+
+Write the package to `.git-exclude/review-request/`. It must include:
 
 Implementation summary · M1 and M2 results · changed files · deviations from
 §4 · the nine logs from §9 · the §8 filename assertion · the S3
