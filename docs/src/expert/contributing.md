@@ -77,3 +77,35 @@ When an RFC is implemented:
 2. Update the RFC header `Status: Proposed` → `Status: Implemented`.
 3. Add a CHANGELOG entry referencing the RFC.
 4. Update `ROADMAP.md`'s Shipped table if it is a significant feature.
+
+## Cutting a release
+
+### Tag format
+
+Release tags are **bare `X.Y.Z` with no `v` prefix** — `0.81.1`, never
+`v0.81.1`. This follows the Rust crates convention and matches every existing
+tag in the repository. `CHANGELOG.md` headings use the same bare form:
+`## [0.81.0] - YYYY-MM-DD`.
+
+Prose *references* to a version in `ROADMAP.md` and in RFC `Status` fields
+conventionally keep the `v` (`Implemented (v0.73.0)`). That is a separate,
+established style and is fine; the no-prefix rule is about tags and CHANGELOG
+headings.
+
+### Every release must satisfy
+
+- A tag exists **and** a CHANGELOG entry exists, for the same version. Neither
+  alone is a release. Historical gaps in both directions exist — `0.79.6` was
+  tagged with no entry; `0.78.13`, `0.79.7`, `0.64.0` and `0.50.3` have
+  entries but no tag. `0.78.13` is the declared baseline of the governing
+  requirements and external-design specs, so the tree those documents describe
+  cannot be checked out. Do not add to this list.
+- Version numbers are never reused, and a bad release is superseded by a new
+  patch rather than re-tagged.
+- The full gate set (see [Running tests](#running-tests)) is green, with each
+  result captured as redirected command output. A hand-written summary line is
+  not evidence — a release bundle once shipped an 80-byte prose
+  `cargo-fmt.log` asserting a clean run that no stable `rustfmt` could have
+  produced.
+- Version bumps require explicit owner confirmation; `1.0.0` requires
+  confirmation *and* sufficient test coverage.
