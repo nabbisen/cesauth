@@ -1,6 +1,6 @@
 # Route contracts
 
-Every browser-facing and machine-facing route in `crates/worker/src/lib.rs`
+Every browser-facing and machine-facing route in `crates/backend/src/lib.rs`
 is recorded here with the six fields identified in the v0.50.1 UI/UX
 design deck (p.13): **actor**, **audit kind**, **view** (MessageKey or
 template), **rendering test reference**, and **CSRF requirement**.
@@ -48,15 +48,20 @@ code-review responsibility.
 | Method | Path | Actor | Audit kind | View / template | Rendering test | CSRF |
 |---|---|---|---|---|---|---|
 | GET | `/me/security` | Authenticated user | none (read) | `security_center_page_for` | `templates::tests::security_center_*` | N/A (GET) |
+| GET | `/me/security.json` | Authenticated user | none (read) | JSON (`SecurityCenterState`) | n/a | N/A (GET) |
 | GET | `/me/security/sessions` | Authenticated user | none (read) | `sessions_page_for` | `templates::tests::sessions_page_*` | N/A (GET) |
+| GET | `/me/security/sessions.json` | Authenticated user | none (read) | JSON (`sessions`, `current_session_id`, `csrf_token`) | n/a | N/A (GET) |
 | POST | `/me/security/sessions/revoke-others` | Authenticated user | `session_revoked_by_user` (bulk) | redirect + flash | n/a | required |
 | POST | `/me/security/sessions/:session_id/revoke` | Authenticated user | `session_revoked_by_user` | redirect + flash | n/a | required |
 | GET | `/me/security/totp/enroll` | Authenticated user | none (read) | `totp_enroll_page_for` | `templates::tests::totp_enroll_page_*` | N/A (GET) |
+| GET | `/me/security/totp/enroll.json` | Authenticated user | none (read) | JSON (`qr_svg`, `secret_b32`, `csrf_token`) | n/a | N/A (GET) |
 | POST | `/me/security/totp/enroll/confirm` | Authenticated user | `totp_enrolled` | `totp_recovery_codes_page_for` | `templates::tests::totp_recovery_codes_*` | required |
 | GET | `/me/security/totp/verify` | End user mid-auth | none (read) | `totp_verify_page_for` | `templates::tests::totp_verify_*` | N/A (GET) |
+| GET | `/me/security/totp/verify.json` | End user mid-auth | none (read) | JSON (`csrf_token`, `totp_handle`) | n/a | N/A (GET) |
 | POST | `/me/security/totp/verify` | End user mid-auth | `totp_verified` / `totp_verify_failed` | `complete_auth` redirect | n/a | required |
 | POST | `/me/security/totp/recover` | End user mid-auth | `totp_recovered` | `complete_auth` redirect | n/a | required |
 | GET | `/me/security/totp/disable` | Authenticated user | none (read) | `totp_disable_confirm_page_for` | `templates::tests::totp_disable_*` | N/A (GET) |
+| GET | `/me/security/totp/disable.json` | Authenticated user | none (read) | JSON (`csrf_token`) | n/a | N/A (GET) |
 | POST | `/me/security/totp/disable` | Authenticated user | `totp_disabled` | redirect + flash | n/a | required |
 
 ## Top-level UI routes
@@ -73,11 +78,14 @@ code-review responsibility.
 |---|---|---|---|---|---|---|
 | POST | `/admin/users` | System admin (bearer) | `user_created` | JSON | n/a | N/A (bearer) |
 | DELETE | `/admin/sessions/:id` | System admin (bearer) | `session_revoked_by_admin` | JSON | n/a | N/A (bearer) |
+| GET | `/admin/login` | System admin (bearer, pre-cookie) | none | login form (no `?token=`) / 302 redirect to `/admin/console` + sets `__Host-cesauth_admin` cookie (valid `?token=`) | n/a | N/A (GET) |
 | GET | `/admin/console` | System admin | none | overview page | `admin::tests::console_*` | N/A (GET) |
+| GET | `/admin/console.json` | System admin | none | JSON (`csrf_token`) | n/a | N/A (GET) |
 | GET | `/admin/console/cost` | System admin | none | cost page | n/a | N/A (GET) |
 | GET | `/admin/console/safety` | System admin | none | safety page | n/a | N/A (GET) |
 | POST | `/admin/console/safety/:bucket/verify` | System admin | `bucket_verified` | redirect | n/a | required |
 | GET  | `/admin/console/operations` | System admin | none | HTML | n/a | required |
+| GET  | `/admin/console/operations.json` | System admin | none | JSON (`csrf_token`) | n/a | required |
 | POST | `/admin/console/audit/export` | System admin | `audit_exported` | CSV/JSONL download | CSRF | required |
 | GET | `/admin/console/audit` | System admin | none | audit search page | n/a | N/A (GET) |
 | GET | `/admin/console/audit/chain` | System admin | none | chain status page | n/a | N/A (GET) |
@@ -87,10 +95,12 @@ code-review responsibility.
 | POST | `/admin/console/config/:bucket/apply` | System admin | `config_applied` | redirect | n/a | required |
 | POST | `/admin/t/:slug/invitations` | Tenant admin | `invitation_issued` | redirect | CSRF | required |
 | GET  | `/admin/t/:slug/invitations` | Tenant admin | none | HTML | n/a | required |
+| GET  | `/admin/t/:slug/invitations.json` | Tenant admin | none | JSON (`csrf_token`) | n/a | required |
 | GET  | `/accept-invite` | public (invite link) | none | HTML | n/a | N/A |
 | POST | `/accept-invite` | public (invite link) | `invitation_accepted` | redirect | n/a | N/A |
 | POST | `/me/security/delete-account` | authenticated user | `deletion_requested` | redirect | CSRF | session |
 | GET  | `/admin/t/:slug/deletion-requests` | Tenant admin | none | HTML | n/a | required |
+| GET  | `/admin/t/:slug/deletion-requests.json` | Tenant admin | none | JSON (`csrf_token`) | n/a | required |
 | POST | `/admin/t/:slug/deletion-requests/:id/cancel` | Tenant admin | `deletion_cancelled` | redirect | CSRF | required |
 | POST | `/admin/t/:slug/deletion-requests/:id/execute` | Tenant admin | `deletion_executed` | redirect | CSRF | required |
 | POST | `/admin/console/config/log_level/preview` | System admin | `operation_previewed` | preview page | n/a | required |
@@ -100,6 +110,7 @@ code-review responsibility.
 | GET | `/admin/console/config/:bucket/edit` | System admin | none | edit form | n/a | N/A (GET) |
 | POST | `/admin/console/config/:bucket/edit` | System admin | `config_edited` | redirect | n/a | required |
 | GET | `/admin/console/tokens` | System admin | none | token list | n/a | N/A (GET) |
+| GET | `/admin/console/tokens.json` | System admin | none | JSON (`csrf_token`) | n/a | N/A (GET) |
 | GET | `/admin/console/tokens/new` | System admin | none | new-token form | n/a | N/A (GET) |
 | POST | `/admin/console/tokens` | System admin | `admin_token_created` | redirect | n/a | required |
 | POST | `/admin/console/tokens/:id/disable` | System admin | `admin_token_disabled` | redirect | n/a | required |
@@ -109,10 +120,13 @@ code-review responsibility.
 | Method | Path | Actor | Audit kind | View / template | Rendering test | CSRF |
 |---|---|---|---|---|---|---|
 | GET | `/admin/tenancy` | System admin | none | tenancy overview | n/a | N/A (GET) |
+| GET | `/admin/tenancy.json` | System admin | none | JSON (`tenant_count`) | n/a | N/A (GET) |
 | POST | `/admin/tenancy/tenants/:id/suspend` | System admin | `tenant_status_changed` | redirect | CSRF | required |
 | POST | `/admin/tenancy/tenants/:id/restore` | System admin | `tenant_status_changed` | redirect | CSRF | required |
 | GET | `/admin/tenancy/tenants` | System admin | none | tenant list | n/a | N/A (GET) |
+| GET | `/admin/tenancy/tenants.json` | System admin | none | JSON (`tenants`) | n/a | N/A (GET) |
 | GET | `/admin/tenancy/tenants/:tid` | System admin | none | tenant detail | n/a | N/A (GET) |
+| GET | `/admin/tenancy/tenants/:tid.json` | System admin | none | JSON (`csrf_token`) | n/a | N/A (GET) |
 | GET | `/admin/tenancy/tenants/:tid/subscription/history` | System admin | none | subscription history | n/a | N/A (GET) |
 | GET | `/admin/tenancy/organizations/:oid` | System admin | none | org detail | n/a | N/A (GET) |
 | GET | `/admin/tenancy/users/:uid/role_assignments` | System admin | none | role assignments | n/a | N/A (GET) |
@@ -158,16 +172,24 @@ code-review responsibility.
 | Method | Path | Actor | Audit kind | View / template | Rendering test | CSRF |
 |---|---|---|---|---|---|---|
 | GET | `/admin/t/:slug` | Tenant admin | none | tenant overview | n/a | N/A (GET) |
+| GET | `/admin/t/:slug.json` | Tenant admin | none | JSON (`tenant`, `counts`) | n/a | N/A (GET) |
 | GET | `/admin/t/:slug/organizations` | Tenant admin | none | org list | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/organizations.json` | Tenant admin | none | JSON (`tenant`, `organizations`) | n/a | N/A (GET) |
 | GET | `/admin/t/:slug/organizations/:oid` | Tenant admin | none | org detail | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/organizations/:oid.json` | Tenant admin | none | JSON (`csrf_token`) | n/a | N/A (GET) |
 | GET | `/admin/t/:slug/users` | Tenant admin | none | user list | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/users.json` | Tenant admin | none | JSON (`tenant`, `users`) | n/a | N/A (GET) |
 | GET | `/admin/t/:slug/users/:uid/role_assignments` | Tenant admin | none | role assignments | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/users/:uid/role_assignments.json` | Tenant admin | none | JSON (`csrf_token`) | n/a | N/A (GET) |
 | GET | `/admin/t/:slug/subscription` | Tenant admin | none | subscription | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/subscription.json` | Tenant admin | none | JSON (`tenant`) | n/a | N/A (GET) |
 | GET | `/admin/t/:slug/organizations/new` | Tenant admin | none | new-org form | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/organizations/new.json` | Tenant admin | none | JSON (`csrf_token`) | n/a | N/A (GET) |
 | POST | `/admin/t/:slug/organizations/new` | Tenant admin | `organization_created` | redirect | n/a | required |
 | GET | `/admin/t/:slug/organizations/:oid/status` | Tenant admin | none | status form | n/a | N/A (GET) |
 | POST | `/admin/t/:slug/organizations/:oid/status` | Tenant admin | `organization_status_changed` | redirect | n/a | required |
 | GET | `/admin/t/:slug/organizations/:oid/groups/new` | Tenant admin | none | new-group form | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/organizations/:oid/groups/new.json` | Tenant admin | none | JSON (`csrf_token`) | n/a | N/A (GET) |
 | POST | `/admin/t/:slug/organizations/:oid/groups/new` | Tenant admin | `group_created` | redirect | n/a | required |
 | GET | `/admin/t/:slug/groups/:gid/delete` | Tenant admin | none | delete confirm | n/a | N/A (GET) |
 | POST | `/admin/t/:slug/groups/:gid/delete` | Tenant admin | `group_deleted` | redirect | n/a | required |
@@ -176,6 +198,7 @@ code-review responsibility.
 | GET | `/admin/t/:slug/role_assignments/:id/delete` | Tenant admin | none | revoke confirm | n/a | N/A (GET) |
 | POST | `/admin/t/:slug/role_assignments/:id/delete` | Tenant admin | `role_assignment_deleted` | redirect | n/a | required |
 | GET | `/admin/t/:slug/memberships/new` | Tenant admin | none | add-member form | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/memberships/new.json` | Tenant admin | none | JSON (`csrf_token`) | n/a | N/A (GET) |
 | POST | `/admin/t/:slug/memberships` | Tenant admin | `membership_added` | redirect | n/a | required |
 | GET | `/admin/t/:slug/memberships/:uid/delete` | Tenant admin | none | remove confirm | n/a | N/A (GET) |
 | POST | `/admin/t/:slug/memberships/:uid/delete` | Tenant admin | `membership_removed` | redirect | n/a | required |
@@ -233,7 +256,7 @@ code-review responsibility.
 
 ## Checklist for adding a new route
 
-When adding a route to `crates/worker/src/lib.rs`, update this table with:
+When adding a route to `crates/backend/src/lib.rs`, update this table with:
 
 1. **Actor** — who makes this request (anonymous, end user, authenticated user, tenant admin, system admin, RS, RP)
 2. **Audit kind** — the `EventKind` emitted on success (or "none" if the route never emits)
