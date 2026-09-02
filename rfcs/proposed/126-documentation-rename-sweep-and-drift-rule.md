@@ -9,7 +9,8 @@ RFC 012 (drift-scanner). Completes the RFC 114 workspace rename.
 **Touches.** 19 files under `docs/src/` (excluding `adr/`),
 `.github/CONTRIBUTING.md`, `scripts/drift-scan.sh`.
 **Depends on.** RFC 125 (C1 touches `route-contracts.md`; avoid the collision).
-**Target release.** v0.81.2 (patch; documentation and tooling only).
+**Sequenced after.** RFC 127 (P0; the CSR bundle cannot be built).
+**Target release.** v0.81.3 (patch; documentation and tooling only).
 
 ## 1. Summary
 
@@ -158,7 +159,7 @@ None. Documentation and one shell script.
 
 ## 9. Migration / rollout
 
-Single patch release **v0.81.2**, after v0.81.1 ships. Documentation-only;
+Single patch release **v0.81.3**, after RFC 127 / v0.81.2 ships. Documentation-only;
 nothing for consumers to do.
 
 Order: D3 (mechanism) → D4 (rules, which will then fail) → D1/D2 (sweep until

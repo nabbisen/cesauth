@@ -127,6 +127,28 @@ started.
   conclusion is amended accordingly. **Exit criteria:** RFC 125 §12.
   **Blocks:** RFC 117 and the rest of the track.
 
+- 🔴 **v0.81.2 — RFC 127 (CSR bundle buildability). Accepted 2026-09-02; P0.**
+  The Leptos CSR browser bundle cannot be built —
+  `cargo check -p cesauth-frontend --features csr --target
+  wasm32-unknown-unknown` fails with 79 errors — and no CI gate covers it.
+  Not dead code: `leptos_html_shell` is called from `/me/security`,
+  `/me/security/sessions`, the TOTP verify/disable gates, invitations and
+  deletion requests, with **no server-rendered fallback**, so a deploy from
+  this tree serves those screens an empty root div. Three defects, two
+  concealing each other: `wasm-bindgen` used but not depended on; 31
+  `<Route path="…"/>` calls passing `&str` where `leptos_router` 0.8.13 needs
+  `path!()`; and Trunk never passing `--features csr`, which is why the first
+  two were never hit. The v0.80.2 Leptos bump to `=0.8.19` was verified
+  host-side only, with "treat the pin as unverified for production" recorded in
+  `DEPENDENCIES.md` and nothing enforcing it. **Exit criteria:** RFC 127 §10.
+
+- **v0.81.3 — RFC 126 (documentation rename sweep + drift-scan rule).**
+  Sequenced after 127. 56 stale `crates/worker` / `cesauth-ui` references
+  across 19 non-ADR files, including a deployment guide documenting a build
+  path that no longer exists. The drift-scanner that should have caught them
+  has no crate-name rule. One step (adding `ROADMAP.md` to its scan paths) is
+  gated on the pending Management-GUI scope decision below.
+
 - **Security-critical assurance track (RFCs 116–124).** RFC 116 shipped in
   v0.81.0 (`rfcs/done/`), with two carve-outs deferred: secret-newtype
   adoption at the remaining credential call sites, and `ports::repo`, which

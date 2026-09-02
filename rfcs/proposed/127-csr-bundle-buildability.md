@@ -1,6 +1,9 @@
 # RFC 127 — CSR bundle buildability and its missing gate
 
-**Status.** Proposed
+**Status.** Proposed — **accepted for implementation by the owner, 2026-09-02.**
+(The tree has no `accepted/` folder; RFC 000's 5-folder variant is nominally
+adopted but not realised, which is an open disposition question. Recording
+acceptance here so the file is self-describing until that is settled.)
 **Tier.** P0 · Category A (user-facing authentication surfaces are affected)
 **Size.** Medium (one repeated idiom + one dependency + one gate)
 **Tracks.** Discovered during the RUSTSEC issue triage (GitHub #4–#7),
@@ -9,8 +12,7 @@ bump both deferred; `DEPENDENCIES.md` predicted this explicitly.
 **Touches.** `crates/frontend/Cargo.toml`, `crates/frontend/src/app.rs`,
 `crates/frontend/index.html`, `.github/workflows/` (new gate), `Makefile`.
 **Depends on.** RFC 125 (gate discipline). **Sequenced before RFC 126.**
-**Target release.** v0.81.3, or earlier if the deployment impact in §2 warrants
-pulling it forward.
+**Target release.** v0.81.2 (immediately after RFC 125 / v0.81.1).
 
 ## 1. Summary
 
