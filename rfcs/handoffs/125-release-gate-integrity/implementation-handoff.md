@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 125, Release-gate integrity restoration
 
-**Governing RFC.** [`rfcs/proposed/125-release-gate-integrity-restoration.md`](../../proposed/125-release-gate-integrity-restoration.md)
+**Governing RFC.** [`rfcs/done/125-release-gate-integrity-restoration.md`](../../done/125-release-gate-integrity-restoration.md)
 **Target release.** v0.81.1 (patch; internal-only; no consumer-visible change)
 **Prepared by.** Architect · **Implemented by.** Mid-capability model
 **Blocked on.** Nothing. RFC 125 §13 Q1 is resolved (owner decision: remove

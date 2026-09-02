@@ -1,9 +1,9 @@
 # RFC 127 — CSR bundle buildability and its missing gate
 
-**Status.** Proposed — **accepted for implementation by the owner, 2026-09-02.**
-(The tree has no `accepted/` folder; RFC 000's 5-folder variant is nominally
-adopted but not realised, which is an open disposition question. Recording
-acceptance here so the file is self-describing until that is settled.)
+**Status.** Implemented — on `main`, pending the `0.81.2` tag. R1–R5 landed.
+**Acceptance criterion 3 was NOT met**: `trunk build --release` still fails and
+the backend cannot locate the artifacts. Continued by RFC 130 — the frontend
+screens remain non-functional until that ships.
 **Tier.** P0 · Category A (user-facing authentication surfaces are affected)
 **Size.** Medium (one repeated idiom + one dependency + one gate)
 **Tracks.** Discovered during the RUSTSEC issue triage (GitHub #4–#7),

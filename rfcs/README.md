@@ -1,7 +1,9 @@
 # cesauth RFCs
 
 Implementation-handover specifications for ROADMAP themes.
-Governed by **RFC 019 — RFC lifecycle policy** (`done/019-rfc-lifecycle-policy.md`).
+Governed by **RFC 000 — RFC lifecycle policy** (`done/000-rfc-lifecycle-policy.md`),
+adopted 2026-09-03 in its **5-folder variant**. It supersedes RFC 019, now in
+`archive/`.
 
 ## What an RFC is here
 
@@ -22,13 +24,22 @@ Folder = source of truth for state. `Status` field inside each file mirrors fold
 
 ```
 rfcs/
-  proposed/    ← open for implementation
-  done/        ← shipped; historical record — never delete
-  archive/     ← withdrawn or superseded
+  proposed/    ← under review; implementer should NOT start
+  accepted/    ← owner approved; implementer may start
+  done/        ← shipped (released, or on main); never delete
+  archive/     ← withdrawn or superseded; never delete
+  handoffs/    ← companion execution docs; state inherited from the RFC
   README.md    ← this index (update in same commit as any move)
 ```
 
-Full policy: `done/019-rfc-lifecycle-policy.md`.
+`draft/` is deliberately absent — RFC 000's guidance is to add it only when
+multiple authors need a shared drafting space.
+
+`accepted/` is the state that makes owner approval an explicit, visible event
+rather than a sentence buried in a Status field. Before it existed, three
+accepted RFCs carried an apologetic parenthetical instead.
+
+Full policy: `done/000-rfc-lifecycle-policy.md`.
 
 ---
 
@@ -43,26 +54,6 @@ the residual gaps. See ROADMAP.md "UI/UX finishing track" for grouping.
 |----|-------|------|--------|
 | [112](./proposed/112-worker-auth-macro-batch-migration.md) | Worker auth macro batch migration (RFC 100 全面適用) | P2 | env-blocked |
 | [110a](./proposed/110a-rate-limit-summary.md) | Rate limit summary surface (RFC 110 sub-RFC) | P2 | v0.75.0+ (KV-heavy, env-blocked) |
-
-Release-gate integrity. Blocks the assurance track below: RFCs 117–124 all
-name "full host suite green" as the gate between steps, and that gate is not
-currently running in CI.
-
-| ID | Title | Tier | Category | Depends on |
-|----|-------|------|----------|------------|
-| [125](./proposed/125-release-gate-integrity-restoration.md) | Release-gate integrity restoration | P0 | A | — |
-| [130](./proposed/130-deployable-frontend-bundle.md) | Deployable frontend bundle (Trunk release build + artifact naming + toolchain pin) | **P0** | A | 127 |
-| [127](./proposed/127-csr-bundle-buildability.md) | CSR bundle buildability and its missing gate | **P0** | A | 125 |
-| [126](./proposed/126-documentation-rename-sweep-and-drift-rule.md) | Documentation rename sweep + drift-scan crate-name rule | P1 | A | 125 |
-
-Rows above are in **sequencing** order, not numeric order. Numbers are
-assignment order and are never reused or renumbered (RFC 019 / RFC 000), so a
-higher number can be earlier work: 130 continues 127 and runs before 126.
-
-127 shipped the crate's *buildability* and a CI gate. 130 is what makes the
-bundle *deployable* — `trunk build --release` still fails and the backend
-cannot locate the artifacts, so `/me/security*` continues to serve an empty
-root div with no server-rendered fallback.
 
 Security-critical assurance track. Source: architect instruction
 `security-critical-assurance-strategy-v0.80.2.md`; audit report at
@@ -91,6 +82,25 @@ and un-scoped, and is folded into RFC 119.
 
 ---
 
+## Accepted
+
+Owner-approved; implementation may start. Rows are in **sequencing** order.
+
+| ID | Title | Tier | Dispatched | Depends on |
+|----|-------|------|---|---|
+| [130](./accepted/130-deployable-frontend-bundle.md) | Deployable frontend bundle (Trunk release build, artifact naming, toolchain pin) | **P0** | task 005 | 127 |
+
+Numbers are assignment order and are never reused or renumbered (RFC 000), so
+a higher number can be earlier work: 130 continues 127. RFC 127 delivered the
+crate's *buildability* and a CI gate; 130 is what makes the bundle
+*deployable*. Until it lands, `trunk build --release` fails, the backend cannot
+locate the artifacts, and `/me/security*` serves an empty root div with no
+server-rendered fallback.
+
+---
+
+---
+
 ## Done
 
 115 RFCs (001–106, 107, 108–111, 110b–110d (with 110e), 113, 116) shipped between v0.50.3 and v0.81.0. Full
@@ -104,7 +114,7 @@ canonical catalogue is the filesystem at `done/`.
 | [016](./done/016-admin-scope-badge.md) | Admin scope badge | v0.53.0 |
 | [017](./done/017-oidc-audience-admin-editor.md) | OIDC audience admin editor | v0.53.0 |
 | [018](./done/018-preview-and-apply-pattern.md) | Preview-and-apply pattern | v0.53.0 |
-| [019](./done/019-rfc-lifecycle-policy.md) | RFC lifecycle policy | v0.51.2 |
+| [019](./archive/019-rfc-lifecycle-policy.md) | RFC lifecycle policy (superseded by RFC 000) | v0.51.2 |
 | [027](./done/027-accessibility-and-route-contracts.md) | A11y verification + route contracts | v0.53.0 |
 | [071–078](./done/) | UI/UX alignment from PDF v0.50.1 | v0.62.0 |
 | [079–084](./done/) | P2 operations UX + UI consistency | v0.63.0 |
@@ -122,6 +132,9 @@ canonical catalogue is the filesystem at `done/`.
 | [111](./done/111-date-rendering-policy.md) | Date rendering policy (ADR-013 §Q4 date side) | v0.73.0 |
 | [113](./done/113-ui-rendering-acceptance-harness.md) | UI rendering acceptance harness | v0.72.0 |
 | [116](./done/116-security-type-modeling-baseline.md) | Security-critical type modeling baseline (Phases 1–3; carve-outs deferred) | v0.81.0 |
+| [125](./done/125-release-gate-integrity-restoration.md) | Release-gate integrity restoration (+ condition C1: 23 route contracts) | v0.81.1 (pending tag) |
+| [127](./done/127-csr-bundle-buildability.md) | CSR bundle buildability and its missing gate (criterion 3 unmet — see RFC 130) | v0.81.2 (pending tag) |
+| [126](./done/126-documentation-rename-sweep-and-drift-rule.md) | Documentation rename sweep + drift-scan crate-name rule (D5 deferred) | v0.81.2 (pending tag) |
 
 For the full mapping (every shipped RFC with its release tag), the
 authoritative record is each file's own `**Status**: Implemented (vX.Y.Z)`
@@ -131,15 +144,30 @@ field plus ROADMAP.md.
 
 ## Archive
 
-*(none)*
+Withdrawn or superseded. Never deleted — an archived RFC is the record that the
+discussion happened.
+
+| ID | Title | Reason |
+|----|-------|--------|
+| [019](./archive/019-rfc-lifecycle-policy.md) | RFC lifecycle policy | Superseded by RFC 000 (5-folder variant adopted 2026-09-03). Was Implemented (v0.51.2). |
 
 ---
 
 ## Adding a new RFC
 
-Next number: **131**. Create `rfcs/proposed/131-slug.md`, set `**Status**: Proposed`,
-add a row above, and update in the same commit. When shipped: move to `done/`,
-update Status to `Implemented (vX.Y.Z)`, update README row. Numbers are permanent.
+Next number: **131**. Create `rfcs/proposed/131-slug.md` with `**Status.** Proposed`
+and add a row above, in the same commit.
+
+Transitions (folder is authoritative; update Status and this index in the same
+commit as every move, and sweep inbound links first):
+
+1. **Owner accepts** → `proposed/` → `accepted/`, Status `Accepted`.
+2. **Shipped** → `accepted/` → `done/`, Status `Implemented (vX.Y.Z)`, plus a
+   CHANGELOG entry and a ROADMAP update.
+3. **Withdrawn or superseded** → `archive/`, Status carrying the reason or the
+   replacing RFC number, with a reciprocal note in the replacement.
+
+Numbers are permanent and never reused.
 
 ---
 

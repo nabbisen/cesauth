@@ -1,6 +1,9 @@
 # RFC 125 — Release-gate integrity restoration
 
-**Status.** Proposed
+**Status.** Implemented — on `main`, pending the `0.81.1` tag. T1–T13 plus
+condition C1 (23 route contracts) all landed; see
+`.git-exclude/reviewed/125-release-gate-integrity-review.md` and
+`…/125-c1-and-126-review.md`.
 **Tier.** P0 · Category A (blocks the assurance track)
 **Size.** Small–Medium (mechanical; no domain logic)
 **Tracks.** Architect review of the v0.81.0 handoff bundle. Amends the

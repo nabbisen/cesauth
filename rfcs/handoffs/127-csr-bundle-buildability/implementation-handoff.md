@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 127, CSR bundle buildability
 
-**Governing RFC.** [`rfcs/proposed/127-csr-bundle-buildability.md`](../../proposed/127-csr-bundle-buildability.md)
+**Governing RFC.** [`rfcs/done/127-csr-bundle-buildability.md`](../../done/127-csr-bundle-buildability.md)
 **Target release.** v0.81.2 (patch; no consumer-visible surface change)
 **Prepared by.** Architect · **Implemented by.** Mid-capability model
 **Blocked on.** Nothing. RFC 127 §11 items 2 and 3 are resolved below.

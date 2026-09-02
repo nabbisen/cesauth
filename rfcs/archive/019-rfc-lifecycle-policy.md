@@ -1,6 +1,9 @@
 # RFC 019 — RFC lifecycle policy
 
-**Status.** Implemented (v0.51.2)
+**Status.** Superseded by RFC 000 — the project adopted RFC 000's 5-folder
+variant (`proposed/ accepted/ done/ archive/`) on 2026-09-03, which RFC 019 does
+not define. Originally Implemented (v0.51.2); preserved as the record of the
+first lifecycle policy.
 **Tracks.** Cross-cutting documentation policy. Not tied to any
 single feature; applies to the RFC directory itself.
 **Touches.** `rfcs/` folder structure, the index file at

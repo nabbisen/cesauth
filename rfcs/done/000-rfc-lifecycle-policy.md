@@ -595,6 +595,21 @@ The fix: when a handoff discovers a design problem, patch or
 supersede the RFC first. Then update the handoff so it describes
 execution of the current RFC, not a competing design.
 
+## Project adoption note (cesauth)
+
+cesauth adopted this policy on 2026-09-03, using the **5-folder variant**
+(`proposed/ accepted/ done/ archive/`). `draft/` is deliberately not created —
+this policy's own guidance is to add it only when multiple authors need a
+shared place for drafts, which a single-maintainer project does not.
+
+This RFC **supersedes RFC 019**, cesauth's first lifecycle policy, which
+covered the same ground but defined no `accepted/` state. RFC 019 now lives in
+`rfcs/archive/019-rfc-lifecycle-policy.md` with its Status recording the
+supersession. It was Implemented (v0.51.2) and is preserved, not deleted — per
+the anti-pattern this policy names first.
+
+The reciprocal note required by § Review and transitions is this section.
+
 ## Self-application
 
 This RFC describes its own placement: it is itself an RFC

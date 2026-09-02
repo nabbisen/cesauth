@@ -40,7 +40,7 @@ cargo-1.91 test -p cesauth-core \
 
 Expect **1,233 passed, 0 failed** (RFC 125; `cesauth-frontend`'s 280
 tests were uncounted and had no CI coverage before this release — see
-`rfcs/proposed/125-release-gate-integrity-restoration.md` for how that
+`rfcs/done/125-release-gate-integrity-restoration.md` for how that
 was found).
 
 ```bash
@@ -69,14 +69,33 @@ will fail if the table is missing the new route.
 
 ## RFC lifecycle
 
-New design decisions go in `rfcs/proposed/NNN-title.md` (RFC 019 documents
-the lifecycle).  Current highest RFC number: 127.  Next RFC: 128.
+New design decisions go in `rfcs/proposed/NNN-title.md`. The lifecycle is
+**RFC 000**, adopted 2026-09-03 in its 5-folder variant (RFC 000 supersedes
+RFC 019, now in `rfcs/archive/`).  Current highest RFC number: 130.
+Next RFC: 131.
 
-When an RFC is implemented:
-1. Move the file from `rfcs/proposed/` to `rfcs/done/`.
-2. Update the RFC header `Status: Proposed` → `Status: Implemented`.
-3. Add a CHANGELOG entry referencing the RFC.
-4. Update `ROADMAP.md`'s Shipped table if it is a significant feature.
+The folder is the source of truth for an RFC's state; the `Status` field
+mirrors it. Four folders carry RFCs:
+
+| Folder | Meaning |
+|---|---|
+| `proposed/` | Under review. **Do not start implementing.** |
+| `accepted/` | Owner approved. Implementation may start. |
+| `done/` | Shipped — in a release, or merged to `main`. |
+| `archive/` | Withdrawn or superseded. Never deleted. |
+
+Transitions, each landing in a single commit that also updates
+`rfcs/README.md` and sweeps inbound links:
+
+1. **Owner accepts** → move `proposed/` → `accepted/`, Status `Accepted`.
+2. **Shipped** → move `accepted/` → `done/`, Status `Implemented (vX.Y.Z)`,
+   add a CHANGELOG entry, update `ROADMAP.md`'s Shipped table.
+3. **Withdrawn or superseded** → move to `archive/`, Status carrying the reason
+   or the replacing RFC number, with a reciprocal note in the replacement.
+
+Numbers are permanent and never reused. A companion execution document may
+live under `rfcs/handoffs/NNN-slug/`; it has no lifecycle state of its own and
+inherits the RFC's. Use `rfcs/handoffs/TEMPLATE.md` as the starting point.
 
 ## Cutting a release
 

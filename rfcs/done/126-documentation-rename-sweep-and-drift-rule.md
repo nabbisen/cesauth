@@ -1,6 +1,10 @@
 # RFC 126 — Documentation rename sweep and drift-scan crate-name rule
 
-**Status.** Proposed
+**Status.** Implemented — on `main`, pending the `0.81.2` tag (rode along with
+RFC 127). D5 deliberately **not** landed: adding `ROADMAP.md` to `SCAN_PATHS`
+awaits the owner's Management-GUI scope ruling. Acceptance criteria 1 and 4
+amended for `tenancy.md`'s changelog section; two follow-ups open (narrow the
+`tenancy.md` exclusion; name RFC 129 in the `crates/` exclusion comment).
 **Tier.** P1 · Category A (one item is operationally misleading today)
 **Size.** Small–Medium (documentation + one script rule; no domain logic)
 **Tracks.** Architect review of RFC 125 — findings F1 and F2

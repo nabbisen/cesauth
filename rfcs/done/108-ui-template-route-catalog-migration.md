@@ -103,7 +103,7 @@ exemption list. Resolution belongs to follow-up work.
    routes were finalised.
 
 Rationale for multi-release implementation: the lifecycle policy
-(RFC 019 / `rfcs/done/019-rfc-lifecycle-policy.md` §Granularity of
+(RFC 019 / `rfcs/archive/019-rfc-lifecycle-policy.md` §Granularity of
 transitions) allows partial implementation when the partial work
 captures the RFC's main design decision. The pattern was fully
 established by v0.68.0 (escape contract + catalog-builder shape); the

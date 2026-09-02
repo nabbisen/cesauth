@@ -2,7 +2,7 @@
 
 **Status.** Amends [RFC 029](../../../rfcs/done/029-rustfmt-toml-review.md)
 (`rustfmt.toml` necessity review). See
-[RFC 125 §5](../../../rfcs/proposed/125-release-gate-integrity-restoration.md#5-the-formatting-decision-with-evidence)
+[RFC 125 §5](../../../rfcs/done/125-release-gate-integrity-restoration.md#5-the-formatting-decision-with-evidence)
 for the measurement behind this decision.
 
 ## The decision
