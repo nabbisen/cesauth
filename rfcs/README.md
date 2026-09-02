@@ -51,6 +51,7 @@ currently running in CI.
 | ID | Title | Tier | Category | Depends on |
 |----|-------|------|----------|------------|
 | [125](./proposed/125-release-gate-integrity-restoration.md) | Release-gate integrity restoration | P0 | A | — |
+| [126](./proposed/126-documentation-rename-sweep-and-drift-rule.md) | Documentation rename sweep + drift-scan crate-name rule | P1 | A | 125 |
 
 Security-critical assurance track. Source: architect instruction
 `security-critical-assurance-strategy-v0.80.2.md`; audit report at
