@@ -1,6 +1,8 @@
 # RFC 130 — Deployable frontend bundle
 
-**Status.** Proposed
+**Status.** Proposed — **accepted for implementation by the owner, 2026-09-03.**
+(No `accepted/` folder exists; recorded here so the file is self-describing —
+see the open RFC 000 / 019 disposition question.)
 **Tier.** P0 · Category A (the user-facing security screens are still broken)
 **Size.** Small–Medium, but with two measurement gates before the design fixes
 **Tracks.** RFC 127 acceptance criterion 3, formally not met; findings 4a/4b in
