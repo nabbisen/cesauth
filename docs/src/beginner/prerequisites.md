@@ -36,12 +36,17 @@ wrangler --version
 
 Clone the repository and run the host-only test suite. This does not
 touch Cloudflare at all — it exercises the pure-Rust `core`,
-`adapter-test`, and `ui` crates that make up cesauth's domain layer:
+`adapter-test`, `frontend`, and `migrate`/`migrate-test` crates that
+make up cesauth's domain layer. A bare `cargo test` tries every
+workspace member, including `adapter-cloudflare` and `backend`, which
+are wasm32-only and fail to compile on the host — scope the command to
+the host-buildable crates:
 
 ```sh
 git clone https://github.com/cesauth/cesauth.git   # or extract the tarball
 cd cesauth
-cargo test
+cargo test -p cesauth-core -p cesauth-adapter-test -p cesauth-frontend
+cargo test -p cesauth-migrate-test --test migration_chain
 ```
 
 You should see the full host test suite pass. If it does not, fix the
@@ -50,14 +55,15 @@ it will work otherwise.
 
 ## Host-only iteration (no Cloudflare)
 
-If you only want to hack on `core`, `adapter-test`, or `ui`, the setup
-ends here. Those three crates target the host toolchain and have no
-Workers runtime dependency:
+If you only want to hack on `core`, `adapter-test`, `frontend`, or
+`migrate`/`migrate-test`, the setup ends here. Those crates target the
+host toolchain and have no Workers runtime dependency:
 
 ```sh
 cargo test -p cesauth-core
 cargo test -p cesauth-adapter-test
-cargo test -p cesauth-ui
+cargo test -p cesauth-frontend
+cargo test -p cesauth-migrate-test --test migration_chain
 ```
 
 The adapter-test crate's in-memory port implementations exercise the

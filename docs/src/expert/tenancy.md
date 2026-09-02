@@ -604,10 +604,13 @@ Metadata:
 
 Naming-debt cleanup:
 
-- **Module paths** renamed:
-  `crates/ui/src/saas/` → `crates/ui/src/tenancy_console/`,
-  `crates/worker/src/routes/admin/saas/` →
-  `crates/worker/src/routes/admin/tenancy_console/`. All
+- **Module paths** renamed: `src/saas/` → `src/tenancy_console/` in
+  what was then the `cesauth-ui` crate (renamed `cesauth-frontend`
+  by RFC 114, v0.79/0.80 — today that path is
+  `crates/frontend/src/tenancy_console/`), and `src/routes/admin/saas/`
+  → `src/routes/admin/tenancy_console/` in what was then
+  `cesauth-worker` (renamed `cesauth-backend`; today
+  `crates/backend/src/routes/admin/tenancy_console/`). All
   `mod`/`use` statements and re-exports updated.
 
 - **URL prefix** renamed: `/admin/saas/*` → `/admin/tenancy/*`.
@@ -636,8 +639,9 @@ threads:
 - **Stale-narrative cleanup** — three docstrings carried
   forward-references and historical claims invalidated by the
   v0.12.0 rename and intervening release-slot reshuffles. Fixed
-  in `crates/ui/src/tenancy_console.rs` (false "URL prefix
-  preserved" claim and wrong "since v0.18.0" marker) and
+  in `src/tenancy_console.rs` of what was then `cesauth-ui`
+  (today `crates/frontend/src/tenancy_console.rs`; false "URL
+  prefix preserved" claim and wrong "since v0.18.0" marker) and
   `crates/core/src/tenancy/types.rs` (`AccountType::Anonymous`
   forward-ref and `ExternalFederatedUser` forward-ref).
 - **Dependency audit** — manual review of every direct
@@ -685,15 +689,18 @@ the v0.8.0 → v0.9.0 split for the system-admin surface.
     the tenant-scoped users page. Pagination intentionally
     omitted at this stage.
 
-- **UI module** — new `crates/ui/src/tenant_admin/` mirroring
-  the shape of `tenancy_console` but tenant-scoped. Per ADR-003,
+- **UI module** — new `src/tenant_admin/` in what was then
+  `cesauth-ui` (today `crates/frontend/src/tenant_admin/`)
+  mirroring the shape of `tenancy_console` but tenant-scoped. Per ADR-003,
   no chrome is shared between the two surfaces — the
   structural separation is the visual signal that an operator
   has switched contexts. Six pages: overview, organizations
   list + detail, users list, role-assignments drill-in,
   subscription history. All read-only.
 
-- **Worker route layer** — `crates/worker/src/routes/admin/tenant_admin/`.
+- **Worker route layer** — `src/routes/admin/tenant_admin/` in
+  what was then `cesauth-worker` (today
+  `crates/backend/src/routes/admin/tenant_admin/`).
   Each handler runs the same opening sequence: bearer →
   principal, tenant-admin gate, action-level
   `check_permission` against the resolved tenant scope.
@@ -702,8 +709,9 @@ the v0.8.0 → v0.9.0 split for the system-admin surface.
   admin who types in another tenant's organization id gets a
   403, not the wrong tenant's data.
 
-- **Six new GET routes** registered in
-  `crates/worker/src/lib.rs`:
+- **Six new GET routes** registered in the worker entrypoint
+  crate's `src/lib.rs` (`cesauth-worker` at the time; today
+  `crates/backend/src/lib.rs`):
   - `/admin/t/:slug` (overview)
   - `/admin/t/:slug/organizations`
   - `/admin/t/:slug/organizations/:oid`
@@ -1139,7 +1147,7 @@ call.
 ### Verifying the anonymous-trial retention sweep ran
 
 v0.18.0 added a Cloudflare Workers Cron Trigger that fires the
-`#[event(scheduled)]` handler in `crates/worker/src/lib.rs` at
+`#[event(scheduled)]` handler in `crates/backend/src/lib.rs` at
 04:00 UTC daily. The handler runs `sweep::run`, which:
 
 1. Lists every `users` row with `account_type='anonymous' AND

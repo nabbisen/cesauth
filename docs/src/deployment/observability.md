@@ -14,7 +14,7 @@ need them, see "Operational metric emission" in the ROADMAP.
 
 ## Structured logs
 
-The log channel in `crates/worker/src/log.rs` emits JSON lines
+The log channel in `crates/backend/src/log.rs` emits JSON lines
 (`console.log` from a Worker is captured by `wrangler tail` and
 Logpush). Each line carries:
 
@@ -116,7 +116,7 @@ Each audit event is one R2 object with:
 
 | Field | Meaning |
 |---|---|
-| `kind` | `EventKind` variant — see `crates/worker/src/audit.rs`. |
+| `kind` | `EventKind` variant — see `crates/backend/src/audit.rs`. |
 | `subject` | The user/principal the event is about. |
 | `client_id` | The OAuth client involved, if any. |
 | `ip` | Source IP (sometimes masked — see ADR-004 §Q5 for the anonymous-sweep case). |
@@ -134,7 +134,7 @@ R2 doesn't have SQL. Query patterns:
    matching ones, parse JSON. Slow at scale.
 3. **Logpush of audit events** — cesauth doesn't push audit
    events to an external destination today, but the audit
-   writer is a single function (`crates/worker/src/audit.rs`)
+   writer is a single function (`crates/backend/src/audit.rs`)
    easily extended to fan out to a SIEM.
 
 For day-to-day incident response, the admin console works. For
@@ -237,7 +237,7 @@ downstream observability stack.
 ## See also
 
 - [Operational logging](../expert/logging.md) — the developer-
-  facing view of `crates/worker/src/log.rs`: categories, levels,
+  facing view of `crates/backend/src/log.rs`: categories, levels,
   and what each is for.
 - [Day-2 operations runbook](./runbook.md) — what to actually
   do when an alert fires.

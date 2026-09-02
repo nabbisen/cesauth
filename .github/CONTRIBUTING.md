@@ -22,14 +22,19 @@ crate, or a refactor that touches more than a handful of files.
 ## Working with the codebase
 
 cesauth is a Cargo workspace targeting both host (`cargo test`) and
-`wasm32-unknown-unknown` (`wrangler deploy`). The recommended local
-flow:
+`wasm32-unknown-unknown` (`wrangler deploy`). `cesauth-adapter-cloudflare`
+and `cesauth-backend` are wasm32-only and fail to compile their test
+targets on the host (missing `tokio`, a dev-dependency deliberately not
+pulled into the Workers build) — a bare `cargo test --workspace --lib`
+does not work on this repository. The recommended local flow scopes to
+the host-buildable crates:
 
 ```sh
 # Build and test on host. This is the fastest feedback loop and
 # covers the bulk of the codebase.
 cargo check --workspace
-cargo test --workspace --lib
+cargo test -p cesauth-core -p cesauth-adapter-test -p cesauth-frontend --lib
+cargo test -p cesauth-migrate-test --test migration_chain
 
 # Build for wasm32 to confirm the worker still compiles.
 cd crates/backend

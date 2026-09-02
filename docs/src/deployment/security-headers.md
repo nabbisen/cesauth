@@ -108,7 +108,7 @@ curl -sI https://<your-cesauth-host>/login | grep -iE \
 
 You should see all six headers. If any are missing, check:
 
-1. Is the `cesauth-worker` build at v0.23.0 or newer?
+1. Is the `cesauth-backend` build at v0.23.0 or newer?
 2. Did the deploy use the latest wrangler.toml?
 3. Are you hitting the right origin (not Cloudflare's edge
    cache returning a stale response)? Cache should not affect

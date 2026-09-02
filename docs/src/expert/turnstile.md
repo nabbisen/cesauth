@@ -99,7 +99,7 @@ does not impose Turnstile on unrelated flows.
 
 The `escalate` signal is **produced** by `RateLimitStore::hit`. The
 Turnstile enforcement around form routes is **implemented** in
-`crates/worker/src/routes/magic_link.rs` and the login page
+`crates/backend/src/routes/magic_link.rs` and the login page
 template, and gated by the flag-setting logic.
 
 What is still manual: tuning the `window_secs` / `threshold` per

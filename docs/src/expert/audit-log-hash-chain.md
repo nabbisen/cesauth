@@ -11,7 +11,7 @@
 Every authentication event, admin action, and tenancy mutation
 that cesauth performs writes a row to the `audit_events` D1
 table. The exact list of event kinds lives in
-`crates/worker/src/audit.rs::EventKind` (snake-cased into the
+`crates/backend/src/audit.rs::EventKind` (snake-cased into the
 `kind` column). Examples: `magic_link_issued`,
 `webauthn_verified`, `token_issued`, `admin_user_created`,
 `tenant_status_changed`, `anonymous_promoted`.

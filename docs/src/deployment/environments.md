@@ -42,12 +42,11 @@ top-level (default) environment. To add `staging` and
 ```toml
 # --- Top-level (used by `wrangler dev`, no --env flag) -------------------
 name               = "cesauth"
-main               = "crates/worker/build/worker/shim.mjs"
+main               = "crates/backend/build/worker/shim.mjs"
 compatibility_date = "2026-04-01"
-compatibility_flags = ["nodejs_compat"]
 
 [build]
-command = "cargo install -q worker-build && worker-build --release crates/worker"
+command = "cargo install -q worker-build && worker-build --release crates/backend"
 
 # Top-level bindings — used by `wrangler dev` only. Local Miniflare
 # ignores the IDs entirely.

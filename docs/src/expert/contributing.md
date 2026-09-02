@@ -70,7 +70,7 @@ will fail if the table is missing the new route.
 ## RFC lifecycle
 
 New design decisions go in `rfcs/proposed/NNN-title.md` (RFC 019 documents
-the lifecycle).  Current highest RFC number: 029.  Next RFC: 030.
+the lifecycle).  Current highest RFC number: 127.  Next RFC: 128.
 
 When an RFC is implemented:
 1. Move the file from `rfcs/proposed/` to `rfcs/done/`.

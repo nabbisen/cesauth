@@ -457,8 +457,8 @@ not allowed to do *this*.
   implementations. The metrics adapter
   (`admin/metrics.rs`) is the most interesting one if you want to
   understand what cesauth can and cannot read from inside a Worker.
-- `crates/worker/src/routes/admin/` — the HTTP handlers. `auth.rs`
+- `crates/backend/src/routes/admin/` — the HTTP handlers. `auth.rs`
   is the middleware everything flows through; each `console/*.rs` is
   one page.
-- `crates/ui/src/admin/` — the HTML templates. No JS, strict CSP,
+- `crates/frontend/src/admin/` — the HTML templates. No JS, strict CSP,
   plain `format!` — no templating engine dependency.

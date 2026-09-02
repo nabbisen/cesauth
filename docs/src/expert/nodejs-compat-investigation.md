@@ -57,7 +57,7 @@ below.
 ```bash
 # Run host-testable tests (unchanged either way — these don't touch
 # the wasm target or Node polyfills)
-cargo-1.91 test -p cesauth-core -p cesauth-adapter-test -p cesauth-ui --lib
+cargo-1.91 test -p cesauth-core -p cesauth-adapter-test -p cesauth-frontend --lib
 
 # Optionally run wrangler dev and exercise /authorize + /token manually
 # to confirm the hot path is unaffected.

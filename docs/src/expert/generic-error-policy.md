@@ -45,7 +45,7 @@ floor (tracked in ROADMAP).
 
 ## Invariant test
 
-`crates/worker/src/routes/me/totp/verify.rs` contains inline commentary that
+`crates/backend/src/routes/me/totp/verify.rs` contains inline commentary that
 `NoUserAuthenticator` and `Success` use the same code path, ensuring that
 successful completion and "user enrolled nothing" produce identical HTTP responses.
 

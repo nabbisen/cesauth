@@ -20,8 +20,8 @@ Safety controls
 
 | PDF item              | v0.72.0 state                                                                                                  | Status                          |
 |-----------------------|----------------------------------------------------------------------------------------------------------------|---------------------------------|
-| Rate limit status     | `crates/worker/src/routes/admin/console/operations*.rs` surfaces cron pass status (RFC 081). **No rate-limit summary** anywhere in the admin console. | gap → **still deferred to RFC 110a** (KV-heavy, env-blocked); v0.74.0 wires the `Option<RateLimitStatus>` field + "— (RFC 110a deferred)" placeholder rendering |
-| Turnstile configured  | `crates/worker/src/turnstile.rs` has `TurnstileConfig::is_configured()`. **Indicator not surfaced** in any admin page. | gap → **shipped v0.74.0 (RFC 110b)** |
+| Rate limit status     | `crates/backend/src/routes/admin/console/operations*.rs` surfaces cron pass status (RFC 081). **No rate-limit summary** anywhere in the admin console. | gap → **still deferred to RFC 110a** (KV-heavy, env-blocked); v0.74.0 wires the `Option<RateLimitStatus>` field + "— (RFC 110a deferred)" placeholder rendering |
+| Turnstile configured  | `crates/backend/src/turnstile.rs` has `TurnstileConfig::is_configured()`. **Indicator not surfaced** in any admin page. | gap → **shipped v0.74.0 (RFC 110b)** |
 | Refresh reuse alerts  | `EventKind::RefreshTokenReuseDetected` is written to `audit_events`. **No summary of recent occurrences** in admin UI; operator must query the audit log directly. | gap → **shipped v0.74.0 (RFC 110c)** |
 | TOTP key status       | `TOTP_SECRET_KEY` env-var presence not surfaced in admin UI. | gap → **shipped v0.74.0 (RFC 110d)** |
 | Open runbook link     | `docs/src/deployment/day-2-runbook.md` exists, but **no hyperlink** from `/admin/console/safety` to it. | gap → **shipped v0.74.0 (RFC 110e)** — `RUNBOOK_URL` env var feeds the anchor |
@@ -34,7 +34,7 @@ public/private safety, RFC 047) — a different surface from PDF page 9's
 
 The deck specifies six tabs: `Overview / Safety / Audit / Config / Alerts / Tokens`.
 
-### Findings against `crates/ui/src/admin/frame.rs::Tab`
+### Findings against `crates/frontend/src/admin/frame.rs::Tab`
 
 | PDF tab   | Implementation                              | Status |
 |-----------|---------------------------------------------|--------|
@@ -61,7 +61,7 @@ Per RFC 110 §"Open questions" Q1, the suggested closure is:
 v0.72.0 adopts this closure. RFC 110 itself ships:
 
 1. **This baseline document** (audit findings recorded).
-2. **Pin tests** in `crates/ui/src/admin/tests.rs` that assert the current
+2. **Pin tests** in `crates/frontend/src/admin/tests.rs` that assert the current
    shape of `safety_page`, `operations_page`, and the `Tab` enum / nav.
    Future gap-fill PRs (110a–110e) will need to update these tests, which
    forces the question "did this PR also update the baseline doc?" to
@@ -90,7 +90,7 @@ worker handler.
 ## How to run the pin tests
 
 ```bash
-cargo-1.91 test -p cesauth-ui --lib admin::tests::rfc_110
+cargo-1.91 test -p cesauth-frontend --lib admin::tests::rfc_110
 ```
 
 A failure of any `rfc_110_*` test signals one of two things:

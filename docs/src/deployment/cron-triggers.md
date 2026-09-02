@@ -5,7 +5,7 @@ that run independently of incoming HTTP requests. As of v0.18.0,
 one trigger is registered: the **anonymous-trial retention
 sweep** (ADR-004 §Q3). Future scheduled tasks will land in the
 same `[triggers]` block; the dispatcher in
-`crates/worker/src/lib.rs` branches on `event.cron()` to
+`crates/backend/src/lib.rs` branches on `event.cron()` to
 multiplex.
 
 ## What ships
@@ -41,10 +41,10 @@ operates against D1 which is regional but accessed transparently.
 
 1. Append the cron expression to the `crons` array.
 2. Add a branch in the dispatcher
-   (`crates/worker/src/lib.rs::scheduled`) that matches the new
+   (`crates/backend/src/lib.rs::scheduled`) that matches the new
    `event.cron()` value.
 3. Implement the handler — usually a new module under
-   `crates/worker/src/`.
+   `crates/backend/src/`.
 4. Document it here, in CHANGELOG, and in the operator runbook.
 
 The `event.cron()` returns the literal string from the array
@@ -194,7 +194,7 @@ chapter is updated.
 - [Pre-flight checklist § F](./preflight.md#f---cron-triggers)
 - [Day-2 operations runbook](./runbook.md) — the operator-facing
   view of "did the sweep run, did it sweep what it should".
-- [`crates/worker/src/sweep.rs`] — the sweep implementation.
+- [`crates/backend/src/sweep.rs`] — the sweep implementation.
 - [Tenancy chapter — Operator runbook](../expert/tenancy.md) —
   the `tenancy.md` runbook section covers diagnostic queries
   for anomalous sweep behavior.

@@ -96,13 +96,13 @@ is subtle across Wrangler versions and explicit is safer.
 cesauth's `wrangler.toml` uses:
 
 ```toml
-main = "crates/worker/build/worker/shim.mjs"
+main = "crates/backend/build/worker/shim.mjs"
 
 [build]
-command = "cargo install -q worker-build && worker-build --release crates/worker"
+command = "cargo install -q worker-build && worker-build --release crates/backend"
 ```
 
-The `crates/worker` positional argument is `worker-build`'s "crate
+The `crates/backend` positional argument is `worker-build`'s "crate
 path" — it targets the cdylib crate. The output lands at
 `<crate>/build/worker/shim.mjs` (hence the nested path in `main`).
 

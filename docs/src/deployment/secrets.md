@@ -33,7 +33,7 @@ LOG_EMIT_SENSITIVE="1"
 Wrangler/Miniflare uses `dotenv` v15+, which supports real newlines
 inside double quotes. An older shell write-path that produces `\n`
 escapes also works because `load_signing_key` in
-`crates/worker/src/config.rs` normalizes both forms.
+`crates/backend/src/config.rs` normalizes both forms.
 
 `.dev.vars` is listed in `.gitignore`. Never commit it.
 

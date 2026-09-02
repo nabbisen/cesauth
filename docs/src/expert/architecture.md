@@ -9,7 +9,7 @@ layout](./crate-layout.md). For storage-specific rationale, see
 
 ```
                     ┌──────────────────────────────┐
-  HTTP requests →   │        crates/worker         │   cdylib (WASM)
+  HTTP requests →   │        crates/backend        │   cdylib (WASM)
                     │  routes + bindings + glue    │
                     └──────────────┬───────────────┘
                                    │
@@ -84,13 +84,13 @@ and the domain layer testable on a plain host toolchain.
   cdylib crate explicitly:
 
   ```toml
-  main = "crates/worker/build/worker/shim.mjs"
+  main = "crates/backend/build/worker/shim.mjs"
 
   [build]
-  command = "cargo install -q worker-build && worker-build --release crates/worker"
+  command = "cargo install -q worker-build && worker-build --release crates/backend"
   ```
 
-  Output lands at `crates/worker/build/worker/`. `build/` is in
+  Output lands at `crates/backend/build/worker/`. `build/` is in
   `.gitignore` unanchored, so the nested path is covered.
 
 ## Testing strategy

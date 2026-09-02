@@ -11,8 +11,8 @@ cesauth/
 │   ├── adapter-test/      # in-memory port impls, for host tests
 │   ├── adapter-cloudflare/# DO classes + Cloudflare port impls
 │   │                      # (D1, DO-RPC, KV, R2)
-│   ├── ui/                # accessible HTML templates
-│   └── worker/            # cdylib entrypoint: #[event(fetch)],
+│   ├── frontend/          # accessible HTML templates
+│   └── backend/           # cdylib entrypoint: #[event(fetch)],
 │                          # router, secrets, audit plumbing
 ├── migrations/            # D1 schema
 ├── wrangler.toml
@@ -24,8 +24,8 @@ cesauth/
 | `cesauth-core`               | OIDC / WebAuthn / JWT / Magic Link domain rules + port traits     | pure Rust, host     |
 | `cesauth-adapter-cloudflare` | DO classes + Cloudflare-specific port impls (D1, DO-RPC, KV, R2)  | `wasm32-unknown`    |
 | `cesauth-adapter-test`       | In-memory port impls for host-side integration tests              | pure Rust, host     |
-| `cesauth-ui`                 | Accessible HTML templates                                         | pure Rust, host     |
-| `cesauth-worker`             | `#[event(fetch)]` entrypoint, router, secrets, audit plumbing     | `cdylib` (WASM)     |
+| `cesauth-frontend`           | Accessible HTML templates                                         | pure Rust, host     |
+| `cesauth-backend`            | `#[event(fetch)]` entrypoint, router, secrets, audit plumbing     | `cdylib` (WASM)     |
 
 ## Why five crates and not three
 
@@ -40,11 +40,11 @@ Workers entrypoint. Two things justified the extra boundaries:
   depending on them, which would pull host-only deps into the WASM
   build.
 
-- **`ui` is a first-class crate because templates have design
+- **`frontend` is a first-class crate because templates have design
   constraints.** Accessibility (`aria-live`, semantic headings,
   keyboard focus order), CSP, and CSRF-token rendering are in scope;
   JavaScript interactivity is not. Isolating them means a future
-  designer can iterate without touching `worker`.
+  designer can iterate without touching `backend`.
 
 ## Module layout: no `mod.rs`
 

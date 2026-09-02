@@ -24,10 +24,23 @@ SCAN_PATHS=("${REPO_ROOT}/crates" "${REPO_ROOT}/docs" "${REPO_ROOT}/README.md")
 
 # ---------------------------------------------------------------------------
 # Stale-phrase registry.
-# Each entry is "pattern|reason" (tab-separated — no tabs in patterns please).
+# Each entry is "pattern<TAB>reason" or, since RFC 126,
+# "pattern<TAB>reason<TAB>exclude_regex" — no literal tabs in the pattern,
+# reason, or exclude_regex fields themselves.
 # Patterns must be specific enough not to fire on *historical explanations* of
 # why something changed (e.g. migration docs legitimately reference "R2 audit").
 # Target: present-tense claims about removed behavior.
+#
+# `exclude_regex` (optional, third field, RFC 126 D3) excludes matches whose
+# file path matches the given bash regex. Use it when a pattern is correct
+# in a live doc but would also match inside a document that is a deliberate
+# historical record — an RFC in `rfcs/done/` or `rfcs/archive/`, an ADR under
+# `docs/src/expert/adr/`, or an archived changelog under
+# `docs/changelog-archive/`. Those documents describe what was true when they
+# were written; rewriting them to match current reality would falsify the
+# record (the same principle that keeps `rfcs/done/` and `rfcs/archive/`
+# immutable). A pattern with no third field applies everywhere in
+# SCAN_PATHS, as before — two-field entries remain fully supported.
 # ---------------------------------------------------------------------------
 declare -a PATTERNS=(
     # README/intro claim: "all land in R2" — false since v0.32.0.
@@ -55,18 +68,49 @@ declare -a PATTERNS=(
     # CHANGELOG, ROADMAP, and docs may reference bare version numbers without parens;
     # those are historical records and are intentionally excluded by this narrow pattern.
     "v0\.[0-9]\+\.[0-9]\+ (	Hardcoded version-with-caption in source (RFC 071) — remove the version string from footers"
+    # RFC 126 D4: RFC 114 renamed crates/worker -> crates/backend and
+    # crates/ui -> crates/frontend. Excluded:
+    #   - docs/src/expert/adr/     — historical decision records.
+    #   - docs/changelog-archive/  — historical release notes.
+    #   - crates/                  — RFC 126's audit scoped only
+    #     `docs/src/`; stale references inside crates/*.rs doc-comments
+    #     were found but are a separate, not-yet-authorized sweep — see
+    #     the RFC 126 review request.
+    #   - docs/src/expert/tenancy.md — its "## What ships in v0.4.x"
+    #     section (roughly lines 351-1099) is a per-subsystem changelog
+    #     embedded in a docs/ page, structurally identical to
+    #     docs/changelog-archive/: each "### Added in 0.X.0" entry
+    #     legitimately names the crate as it was called at that
+    #     release. The live content in this file (outside that section)
+    #     was manually verified and corrected as of RFC 126; a whole-file
+    #     exclusion was used only because this scanner has no way to
+    #     exclude a byte range within one file. A future stale reference
+    #     introduced in this file's *live* sections will not be caught
+    #     by this rule.
+    "crates/worker	RFC 114 renamed crates/worker -> crates/backend	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md|crates/"
+    "crates/ui	RFC 114 renamed crates/ui -> crates/frontend	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md|crates/"
+    "cesauth-worker	RFC 114 renamed cesauth-worker -> cesauth-backend	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md|crates/"
+    "cesauth-ui	RFC 114 renamed cesauth-ui -> cesauth-frontend (also the mockup's own crate name if RFC 126 risk #2 materializes; re-scope this rule if the mockup is adopted)	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md|crates/"
 )
 
 found=0
 
 for entry in "${PATTERNS[@]}"; do
-    pattern="${entry%%	*}"
-    reason="${entry##*	}"
+    IFS=$'\t' read -r pattern reason exclude_regex <<< "$entry"
 
     matches=()
     for path in "${SCAN_PATHS[@]}"; do
         if [[ -e "$path" ]]; then
             while IFS= read -r line; do
+                # Match exclude_regex against the file path only (the part
+                # before the first `:line_number:` separator) — not the
+                # whole line, which also contains the matched *content* and
+                # would otherwise spuriously self-exclude (e.g. a pattern
+                # for "crates/worker" would match "crates/" inside its own
+                # matched text on every hit, everywhere).
+                if [[ -n "$exclude_regex" ]] && [[ "${line%%:*}" =~ $exclude_regex ]]; then
+                    continue
+                fi
                 matches+=("$line")
             done < <(grep -rn --include="*.rs" --include="*.md" --include="*.toml" \
                          -E "$pattern" "$path" 2>/dev/null || true)
