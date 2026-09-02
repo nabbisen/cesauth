@@ -51,7 +51,7 @@ async fn fetch_state() -> Result<SecurityCenterState, String> {
 pub fn SecurityCenter() -> impl IntoView {
     // Resource fires once on mount and re-fires whenever the signal
     // changes (here it never changes — use signal is the unit type).
-    let state = Resource::new(|| (), |_| async { fetch_state().await });
+    let state = LocalResource::new(|| async { fetch_state().await });
 
     view! {
         <main class="security-center" aria-label="Security centre">

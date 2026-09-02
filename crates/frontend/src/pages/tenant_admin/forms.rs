@@ -23,27 +23,16 @@ pub fn AdminCsrfForm(
     form_action: String,
     title:       String,
     #[prop(optional)] back_link: Option<String>,
-    children:    Children,
+    children:    ChildrenFn,
 ) -> impl IntoView {
-    let url = json_path.clone();
-    let data = Resource::new(
-        move || url.clone(),
-        |u| async move {
-            gloo_net::http::Request::get(&u)
-                .header("Accept", "application/json")
-                .send().await
-                .map_err(|e| e.to_string())
-                .and_then(|r| if r.status() == 200 { Ok(r) } else { Err(format!("http {}", r.status())) })
-                // We parse the whole response, but async closures in chains are tricky:
-                // this is done inline below in the view.
+    let data2 = LocalResource::new(move || {
+        let u = json_path.clone();
+        async move {
+            let r = gloo_net::http::Request::get(&u).header("Accept","application/json")
+                .send().await.map_err(|e| e.to_string())?;
+            if r.status() == 200 { r.json::<CsrfData>().await.map_err(|e| e.to_string()) }
+            else { Err(format!("http {}", r.status())) }
         }
-    );
-    // Simpler: fetch synchronously via Resource
-    let data2 = Resource::new(move || json_path.clone(), |u| async move {
-        let r = gloo_net::http::Request::get(&u).header("Accept","application/json")
-            .send().await.map_err(|e| e.to_string())?;
-        if r.status() == 200 { r.json::<CsrfData>().await.map_err(|e| e.to_string()) }
-        else { Err(format!("http {}", r.status())) }
     });
 
     let back = back_link.clone();

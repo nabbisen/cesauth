@@ -14,7 +14,11 @@
   authentication routes are on the wrangler dev port (8787).
 
   The `<link data-trunk rel="rust"/>` tag is the Trunk directive that:
-  - Compiles crates/frontend with --features csr
+  - Compiles crates/frontend with --features csr (via data-cargo-features
+    below — RFC 127 R4: this was previously missing, so Trunk built with
+    default features only, and `app`/`pages`/`leptos_start` — all
+    #[cfg(feature = "csr")] — were compiled out. The bundle had no
+    wasm_bindgen(start) export.)
   - Injects the generated <script type="module"> that loads the WASM
   - Applies wasm-opt level "z" (size-optimised) in release mode
 -->
@@ -24,7 +28,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>cesauth (dev)</title>
   <!-- Trunk injects the compiled WASM bootstrap script here. -->
-  <link data-trunk rel="rust" data-wasm-opt="z"/>
+  <link data-trunk rel="rust" data-cargo-features="csr" data-wasm-opt="z"/>
 </head>
 <body>
   <!--

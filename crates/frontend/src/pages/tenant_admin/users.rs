@@ -18,7 +18,10 @@ async fn fetch_users(slug: String) -> Result<UsersData, String> {
 pub fn TenantUsers() -> impl IntoView {
     let params = use_params_map();
     let slug = move || params.with(|p| p.get("slug").unwrap_or_default());
-    let data = Resource::new(slug, |s| async move { fetch_users(s).await });
+    let data = LocalResource::new(move || {
+        let s = slug();
+        async move { fetch_users(s).await }
+    });
 
     view! {
         <main>

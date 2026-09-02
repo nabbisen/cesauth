@@ -34,7 +34,7 @@ async fn fetch_enroll() -> Result<EnrollData, String> {
 /// TOTP enrollment page — shows QR code + manual entry + confirm form.
 #[component]
 pub fn TotpEnroll() -> impl IntoView {
-    let data = Resource::new(|| (), |_| async { fetch_enroll().await });
+    let data = LocalResource::new(|| async { fetch_enroll().await });
 
     view! {
         <main aria-label="Enable two-factor authentication">
@@ -139,7 +139,7 @@ async fn fetch_verify() -> Result<VerifyData, String> {
 /// TOTP gate prompt — shown after Magic Link login when TOTP is enabled.
 #[component]
 pub fn TotpVerify() -> impl IntoView {
-    let data = Resource::new(|| (), |_| async { fetch_verify().await });
+    let data = LocalResource::new(|| async { fetch_verify().await });
 
     view! {
         <main aria-label="Two-factor verification">
@@ -223,7 +223,7 @@ async fn fetch_disable() -> Result<DisableData, String> {
 /// TOTP disable confirmation page.
 #[component]
 pub fn TotpDisable() -> impl IntoView {
-    let data = Resource::new(|| (), |_| async { fetch_disable().await });
+    let data = LocalResource::new(|| async { fetch_disable().await });
 
     view! {
         <main aria-label="Disable two-factor authentication">

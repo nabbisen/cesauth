@@ -18,7 +18,10 @@ async fn fetch_sub(slug: String) -> Result<SubData, String> {
 pub fn TenantSubscription() -> impl IntoView {
     let params = use_params_map();
     let slug = move || params.with(|p| p.get("slug").unwrap_or_default());
-    let data = Resource::new(slug, |s| async move { fetch_sub(s).await });
+    let data = LocalResource::new(move || {
+        let s = slug();
+        async move { fetch_sub(s).await }
+    });
 
     view! {
         <main>

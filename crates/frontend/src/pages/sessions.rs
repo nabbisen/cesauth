@@ -46,7 +46,7 @@ async fn fetch_sessions() -> Result<SessionsResponse, String> {
 /// Sessions page (`/me/security/sessions`).
 #[component]
 pub fn Sessions() -> impl IntoView {
-    let data = Resource::new(|| (), |_| async { fetch_sessions().await });
+    let data = LocalResource::new(|| async { fetch_sessions().await });
 
     view! {
         <main class="sessions-page" aria-label="Active sessions">

@@ -4,7 +4,7 @@ use leptos::prelude::*;
 use leptos_router::hooks::use_params_map;
 
 use cesauth_core::tenancy::types::Tenant;
-use cesauth_frontend::tenant_admin::overview::TenantOverviewCounts;
+use crate::tenant_admin::TenantOverviewCounts;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct OverviewData {
@@ -29,7 +29,10 @@ async fn fetch(slug: String) -> Result<OverviewData, String> {
 pub fn TenantOverview() -> impl IntoView {
     let params = use_params_map();
     let slug = move || params.with(|p| p.get("slug").unwrap_or_default());
-    let data = Resource::new(slug, |s| async move { fetch(s).await });
+    let data = LocalResource::new(move || {
+        let s = slug();
+        async move { fetch(s).await }
+    });
 
     view! {
         <main aria-label="Tenant overview">

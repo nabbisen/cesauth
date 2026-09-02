@@ -9,7 +9,7 @@ use leptos::prelude::*;
 /// コンソール概要 (`/admin/console`)
 #[component]
 pub fn ConsoleOverview() -> impl IntoView {
-    let data = Resource::new(|| (), |_| async {
+    let data = LocalResource::new(|| async {
         gloo_net::http::Request::get("/admin/console.json")
             .header("Accept", "application/json")
             .send().await
@@ -93,7 +93,7 @@ async fn fetch_tokens() -> Result<TokensData, String> {
 /// 管理トークン一覧 (`/admin/console/tokens`)
 #[component]
 pub fn ConsoleTokens() -> impl IntoView {
-    let data = Resource::new(|| (), |_| async { fetch_tokens().await });
+    let data = LocalResource::new(|| async { fetch_tokens().await });
 
     view! {
         <main lang="ja">

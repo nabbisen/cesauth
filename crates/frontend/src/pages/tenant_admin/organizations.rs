@@ -17,7 +17,10 @@ async fn fetch(slug: String) -> Result<OrgsData, String> {
 pub fn TenantOrganizations() -> impl IntoView {
     let params = use_params_map();
     let slug = move || params.with(|p| p.get("slug").unwrap_or_default());
-    let data = Resource::new(slug, |s| async move { fetch(s).await });
+    let data = LocalResource::new(move || {
+        let s = slug();
+        async move { fetch(s).await }
+    });
 
     view! {
         <main>

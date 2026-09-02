@@ -1,0 +1,39 @@
+name: CSR bundle buildability
+
+# RFC 127: Fail CI if the Leptos CSR browser bundle cannot be compiled.
+#
+# This does not run `trunk build` — it only checks that
+# `cesauth-frontend` compiles for wasm32 with the `csr` feature enabled,
+# the same feature set Trunk is configured to build with
+# (`crates/frontend/index.html`'s `data-cargo-features="csr"`). This is
+# cheap (no Trunk/wasm-opt toolchain needed on the runner) and would have
+# caught all three defects RFC 127 fixed: the missing `wasm-bindgen`
+# dependency, the un-migrated `<Route path="…"/>` idiom, and — because
+# nothing before this gate ever compiled the crate with `--features csr`
+# at all — the fact that `app`, `pages`, and `leptos_start` were silently
+# excluded from every build.
+#
+# This is deliberately not a full `trunk build` gate. That would also
+# catch artifact-name drift between Trunk's output and
+# `crates/backend/src/routes/leptos_shell.rs`'s hardcoded filenames, but
+# needs the Trunk toolchain on the runner. Recommended as a follow-up,
+# not implemented here — see the RFC 127 review request.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  csr-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.91
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: cargo check -p cesauth-frontend --features csr --target wasm32-unknown-unknown
+        run: |
+          cargo check -p cesauth-frontend --features csr --target wasm32-unknown-unknown

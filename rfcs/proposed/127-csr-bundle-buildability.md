@@ -70,11 +70,11 @@ failure shape as RFC 125: a gate that does not exist cannot fail.
 `wasm-bindgen-futures`. The `csr` feature list omits `dep:wasm-bindgen`
 entirely. → E0432, E0433 (3 errors).
 
-**(b) Leptos router API drift, never compiled.** 31 `<Route path="…"/>` uses in
+**(b) Leptos router API drift, never compiled.** 26 `<Route path="…"/>` uses in
 `app.rs` pass a bare `&str`. `leptos_router` 0.8.13 requires a
 `PossibleRouteMatch`, produced by the `path!()` macro. The `path!` macro is not
 imported or used anywhere in the crate. → E0277 ×46, E0599 ×27 (73 errors),
-all traceable to this one idiom repeated 31 times.
+all traceable to this one idiom repeated 26 times.
 
 The pin history in `Cargo.toml` records `=0.8.2 → =0.8.19` (leptos) and
 `=0.8.2 → =0.8.13` (leptos_router) during v0.80.2, verified host-side only.
@@ -106,7 +106,7 @@ on. The two defects have concealed each other: (c) is why nobody hit (a)/(b).
 to the `csr` feature. The workspace already pins `wasm-bindgen = "0.2"`, so no
 new version enters the graph.
 
-**R2 — Convert the 31 routes to `path!()`.** Import `leptos_router::path` and
+**R2 — Convert the 26 routes to `path!()`.** Import `leptos_router::path` and
 rewrite `<Route path="/x"/>` as `<Route path=path!("/x")/>`. Mechanical, but
 verify each path string is preserved character-for-character — these are the
 production URLs, and a typo here is a silently broken screen, not a compile
@@ -138,7 +138,7 @@ None. No wire format, schema, DO payload, cookie, or public `core` type. Route
 
 1. `cargo check -p cesauth-frontend --features csr --target wasm32-unknown-unknown`
    — zero errors. This is the primary exit criterion.
-2. Confirm the 31 route strings are byte-identical before and after R2. Diff
+2. Confirm the 26 route strings are byte-identical before and after R2. Diff
    the extracted path literals rather than eyeballing the diff.
 3. `trunk build --release` produces `crates/frontend/dist/` containing
    `cesauth_frontend.js` and `cesauth_frontend_bg.wasm` — the exact filenames
@@ -160,7 +160,7 @@ No consumer action. No version-surface change.
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| A route string is altered during R2 | A screen 404s in production, with no compile error to catch it | §7.2 requires a literal-level diff of all 31 paths |
+| A route string is altered during R2 | A screen 404s in production, with no compile error to catch it | §7.2 requires a literal-level diff of all 26 paths |
 | R3 uncovers deeper 0.8.x drift than expected | Scope grows beyond one release | Re-scope and report rather than absorbing it; R1/R2/R5 still ship value alone |
 | `trunk build` emits different artifact names than `leptos_shell.rs` expects | Bundle builds but the shell still cannot load it | §7.3 checks names explicitly, not just build success |
 | Fixing this entrenches the CSR architecture just as the mockup (SSR + hydrate) is under consideration | Wasted effort if the mockup is adopted | Accepted deliberately: the shipped product is broken *now*, and the UI-strategy decision has no date. Repair is cheap and independent of that choice. |
@@ -168,7 +168,7 @@ No consumer action. No version-surface change.
 ## 10. Acceptance criteria
 
 1. `--features csr` wasm32 check exits 0.
-2. All 31 route strings unchanged (§7.2 evidence attached).
+2. All 26 route strings unchanged (§7.2 evidence attached).
 3. `trunk build --release` produces `dist/` with the two filenames
    `leptos_shell.rs` references.
 4. CI gate present, blocking, and demonstrated to fail on a reintroduced defect.

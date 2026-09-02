@@ -23,6 +23,7 @@ csr     = [
     "dep:gloo-net",
     "dep:console_error_panic_hook",
     "dep:web-sys",
+    "dep:wasm-bindgen",
     "dep:wasm-bindgen-futures",
     "dep:js-sys",
     "leptos/csr",
@@ -70,6 +71,13 @@ web-sys                     = {
     ],
     optional = true
 }
+
+# RFC 127 R1: used directly (`wasm_bindgen::prelude::wasm_bindgen(start)` in
+# lib.rs, `wasm_bindgen::JsValue` in pages/login.rs) but was missing as a
+# real dependency — only pulled in transitively via wasm-bindgen-futures,
+# which does not re-export it. Workspace already pins "0.2"; no new version
+# enters the graph.
+wasm-bindgen                = { workspace = true, optional = true }
 
 # Async bridge for Promises → Rust futures.
 wasm-bindgen-futures        = { version = "0.4", optional = true }

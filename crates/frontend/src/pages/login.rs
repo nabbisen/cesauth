@@ -27,6 +27,7 @@
 //! - Keeps the binary serialisation concern out of Rust/WASM
 
 use leptos::prelude::*;
+use wasm_bindgen::JsCast;
 
 // ─── WebAuthn interop ────────────────────────────────────────────────────────
 

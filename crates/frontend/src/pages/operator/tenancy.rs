@@ -14,12 +14,17 @@ struct OverviewData { tenant_count: usize }
 /// テナント管理概要 (`/admin/tenancy`)
 #[component]
 pub fn TenancyOverview() -> impl IntoView {
-    let data = Resource::new(|| (), |_| async {
-        gloo_net::http::Request::get("/admin/tenancy.json")
+    let data = LocalResource::new(|| async {
+        // `Result::and_then` takes a synchronous closure; `.json()` is async,
+        // so the fetch/parse must be sequenced with an explicit match rather
+        // than chained through `and_then` (RFC 127 R3).
+        match gloo_net::http::Request::get("/admin/tenancy.json")
             .header("Accept", "application/json")
             .send().await
-            .and_then(|r| async move { r.json::<OverviewData>().await })
-            .await.ok()
+        {
+            Ok(r)  => r.json::<OverviewData>().await.ok(),
+            Err(_) => None,
+        }
     });
 
     view! {
@@ -52,12 +57,14 @@ struct TenantsData { tenants: Vec<Tenant> }
 /// テナント一覧 (`/admin/tenancy/tenants`)
 #[component]
 pub fn TenancyTenants() -> impl IntoView {
-    let data = Resource::new(|| (), |_| async {
-        gloo_net::http::Request::get("/admin/tenancy/tenants.json")
+    let data = LocalResource::new(|| async {
+        match gloo_net::http::Request::get("/admin/tenancy/tenants.json")
             .header("Accept", "application/json")
             .send().await
-            .and_then(|r| async move { r.json::<TenantsData>().await })
-            .await.ok()
+        {
+            Ok(r)  => r.json::<TenantsData>().await.ok(),
+            Err(_) => None,
+        }
     });
 
     view! {
@@ -114,13 +121,21 @@ struct TenantDetailData { csrf_token: String }
 pub fn TenancyTenantDetail() -> impl IntoView {
     let params = use_params_map();
     let tid = move || params.with(|p| p.get("tid").unwrap_or_default());
-    let data = Resource::new(tid.clone(), |tid| async move {
-        gloo_net::http::Request::get(&format!("/admin/tenancy/tenants/{tid}.json"))
-            .header("Accept", "application/json")
-            .send().await
-            .and_then(|r| async move { r.json::<TenantDetailData>().await })
-            .await.ok()
-    });
+    let data = {
+        let tid = tid.clone();
+        LocalResource::new(move || {
+            let tid = tid();
+            async move {
+                match gloo_net::http::Request::get(&format!("/admin/tenancy/tenants/{tid}.json"))
+                    .header("Accept", "application/json")
+                    .send().await
+                {
+                    Ok(r)  => r.json::<TenantDetailData>().await.ok(),
+                    Err(_) => None,
+                }
+            }
+        })
+    };
 
     view! {
         <main lang="ja">
@@ -178,14 +193,17 @@ pub fn TenancyFormPlaceholder(
     form_action: String,
 ) -> impl IntoView {
     let json_url = format!("{}.json", form_action);
-    let data = Resource::new(move || json_url.clone(), |url| async move {
-        gloo_net::http::Request::get(&url)
-            .header("Accept", "application/json")
-            .send().await.ok()
-            .and_then(|r| if r.status() == 200 {
-                // synchronous parse not straightforward here; use a workaround
-                Some(r)
-            } else { None })
+    let data = LocalResource::new(move || {
+        let url = json_url.clone();
+        async move {
+            gloo_net::http::Request::get(&url)
+                .header("Accept", "application/json")
+                .send().await.ok()
+                .and_then(|r| if r.status() == 200 {
+                    // synchronous parse not straightforward here; use a workaround
+                    Some(r)
+                } else { None })
+        }
     });
 
     view! {

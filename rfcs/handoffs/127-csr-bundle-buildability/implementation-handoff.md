@@ -44,7 +44,7 @@ during drafting; see RFC 127 §2. Do not re-investigate.
 | # | Task | Files |
 |---|---|---|
 | R1 | Add `wasm-bindgen = { workspace = true, optional = true }` and `dep:wasm-bindgen` to the `csr` feature | `crates/frontend/Cargo.toml` |
-| R2 | Convert 31 `<Route path="…"/>` to `path=path!("…")`; import `leptos_router::path` | `crates/frontend/src/app.rs` |
+| R2 | Convert 26 `<Route path="…"/>` to `path=path!("…")`; import `leptos_router::path` | `crates/frontend/src/app.rs` |
 | R3 | Re-check and resolve whatever remains after R1+R2 | `crates/frontend/src/pages/**` likely |
 | R4 | Add `data-cargo-features="csr"` to the `data-trunk` link; correct the false comment at line 16 | `crates/frontend/index.html` |
 | R5 | New blocking CI job: `cargo check -p cesauth-frontend --features csr --target wasm32-unknown-unknown` | `.github/workflows/` |
@@ -66,7 +66,7 @@ introduced green rather than merged red.
 
 ## 6. Task detail worth stating explicitly
 
-**R2 — the route strings are a user-visible contract.** All 31 are production
+**R2 — the route strings are a user-visible contract.** All 26 are production
 URLs. A typo converts a working screen into a 404 with **no compile error to
 catch it** — `path!("/me/securty")` compiles perfectly. Before/after, extract
 the literals and diff them:
