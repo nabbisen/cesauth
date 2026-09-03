@@ -60,7 +60,7 @@ Security-critical assurance track. Source: architect instruction
 `docs/src/expert/security-assurance-audit-v0.80.2.md`. Implement in ID
 order (116 first — later RFCs consume its newtypes). Numbers 114/115 are
 consumed by the v0.79/v0.80 workspace-restructure and Leptos-migration
-work (see CHANGELOG); per RFC 019, numbers are never reused.
+work (see CHANGELOG); per RFC 000, numbers are never reused.
 
 RFC 116 shipped in v0.81.0 and now lives in
 [`done/`](./done/116-security-type-modeling-baseline.md). Two carve-outs
@@ -99,11 +99,9 @@ server-rendered fallback.
 
 ---
 
----
-
 ## Done
 
-115 RFCs (001–106, 107, 108–111, 110b–110d (with 110e), 113, 116) shipped between v0.50.3 and v0.81.0. Full
+118 RFCs shipped between v0.50.3 and v0.81.1 (001–106, 107, 108–111, 110b–110e, 113, 116, 125, 126, 127). Full
 list with shipped-in versions: see ROADMAP.md "Shipped" section and
 CHANGELOG.md release entries. Selected highlights only listed here; the
 canonical catalogue is the filesystem at `done/`.
@@ -132,9 +130,9 @@ canonical catalogue is the filesystem at `done/`.
 | [111](./done/111-date-rendering-policy.md) | Date rendering policy (ADR-013 §Q4 date side) | v0.73.0 |
 | [113](./done/113-ui-rendering-acceptance-harness.md) | UI rendering acceptance harness | v0.72.0 |
 | [116](./done/116-security-type-modeling-baseline.md) | Security-critical type modeling baseline (Phases 1–3; carve-outs deferred) | v0.81.0 |
-| [125](./done/125-release-gate-integrity-restoration.md) | Release-gate integrity restoration (+ condition C1: 23 route contracts) | v0.81.1 (pending tag) |
-| [127](./done/127-csr-bundle-buildability.md) | CSR bundle buildability and its missing gate (criterion 3 unmet — see RFC 130) | v0.81.2 (pending tag) |
-| [126](./done/126-documentation-rename-sweep-and-drift-rule.md) | Documentation rename sweep + drift-scan crate-name rule (D5 deferred) | v0.81.2 (pending tag) |
+| [125](./done/125-release-gate-integrity-restoration.md) | Release-gate integrity restoration (+ condition C1: 23 route contracts) | v0.81.1 |
+| [127](./done/127-csr-bundle-buildability.md) | CSR bundle buildability and its missing gate (criterion 3 unmet — see RFC 130) | v0.81.1 |
+| [126](./done/126-documentation-rename-sweep-and-drift-rule.md) | Documentation rename sweep + drift-scan crate-name rule (D5 deferred) | v0.81.1 |
 
 For the full mapping (every shipped RFC with its release tag), the
 authoritative record is each file's own `**Status**: Implemented (vX.Y.Z)`

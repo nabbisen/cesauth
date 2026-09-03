@@ -1,6 +1,6 @@
 # RFC 125 — Release-gate integrity restoration
 
-**Status.** Implemented — on `main`, pending the `0.81.1` tag. T1–T13 plus
+**Status.** Implemented (v0.81.1). T1–T13 plus
 condition C1 (23 route contracts) all landed; see
 `.git-exclude/reviewed/125-release-gate-integrity-review.md` and
 `…/125-c1-and-126-review.md`.

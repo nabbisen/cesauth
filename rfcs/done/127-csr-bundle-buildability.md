@@ -1,6 +1,6 @@
 # RFC 127 — CSR bundle buildability and its missing gate
 
-**Status.** Implemented — on `main`, pending the `0.81.1` tag. R1–R5 landed.
+**Status.** Implemented (v0.81.1). R1–R5 landed.
 **Acceptance criterion 3 was NOT met**: `trunk build --release` still fails and
 the backend cannot locate the artifacts. Continued by RFC 130 — the frontend
 screens remain non-functional until that ships.
