@@ -69,6 +69,14 @@ adoption at the remaining credential call sites (handoff RISK-001), and
 `ports::repo`, which RFC 116 did not reach — it remains entirely `&str`
 and un-scoped, and is folded into RFC 119.
 
+Operator-facing documentation correctness.
+
+| ID | Title | Tier | Category | Depends on |
+|----|-------|------|----------|------------|
+| [128](./proposed/128-observability-audit-architecture-correction.md) | Correct the audit architecture in the observability guide | P1 | A | — |
+
+Security-critical assurance track, continued.
+
 | ID | Title | Tier | Category | Depends on |
 |----|-------|------|----------|------------|
 | [117](./proposed/117-authorization-code-lifecycle-assurance.md) | Authorization code lifecycle assurance | P0 | A | 116 |
