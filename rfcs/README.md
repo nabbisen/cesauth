@@ -69,6 +69,13 @@ adoption at the remaining credential call sites (handoff RISK-001), and
 `ports::repo`, which RFC 116 did not reach — it remains entirely `&str`
 and un-scoped, and is folded into RFC 119.
 
+Frontend strategy. The owner decided on 2026-09-03 to adopt the GUI mockup;
+131 decides how, and spawns the implementation RFCs.
+
+| ID | Title | Tier | Category | Depends on |
+|----|-------|------|----------|------------|
+| [131](./proposed/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | B | 130 |
+
 Operator-facing documentation correctness.
 
 | ID | Title | Tier | Category | Depends on |
@@ -161,7 +168,7 @@ discussion happened.
 
 ## Adding a new RFC
 
-Next number: **131**. Create `rfcs/proposed/131-slug.md` with `**Status.** Proposed`
+Next number: **132**. Create `rfcs/proposed/132-slug.md` with `**Status.** Proposed`
 and add a row above, in the same commit.
 
 Transitions (folder is authoritative; update Status and this index in the same
