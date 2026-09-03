@@ -14,6 +14,108 @@ changes will always be called out here.
 
 ---
 
+## [0.81.1] - 2026-09-03
+
+### Release-gate integrity — RFC 125 (+ condition C1)
+
+Four of nine CI workflows had been failing at invocation since the RFC 114
+crate rename (`cesauth-ui` → `cesauth-frontend`, `cesauth-worker` →
+`cesauth-backend`), which the rename never reached. The "full host suite
+green" gate that RFCs 117–124 each name as their step boundary was not
+running at all.
+
+- `test.yml` / `clippy.yml`: corrected the package names, and added
+  `cesauth-frontend` to the host-test job. It had **no CI coverage** since the
+  rename; the real suite is **1,233 tests**, not the 953 previously reported.
+- `clippy.yml`: `-D warnings` → `-D clippy::correctness`, aligning CI with the
+  declared advisory-clippy policy while keeping genuine defects blocking.
+- `scripts/route-contracts-check.sh`: now reads `crates/backend/src/lib.rs`,
+  fails with a named diagnostic when its input is missing, and treats a zero
+  route count as a failure rather than a vacuous pass.
+- **`fmt.yml` removed.** `cargo fmt --check` had never passed on this tree —
+  447 of 498 files differ, and the hand-aligned columns it would collapse
+  cannot be produced by any stable `rustfmt` (`struct_field_align_threshold`
+  is nightly-only). Hand-alignment is now documented house style in
+  `docs/src/expert/code-style.md`, amending RFC 029's conclusion.
+- Fixed a deny-level `clippy::never_loop` in
+  `crates/core/src/migrate/tests/import_pipeline.rs`.
+- `crates/core/src/types/ids.rs`: module doc described `mint()` and
+  `from_storage()` as `pub(crate)`; both are `pub`. Since `from_storage()`
+  **bypasses validation**, the doc understated the reach of the one
+  constructor that skips input checks.
+- **Condition C1:** documented the 23 routes the repaired contract gate found
+  undocumented — 22 `.json` API views plus `GET /admin/login`. Route contracts
+  are now 188/188.
+
+### Frontend bundle buildability — RFC 127
+
+The Leptos CSR crate had **never compiled**. `cargo check -p cesauth-frontend
+--features csr --target wasm32-unknown-unknown` failed with 79 errors, and no
+gate covered it.
+
+- `wasm-bindgen` was used in the source but was not a dependency; the `csr`
+  feature omitted it.
+- 26 `<Route path="…"/>` elements passed a bare `&str`; `leptos_router` 0.8.13
+  requires `PossibleRouteMatch` via `path!()`. All 26 production route strings
+  verified byte-identical.
+- 18 `Resource` → `LocalResource` conversions (`Resource` requires
+  `Send + Sync`, which `gloo-net`'s `JsFuture`-based fetch cannot satisfy on a
+  single-threaded wasm32 target), plus a self-referential crate import, a
+  missing `JsCast` import, three `Result::and_then(async …)` chains that could
+  never have compiled, and one `Children` → `ChildrenFn` prop fix.
+- Trunk now passes `data-cargo-features="csr"`. Without it the feature was
+  never enabled — which is why the two defects above went unnoticed for two
+  release cycles.
+- New blocking workflow `.github/workflows/csr-bundle-check.yml`.
+
+**The frontend screens are still not functional.** `trunk build --release`
+fails at `wasm-opt`, and the artifact names Trunk emits do not match what the
+backend expects. RFC 127's acceptance criterion 3 was formally not met.
+RFC 130 addresses both.
+
+### Documentation rename sweep — RFC 126
+
+The RFC 114 rename changed the code but never reached the documentation: 56
+stale references across 19 files, including `docs/src/deployment/wrangler.md`
+documenting a build path that no longer exists — an operator following it
+would have misconfigured the deploy.
+
+- `scripts/drift-scan.sh` gains an optional per-pattern exclude-path field and
+  four crate-name rules. ADRs and archived changelogs are excluded as
+  historical records.
+- **Known gap:** `crates/` is excluded from those rules, hiding 25 stale
+  doc-comments in Rust source. Deliberate and disclosed; a follow-up RFC owns
+  it.
+- D5 (adding `ROADMAP.md` to the scan paths) is **not** included — it would
+  surface an unresolved scope contradiction and ship a knowingly red gate.
+
+### Security — dependency advisories
+
+- **RUSTSEC-2026-0221** (`event-listener` unsoundness): patched, 5.4.1 →
+  5.4.2. Net −2 crates.
+- **RUSTSEC-2026-0190** (`anyhow` unsoundness): patched, 1.0.102 → 1.0.104.
+- **RUSTSEC-2024-0436** (`paste`) and **RUSTSEC-2026-0173**
+  (`proc-macro-error2`): accepted, not fixed. Both unmaintained, both
+  compile-time only via Leptos proc-macros, neither reachable at runtime in
+  the Worker binary or the browser bundle. Recorded in `.cargo/audit.toml`
+  and `DEPENDENCIES.md`, each with a revisit trigger.
+
+### Project governance
+
+- RFC 000's RFC lifecycle adopted in its **5-folder variant**
+  (`proposed/ accepted/ done/ archive/`). Supersedes RFC 019, now archived.
+- Release procedure documented for the first time, including the tag format
+  (bare `X.Y.Z`, no `v` prefix) and the requirement that a tag and a CHANGELOG
+  entry exist together.
+- `rfcs/handoffs/TEMPLATE.md` added.
+
+### Notes
+
+No wire format, D1 schema, Durable Object payload, cookie, permission slug, or
+public `cesauth-core` type changed. Drop-in for 0.81.0 consumers.
+
+---
+
 ## [0.81.0] - 2026-06-05
 
 ### Security hardening — RFC 116 (type-modeling baseline, Phase 2)

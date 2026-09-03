@@ -114,40 +114,53 @@ started.
 
 ### Next minor releases
 
-- 🔧 **v0.81.1 — RFC 125 (release-gate integrity restoration). In flight;
-  authorized 2026-08-31.** Patch release, internal-only, no consumer-visible
-  change. Repairs the CI gates broken by the RFC 114 crate rename: four of
-  nine workflows currently fail at invocation or enforce a rule the tree has
-  never satisfied, so the "full host suite green" gate that every assurance
-  RFC below names as its step boundary is not actually running. Also adds
-  `cesauth-frontend` (280 tests) to the gate set — it has had no CI coverage
-  since the rename, making the real host suite 1,233 tests rather than the
-  953 previously reported. Owner decision recorded in RFC 125 §13 Q1:
-  `fmt.yml` is dropped and hand-alignment is house style; RFC 029's
-  conclusion is amended accordingly. **Exit criteria:** RFC 125 §12.
-  **Blocks:** RFC 117 and the rest of the track.
+- ✅ **v0.81.1 — RFC 125 (+ condition C1), RFC 127, RFC 126. Shipped
+  2026-09-03, one patch release.** Originally planned as three releases
+  (0.81.1/0.81.2/0.81.3); reconciled to one because no intermediate commit
+  ever set `Cargo.toml` to 0.81.1 or 0.81.2 — retro-tagging would have
+  contradicted the project's own "workspace version is the single source of
+  truth" invariant. The CHANGELOG entry is sectioned per RFC so the
+  boundaries remain legible even though they no longer correspond to
+  separate tags.
 
-- 🔴 **v0.81.2 — RFC 127 (CSR bundle buildability). Accepted 2026-09-02; P0.**
-  The Leptos CSR browser bundle cannot be built —
-  `cargo check -p cesauth-frontend --features csr --target
-  wasm32-unknown-unknown` fails with 79 errors — and no CI gate covers it.
+  **RFC 125 — release-gate integrity restoration.** Repairs the CI gates
+  broken by the RFC 114 crate rename: four of nine workflows had been
+  failing at invocation or enforcing a rule the tree never satisfied, so the
+  "full host suite green" gate every assurance RFC below names as its step
+  boundary was not actually running. Adds `cesauth-frontend` (280 tests) to
+  the gate set — it had no CI coverage since the rename, making the real
+  host suite 1,233 tests rather than the 953 previously reported. Owner
+  decision recorded in RFC 125 §13 Q1: `fmt.yml` is dropped and
+  hand-alignment is house style; RFC 029's conclusion is amended accordingly.
+  Condition C1 (documenting the 23 routes the repaired contract gate found
+  undocumented) closed before this release cut. **Blocks:** RFC 117 and the
+  rest of the assurance track — now unblocked.
+
+  **RFC 127 — CSR bundle buildability.** The Leptos CSR browser bundle could
+  not be built — `cargo check -p cesauth-frontend --features csr --target
+  wasm32-unknown-unknown` failed with 79 errors — and no CI gate covered it.
   Not dead code: `leptos_html_shell` is called from `/me/security`,
   `/me/security/sessions`, the TOTP verify/disable gates, invitations and
   deletion requests, with **no server-rendered fallback**, so a deploy from
-  this tree serves those screens an empty root div. Three defects, two
-  concealing each other: `wasm-bindgen` used but not depended on; 31
-  `<Route path="…"/>` calls passing `&str` where `leptos_router` 0.8.13 needs
-  `path!()`; and Trunk never passing `--features csr`, which is why the first
-  two were never hit. The v0.80.2 Leptos bump to `=0.8.19` was verified
-  host-side only, with "treat the pin as unverified for production" recorded in
-  `DEPENDENCIES.md` and nothing enforcing it. **Exit criteria:** RFC 127 §10.
+  this tree served those screens an empty root div. Fixed: the missing
+  `wasm-bindgen` dependency, 26 `<Route path="…"/>` calls migrated to
+  `path!()`, and Trunk now actually passing `--features csr`. New blocking
+  gate `csr-bundle-check.yml`. **Not fixed by this release:** `trunk build
+  --release` still fails at `wasm-opt`, and the artifact names Trunk emits
+  do not match what the backend expects — RFC 127's acceptance criterion 3
+  was formally not met. **RFC 130** (accepted, not yet started) continues
+  this work; the frontend screens remain non-functional until it lands.
 
-- **v0.81.3 — RFC 126 (documentation rename sweep + drift-scan rule).**
-  Sequenced after 127. 56 stale `crates/worker` / `cesauth-ui` references
-  across 19 non-ADR files, including a deployment guide documenting a build
-  path that no longer exists. The drift-scanner that should have caught them
-  has no crate-name rule. One step (adding `ROADMAP.md` to its scan paths) is
-  gated on the pending Management-GUI scope decision below.
+  **RFC 126 — documentation rename sweep + drift-scan rule.** 56 stale
+  `crates/worker` / `cesauth-ui` references across 19 non-ADR files fixed,
+  including a deployment guide that documented a build path no longer in
+  existence. `drift-scan.sh` gains a crate-name rule with a path-exclusion
+  mechanism (ADRs and archived changelogs excluded as historical records).
+  **Known gap, deliberate:** the exclusion also covers `crates/` itself,
+  hiding 25 stale doc-comments in Rust source pending a follow-up RFC. D5
+  (adding `ROADMAP.md` to the scan paths) is not included — it would
+  surface the unresolved Management-GUI scope contradiction below and ship
+  a knowingly red gate.
 
 - **Security-critical assurance track (RFCs 116–124).** RFC 116 shipped in
   v0.81.0 (`rfcs/done/`), with two carve-outs deferred: secret-newtype
