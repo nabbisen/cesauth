@@ -1,0 +1,25 @@
+# RFC 130 M2 — pin the toolchain everything is measured against.
+#
+# Before this file existed, cesauth ran on four unreconciled toolchain
+# numbers with nothing pinning them: workspace `rust-version = "1.85"`
+# (Cargo.toml — the *minimum supported* version, a different thing from
+# this pin), CI installing 1.91, the v0.81.0 handoff bundle verified on
+# 1.96, and 1.98.x locally. RFC 127's `csr` gate compiled on 1.91 while the
+# code that gate exists to protect was written on 1.98 — the gate and the
+# developer were not building the same thing, and RFC 130's finding 4a
+# (Trunk's `wasm-opt` rejecting bulk-memory wasm) exists *because of* a
+# version difference nobody had pinned.
+#
+# 1.98.1 was chosen because it is what this measurement was actually run
+# on (`rustc --version` at measurement time), not asserted without
+# evidence — RFC 029 was marked Implemented on a measurement that had
+# stopped being true, and that produced a much larger surprise later. Do
+# not bump this file without re-running the full gate set, `--features
+# csr`, and `trunk build --release` on the candidate version first (RFC
+# 130 §6 / M2), and reconciling every CI toolchain reference to match
+# (`.github/workflows/*.yml` — `fuzz.yml`'s `nightly` pin is deliberate,
+# for cargo-fuzz, and is not part of this reconciliation).
+[toolchain]
+channel = "1.98.1"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]

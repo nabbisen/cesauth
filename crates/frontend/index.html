@@ -20,7 +20,17 @@
     #[cfg(feature = "csr")] — were compiled out. The bundle had no
     wasm_bindgen(start) export.)
   - Injects the generated <script type="module"> that loads the WASM
-  - Applies wasm-opt level "z" (size-optimised) in release mode
+  - Does NOT run wasm-opt (data-wasm-opt="0", RFC 130 S1). rustc's
+    wasm32-unknown-unknown target now emits bulk-memory instructions by
+    default; Trunk's own wasm-opt invocation cannot pass the
+    --enable-bulk-memory flags accepting them requires (M1 measured this
+    holds even on the newest available Binaryen release, not just the
+    pinned one), and has no HTML attribute to add them. `make
+    build-frontend` runs the real optimization pass itself afterward,
+    with the required flags, over whatever Trunk staged — see Makefile.
+    A bare `trunk build --release` (skipping the Makefile) still exits 0,
+    but ships an unoptimized, un-filehashed-per-CLI-flag bundle; use
+    `make build-frontend` for anything that will actually be deployed.
 -->
 <html lang="en">
 <head>
@@ -28,7 +38,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>cesauth (dev)</title>
   <!-- Trunk injects the compiled WASM bootstrap script here. -->
-  <link data-trunk rel="rust" data-cargo-features="csr" data-wasm-opt="z"/>
+  <!-- wasm-opt disabled here; make build-frontend runs it manually (see above). -->
+  <link data-trunk rel="rust" data-cargo-features="csr" data-wasm-opt="0"/>
 </head>
 <body>
   <!--

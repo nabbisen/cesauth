@@ -16,14 +16,21 @@
 //! ## Asset path
 //!
 //! The WASM bundle is served from the Workers Static Assets binding
-//! at `/assets/`.  Trunk's default output names are:
-//! - `cesauth_frontend.js`        (the JS loader/glue)
-//! - `cesauth_frontend_bg.wasm`   (the WASM binary)
+//! at `/assets/`. Trunk's *default* output names are the Cargo package
+//! name — **hyphenated** (`cesauth-frontend`, not `cesauth_frontend`) —
+//! plus a content hash: `cesauth-frontend-<16-hex-hash>.js` /
+//! `..._bg.wasm`. `Makefile`'s `build-frontend` target passes
+//! `--filehash false` (RFC 130 S2), which drops the hash and produces the
+//! deterministic names below.
 //!
-//! In release builds Trunk appends a content hash:
-//! `cesauth_frontend-<sha8>.js`.  Phase B uses the non-hashed names
-//! for simplicity; a follow-up will read Trunk's `manifest.json` to
-//! inject the correct hashed name at build time.
+//! **There is no `dist/manifest.json`.** An earlier version of this
+//! comment claimed Trunk emits one and that a "Phase C" would read it to
+//! inject a hashed name automatically; that was wrong — `trunk build
+//! --help` has no such output, and `dist/` only ever contains the `.js`,
+//! `_bg.wasm`, and `index.html` (RFC 130 §2.1). What Trunk *does* emit is
+//! `dist/index.html` itself, containing the real `href="…"` — a future
+//! change that wants hashed names back would parse that file into a
+//! manifest at build time, not read one Trunk already wrote.
 //!
 //! ## CSP note
 //!
@@ -36,12 +43,16 @@ use worker::{Request, Response, Result, RouteContext};
 
 use crate::config::Config;
 
-/// Asset filenames produced by `trunk build`.
+/// Asset filenames produced by `trunk build --release --filehash false`
+/// (RFC 130 S2) — deterministic, hyphenated to match the Cargo package
+/// name `cesauth-frontend`. Verified against a real `dist/` build
+/// (`Makefile`'s `build-frontend` target), not assumed: see the RFC 130
+/// review request's mechanical filename assertion.
 ///
-/// Phase B hardcodes these.  Phase C will read `dist/manifest.json`
-/// so content-hashed names are used automatically.
-const LEPTOS_JS:   &str = "cesauth_frontend.js";
-const LEPTOS_WASM: &str = "cesauth_frontend_bg.wasm";
+/// Still hardcoded, not read from a manifest — see the module doc for
+/// why there is no manifest to read.
+const LEPTOS_JS:   &str = "cesauth-frontend.js";
+const LEPTOS_WASM: &str = "cesauth-frontend_bg.wasm";
 
 /// Render the HTML shell that bootstraps the Leptos CSR bundle.
 ///

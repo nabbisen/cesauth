@@ -6,6 +6,13 @@ name: Clippy lint
 # WASM crates (adapter-cloudflare, backend) are excluded; they require
 # the wasm32 target and cannot be linted on a standard Ubuntu runner
 # without worker-build toolchain setup.
+#
+# RFC 130 M2/M2b: toolchain pinned via dtolnay/rust-toolchain, replacing
+# the apt-based install below — apt does not carry arbitrary Rust patch
+# releases, so it could never actually track a specific pin. The version
+# must match rust-toolchain.toml (repo root) exactly; if you bump one,
+# bump both and every other workflow listed in that file's header
+# comment, then re-run the full gate set before merging.
 
 on:
   pull_request:
@@ -18,16 +25,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust 1.91 + clippy component
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y rustc-1.91 cargo-1.91
-          # The apt package bundles clippy; verify it's present.
-          clippy-driver-1.91 --version || cargo-1.91 clippy --version
+      - uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          components: clippy
+          targets: wasm32-unknown-unknown
 
       - name: Clippy — host crates
         run: |
-          cargo-1.91 clippy \
+          cargo clippy \
             -p cesauth-core \
             -p cesauth-adapter-test \
             -p cesauth-frontend \

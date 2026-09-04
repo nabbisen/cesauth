@@ -16,8 +16,11 @@ name: CSR bundle buildability
 # This is deliberately not a full `trunk build` gate. That would also
 # catch artifact-name drift between Trunk's output and
 # `crates/backend/src/routes/leptos_shell.rs`'s hardcoded filenames, but
-# needs the Trunk toolchain on the runner. Recommended as a follow-up,
-# not implemented here — see the RFC 127 review request.
+# needs the Trunk toolchain on the runner. RFC 130 S3 adds that gate.
+#
+# RFC 130 M2b: toolchain version below must match rust-toolchain.toml
+# (repo root) and every other workflow listed in that file's header
+# comment.
 
 on:
   pull_request:
@@ -30,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@1.91
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           targets: wasm32-unknown-unknown
 

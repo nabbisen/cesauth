@@ -3,6 +3,10 @@ name: Worker bundle size budget
 # RFC 025: Fail CI if the Workers bundle gzip size exceeds the declared
 # budget. This catches dependency additions and feature growth before
 # they reach a Cloudflare deploy that silently truncates the bundle.
+#
+# RFC 130 M2b: toolchain version below must match rust-toolchain.toml
+# (repo root) and every other workflow listed in that file's header
+# comment.
 
 on:
   pull_request:
@@ -15,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@1.91
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           targets: wasm32-unknown-unknown
 

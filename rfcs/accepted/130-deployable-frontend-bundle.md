@@ -191,7 +191,15 @@ everything else is then verified against.
 
 ## 9. Acceptance criteria
 
-1. `trunk build --release` exits 0 on the pinned toolchain.
+1. **`make build-frontend`** exits 0 on the pinned toolchain and produces
+   `dist/` artifacts matching `leptos_shell.rs`'s constants.
+   *(Amended 2026-09-05. As originally written — "`trunk build --release`
+   exits 0" — this became satisfiable by the bare command alone once
+   `data-wasm-opt="0"` moved into `index.html`, while that same invocation
+   emits hashed, unoptimized artifacts that fail criterion 2. The
+   implementer flagged it rather than satisfying it on the technicality; the
+   defect was in the criterion, written before it was known the build would
+   split between Trunk and a Makefile step.)*
 2. Every filename constant in `leptos_shell.rs` matches a file in `dist/`,
    asserted mechanically (§6.2).
 3. `rust-toolchain.toml` exists; CI's version references reconcile to it; the

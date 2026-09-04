@@ -1,0 +1,51 @@
+name: Trunk release build
+
+# RFC 130 S3: the gate that would have caught findings 4a and 4b (RFC 127
+# review §4) — a real `trunk build --release`, not just `cargo check
+# --features csr` (that's csr-bundle-check.yml; it catches compile
+# defects but cannot catch wasm-opt validation failures or artifact-name
+# drift, because it never invokes Trunk or produces a dist/ directory).
+#
+# Slower than csr-bundle-check.yml (needs Trunk + a Binaryen download on
+# the runner) — this complements that gate, it does not replace it.
+#
+# Runs the same `make build-frontend` target developers use locally, so
+# CI and local dev exercise identical logic (RFC 130's fix for 4a: a
+# Makefile-driven wasm-opt step with the flags Trunk's own optimize step
+# cannot pass — see Makefile's `wasm-opt-fetch` / `build-frontend`
+# targets and their comments for why).
+#
+# RFC 130 M2b: toolchain version below must match rust-toolchain.toml
+# (repo root) and every other workflow listed in that file's header
+# comment.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  trunk-release-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install Trunk
+        run: cargo install trunk --locked
+
+      - name: make build-frontend
+        run: make build-frontend
+
+      - name: Assert dist/ contains the filenames leptos_shell.rs hardcodes
+        run: |
+          set -euo pipefail
+          for f in $(grep -oP '^const LEPTOS_\w+:\s*&str\s*=\s*"\K[^"]+' \
+                     crates/backend/src/routes/leptos_shell.rs); do
+            test -f "crates/frontend/dist/$f" \
+              && echo "OK      $f" \
+              || { echo "MISSING $f — leptos_shell.rs's constants no longer match what Trunk emits" >&2; exit 1; }
+          done
