@@ -53,6 +53,20 @@ build: build-frontend build-backend
 # Pinned to version_123: the version this was verified against (RFC 130 §2).
 # Re-verify before bumping; M1 already showed version_132 does not remove
 # the need for this step.
+#
+# RFC 130 C1-130: this downloads and executes an 18 MB binary that then
+# transforms the shipped wasm artifact — on every clean checkout and every
+# CI run. deny.toml sets unknown-registry = "deny" and allow-git = [] for
+# exactly this class of risk; an unpinned binary fetch would be a bigger
+# unverified surface than anything that policy already governs. The
+# SHA-256 below is fetched from Binaryen's own published .sha256 release
+# asset (not computed from a file we already trusted) and checked after
+# download; a mismatch aborts the build rather than running an unverified
+# binary. Updating BINARYEN_VERSION without ALSO updating BINARYEN_SHA256
+# to the new release's checksum silently drops this check — the verify
+# step below fails loudly on a stale hash, but nothing stops someone
+# copy-pasting the old hash next to a new version string, so treat "bump
+# the version" and "bump the hash" as one edit, never two commits.
 BINARYEN_VERSION := version_123
 BINARYEN_DIR     := target/binaryen-$(BINARYEN_VERSION)
 BINARYEN_OS      := $(shell uname -s)
@@ -60,9 +74,19 @@ BINARYEN_ARCH    := $(shell uname -m)
 ifeq ($(BINARYEN_OS),Linux)
   BINARYEN_ARCH := $(if $(filter aarch64,$(BINARYEN_ARCH)),aarch64,x86_64)
   BINARYEN_ASSET := binaryen-$(BINARYEN_VERSION)-$(BINARYEN_ARCH)-linux.tar.gz
+  ifeq ($(BINARYEN_ARCH),aarch64)
+    BINARYEN_SHA256 := 4b6bd61ba6cd3b18c993b4657d93426c782f9b91b74be0d38018cd8be1319376
+  else
+    BINARYEN_SHA256 := e959f2170af4c20c552e9de3a0253704d6a9d2766e8fdb88e4d6ac4bae9388fe
+  endif
 else ifeq ($(BINARYEN_OS),Darwin)
   BINARYEN_ARCH := $(if $(filter arm64,$(BINARYEN_ARCH)),arm64,x86_64)
   BINARYEN_ASSET := binaryen-$(BINARYEN_VERSION)-$(BINARYEN_ARCH)-macos.tar.gz
+  ifeq ($(BINARYEN_ARCH),arm64)
+    BINARYEN_SHA256 := 74428be348c1a09863e7b642a1fa948cabf8ec9561052233d8288e941951725b
+  else
+    BINARYEN_SHA256 := cc18b14d2b673d9c66bf54f31ff2b0ceb23ba5132455b893965ae2792f9e00dd
+  endif
 else
   $(error RFC 130 S1: no Binaryen release mapping for OS "$(BINARYEN_OS)" — add one or fetch wasm-opt manually)
 endif
@@ -70,11 +94,18 @@ BINARYEN_URL := https://github.com/WebAssembly/binaryen/releases/download/$(BINA
 
 ## Fetch wasm-opt directly from the upstream Binaryen release, cached
 ## under target/ so `make clean` removes it. No-op if already present.
+## Verifies the download's SHA-256 against BINARYEN_SHA256 before
+## extracting; aborts on mismatch rather than running an unverified binary
+## (RFC 130 C1-130).
 wasm-opt-fetch:
 	@if [ ! -x "$(BINARYEN_DIR)/bin/wasm-opt" ]; then \
 		echo "Fetching Binaryen $(BINARYEN_VERSION) ($(BINARYEN_ASSET))..."; \
 		mkdir -p target; \
 		curl -sSL -o target/$(BINARYEN_ASSET) "$(BINARYEN_URL)"; \
+		echo "$(BINARYEN_SHA256)  target/$(BINARYEN_ASSET)" | sha256sum -c - || \
+			{ echo "RFC 130 C1-130: checksum mismatch for $(BINARYEN_ASSET) — refusing to extract an unverified binary. Either the download was corrupted/tampered, or BINARYEN_SHA256 in the Makefile is stale for BINARYEN_VERSION." >&2; \
+			  rm -f target/$(BINARYEN_ASSET); \
+			  exit 1; }; \
 		tar xzf target/$(BINARYEN_ASSET) -C target; \
 		rm -f target/$(BINARYEN_ASSET); \
 	fi
