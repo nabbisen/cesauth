@@ -1,6 +1,6 @@
 # RFC 128 — Correct the audit architecture in the observability guide
 
-**Status.** Proposed
+**Status.** Accepted — approved by the owner 2026-09-05, targeted at 0.81.3.
 **Tier.** P1 · Category A (operator-facing; wrong during incident response)
 **Size.** Small (one document section, verified against three sources)
 **Tracks.** RFC 126 review, Finding A
