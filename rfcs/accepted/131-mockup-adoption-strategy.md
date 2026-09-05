@@ -1,6 +1,7 @@
 # RFC 131 — Mockup adoption strategy
 
-**Status.** Proposed
+**Status.** Accepted — approved by the owner 2026-09-05. R0's spike is the
+first work item.
 **Tier.** P1 · Category B — a strategy RFC. It decides *how* adoption happens
 and spawns the implementation RFCs; it is not itself a unit of work.
 **Size.** Large (programme). Individual slices are Medium at most.
@@ -73,7 +74,8 @@ HTTP route surface, which is the first item in ROADMAP's minor-bump rubric — a
 ## 3. The goal, as checkable properties
 
 **Clean.**
-- Exactly **one** rendering path. Production runs two today: the Leptos CSR
+- **One rendering path per surface, chosen deliberately.** Production runs two
+  today, accidentally: the Leptos CSR
   shells *and* the `format!` template layer, which RFC 115 Phase C reported
   removed but which is still live — `routes/magic_link/verify.rs:35` calls
   `magic_link_sent_page_for`; `backend/src/flash.rs` uses
@@ -115,12 +117,51 @@ HTTP route surface, which is the first item in ROADMAP's minor-bump rubric — a
 
 ## 5. Proposed design
 
-**R0 — Decide the rendering mode, once, and record it.** CSR (production's
-current mode, requiring a `csr` feature on `cesauth-ui`) or SSR+hydrate. §2
-shows the components do not care. Production's CSR choice was itself
-incidental — it fell out of RFC 115 migrating screens behind a feature flag on
-an existing template crate. Decide deliberately now rather than inherit it
-twice. This is a short written decision, not a spike.
+**R0 — Decide the rendering mode. This needs a spike, not a memo.**
+
+I previously wrote that R0 was "a short written decision, not a spike," on the
+grounds that the components are mode-agnostic. That reasoning was sound and
+answered the wrong question. Inspecting which routes actually render
+server-side changed it:
+
+| Path | Renders | Works without JS |
+|---|---|---|
+| `magic_link/request.rs`, `verify.rs` | `magic_link_sent_page_for`, `error_page_for` | **yes** |
+| `me/totp/verify.rs` | `totp_verify_page_for` | **yes** |
+| `me/totp/enroll.rs` | `totp_enroll_page_for`, `totp_recovery_codes_page_for` | **yes** |
+| `/me/security`, sessions, TOTP disable, invitations, deletions, admin shells | Leptos shell | no |
+
+**The authentication path is server-rendered today.** A user can complete a
+magic-link login, pass the TOTP gate, and save recovery codes with JavaScript
+disabled. R4 as written deletes that.
+
+For an identity provider this is not a cosmetic regression. Requiring a 750 KB
+wasm download before a login form appears means: no authentication in
+JS-restricted environments, no authentication if the bundle fails or is slow to
+load, and no graceful degradation on the one surface a user cannot route
+around. It also contradicts the project's own ABDD requirement and the
+external design's statement that screens are server-rendered.
+
+**Three candidate answers, and I will not pick one without measuring:**
+
+1. **CSR everywhere.** Simplest; matches RFC 130's pipeline investment.
+   Accepts the no-JS regression on the auth path.
+2. **Split by trust boundary** — server-rendered pre-auth, CSR for the
+   authenticated console. Preserves no-JS login. Not the accidental duplication
+   §3 condemns but a deliberate split, one path per surface, documented.
+3. **SSR + hydrate**, as the mockup does. Would give server-rendered first
+   paint *and* interactivity from one component set — the best outcome if it
+   works. `leptos_axum` cannot run on Workers, but `leptos::ssr::render_to_string`
+   is plain Rust and may. **Nobody has tested this**, and I will not assert it.
+
+**Spike:** time-boxed, one question — does Leptos render-to-string work inside
+the wasm32 Worker? If yes, option 3. If no, the choice is 1 vs 2, and §3's
+"one rendering path" goal is weighed against keeping login working without
+JavaScript. Report the result; the decision follows the measurement.
+
+Until R0 resolves, **R4 does not delete the auth-path templates.** Collapsing
+to one path is still the goal; which path, and whether the pre-auth surface is
+an exception, is what the spike decides.
 
 **R1 — Land the pipeline first.** RFC 130 must be complete: `trunk build
 --release` working, artifact naming resolved, toolchain pinned. Rewriting the
@@ -198,8 +239,9 @@ route inside this programme.
 
 ## 10. Open questions
 
-1. **R0's answer** — CSR or SSR+hydrate. Mine to recommend once RFC 130's M2
-   reports; the toolchain and pipeline facts bear on it.
+1. **R0's answer** — resolved by the spike in §5 R0, not by argument. The
+   question changed once it emerged that the authentication path is
+   server-rendered today and works without JavaScript.
 2. **Screen-by-screen or shell-first?** Landing the four shells early gives
    every subsequent screen a consistent frame, at the cost of a period where
    shells and old templates interleave. My leaning is shells first, but it
