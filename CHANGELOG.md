@@ -14,6 +14,57 @@ changes will always be called out here.
 
 ---
 
+## [0.81.2] - 2026-09-05
+
+### Frontend bundle is deployable — RFC 130
+
+`trunk build --release` failed at `wasm-opt`, and the artifact names Trunk
+emits did not match what `crates/backend/src/routes/leptos_shell.rs` asks the
+browser to load. Both are fixed; `make build-frontend` now produces a bundle
+that can actually be deployed.
+
+- **`wasm-opt` failure.** rustc 1.98 enables `bulk-memory` by default on
+  wasm32; Trunk's pinned Binaryen rejects those instructions and exposes no
+  way to pass the enabling flags. Pinning a newer Binaryen (version 132) was
+  measured first and produces the identical error, so Trunk's optimize step is
+  disabled (`data-wasm-opt="0"`) and `wasm-opt` runs from the `Makefile` with
+  the required flags.
+- **Artifact naming.** Trunk names output after the Cargo *package* and
+  appends a content hash, so the hardcoded constants could never match in any
+  spelling. The build now passes `--filehash false` — a CLI flag; the
+  `data-filehash` HTML attribute is silently ignored — and the constants are
+  corrected to the hyphenated names Trunk actually emits.
+- **Toolchain pinned.** New `rust-toolchain.toml` at **1.98.1**, measured
+  rather than assumed. Every CI workflow reconciled to it; `test.yml` and
+  `clippy.yml` moved from apt to `dtolnay/rust-toolchain`, since apt carries no
+  arbitrary patch release and could never honour the pin. `fuzz.yml` stays on
+  nightly for cargo-fuzz. `Cargo.toml`'s `rust-version` stays at 1.85 — the
+  MSRV is a promise to consumers and a codegen default does not justify
+  raising it.
+- **New blocking CI gate** `trunk-release-build.yml` runs `make
+  build-frontend` and re-asserts that every filename constant resolves to a
+  real file.
+- **Binaryen download is verified.** The `Makefile` pins the SHA-256 of all
+  four platform assets and refuses to extract on mismatch, removing the
+  partial download. Previously an 18 MB binary was downloaded and executed
+  unverified on every clean checkout and CI run — and that binary transforms
+  the wasm artifact serving the authentication UI.
+- **First recorded bundle measurements** in `BUNDLE_SIZE_BUDGET.md`:
+  879,980 B pre-opt → 750,151 B post-`-Oz` → 262,744 B gzipped, stated
+  explicitly as a *separate* budget from the Worker bundle.
+
+**The frontend screens are not yet confirmed working.** Every check in this
+release is build-time. The bundle builds, is verified, is correctly named, and
+is addressable by the shell; whether it mounts in a browser is unverified.
+
+### Notes
+
+No wire format, D1 schema, Durable Object payload, cookie, permission slug, or
+public `cesauth-core` type changed. MSRV unchanged at 1.85. Drop-in for
+0.81.1 consumers.
+
+---
+
 ## [0.81.1] - 2026-09-03
 
 ### Release-gate integrity — RFC 125 (+ condition C1)

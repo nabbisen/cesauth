@@ -148,8 +148,7 @@ started.
   gate `csr-bundle-check.yml`. **Not fixed by this release:** `trunk build
   --release` still fails at `wasm-opt`, and the artifact names Trunk emits
   do not match what the backend expects — RFC 127's acceptance criterion 3
-  was formally not met. **RFC 130** (accepted, not yet started) continues
-  this work; the frontend screens remain non-functional until it lands.
+  was formally not met. **RFC 130 (v0.81.2, below) closed this criterion.**
 
   **RFC 126 — documentation rename sweep + drift-scan rule.** 56 stale
   `crates/worker` / `cesauth-ui` references across 19 non-ADR files fixed,
@@ -161,6 +160,28 @@ started.
   (adding `ROADMAP.md` to the scan paths) is not included — it would
   surface the unresolved Management-GUI scope contradiction below and ship
   a knowingly red gate.
+
+- ✅ **v0.81.2 — RFC 130 (+ condition C1-130). Shipped 2026-09-05.** Closes
+  RFC 127's acceptance criterion 3 (open since v0.81.1): the Leptos CSR
+  bundle can now actually be built and deployed, not merely compiled.
+  `trunk build --release` was failing at `wasm-opt` (rustc 1.98 emits
+  bulk-memory wasm by default; Trunk's pinned Binaryen rejects it and
+  exposes no way to pass the enabling flags — measured first against the
+  newest available Binaryen release, which fails identically, before
+  building the fix), and the artifact names Trunk emits never matched what
+  `crates/backend/src/routes/leptos_shell.rs` hardcodes. Both fixed:
+  `make build-frontend` disables Trunk's optimize step and runs `wasm-opt`
+  itself with the required flags (Binaryen fetched directly from the
+  upstream release, **checksum-verified per platform before extraction** —
+  condition C1-130, closed same release), and `--filehash false` plus
+  corrected constants make the names match. New blocking gate
+  `trunk-release-build.yml`. Toolchain pinned for the first time
+  (`rust-toolchain.toml`, 1.98.1, measured against the full gate set before
+  pinning — not asserted); every CI workflow reconciled to it. First
+  recorded bundle measurements in `BUNDLE_SIZE_BUDGET.md`:
+  879,980 B → 750,151 B (`-Oz`) → 262,744 B gzipped. **Still not
+  delivered:** confirmation that the bundle actually mounts in a browser —
+  every check here is build-time; RFC 131's harness adoption closes that.
 
 - **Security-critical assurance track (RFCs 116–124).** RFC 116 shipped in
   v0.81.0 (`rfcs/done/`), with two carve-outs deferred: secret-newtype
