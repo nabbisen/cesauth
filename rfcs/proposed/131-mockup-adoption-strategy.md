@@ -44,6 +44,32 @@ The earlier concern that `cesauth-ui` lacks a `csr` feature is **resolved**:
 its ssr/hydrate feature set is an artifact of the Axum preview harness, not a
 property of the components. Adding a `csr` feature is plumbing.
 
+### 2.1 What adoption covers — and what it cannot
+
+The mockup's screen set is a **superset** of production's route surface.
+Production registers no routes for four of its screen groups:
+
+| Mockup screens | Production routes today |
+|---|---|
+| TA-OIDC-01/02/03 — OIDC client management | none |
+| TA-ROLES / TA-ROLES-D — roles catalogue | none (role *assignment* routes exist; a catalogue does not) |
+| ME-APPS — connected applications | none |
+| SO-INV — investigate hub | none |
+
+Those are **new features**, not presentation swaps: each needs backend routes
+and `.json` endpoints that do not exist. §4 and §6 put both out of scope, so
+they are **not part of this programme**. Each earns its own RFC, and each
+carries the owner's §4 caveat that our own UI/UX judgement governs rather than
+the mockup's product decisions.
+
+**This determines versioning.** A slice that re-skins a screen production
+already serves changes no route, no contract, and no observable surface — a
+**patch**. A slice that introduces a screen production has no route for adds
+HTTP route surface, which is the first item in ROADMAP's minor-bump rubric — a
+**minor**. Because this programme contains only the former, it ships as
+`0.81.x` patches. The screens above, when their own RFCs are written, are
+`0.82.0` work.
+
 ## 3. The goal, as checkable properties
 
 **Clean.**
