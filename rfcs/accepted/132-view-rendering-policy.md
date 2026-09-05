@@ -1,6 +1,6 @@
 # RFC 132 — View rendering policy
 
-**Status.** Proposed
+**Status.** Accepted — approved by the owner 2026-09-05, targeted at 0.81.4.
 **Tier.** P1 · Category A — a policy RFC. It establishes the rule; conformance
 work is scoped by it.
 **Size.** Small to write, Medium to enforce, and it re-scopes part of RFC 131.

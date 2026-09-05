@@ -69,13 +69,6 @@ adoption at the remaining credential call sites (handoff RISK-001), and
 `ports::repo`, which RFC 116 did not reach — it remains entirely `&str`
 and un-scoped, and is folded into RFC 119.
 
-View rendering policy. Supersedes RFC 131's R0: rendering mode is derived per
-surface, not chosen globally.
-
-| ID | Title | Tier | Category | Depends on |
-|----|-------|------|----------|------------|
-| [132](./proposed/132-view-rendering-policy.md) | View rendering policy (blocks RFC 131 R3) | P1 | A | — |
-
 Security-critical assurance track, continued.
 
 | ID | Title | Tier | Category | Depends on |
@@ -99,7 +92,8 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 |----|-------|------|---|---|
 | [130](./accepted/130-deployable-frontend-bundle.md) | Deployable frontend bundle (Trunk release build, artifact naming, toolchain pin) | **P0** | task 005 — **complete**, awaiting 0.81.2 | 127 |
 | [128](./accepted/128-observability-audit-architecture-correction.md) | Correct the audit architecture in the observability guide | P1 | 0.81.3 | — |
-| [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | 0.81.4 — R2 + R5 first | 130 |
+| [132](./accepted/132-view-rendering-policy.md) | View rendering policy — supersedes RFC 131 R0; blocks R3 | P1 | 0.81.4 | — |
+| [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | 0.81.4 — R2 + R5; R3 awaits 132 | 130, 132 |
 
 Numbers are assignment order and are never reused or renumbered (RFC 000), so
 a higher number can be earlier work: 130 continues 127, and 131 continues 130.

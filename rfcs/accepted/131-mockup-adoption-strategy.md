@@ -117,51 +117,20 @@ HTTP route surface, which is the first item in ROADMAP's minor-bump rubric — a
 
 ## 5. Proposed design
 
-**R0 — Decide the rendering mode. This needs a spike, not a memo.**
+**R0 — ~~Decide the rendering mode~~ SUPERSEDED by RFC 132.**
 
-I previously wrote that R0 was "a short written decision, not a spike," on the
-grounds that the components are mode-agnostic. That reasoning was sound and
-answered the wrong question. Inspecting which routes actually render
-server-side changed it:
+R0 asked which global rendering mode to adopt. RFC 132 establishes that there
+is no global answer: mode is **derived per surface** from whether the user can
+route around a failure, whether the surface is pre-authentication, whether it
+needs client interactivity, and whether it is machine-facing. See RFC 132 §5
+for the rule and §5.1 for the classification of all 188 routes.
 
-| Path | Renders | Works without JS |
-|---|---|---|
-| `magic_link/request.rs`, `verify.rs` | `magic_link_sent_page_for`, `error_page_for` | **yes** |
-| `me/totp/verify.rs` | `totp_verify_page_for` | **yes** |
-| `me/totp/enroll.rs` | `totp_enroll_page_for`, `totp_recovery_codes_page_for` | **yes** |
-| `/me/security`, sessions, TOTP disable, invitations, deletions, admin shells | Leptos shell | no |
+R3 therefore inherits an assignment rather than a preference, and the
+SSR+hydrate spike is not required for this programme to proceed — RFC 132 §7.
 
-**The authentication path is server-rendered today.** A user can complete a
-magic-link login, pass the TOTP gate, and save recovery codes with JavaScript
-disabled. R4 as written deletes that.
-
-For an identity provider this is not a cosmetic regression. Requiring a 750 KB
-wasm download before a login form appears means: no authentication in
-JS-restricted environments, no authentication if the bundle fails or is slow to
-load, and no graceful degradation on the one surface a user cannot route
-around. It also contradicts the project's own ABDD requirement and the
-external design's statement that screens are server-rendered.
-
-**Three candidate answers, and I will not pick one without measuring:**
-
-1. **CSR everywhere.** Simplest; matches RFC 130's pipeline investment.
-   Accepts the no-JS regression on the auth path.
-2. **Split by trust boundary** — server-rendered pre-auth, CSR for the
-   authenticated console. Preserves no-JS login. Not the accidental duplication
-   §3 condemns but a deliberate split, one path per surface, documented.
-3. **SSR + hydrate**, as the mockup does. Would give server-rendered first
-   paint *and* interactivity from one component set — the best outcome if it
-   works. `leptos_axum` cannot run on Workers, but `leptos::ssr::render_to_string`
-   is plain Rust and may. **Nobody has tested this**, and I will not assert it.
-
-**Spike:** time-boxed, one question — does Leptos render-to-string work inside
-the wasm32 Worker? If yes, option 3. If no, the choice is 1 vs 2, and §3's
-"one rendering path" goal is weighed against keeping login working without
-JavaScript. Report the result; the decision follows the measurement.
-
-Until R0 resolves, **R4 does not delete the auth-path templates.** Collapsing
-to one path is still the goal; which path, and whether the pre-auth surface is
-an exception, is what the spike decides.
+*Why this was superseded rather than answered: posing the question globally is
+what produced the state RFC 132 §3 documents. RFC 115 chose per screen and a
+split emerged instead of being decided.*
 
 **R1 — Land the pipeline first.** RFC 130 must be complete: `trunk build
 --release` working, artifact naming resolved, toolchain pinned. Rewriting the
@@ -186,10 +155,16 @@ mockup screens take props from mock data, wiring must happen *as* the screen
 moves, not after. A mechanical move followed by cleanup would put fake
 credentials in the tree, however briefly.
 
-**R4 — Collapse to one rendering path.** When the last screen is paired, the
-`format!` template layer and `render_context.rs` are deleted. Until then both
-paths coexist — which is the status quo, not a regression, but it is the
-condition this programme exists to end.
+**R4 — Collapse to one path per surface class**, per RFC 132 §5.1 — not to one
+path overall. `render_context.rs` (74 orphaned lines) is deleted outright. The
+`format!` templates serving the **pre-authentication** surfaces are **kept**:
+RFC 132 classifies those `server`, and they are the reason a user without
+JavaScript can still authenticate. What gets deleted is every *duplicate* — a
+screen rendered two ways — which is the accidental condition this programme
+exists to end.
+
+One conformance gap falls out of RFC 132 and belongs to this step: `/` and
+`/login` render through `leptos_html_shell` and must render server-side.
 
 **R5 — Adopt the e2e harness.** Bring `e2e/` across and gate it in CI. Do this
 early rather than last: it is the only check that would catch a screen that
