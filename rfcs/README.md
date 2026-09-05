@@ -69,6 +69,13 @@ adoption at the remaining credential call sites (handoff RISK-001), and
 `ports::repo`, which RFC 116 did not reach — it remains entirely `&str`
 and un-scoped, and is folded into RFC 119.
 
+View rendering policy. Supersedes RFC 131's R0: rendering mode is derived per
+surface, not chosen globally.
+
+| ID | Title | Tier | Category | Depends on |
+|----|-------|------|----------|------------|
+| [132](./proposed/132-view-rendering-policy.md) | View rendering policy (blocks RFC 131 R3) | P1 | A | — |
+
 Security-critical assurance track, continued.
 
 | ID | Title | Tier | Category | Depends on |
@@ -161,7 +168,7 @@ discussion happened.
 
 ## Adding a new RFC
 
-Next number: **132**. Create `rfcs/proposed/132-slug.md` with `**Status.** Proposed`
+Next number: **133**. Create `rfcs/proposed/133-slug.md` with `**Status.** Proposed`
 and add a row above, in the same commit.
 
 Transitions (folder is authoritative; update Status and this index in the same
