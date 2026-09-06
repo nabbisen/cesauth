@@ -69,6 +69,12 @@ adoption at the remaining credential call sites (handoff RISK-001), and
 `ports::repo`, which RFC 116 did not reach — it remains entirely `&str`
 and un-scoped, and is folded into RFC 119.
 
+Build integrity.
+
+| ID | Title | Tier | Category | Depends on |
+|----|-------|------|----------|------------|
+| [133](./proposed/133-build-reproducibility.md) | Frontend build reproducibility (run-reproducible, not environment-reproducible) | P2 | B | — |
+
 Security-critical assurance track, continued.
 
 | ID | Title | Tier | Category | Depends on |
@@ -162,7 +168,7 @@ discussion happened.
 
 ## Adding a new RFC
 
-Next number: **133**. Create `rfcs/proposed/133-slug.md` with `**Status.** Proposed`
+Next number: **134**. Create `rfcs/proposed/134-slug.md` with `**Status.** Proposed`
 and add a row above, in the same commit.
 
 Transitions (folder is authoritative; update Status and this index in the same
