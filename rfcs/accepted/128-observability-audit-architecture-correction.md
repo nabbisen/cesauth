@@ -100,13 +100,25 @@ Point at `docs/src/expert/audit-log-hash-chain.md` as the reference rather
 than restating it. Two documents describing the same chain is how this class
 of drift starts.
 
-**D2 — Fix the two incidental R2 references.**
+**D2 — Fix the remaining R2 references. Full inventory, corrected.**
 
-- Line 5 introduces the audit trail as "per-event records in R2" — the
-  chapter's own summary is wrong before the reader reaches the section.
-- Line 99's `**Storage errors (D1/R2 failures):**` log-filter example: R2 is
-  still bound for `ASSETS`, so this one may be legitimate. **Verify against
-  `wrangler.toml` before changing it** — do not sweep it on pattern match.
+This RFC originally named two. There are **seven**, and one of the five I had
+not listed is a second operator-facing error. Dispositions, each verified
+against `wrangler.toml` (R2 is still bound, as `ASSETS`):
+
+| Line | Text | Disposition |
+|---|---|---|
+| 5 | audit trail "(per-event records in R2)" | **Wrong.** The chapter summary is false before the reader reaches §The audit trail |
+| 99 | `**Storage errors (D1/R2 failures):**` log filter | **Likely legitimate** — `ASSETS` is a real R2 binding that can fail. Verify, do not sweep |
+| 115 | "Each audit event is one R2 object with:" | **Wrong.** D1's covered by this RFC |
+| 128 | "R2 doesn't have SQL. Query patterns:" | **Wrong** |
+| 133 | "Direct R2 list + filter" | **Wrong** — unactionable; there is no audit bucket to list |
+| 180 | "each D1 query, R2 fetch, KV read counts" as a subrequest | **Legitimate** — subrequest accounting, unrelated to audit |
+| 233 | "**R2 object count.** R2's pricing is per-object-month; the audit log grows inexorably… Lifecycle rules manage cost." | **Wrong, and operator-facing.** It attributes R2 object growth to the audit log and points at R2 lifecycle rules for cost. Audit lives in D1; its growth is managed by `audit_retention_cron` per the tenant's plan-level retention policy, not by an R2 lifecycle rule |
+
+Line 233 matters as much as the query-patterns section: an operator managing
+audit-log cost would go looking for an R2 lifecycle configuration that does not
+exist, instead of the retention cron that does.
 
 **D3 — Add a drift rule.** The reason this survived 49 versions is that
 nothing checked for it. `scripts/drift-scan.sh` already carries
@@ -155,11 +167,13 @@ last so it lands green.
 3. Every route named resolves in `crates/backend/src/lib.rs`, asserted
    mechanically.
 4. The chapter summary (line 5) is corrected.
-5. Line 99's D1/R2 log filter is either kept with a verified justification or
-   corrected — and which one, with the reason, is stated in the review request.
-6. A drift rule exists that fires on the old wording, with a captured
+5. All seven R2 references are dispositioned per §5 D2's table, and for each
+   one kept, the justification is stated in the review request.
+6. Line 233 names `audit_retention_cron` and the plan-level retention policy
+   as what governs audit-log growth — not R2 lifecycle rules.
+7. A drift rule exists that fires on the old wording, with a captured
    fires/does-not-fire pair.
-7. `mdbook build docs` clean; full gate set green.
+8. `mdbook build docs` clean; full gate set green.
 
 ## 11. Open questions
 
