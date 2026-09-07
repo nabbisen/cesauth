@@ -49,18 +49,21 @@ that can actually be deployed.
   partial download. Previously an 18 MB binary was downloaded and executed
   unverified on every clean checkout and CI run — and that binary transforms
   the wasm artifact serving the authentication UI.
-- **Bundle measurements — corrected (C1-0.81.2).** RFC 130 S4 first recorded
-  879,980 B pre-opt → 750,151 B post-`-Oz` → 262,744 B gzipped in
-  `BUNDLE_SIZE_BUDGET.md`. Rebuilding this same commit on a different host
-  (rustc 1.98.1, Trunk 0.21.14, Binaryen `version_123` — all unchanged;
-  `git diff --stat -- crates/` between the two measurements is empty)
-  produces **881,519 B pre-opt → 751,714 B post-`-Oz` → 261,502 B gzipped**
-  instead — a fixed ~1.5 KB shift, confirmed non-random by three consecutive
-  builds (incremental, incremental, and after a forced
-  `cargo clean -p cesauth-frontend`) all yielding a byte-identical artifact
-  on the rebuilding host. The build is run-reproducible but not
-  environment-reproducible; RFC 133 is opened to close that gap. These are
-  the figures that reproduce at this commit and are recorded as
+- **Bundle measurements — corrected (C1-0.81.2, C2-0.81.2).** RFC 130 S4 first
+  recorded 879,980 B pre-opt → 750,151 B post-`-Oz` → 262,744 B gzipped
+  (default `gzip` level) in `BUNDLE_SIZE_BUDGET.md`. Rebuilding this same
+  commit on a different host (rustc 1.98.1, Trunk 0.21.14, Binaryen
+  `version_123` — all unchanged; `git diff --stat -- crates/` between the two
+  measurements is empty) produces **881,519 B pre-opt → 751,714 B
+  post-`-Oz`** instead — a fixed ~1.5 KB shift, confirmed non-random by three
+  consecutive builds (incremental, incremental, and after a forced
+  `cargo clean -p cesauth-frontend`) all yielding a byte-identical artifact on
+  the rebuilding host. The build is run-reproducible but not
+  environment-reproducible; RFC 133 is opened to close that gap.
+  **Gzip: 261,502 B**, measured as `gzip -9 -c <file> | wc -c` — the original
+  figure's level was never stated, so it is not directly comparable to this
+  one; only the raw sizes are. These are the figures that reproduce at this
+  commit, with their measurement command stated, and are recorded as
   environment-sensitive, not as invariants — see `BUNDLE_SIZE_BUDGET.md` for
   the full note.
 

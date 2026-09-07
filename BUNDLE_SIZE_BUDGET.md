@@ -95,9 +95,11 @@ environment-reproducible**; see RFC 133, which owns closing that gap. Do not
 treat either host's numbers as the "correct" one — record what the tagged
 commit measures on the host that tags it, qualified as below.
 
-Current measurement (0.81.2 tag, C1-0.81.2 correction):
+Current measurement (0.81.2 tag, C1-0.81.2 correction). **Gzip figures are
+`gzip -9 -c <file> | wc -c`** — a gzip size without a stated level is not a
+measurement (condition C2-0.81.2):
 
-| Artifact | Raw size | Gzip size |
+| Artifact | Raw size | Gzip size (`-9`) |
 |---|---:|---:|
 | `cesauth-frontend_bg.wasm`, pre-`wasm-opt` | 881,519 bytes (860.9 KiB) | — |
 | `cesauth-frontend_bg.wasm`, post-`wasm-opt -Oz` | 751,714 bytes (734.1 KiB) | 261,502 bytes (255.4 KiB) |
@@ -109,10 +111,20 @@ consistent with the RFC 130 S4 measurement's savings ratio even though the
 absolute bytes differ, which is more evidence the shift is environmental
 rather than a change in what is being compiled.
 
+**The RFC 130 S4 gzip figures (262,744 / 8,650 / 271,394) used the default
+gzip level (`-6`), not `-9`.** Only the raw sizes are directly comparable
+across the two measurements — the gzip figures differ partly by host and
+partly by method, and conflating the two looks like the bundle compressing
+worse when the host changed, which is not what happened. Proof: the js *raw*
+size above is unchanged at 49,690 bytes across both measurements; identical
+bytes cannot compress to two different sizes under one method, so its
+recorded gzip figure moving (8,650 → 8,499) is entirely a level change, not
+an environment effect.
+
 Measured on: rustc 1.98.1 (`rust-toolchain.toml`, RFC 130 M2), Trunk 0.21.14,
 Binaryen `version_123` (fetched by `Makefile`'s `wasm-opt-fetch` target — see
 RFC 130 S1 for why Trunk's own `wasm-opt` invocation cannot be used as-is),
 Linux 7.2.3. Reproduce with `make build-frontend` then
-`ls -la crates/frontend/dist/` / `gzip -c <file> | wc -c` — but expect the
+`ls -la crates/frontend/dist/` / `gzip -9 -c <file> | wc -c` — but expect the
 absolute bytes to be host-sensitive per the note above; a differing number is
 not by itself evidence of a broken build.
