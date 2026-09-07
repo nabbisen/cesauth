@@ -14,7 +14,7 @@ changes will always be called out here.
 
 ---
 
-## [0.81.2] - 2026-09-05
+## [0.81.2] - 2026-09-08
 
 ### Frontend bundle is deployable — RFC 130
 

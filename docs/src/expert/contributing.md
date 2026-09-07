@@ -121,6 +121,9 @@ headings.
   cannot be checked out. Do not add to this list.
 - Version numbers are never reused, and a bad release is superseded by a new
   patch rather than re-tagged.
+- The CHANGELOG heading's date is the **tag** date, not the date the candidate
+  was first produced. 0.81.2 took three correction cycles between those two
+  points, and the entry initially carried the earlier one.
 - The full gate set (see [Running tests](#running-tests)) is green, with each
   result captured as redirected command output. A hand-written summary line is
   not evidence — a release bundle once shipped an 80-byte prose
