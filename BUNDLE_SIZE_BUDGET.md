@@ -84,23 +84,35 @@ by the *browser*, not evaluated as a Worker script. There is currently no
 CI budget gate on this bundle — RFC 130 recorded the first real measurement;
 introducing a gate is a separate decision.
 
-First real measurement (RFC 130, superseding the RFC 127-era estimate of
-"876 KB / ≈748 KB", which was measured on an earlier state of this tree):
+**These figures are environment-sensitive, not invariants.** RFC 130 S4
+recorded 879,980 / 750,151 / 262,744 bytes on one host. Rebuilding the
+*identical* commit on a different host (condition C1-0.81.2) produced the
+table below instead — a fixed ~1.5 KB shift, not run-to-run noise: three
+consecutive builds on the C1-0.81.2 host, including a forced
+`cargo clean -p cesauth-frontend`, all produced a byte-identical artifact
+(same sha256). The build is **run-reproducible but not
+environment-reproducible**; see RFC 133, which owns closing that gap. Do not
+treat either host's numbers as the "correct" one — record what the tagged
+commit measures on the host that tags it, qualified as below.
+
+Current measurement (0.81.2 tag, C1-0.81.2 correction):
 
 | Artifact | Raw size | Gzip size |
 |---|---:|---:|
-| `cesauth-frontend_bg.wasm`, pre-`wasm-opt` | 879,980 bytes (859.4 KiB) | — |
-| `cesauth-frontend_bg.wasm`, post-`wasm-opt -Oz` | 750,151 bytes (732.6 KiB) | 262,744 bytes (256.6 KiB) |
-| `cesauth-frontend.js` (loader/glue) | 49,690 bytes (48.5 KiB) | 8,650 bytes (8.4 KiB) |
-| **Total, post-opt, gzip** | — | **271,394 bytes (265.0 KiB)** |
+| `cesauth-frontend_bg.wasm`, pre-`wasm-opt` | 881,519 bytes (860.9 KiB) | — |
+| `cesauth-frontend_bg.wasm`, post-`wasm-opt -Oz` | 751,714 bytes (734.1 KiB) | 261,502 bytes (255.4 KiB) |
+| `cesauth-frontend.js` (loader/glue) | 49,690 bytes (48.5 KiB) | 8,499 bytes (8.3 KiB) |
+| **Total, post-opt, gzip** | — | **270,001 bytes (263.7 KiB)** |
 
-`wasm-opt -Oz` saves **14.7%** raw size (879,980 → 750,151) — meaningful, not
-the order-of-magnitude a budget-conscious reader might assume from "optimized
-build." RFC 130 §3 deliberately does not attack this further; 748 KB (raw) /
-265 KiB (gzip) is recorded as a baseline, not a target to shrink.
+`wasm-opt -Oz` saves **14.7%** raw size (881,519 → 751,714) on this host —
+consistent with the RFC 130 S4 measurement's savings ratio even though the
+absolute bytes differ, which is more evidence the shift is environmental
+rather than a change in what is being compiled.
 
 Measured on: rustc 1.98.1 (`rust-toolchain.toml`, RFC 130 M2), Trunk 0.21.14,
 Binaryen `version_123` (fetched by `Makefile`'s `wasm-opt-fetch` target — see
-RFC 130 S1 for why Trunk's own `wasm-opt` invocation cannot be used as-is).
-Reproduce with `make build-frontend` then `ls -la crates/frontend/dist/` /
-`gzip -c <file> | wc -c`.
+RFC 130 S1 for why Trunk's own `wasm-opt` invocation cannot be used as-is),
+Linux 7.2.3. Reproduce with `make build-frontend` then
+`ls -la crates/frontend/dist/` / `gzip -c <file> | wc -c` — but expect the
+absolute bytes to be host-sensitive per the note above; a differing number is
+not by itself evidence of a broken build.
