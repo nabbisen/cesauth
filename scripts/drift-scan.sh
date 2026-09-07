@@ -91,6 +91,16 @@ declare -a PATTERNS=(
     "crates/ui	RFC 114 renamed crates/ui -> crates/frontend	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md|crates/"
     "cesauth-worker	RFC 114 renamed cesauth-worker -> cesauth-backend	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md|crates/"
     "cesauth-ui	RFC 114 renamed cesauth-ui -> cesauth-frontend (also the mockup's own crate name if RFC 126 risk #2 materializes; re-scope this rule if the mockup is adopted)	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md|crates/"
+    # RFC 128: audit events moved from R2 objects to D1 rows in v0.32.0
+    # (ADR-010), but observability.md described the pre-move architecture
+    # until this RFC. Both patterns are specific to the storage-model
+    # claim itself, not to "R2" generally — they must not fire on the
+    # legitimate `ASSETS` R2 binding references that remain in the same
+    # file. Excluded, same as the RFC 126 D3 rules above: ADRs and
+    # docs/changelog-archive/ describe the pre-v0.32.0 architecture in
+    # the past tense, correctly.
+    "Each audit event is one R2 object	audit events have been D1 rows with a hash chain since v0.32.0/ADR-010 (RFC 128)	docs/src/expert/adr/|docs/changelog-archive/"
+    "R2 doesn't have SQL	audit-trail query-patterns claim obsoleted by the v0.32.0/ADR-010 move to D1 (RFC 128)	docs/src/expert/adr/|docs/changelog-archive/"
 )
 
 found=0

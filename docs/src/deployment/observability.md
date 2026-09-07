@@ -2,10 +2,10 @@
 
 cesauth ships three observability surfaces: **structured logs**
 (via `wrangler tail` and Cloudflare's log push), **the audit
-trail** (per-event records in R2), and **Cloudflare's built-in
-metrics** (request rates, error rates, latency from the
-dashboard). This chapter is about getting useful signal from
-each.
+trail** (a hash-chained D1 table, `audit_events`), and
+**Cloudflare's built-in metrics** (request rates, error rates,
+latency from the dashboard). This chapter is about getting
+useful signal from each.
 
 cesauth does NOT ship Prometheus exporters, OpenTelemetry
 instrumentation, or other custom metrics infrastructure as of
@@ -112,34 +112,76 @@ The audit trail is a separate observability surface from the
 log channel. Logs are operational ("did the request succeed");
 audit events are security-relevant ("who did what to whom").
 
-Each audit event is one R2 object with:
+Since **v0.32.0** (ADR-010), audit events are rows in the D1
+`audit_events` table, each linked to the previous row by a
+SHA-256 hash chain. The full mechanism — chain semantics,
+verification, tamper investigation — is documented in
+[Audit log hash chain](../expert/audit-log-hash-chain.md); this
+section covers only what an operator needs during an incident.
+
+`audit_events` (migration `0008_audit_chain.sql`):
 
 | Field | Meaning |
 |---|---|
-| `kind` | `EventKind` variant — see `crates/backend/src/audit.rs`. |
-| `subject` | The user/principal the event is about. |
+| `seq` | Monotonic sequence; the chain follows `seq` order. |
+| `id` | Public event ID (UUID v4), for log correlation. |
+| `ts` | Unix seconds, captured at write time. |
+| `kind` | `EventKind` variant, snake-cased — see `crates/backend/src/audit.rs`. |
+| `subject` | The user/principal the event is about, if any. |
 | `client_id` | The OAuth client involved, if any. |
 | `ip` | Source IP (sometimes masked — see ADR-004 §Q5 for the anonymous-sweep case). |
+| `user_agent` | Requesting client's user agent, if any. |
 | `reason` | Free-form code with `via=...,...` markers. |
-| `ts` | Unix seconds. |
+| `payload` | Canonical JSON event body; the bytes the hash chain covers. |
+| `payload_hash`, `previous_hash`, `chain_hash` | Hash-chain fields — see the linked chapter for what each covers. |
+| `created_at` | Wall-clock at row insert. |
+
+Indexed by `idx_audit_events_ts` (time-range queries),
+`idx_audit_events_kind_ts` (kind+time), and a partial
+`idx_audit_events_subject` (subject lookups) — these are what
+make the console's filters, and the `wrangler d1 execute` query
+below, fast rather than a full table scan.
 
 ### Querying the audit trail
 
-R2 doesn't have SQL. Query patterns:
+Four routes surface the table:
 
-1. **Through the admin console** — the
-   `/admin/console/audit` page lists recent events with
-   filters by kind and subject. Read-only; no SQL flexibility.
-2. **Direct R2 list + filter** — list objects, fetch
-   matching ones, parse JSON. Slow at scale.
-3. **Logpush of audit events** — cesauth doesn't push audit
-   events to an external destination today, but the audit
-   writer is a single function (`crates/backend/src/audit.rs`)
-   easily extended to fan out to a SIEM.
+1. **`/admin/console/audit`** — the admin console's audit
+   browser. Filters: kind (exact), subject (exact), date range,
+   limit. The GUI surface for day-to-day incident response.
+2. **`/admin/console/audit/export`** (`POST`) — exports filtered
+   rows as CSV or JSONL for offline analysis. **The export
+   itself writes an audit event** — exporting the log is itself
+   a logged action.
+3. **`/admin/console/audit/chain`** (status) and
+   **`/admin/console/audit/chain/verify`** (`POST`, on-demand
+   full re-verify) — chain integrity. A daily cron
+   (`audit_chain_cron`) verifies incrementally; a reported gap
+   or tamper alarm means investigate the affected range before
+   trusting it. Full detail, including what to do when an alarm
+   fires: [Audit log hash chain](../expert/audit-log-hash-chain.md).
+4. **`wrangler d1 execute`** against `audit_events` directly,
+   for anything the console's fixed filters can't express —
+   arbitrary `WHERE` clauses, joins against other tables,
+   ad-hoc aggregation:
 
-For day-to-day incident response, the admin console works. For
-historical compliance queries (months of data, complex
-filters), pushing audit events to a SIEM is the answer.
+   ```sh
+   wrangler d1 execute cesauth-prod --remote \
+     --command "SELECT seq, ts, kind, subject FROM audit_events
+                WHERE kind = 'admin_user_created'
+                  AND ts > strftime('%s', 'now', '-7 days')
+                ORDER BY seq DESC"
+   ```
+
+(Local dev also exposes `/__dev/audit`; it does not exist in
+production.)
+
+For day-to-day incident response, the admin console covers most
+needs. For historical or compliance queries spanning months of
+data or requiring joins the console can't express, `wrangler d1
+execute` against `audit_events` is the current answer — cesauth
+does not push audit events to an external destination (SIEM)
+today.
 
 ### Useful audit queries
 
@@ -230,9 +272,14 @@ downstream observability stack.
 - **D1 query count.** Workers run on a per-request CPU budget,
   not a per-DB-query budget. As long as CPU time is fine,
   query count is fine.
-- **R2 object count.** R2's pricing is per-object-month; the
-  audit log grows inexorably and that's the design. Lifecycle
-  rules manage cost.
+- **R2 object count.** R2's pricing is per-object-month, but
+  cesauth's own R2 usage (the `ASSETS` binding, serving the
+  frontend bundle) is a small, static object count that doesn't
+  grow with traffic. The audit log is **not** R2 — it's D1 rows
+  — and its growth is bounded by the daily `audit_retention_cron`
+  job (`AUDIT_RETENTION_DAYS` / `AUDIT_RETENTION_TOKEN_INTROSPECTED_DAYS`
+  operator env vars, defaults 365 / 30 days), not by an R2
+  lifecycle rule.
 
 ## See also
 
