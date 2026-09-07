@@ -9,9 +9,13 @@ than leaving it silently blank.
 Scope of this document vs. its neighbours:
   RFC      — what to change and why; the decision record. Authoritative.
   Handoff  — how to implement and verify it safely. Never redefines the RFC.
-  Task file (.git-exclude/tasks/dev-team/) — dispatch only: sequencing state,
-             prior-cycle feedback, transient tree conditions. Not a summary of
-             this file; duplication here is how the two drift apart.
+  Task file (.git-exclude/tasks/dev-team/) — OPTIONAL, and usually unnecessary.
+             Create one ONLY when there is something this handoff genuinely
+             cannot carry: cross-RFC sequencing state, or a transient tree
+             condition. Prior-cycle feedback belongs in the review, not here.
+             If the handoff is sufficient, hand over its path and write no
+             task file — a second document that restates the first is how the
+             two drift apart.
 -->
 
 **Governing RFC.** `rfcs/accepted/NNN-slug.md` (link it once NNN is real)
