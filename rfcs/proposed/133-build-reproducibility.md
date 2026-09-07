@@ -123,6 +123,11 @@ Recorded so the shape is understood, not as a chosen design:
    measurements behind it.
 3. `BUNDLE_SIZE_BUDGET.md` states which of those two holds, so a future reader
    is not misled by a figure that looks invariant.
+4. **Every figure this RFC records states its measurement command.** A gzip
+   size without a compression level is not a measurement — RFC 130 S4 omitted
+   it, and 0.81.2's condition C2 exists because two incompatible numbers both
+   then looked like "the gzip size." Raw sizes state the artifact path; gzip
+   sizes state the full pipe.
 
 ## 10. Open questions
 
