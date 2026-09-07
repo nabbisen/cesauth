@@ -96,7 +96,6 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 
 | ID | Title | Tier | Dispatched | Depends on |
 |----|-------|------|---|---|
-| [130](./accepted/130-deployable-frontend-bundle.md) | Deployable frontend bundle (Trunk release build, artifact naming, toolchain pin) | **P0** | task 005 — **complete**, awaiting 0.81.2 | 127 |
 | [128](./accepted/128-observability-audit-architecture-correction.md) | Correct the audit architecture in the observability guide | P1 | 0.81.3 | — |
 | [132](./accepted/132-view-rendering-policy.md) | View rendering policy — supersedes RFC 131 R0; blocks R3 | P1 | 0.81.4 | — |
 | [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | 0.81.4 — R2 + R5; R3 awaits 132 | 130, 132 |
@@ -104,19 +103,19 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 Numbers are assignment order and are never reused or renumbered (RFC 000), so
 a higher number can be earlier work: 130 continues 127, and 131 continues 130.
 
-RFC 127 delivered the crate's *buildability* and a CI gate; **130 made the
-bundle deployable and is complete** — `make build-frontend` produces a
-verified, optimized, correctly-named artifact. 131 replaces what that bundle
-*contains*.
+RFC 130 shipped in v0.81.2 and is in [`done/`](./done/130-deployable-frontend-bundle.md):
+`make build-frontend` produces a verified, optimized, correctly-named artifact.
+131 replaces what that bundle *contains*, and 132 governs how each surface
+renders it.
 
 Everything to this point is build-time verified only. Whether the app mounts in
-a browser is still unverified; RFC 131 brings the harness that closes it.
+a browser is still unverified; RFC 131 R5 brings the harness that closes it.
 
 ---
 
 ## Done
 
-118 RFCs shipped between v0.50.3 and v0.81.1 (001–106, 107, 108–111, 110b–110e, 113, 116, 125, 126, 127). Full
+119 RFCs shipped between v0.50.3 and v0.81.2 (001–106, 107, 108–111, 110b–110e, 113, 116, 125, 126, 127, 130). Full
 list with shipped-in versions: see ROADMAP.md "Shipped" section and
 CHANGELOG.md release entries. Selected highlights only listed here; the
 canonical catalogue is the filesystem at `done/`.
@@ -146,7 +145,8 @@ canonical catalogue is the filesystem at `done/`.
 | [113](./done/113-ui-rendering-acceptance-harness.md) | UI rendering acceptance harness | v0.72.0 |
 | [116](./done/116-security-type-modeling-baseline.md) | Security-critical type modeling baseline (Phases 1–3; carve-outs deferred) | v0.81.0 |
 | [125](./done/125-release-gate-integrity-restoration.md) | Release-gate integrity restoration (+ condition C1: 23 route contracts) | v0.81.1 |
-| [127](./done/127-csr-bundle-buildability.md) | CSR bundle buildability and its missing gate (criterion 3 unmet — see RFC 130) | v0.81.1 |
+| [127](./done/127-csr-bundle-buildability.md) | CSR bundle buildability and its missing gate (criterion 3 unmet — closed by RFC 130) | v0.81.1 |
+| [130](./done/130-deployable-frontend-bundle.md) | Deployable frontend bundle (Trunk release build, artifact naming, toolchain pin, Binaryen checksum) | v0.81.2 |
 | [126](./done/126-documentation-rename-sweep-and-drift-rule.md) | Documentation rename sweep + drift-scan crate-name rule (D5 deferred) | v0.81.1 |
 
 For the full mapping (every shipped RFC with its release tag), the

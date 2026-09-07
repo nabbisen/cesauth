@@ -1,7 +1,10 @@
 # RFC 130 — Deployable frontend bundle
 
-**Status.** Accepted — approved for implementation by the owner 2026-09-03;
-dispatched. Not yet started.
+**Status.** Implemented (v0.81.2). M1, M2, M2b, S1, S2, S2b, S3, S4 plus
+condition C1-130 (Binaryen checksum verification). RFC 127's acceptance
+criterion 3 — the reason this RFC existed — is met.
+**Deferred:** the S2 follow-on (restore content hashing via a generated
+manifest) and browser-level verification, which RFC 131's harness closes.
 **Tier.** P0 · Category A (the user-facing security screens are still broken)
 **Size.** Small–Medium, but with two measurement gates before the design fixes
 **Tracks.** RFC 127 acceptance criterion 3, formally not met; findings 4a/4b in
