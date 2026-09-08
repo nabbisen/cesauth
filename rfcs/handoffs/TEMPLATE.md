@@ -137,6 +137,14 @@ A hand-written summary line is not evidence and is rejected at review: the
 v0.81.0 bundle shipped an 80-byte prose `cargo-fmt.log` asserting a clean run
 that no stable `rustfmt` could have produced.
 
+**A count or a list in prose is a measurement.** It gets the same treatment as
+a byte figure: state the command that produced it. RFC 128's C1 wrote "the five
+real `admin_`-prefixed kinds" where `grep -oE '"admin_[a-z_]+"' … | sort -u |
+wc -l` says ten, and the two it omitted were the two the surrounding heading
+was about. A presence assertion cannot catch this — it checks that each item
+named exists, not that a list claiming completeness is complete. The command
+is what catches it.
+
 ## 11. What must NOT be claimed
 
 Where verification stops short of the real-world property, name the gap and
