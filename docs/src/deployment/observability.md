@@ -96,7 +96,7 @@ category=Storage AND msg=*"anonymous sweep"*
   AND ts > yesterday_04_00 AND ts < yesterday_04_30
 ```
 
-**Storage errors (D1/R2 failures):**
+**Storage errors (Durable Object / D1 / KV / R2 failures):**
 ```
 level=error AND category=Storage
 ```
@@ -129,9 +129,9 @@ section covers only what an operator needs during an incident.
 | `kind` | `EventKind` variant, snake-cased — see `crates/backend/src/audit.rs`. |
 | `subject` | The user/principal the event is about, if any. |
 | `client_id` | The OAuth client involved, if any. |
-| `ip` | Source IP (sometimes masked — see ADR-004 §Q5 for the anonymous-sweep case). |
+| `ip` | Source IP, or NULL if not captured for that event kind. Never masked in this column — masking, when it happens, is a `reason`-string convention (see below), not something this column itself does. |
 | `user_agent` | Requesting client's user agent, if any. |
-| `reason` | Free-form code with `via=...,...` markers. |
+| `reason` | Free-form code with `via=...,...` markers — e.g. the anonymous-sweep case, `via=anonymous-begin,ip=<masked>` (ADR-004 §Q5), masks the IP *inside this string*, not the `ip` column above. |
 | `payload` | Canonical JSON event body; the bytes the hash chain covers. |
 | `payload_hash`, `previous_hash`, `chain_hash` | Hash-chain fields — see the linked chapter for what each covers. |
 | `created_at` | Wall-clock at row insert. |
@@ -147,12 +147,23 @@ below, fast rather than a full table scan.
 Four routes surface the table:
 
 1. **`/admin/console/audit`** — the admin console's audit
-   browser. Filters: kind (exact), subject (exact), date range,
-   limit. The GUI surface for day-to-day incident response.
+   browser. Filters, per `crates/backend/src/routes/admin/console/audit.rs`:
+   `kind` (**substring** match — legacy field), `subject` (**substring**
+   match; `actor` is an alias), `event` (**exact** match on kind — the
+   RFC 109 dropdown), `from`/`to` (RFC 3339 UTC bounds, inclusive),
+   `limit`. `kind`/`subject` being substring rather than exact matters
+   during an incident — "subject contains" is a materially broader query
+   than "subject is." **An invalid `from`/`to` value is dropped
+   silently, not rejected** — the page still renders, unfiltered by that
+   bound, with no error shown.
 2. **`/admin/console/audit/export`** (`POST`) — exports filtered
    rows as CSV or JSONL for offline analysis. **The export
    itself writes an audit event** — exporting the log is itself
-   a logged action.
+   a logged action, though that write is **best-effort**: if it
+   fails, the export still succeeds, unlogged. Exports are also
+   **capped at `AUDIT_EXPORT_MAX_ROWS`, default 10,000 rows** — a
+   compliance export spanning months of data can silently
+   truncate at that limit.
 3. **`/admin/console/audit/chain`** (status) and
    **`/admin/console/audit/chain/verify`** (`POST`, on-demand
    full re-verify) — chain integrity. A daily cron
@@ -185,27 +196,54 @@ today.
 
 ### Useful audit queries
 
+In the two syntaxes that actually exist — `wrangler d1 execute` SQL, and
+the console's filter fields (§Querying the audit trail above):
+
 **Who promoted recently?**
+```sh
+wrangler d1 execute cesauth-prod --remote \
+  --command "SELECT seq, ts, subject FROM audit_events
+             WHERE kind = 'anonymous_promoted'
+               AND ts > strftime('%s', 'now', '-7 days')
+             ORDER BY seq DESC"
 ```
-kind=anonymous_promoted
-  AND ts > unixepoch() - 7 * 86400
-```
+Console: `event=anonymous_promoted` (exact-match field) with `from` set
+to a timestamp 7 days back.
 
 **Failed magic-link verification spike:**
+```sh
+wrangler d1 execute cesauth-prod --remote \
+  --command "SELECT seq, ts, subject FROM audit_events
+             WHERE kind = 'magic_link_failed'
+               AND ts > strftime('%s', 'now', '-1 hours')
+             ORDER BY seq DESC"
 ```
-kind=magic_link_failed
-  AND ts > unixepoch() - 3600
-```
+Console: `event=magic_link_failed` with `from` set to an hour back.
 
 **A specific user's activity:**
+```sh
+wrangler d1 execute cesauth-prod --remote \
+  --command "SELECT seq, ts, kind, reason FROM audit_events
+             WHERE subject = 'u-7K9F2L'
+             ORDER BY seq DESC"
 ```
-subject="u-7K9F2L"
-```
+Console: `subject=u-7K9F2L` — remember this field is a **substring**
+match, so it can also return other subjects whose id happens to contain
+that string.
 
 **Admin token use (always worth review):**
+```sh
+wrangler d1 execute cesauth-prod --remote \
+  --command "SELECT seq, ts, kind, subject FROM audit_events
+             WHERE kind LIKE 'admin\_%' ESCAPE '\'
+             ORDER BY seq DESC"
 ```
-kind=admin_*
-```
+There is no `admin_*` kind glob in the codebase — this matches the five
+real `admin_`-prefixed kinds (`admin_user_created`,
+`admin_session_revoked`, `admin_client_created`, `admin_login_failed`,
+`admin_console_viewed`). Console equivalent: `kind=admin_` — the
+substring match (§Querying the audit trail) does the same thing without
+needing a glob.
 
 The Day-2 operations runbook has more application-specific
 queries.
@@ -272,14 +310,17 @@ downstream observability stack.
 - **D1 query count.** Workers run on a per-request CPU budget,
   not a per-DB-query budget. As long as CPU time is fine,
   query count is fine.
-- **R2 object count.** R2's pricing is per-object-month, but
-  cesauth's own R2 usage (the `ASSETS` binding, serving the
-  frontend bundle) is a small, static object count that doesn't
-  grow with traffic. The audit log is **not** R2 — it's D1 rows
-  — and its growth is bounded by the daily `audit_retention_cron`
-  job (`AUDIT_RETENTION_DAYS` / `AUDIT_RETENTION_TOKEN_INTROSPECTED_DAYS`
-  operator env vars, defaults 365 / 30 days), not by an R2
-  lifecycle rule.
+- **R2 object count.** cesauth's Worker makes **no R2 API calls at
+  all**. `wrangler.toml` declares an `ASSETS` R2 bucket binding, but
+  nothing in `crates/backend` or `crates/adapter-cloudflare` reads or
+  writes it — it's vestigial. (The Leptos frontend bundle is served by
+  **Workers Static Assets**, a different Cloudflare product configured
+  under `wrangler.toml`'s `[assets]` section; that's not R2 either.)
+  The audit log is **not** R2 — it's D1 rows — and its growth is
+  bounded by the daily `audit_retention_cron` job
+  (`AUDIT_RETENTION_DAYS` / `AUDIT_RETENTION_TOKEN_INTROSPECTED_DAYS`
+  operator env vars, defaults 365 / 30 days), not by an R2 lifecycle
+  rule.
 
 ## See also
 
