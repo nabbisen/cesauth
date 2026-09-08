@@ -109,16 +109,28 @@ against `wrangler.toml` (R2 is still bound, as `ASSETS`):
 | Line | Text | Disposition |
 |---|---|---|
 | 5 | audit trail "(per-event records in R2)" | **Wrong.** The chapter summary is false before the reader reaches §The audit trail |
-| 99 | `**Storage errors (D1/R2 failures):**` log filter | **Likely legitimate** — `ASSETS` is a real R2 binding that can fail. Verify, do not sweep |
+| 99 | `**Storage errors (D1/R2 failures):**` log filter | **Legitimate, but not for the reason I first gave.** Keep it because it mirrors the code's own definition: `crates/backend/src/log.rs:86` documents `Category::Storage` as "Durable Object / D1 / KV / R2 unexpected failures." My original note ("`ASSETS` is a real R2 binding that can fail") is wrong — see the vestigial-binding note below |
 | 115 | "Each audit event is one R2 object with:" | **Wrong.** D1's covered by this RFC |
 | 128 | "R2 doesn't have SQL. Query patterns:" | **Wrong** |
 | 133 | "Direct R2 list + filter" | **Wrong** — unactionable; there is no audit bucket to list |
 | 180 | "each D1 query, R2 fetch, KV read counts" as a subrequest | **Legitimate** — subrequest accounting, unrelated to audit |
-| 233 | "**R2 object count.** R2's pricing is per-object-month; the audit log grows inexorably… Lifecycle rules manage cost." | **Wrong, and operator-facing.** It attributes R2 object growth to the audit log and points at R2 lifecycle rules for cost. Audit lives in D1; its growth is managed by `audit_retention_cron` per the tenant's plan-level retention policy, not by an R2 lifecycle rule |
+| 233 | "**R2 object count.** R2's pricing is per-object-month; the audit log grows inexorably… Lifecycle rules manage cost." | **Wrong, and operator-facing.** It attributes R2 object growth to the audit log and points at R2 lifecycle rules for cost. Audit lives in D1; its growth is managed by the daily `audit_retention_cron` job, configured by the deployment-wide `AUDIT_RETENTION_DAYS` / `AUDIT_RETENTION_TOKEN_INTROSPECTED_DAYS` operator env vars (defaults 365 / 30), not by an R2 lifecycle rule |
 
 Line 233 matters as much as the query-patterns section: an operator managing
 audit-log cost would go looking for an R2 lifecycle configuration that does not
 exist, instead of the retention cron that does.
+
+**The `ASSETS` R2 binding is vestigial — do not build a justification on it.**
+Amended 2026-09-08, after the C1-128 review. `wrangler.toml:82-84` declares
+the binding, but nothing in `crates/backend/src` or
+`crates/adapter-cloudflare/src` makes a single R2 API call:
+`crates/adapter-cloudflare/src/admin/metrics.rs:142-152` returns
+`ServiceId::R2 => Vec::new()` with the comment "cesauth no longer uses R2."
+The frontend bundle is served by **Workers Static Assets**
+(`wrangler.toml:147-148`, `[assets] directory = "crates/frontend/dist"`), a
+different product that shares the word. The R2 references kept at lines 99 and
+180 survive on their own merits — the `log.rs` category definition, and
+platform-generic subrequest accounting — not on anything cesauth does with R2.
 
 **D3 — Add a drift rule.** The reason this survived 49 versions is that
 nothing checked for it. `scripts/drift-scan.sh` already carries
@@ -169,8 +181,14 @@ last so it lands green.
 4. The chapter summary (line 5) is corrected.
 5. All seven R2 references are dispositioned per §5 D2's table, and for each
    one kept, the justification is stated in the review request.
-6. Line 233 names `audit_retention_cron` and the plan-level retention policy
-   as what governs audit-log growth — not R2 lifecycle rules.
+6. Line 233 names `audit_retention_cron` and its two operator env vars
+   (`AUDIT_RETENTION_DAYS` / `AUDIT_RETENTION_TOKEN_INTROSPECTED_DAYS`) as what
+   governs audit-log growth — not R2 lifecycle rules. *Amended 2026-09-08: this
+   criterion previously said "the plan-level retention policy," which describes
+   a mechanism that does not exist — `RetentionConfig`
+   (`crates/core/src/audit/retention.rs:137-152`) carries only `global_days`
+   and `token_introspected_days`, read deployment-wide, with no tenant or plan
+   reference anywhere in the retention path.*
 7. A drift rule exists that fires on the old wording, with a captured
    fires/does-not-fire pair.
 8. `mdbook build docs` clean; full gate set green.
