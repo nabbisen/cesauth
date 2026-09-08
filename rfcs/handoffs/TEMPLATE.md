@@ -19,7 +19,11 @@ Scope of this document vs. its neighbours:
 -->
 
 **Governing RFC.** `rfcs/accepted/NNN-slug.md` (link it once NNN is real)
-**Target release.** vX.Y.Z
+**Target release.** vX.Y.Z — **and why that level:** which changes are fixes,
+                    which add capability. Patch = backwards-compatible fix;
+                    added capability = minor; a mix takes the higher. Decide it
+                    here, not at the cut — see `docs/src/expert/contributing.md`
+                    §Choosing the version level.
 **Prepared by.** Architect · **Implemented by.** Mid-capability model
 **Blocked on.** Nothing / <the open item, and who owns it>
 

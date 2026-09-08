@@ -158,3 +158,10 @@ A release that mixes fixes and new capability takes the **higher** level.
   produced.
 - Version bumps require explicit owner confirmation; `1.0.0` requires
   confirmation *and* sufficient test coverage.
+- **The version level is decided when the handoff is written, not at the cut,**
+  and the handoff states it with its reasoning: which of the changes are fixes,
+  which add capability, and therefore which level applies (see
+  [Choosing the version level](#choosing-the-version-level)). Deciding it at
+  tag time is how 0.81.2 went out as a patch — by then the work is done, the
+  number feels settled, and nobody re-derives it. A level asserted without that
+  reasoning is sent back.
