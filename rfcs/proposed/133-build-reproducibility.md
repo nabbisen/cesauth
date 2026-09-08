@@ -27,6 +27,7 @@ Measured across two sessions, on identical source:
 | Repeat build, same session | **byte-identical**, same sha256 |
 | Clean rebuild (`cargo clean -p cesauth-frontend --target wasm32-unknown-unknown --release`) | **byte-identical**, same sha256 |
 | Across sessions, one day apart | **751,714 vs 750,151** — a fixed 1,563-byte delta |
+| Across sessions, **same day, same host** (added 2026-09-08) | **751,714 (08:49) vs 751,711 (19:41)** — a 3-byte delta |
 | Pre-`wasm-opt` size | 881,519 vs 879,980 — so the difference originates in `cargo`/`rustc`/LTO, not Binaryen |
 
 Ruled out, with evidence:
@@ -44,6 +45,44 @@ measurements — the kernel moved 7.2.2 → 7.2.3, implying a system update.
 The mechanism is unidentified. Bit-level diffing of two wasm binaries was
 judged disproportionate by both the implementer and the reviewer, and that
 judgement stands until this RFC is scheduled.
+
+### 2.1 The same-day observation, and what it costs the kernel explanation
+
+Added 2026-09-08, from the 0.81.3 release review. The figure moved **within a
+single host-day**: 751,714 at 08:49, 751,711 at 19:41, with no change under
+`crates/`, the same pinned `rustc 1.98.1 (48a229cea)`, the same `wasm-opt
+version 123`, and the same `trunk 0.21.14`. Both figures were reproducible at
+the time they were taken — seven agreeing builds at the first, two at the
+second, and I confirmed the second independently:
+
+```sh
+sha256sum crates/frontend/dist/cesauth-frontend_bg.wasm
+#   751,711 B — 6f65f4f64f9a560e53fa001691e4cee165acb7ff0f9e8addae21aac3204d64b6
+cargo build -p cesauth-frontend --features csr       --target wasm32-unknown-unknown --release -v   # 231 units, all Fresh
+```
+
+This is the most constraining evidence the RFC has, and it damages the leading
+hypothesis: **a kernel or system update cannot explain a delta inside one day
+with no intervening update.** M1 should therefore not begin by assuming the
+cause is a host-image difference.
+
+The version-bump hypothesis was tested and is **not** supported, by a second
+route independent of §2's `CARGO_PKG_VERSION` grep. `crates/frontend/Cargo.toml`
+carries `version.workspace = true`, so the crate's own version did change with
+the 0.81.3 bump — a genuine source input, which would have made the delta fully
+explained rather than environmental. Rebuilding with the workspace version
+reverted to `0.81.2` produced **byte-identical** output (751,711 /
+`6f65f4f6…`). Also: no version literal appears in the wasm at all
+(`strings … | grep -oE '0\.81\.[0-9]'` → nothing).
+
+**Stated with its limit, per criterion 4:** that build completed in ~1.2 s and
+was largely cached, so it rules the hypothesis unlikely rather than out. M1
+must repeat it from a clean tree before relying on it.
+
+The 3-byte magnitude is itself a lead the 1,563-byte delta did not offer: a
+delta that small is more consistent with LEB128 length encodings or section
+padding shifting than with different codegen, which is a cheaper thing to
+localise.
 
 ## 3. Why it is worth an RFC rather than a shrug
 
