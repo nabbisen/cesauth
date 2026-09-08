@@ -129,12 +129,17 @@ section covers only what an operator needs during an incident.
 | `kind` | `EventKind` variant, snake-cased — see `crates/backend/src/audit.rs`. |
 | `subject` | The user/principal the event is about, if any. |
 | `client_id` | The OAuth client involved, if any. |
-| `ip` | Source IP, or NULL if not captured for that event kind. Never masked in this column — masking, when it happens, is a `reason`-string convention (see below), not something this column itself does. |
-| `user_agent` | Requesting client's user agent, if any. |
-| `reason` | Free-form code with `via=...,...` markers — e.g. the anonymous-sweep case, `via=anonymous-begin,ip=<masked>` (ADR-004 §Q5), masks the IP *inside this string*, not the `ip` column above. |
+| `ip` | **Always NULL as the code stands.** The column exists and the writer supports it (`audit.rs:432`, `with_ip`), but that builder method has no callers, and `write_owned` — the helper every call site uses — hardcodes `ip: None` (`audit.rs:500`). Not masked here either; masking, where it happens, is a `reason`-string convention (see below). |
+| `user_agent` | **Always NULL as the code stands**, for the same reason as `ip`: `with_user_agent` (`audit.rs:433`) has no callers. |
+| `reason` | Free-form code with `via=...,...` markers — e.g. the anonymous-create path (`EventKind::AnonymousCreated`), `via=anonymous-begin,ip=<masked>` (ADR-004 §Q5), masks the IP *inside this string*, not the `ip` column above. |
 | `payload` | Canonical JSON event body; the bytes the hash chain covers. |
 | `payload_hash`, `previous_hash`, `chain_hash` | Hash-chain fields — see the linked chapter for what each covers. |
 | `created_at` | Wall-clock at row insert. |
+
+Do not plan IP or user-agent correlation on this table as it stands: those
+two columns are reserved but unwritten. The only IP that reaches the trail
+today is the masked value inside the `reason` string of the anonymous-create
+event.
 
 Indexed by `idx_audit_events_ts` (time-range queries),
 `idx_audit_events_kind_ts` (kind+time), and a partial
@@ -238,12 +243,15 @@ wrangler d1 execute cesauth-prod --remote \
              WHERE kind LIKE 'admin\_%' ESCAPE '\'
              ORDER BY seq DESC"
 ```
-There is no `admin_*` kind glob in the codebase — this matches the five
-real `admin_`-prefixed kinds (`admin_user_created`,
-`admin_session_revoked`, `admin_client_created`, `admin_login_failed`,
-`admin_console_viewed`). Console equivalent: `kind=admin_` — the
-substring match (§Querying the audit trail) does the same thing without
-needing a glob.
+There is no `admin_*` kind glob in the codebase — the `LIKE` above matches
+all ten `admin_`-prefixed kinds: `admin_bucket_safety_changed`,
+`admin_bucket_safety_verified`, `admin_client_created`,
+`admin_console_viewed`, `admin_login_failed`, `admin_session_revoked`,
+`admin_threshold_updated`, `admin_token_created`, `admin_token_disabled`,
+`admin_user_created`. For the question in this heading, start with
+`admin_token_created` and `admin_token_disabled`. Console equivalent:
+`kind=admin_` — the substring match (§Querying the audit trail) does the
+same thing without needing a glob.
 
 The Day-2 operations runbook has more application-specific
 queries.
