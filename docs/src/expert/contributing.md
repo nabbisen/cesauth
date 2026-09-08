@@ -111,6 +111,33 @@ conventionally keep the `v` (`Implemented (v0.73.0)`). That is a separate,
 established style and is fine; the no-prefix rule is about tags and CHANGELOG
 headings.
 
+### Choosing the version level
+
+The question is **what kind of change this is**, not what part of the tree it
+touched:
+
+| Level | Means | In this project |
+|---|---|---|
+| **Patch** `X.Y.Z+1` | A backwards-compatible **fix**. Something was broken or wrong and now is not | 0.81.1 (four dead CI workflows repaired), 0.81.3 (documentation asserting the wrong storage backend) |
+| **Minor** `X.Y+1.0` | Backwards-compatible **added functionality**. Something is now possible that was not | 0.81.0 (new public `core` types), 0.80.0 (Leptos components replacing the template layer), 0.79.0 (workspace restructuring) |
+| **Major** | An incompatible change | Not yet reached; `1.0.0` needs owner confirmation *and* sufficient coverage |
+
+cesauth is `0.y.z`, where SemVer formally permits anything to change at any
+time. The distinction above is therefore a **project convention** rather than a
+SemVer obligation — but the words keep their ordinary meaning, and a release
+that adds capability is a minor even when no public type moved.
+
+**The trap, recorded because it was walked into.** 0.81.2 was cut as a patch on
+the reasoning that RFC 130 changed no public API. It produced a deployable
+frontend bundle for the first time, pinned the toolchain, added a `wasm-opt`
+pipeline step and added CI gates — new capability throughout, and no part of it
+a fix. It should have been 0.82.0. "No public surface changed" is the
+major/minor test; it says nothing about minor versus patch. Ask instead: *was
+anything broken before, and is it now fixed?* If the honest answer is "nothing
+was broken; this is new," it is a minor.
+
+A release that mixes fixes and new capability takes the **higher** level.
+
 ### Every release must satisfy
 
 - A tag exists **and** a CHANGELOG entry exists, for the same version. Neither
