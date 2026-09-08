@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 128, Observability audit-architecture correction
 
-**Governing RFC.** [`rfcs/accepted/128-observability-audit-architecture-correction.md`](../../accepted/128-observability-audit-architecture-correction.md)
+**Governing RFC.** [`rfcs/done/128-observability-audit-architecture-correction.md`](../../done/128-observability-audit-architecture-correction.md)
 **Target release.** 0.81.3
 **Prepared by.** Architect · **Implemented by.** Mid-capability model
 **Blocked on.** Nothing.

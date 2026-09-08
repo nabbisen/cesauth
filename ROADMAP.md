@@ -183,6 +183,29 @@ started.
   delivered:** confirmation that the bundle actually mounts in a browser —
   every check here is build-time; RFC 131's harness adoption closes that.
 
+- ✅ **v0.81.3 — RFC 128 (+ conditions C1-128, C2-128). Shipped
+  2026-09-08.** `docs/src/deployment/observability.md` told operators that
+  audit events are R2 objects with R2 query patterns and R2-lifecycle-managed
+  cost. They have been D1 `audit_events` rows with a SHA-256 hash chain since
+  v0.32.0 (ADR-010) — roughly 49 versions. Rewritten against source: the real
+  14-column shape, the real query surfaces (console filters — `kind`/`subject`
+  substring, `event` exact, silent-drop on invalid `from`/`to` — export,
+  chain status/verify, `wrangler d1 execute`), and the real cost mechanism
+  (`audit_retention_cron`'s two operator env vars, not an R2 lifecycle rule;
+  cesauth's Worker makes no R2 API calls at all — the `ASSETS` binding is
+  vestigial, and the frontend bundle is served by Workers Static Assets, a
+  different product). New `drift-scan.sh` rules catch the two core stale
+  claims should they reappear. Documentation only — no route, schema, or code
+  changed. Two review-caught corrections landed before this shipped: the
+  first rewrite introduced five new inaccuracies (wrong R2 service named,
+  inverted filter-exactness claims, missing export caveats, a masked-IP note
+  on the wrong column), and a second pass then found the `admin_*`
+  enumeration undercounted (five listed, ten real) and a mislabeled
+  reason-string example. **Recorded for v0.82.0:** `ip` and `user_agent` are
+  now documented as always NULL — the builder methods that would populate
+  them have zero callers — because populating them is a real product
+  decision (an unmasked IP in an audit row), not a documentation fix.
+
 - **Security-critical assurance track (RFCs 116–124).** RFC 116 shipped in
   v0.81.0 (`rfcs/done/`), with two carve-outs deferred: secret-newtype
   adoption at the remaining credential call sites, and `ports::repo`, which

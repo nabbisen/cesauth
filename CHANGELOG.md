@@ -14,6 +14,75 @@ changes will always be called out here.
 
 ---
 
+## [0.81.3] - 2026-09-08
+
+### Audit architecture corrected in the observability guide — RFC 128
+
+`docs/src/deployment/observability.md` told operators that audit events
+are R2 objects with R2 query patterns and R2-lifecycle-managed cost.
+Audit events have been rows in the D1 `audit_events` table with a
+SHA-256 hash chain since **v0.32.0** (ADR-010) — roughly 49 versions.
+Two of the three "query patterns" the chapter gave were unactionable:
+there is no audit bucket to list, and cesauth does not push audit
+events to a SIEM.
+
+- **The audit-trail section is rewritten** against source, not
+  restated prose: the real 14-column `audit_events` shape (migration
+  `0008_audit_chain.sql`), the three real indexes, and the four real
+  query surfaces — the admin console browser (with its actual filter
+  semantics: `kind`/`subject` are **substring** matches, `event` is
+  the one **exact** match, and an invalid `from`/`to` bound is
+  **dropped silently** rather than rejected), the export endpoint
+  (itself an audited event, though that write is best-effort, and
+  capped at `AUDIT_EXPORT_MAX_ROWS` — 10,000 rows by default), chain
+  status/verify, and `wrangler d1 execute` for anything the console
+  can't express. Links out to `docs/src/expert/audit-log-hash-chain.md`
+  for chain mechanics rather than duplicating it.
+- **The cost-management line no longer points at a fictional
+  mechanism.** cesauth's Worker makes **no R2 API calls at all** — the
+  `ASSETS` R2 binding is declared in `wrangler.toml` but unused; the
+  frontend bundle is served by Workers Static Assets, a different
+  product. Audit-log growth is bounded by the daily
+  `audit_retention_cron` job, configured by the deployment-wide
+  `AUDIT_RETENTION_DAYS` / `AUDIT_RETENTION_TOKEN_INTROSPECTED_DAYS`
+  operator env vars (defaults 365 / 30 days) — not an R2 lifecycle
+  rule.
+- **`ip` and `user_agent` are documented as always NULL**, because
+  they are: the builder methods that would populate them
+  (`with_ip`/`with_user_agent`) have zero callers anywhere in the
+  tree, and `write_owned` — the helper every call site actually
+  uses — hardcodes both to `None`. Populating them is recorded as a
+  0.82.0 candidate; this release only documents the code as it
+  stands.
+- **"Useful audit queries" rewritten in syntax that exists** —
+  `wrangler d1 execute` SQL plus the console's real filter fields —
+  replacing pseudo-syntax that matched neither, including an
+  `admin_*` glob that doesn't exist in the codebase (the real
+  substring match already does what it implied).
+- **New drift-scan.sh rules** catch the two core stale claims ("Each
+  audit event is one R2 object", "R2 doesn't have SQL") should they
+  reappear, excluded on ADRs and the changelog archive so legitimate
+  historical descriptions don't trip them.
+
+Two corrections landed before this shipped, both to unshipped work and
+not separately noted here: the R2/cost rewrite itself introduced five
+new inaccuracies (wrong service named for the R2 bullet, inverted
+filter-exactness claims, missing export caveats, a masked-IP note on
+the wrong column), all caught in review and corrected against source
+before release; a second pass then found the `admin_*` enumeration
+undercounted the real kinds (five listed, ten actual — the two missing
+were the ones a reader asking about admin token use most needed) and
+a mislabeled reason-string example, both also fixed before this tag.
+
+### Notes
+
+No wire format, D1 schema, Durable Object payload, cookie, permission
+slug, or public `cesauth-core` type changed. Documentation only — no
+code, route, or schema changed. MSRV unchanged at 1.85. Drop-in for
+0.81.2 consumers.
+
+---
+
 ## [0.81.2] - 2026-09-08
 
 ### Frontend bundle is deployable — RFC 130
