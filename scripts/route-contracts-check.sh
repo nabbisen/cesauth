@@ -127,7 +127,22 @@ fi
 # general exemption facility (RFC 132 §8 reserves that decision); add an
 # entry here only on an explicit review ruling, same as these three.
 #
-#   GET /                          -- RFC 131 R3 (RFC 132 §8, original)
+#   GET /                          -- RFC 131 R3 (RFC 132 §8, original).
+#                                     A green E3 here does NOT mean `/`
+#                                     behaves: as of RFC 131 C1-131, `/`
+#                                     was found served entirely by
+#                                     Cloudflare Workers Static Assets
+#                                     (Trunk's dev-only index.html),
+#                                     never reaching this handler at all
+#                                     -- no CSP, no security headers, a
+#                                     live regression against RFC 006.
+#                                     E3 only asserts the shell-call
+#                                     invariant on code that, at `/`,
+#                                     was off the request path entirely.
+#                                     Fixed in C2-131 (index.html no
+#                                     longer shipped); see that RFC for
+#                                     current status before trusting
+#                                     this exemption describes reality.
 #   GET /login                     -- RFC 131 R3 (RFC 132 §8, original)
 #   GET /me/security/totp/verify   -- RFC 131 R3 (RFC 132 C1-132 ruling 1,
 #                                      2026-09-09 — found while building
@@ -140,20 +155,30 @@ GET /login
 GET /me/security/totp/verify"
 
 # Resolve a handler's qualified name (e.g. "routes::magic_link::verify",
-# as lib.rs spells the call) to whether ITS OWN function body — not
-# anything it calls into — contains leptos_html_shell.
+# as lib.rs spells the call) to one of three states, distinguished by
+# return code — NOT just "does it call the shell": a handler this cannot
+# locate at all must never be silently treated as clean.
 #
-# Two shapes cover every route in this codebase (verified against all
-# 188): a direct function in a module file (routes::ui::login ->
-# routes/ui.rs, fn login), and a same-named single-function re-export
-# (routes::magic_link::verify -> `pub use verify::verify;` in
-# routes/magic_link.rs -> routes/magic_link/verify.rs, fn verify). Does
-# NOT resolve a *renamed* re-export (e.g. oidc.rs's `pub use
-# userinfo::handler as userinfo_handler`) — none of the current
-# `server`-declared routes need it, but if one ever does, this will
-# silently under-report rather than error, which is why E3 is
-# documented (view-rendering-policy.md) as checking one direction only.
-handler_calls_shell() {
+#   0 — resolved; its own function body calls leptos_html_shell
+#   1 — resolved; its own function body does not call leptos_html_shell
+#   2 — UNRESOLVED — neither shape below found the function. Hard
+#       failure, not a pass. (RFC 132 C1-132 review: the original draft
+#       `return 1`'d here, i.e. treated "could not find it" the same as
+#       "found it and it's clean" — indistinguishable to the caller.
+#       Silent under-reporting is the exact failure class RFC 125 T5
+#       exists to prevent; this check must not reintroduce it.)
+#
+# Two shapes cover every route in this codebase as of this writing
+# (verified against all 188): a direct function in a module file
+# (routes::ui::login -> routes/ui.rs, fn login), and a same-named
+# single-function re-export (routes::magic_link::verify -> `pub use
+# verify::verify;` in routes/magic_link.rs -> routes/magic_link/verify.rs,
+# fn verify). A *renamed* re-export (e.g. oidc.rs's `pub use
+# userinfo::handler as userinfo_handler`) resolves neither shape and is
+# therefore now a hard failure on the day a route using it is ever
+# declared `server` — which is exactly when this needs extending, and
+# the failure says so rather than passing silently.
+resolve_handler_shell_status() {
   local qualified="$1"
   local fn="${qualified##*::}"
   local modpath="${qualified%::*}"
@@ -161,22 +186,30 @@ handler_calls_shell() {
 
   # Shape 1: direct function in <dirpath>.rs
   local f1="$REPO_ROOT/crates/backend/src/${dirpath}.rs"
-  if [ -f "$f1" ] && fn_body_has_shell "$f1" "$fn"; then
-    return 0
+  if [ -f "$f1" ] && fn_exists_in_file "$f1" "$fn"; then
+    if fn_body_has_shell "$f1" "$fn"; then return 0; else return 1; fi
   fi
 
   # Shape 2: same-named submodule re-export, <dirpath>/<fn>.rs
   local f2="$REPO_ROOT/crates/backend/src/${dirpath}/${fn}.rs"
-  if [ -f "$f2" ] && fn_body_has_shell "$f2" "$fn"; then
-    return 0
+  if [ -f "$f2" ] && fn_exists_in_file "$f2" "$fn"; then
+    if fn_body_has_shell "$f2" "$fn"; then return 0; else return 1; fi
   fi
 
-  return 1
+  return 2
+}
+
+# Is function $2 defined (as `pub async fn`/`pub fn`/`fn`, top-level) in
+# file $1?
+fn_exists_in_file() {
+  grep -qE "^(pub async fn|pub fn|fn) $2(<|\()" "$1"
 }
 
 # Does function $2's body in file $1 contain leptos_html_shell? Bounded
 # from its `pub async fn <name>` line to the next top-level `pub async
-# fn`/`pub fn`/`fn` line, or EOF.
+# fn`/`pub fn`/`fn` line, or EOF. Caller must have already confirmed the
+# function exists (fn_exists_in_file) — this does not distinguish
+# "clean" from "not found."
 fn_body_has_shell() {
   awk -v want="$2" '
     /^pub async fn [a-zA-Z0-9_]+/ || /^pub fn [a-zA-Z0-9_]+/ || /^fn [a-zA-Z0-9_]+/ {
@@ -228,6 +261,7 @@ server_routes=$(
 )
 
 e3_violations=""
+e3_unresolved=""
 while IFS= read -r route; do
   [ -z "$route" ] && continue
   m="${route%% *}"
@@ -236,14 +270,36 @@ while IFS= read -r route; do
   if [ -z "$handler" ]; then
     continue  # no handler resolved (shouldn't happen; the earlier missing/extra diff already covers registration)
   fi
-  if handler_calls_shell "$handler"; then
-    exempted=$(printf '%s\n' "$E3_EXEMPT" | grep -Fx "$route" || true)
-    if [ -z "$exempted" ]; then
-      e3_violations="${e3_violations}${m} ${p} -> ${handler} calls leptos_html_shell, not on the exemption list
-"
-    fi
+  if resolve_handler_shell_status "$handler"; then
+    status=0
+  else
+    status=$?
   fi
+  case "$status" in
+    0)
+      exempted=$(printf '%s\n' "$E3_EXEMPT" | grep -Fx "$route" || true)
+      if [ -z "$exempted" ]; then
+        e3_violations="${e3_violations}${m} ${p} -> ${handler} calls leptos_html_shell, not on the exemption list
+"
+      fi
+      ;;
+    1) ;;  # clean, resolved
+    2)
+      e3_unresolved="${e3_unresolved}${m} ${p} -> ${handler} (neither direct-function nor same-named-re-export shape resolved it)
+"
+      ;;
+  esac
 done <<< "$server_routes"
+
+if [ -n "$e3_unresolved" ]; then
+  echo "❌  server-declared route(s) whose handler E3 could not locate in source:" >&2
+  printf '%s' "$e3_unresolved" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line" >&2; done
+  echo "" >&2
+  echo "    This is a hard failure, not a pass — an unresolved handler must never" >&2
+  echo "    be treated as clean. Likely a renamed re-export (see resolve_handler_shell_status's" >&2
+  echo "    comment); extend the resolver in scripts/route-contracts-check.sh to cover it." >&2
+  exit_code=1
+fi
 
 if [ -n "$e3_violations" ]; then
   echo "❌  server-declared route(s) whose handler calls leptos_html_shell, and are not an approved exemption:" >&2
