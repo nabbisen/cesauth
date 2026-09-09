@@ -138,12 +138,48 @@ frontend's contents on an unverified build pipeline would confound two sets of
 failures.
 
 **R2 — Import the foundation.** `cesauth-ui`'s primitives, shells, view-models,
-i18n and icons — the 3,489 LOC that RFC 027 already made production-safe.
-Rename to avoid the `cesauth-ui` collision (RFC 126's drift rule now treats
-that name as stale; the crate it names was renamed by RFC 114). Reconcile the
-Leptos pins **after** RFC 130's M2 reports, not before —
+i18n and icons. Rename to avoid the `cesauth-ui` collision (RFC 126's drift
+rule now treats that name as stale; the crate it names was renamed by RFC 114).
+Reconcile the Leptos pins **after** RFC 130's M2 reports, not before —
 `DEPENDENCIES.md` records `=0.8.19` as *"unverified for production"* and M2 is
 the first thing that will actually verify it.
+
+**R2 splits, 2026-09-09.** Measuring the foundation before writing its handoff
+found a locale mechanism inside it that collides with RFC 132. Coupling map
+(`grep -rlE 'crate::i18n|use_locale|LocaleContext'` over each directory of
+`crates/ui/src/` at mockup `df3d9d0`, v0.14.0):
+
+| Area | Files using i18n | LOC |
+|---|---|---|
+| `view_models` | **0** / 7 | 651 |
+| `icons` | **0** / 1 | 136 |
+| `components/primitives` | 2 / 19 | 747 |
+| `components/nav` | 1 / 3 | 101 |
+| `components/domain` | 3 / 5 | 262 |
+| `components/shells` | 4 / 5 | 341 |
+
+- **R2a — the mechanism-free foundation.** `view_models`, `icons`, and the 17
+  i18n-free primitives. No architectural question; lands as dormant modules
+  that R3 wires up.
+- **R2b — the locale mechanism and the components that depend on it.** The
+  remaining 10 files, plus a catalog merge, plus a design decision.
+
+**Why R2b is not clerical.** cesauth already has one catalog —
+`cesauth_core::i18n`, `Locale { Ja, En }`, `MessageKey` with **175** variants,
+resolved *per request* by `parse_accept_language` and a plain
+`lookup(MessageKey, Locale)`. The mockup has a **second**: its own `Locale`,
+its own key enum with **263** variants, and a *Leptos-reactive*
+`LocaleContext` / `use_locale()` hook. Importing it as-is creates exactly the
+duplication ADR-013 rejected when it declined a separate `cesauth-i18n` crate,
+and exactly the two-libraries drift §3 of this RFC condemns.
+
+Worse, the two mechanisms disagree with RFC 132: `components/shells/auth_shell.rs`
+is a **pre-authentication** shell calling `t`, and RFC 132 classifies pre-auth
+`server` — where no Leptos reactive context exists. So R2b cannot be settled
+without RFC 132 §13 q1, which the owner deferred on 2026-09-09.
+
+**R2b is therefore deferred with q1, not separately delayed.** R2a and R5 do
+not depend on either.
 
 **R3 — Pair screens with data, one at a time.** For each screen: take the
 mockup's presentation, wire it to the production fetch logic that already
@@ -221,10 +257,21 @@ route inside this programme.
    every subsequent screen a consistent frame, at the cost of a period where
    shells and old templates interleave. My leaning is shells first, but it
    depends on how cleanly the shells sit over existing routes.
-3. **What happens to the mockup repository afterwards?** Once its presentation
-   layer lives here, keeping it as a design sandbox invites drift between two
-   component libraries. Archiving it loses the preview harness. Worth deciding
-   before, not after.
-4. **Does the operator console's JA-only rule (ADR-013) survive?** The mockup
-   implements it (its RFC 034). Confirm it is still wanted rather than
-   inheriting it silently.
+3. ~~**What happens to the mockup repository afterwards?**~~ **Ruled by the
+   architect 2026-09-09: freeze, do not archive — yet.** At R2a the mockup
+   repository becomes a **read-only reference**, pinned at the commit the
+   import is taken from: `df3d9d0`, v0.14.0. Record that hash in the handoff
+   and in `DEPENDENCIES.md`, so any later question of "what did we import?"
+   has one answer. No further commits to it, and no fixes made there instead
+   of here.
+
+   Not archived, because R3 still needs to read its screens — the preview
+   harness has work left to do. Revisit archiving when R3 completes and
+   nothing in cesauth needs to consult it; keeping a live second component
+   library past that point is the drift this RFC exists to end.
+4. ~~**Does the operator console's JA-only rule (ADR-013) survive?**~~
+   **Resolved 2026-09-09 — yes, Japanese.** ADR-013 had said the console was
+   "English by design"; 29 files under `crates/backend/src/routes/admin/`
+   contradicted it, every page title included. The owner ruled on the drift
+   rather than against it and ADR-013 is amended accordingly. The mockup's own
+   rule (its RFC 034) is therefore inherited **deliberately**, not silently.

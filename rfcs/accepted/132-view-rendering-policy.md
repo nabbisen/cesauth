@@ -101,7 +101,7 @@ the mode with fewer failure modes and it is what ABDD implies.
 | Surface | Q-path | Mode |
 |---|---|---|
 | `/`, `/login`, `/magic-link/*`, `/accept-invite`, TOTP verify + recovery, terminal errors | Q1 no / Q2 yes | **Server HTML.** Non-negotiable |
-| `/webauthn/*` ceremonies | Q3 yes, but pre-auth | Server HTML page + scripted ceremony; the page must render and offer the Magic Link fallback without JS |
+| `/webauthn/*` ceremonies | **Q4** | **N/A — these render nothing.** All four are `POST` JSON (`route-contracts.md:34-37`: view "JSON (challenge)" / "JSON", rendering test "N/A (JSON)"). *Corrected 2026-09-09: this row previously classified a "Server HTML page + scripted ceremony." No such page exists; I invented it. Where the passkey affordance lives is a property of `/login` and `/me/security`, both classified above — see §13 q1.* |
 | `/me/security*` (authenticated self-service) | Q1 yes — a session exists, support paths exist | Client, permitted |
 | `/admin/t/*`, `/admin/tenancy/*`, `/admin/console/*` | Q1 yes, Q3 yes | Client, permitted |
 | `*.json`, OIDC, `/api/v1/*` | Q4 | N/A |
@@ -196,12 +196,49 @@ superseded.
 
 ## 13. Open questions
 
-1. **`/webauthn/*` classification.** §5.1 says the page renders server-side and
-   the ceremony is scripted, with Magic Link reachable without JS. That
-   preserves passkey-first while keeping a no-JS path to authenticate. Worth
-   confirming this is the intended product behaviour and not just the
-   technically convenient reading.
-2. **Does the operator console warrant an exception?** It is JA-only by
-   ADR-013 and used by a known internal population, so a JS requirement is
-   defensible there in a way it is not for end users. Currently classified
-   `client` on that basis; flagging it as an assumption rather than a finding.
+1. **Where does the passkey affordance live on `/login`, and what does a
+   no-JS user meet?** *Deferred by the owner 2026-09-09 for further
+   discussion — not blocking.*
+
+   The rule already settles the hard part: `/login` is Q1/Q2, so it must
+   render server-side and be usable without JavaScript, and WebAuthn cannot
+   run without JavaScript at all. What remains is the shape of the affordance:
+   the architect's recommendation is **progressive enhancement** — `/`
+   server-renders the Magic Link email form, and a detection script adds the
+   passkey button when `PublicKeyCredential` and a platform authenticator are
+   present — rather than a dedicated passkey page, which would have to be
+   created and could render a button that does nothing.
+
+   **Consequence, stated because the first framing understated it:** no user
+   who can use a passkey sees any change; a user without JavaScript goes from
+   a blank page (`ui.rs:28-31` renders `leptos_html_shell` today) to a working
+   email-and-code sign-in. The cost is that the passkey button appears a beat
+   late unless its space is reserved in the server-rendered markup.
+
+   **Who it blocks:** nothing in this RFC, nothing in RFC 131 R2 or R5. It is
+   a prerequisite for **R3**, which owns the `/` and `/login` conversion
+   (§8). It must be settled before R3 is scheduled.
+
+2. ~~**Does the operator console warrant an exception?**~~ **Withdrawn
+   2026-09-09 — the question was malformed, and no exception is needed.**
+
+   It claimed the console is "JA-only by ADR-013," which inverted the ADR:
+   ADR-013 said "English by design" (since amended to Japanese, 2026-09-09,
+   after 29 files of console UI were found to contradict it). The inference
+   was also a non-sequitur — language has no bearing on whether JavaScript is
+   required — and "used by a known internal population" is the wrong kind of
+   reason: it is precedent for weakening resilience wherever an audience is
+   deemed safe, and it points the wrong way on the highest-privilege surface
+   in the product.
+
+   The `client` classification stands on the rule's own terms, no exception:
+   **Q1** — the operator can route around a failure (a session exists;
+   `wrangler d1 execute`, `wrangler tail` and the migrate CLI are real
+   fallbacks); **Q3** — live filtering and large audit tables. That is the
+   same path `/me/security` and `/admin/t/*` take.
+
+3. **A `client` classification must not permit a blank page.** Recorded here
+   as policy; **implementation is not in this RFC** (§10 keeps this change to
+   documentation and one script). Every `client` surface owes a `<noscript>`
+   block stating the requirement and naming the fallback. Assigned to the
+   console programme, alongside RFC 131 R3.
