@@ -81,16 +81,59 @@ fi
 
 registered_count=$(printf '%s\n' "$registered" | grep -c . || true)
 
+if [ "$registered_count" -eq 0 ]; then
+  echo "❌  Extracted 0 registered routes from $LIB_RS." >&2
+  echo "    This is a failure, not a pass — either the file has no" >&2
+  echo "    routes (unexpected) or the extraction pattern no longer" >&2
+  echo "    matches the route-registration idiom used there." >&2
+  exit_code=1
+fi
+
+# ── E2 (RFC 132): every documented row must declare a Rendering mode ──
+#
+# route-contracts.md's 7th field (added by RFC 132) is the `Rendering`
+# column: server | client | n/a, per docs/src/expert/view-rendering-policy.md.
+# A missing or misspelled value fails the same way an undocumented route
+# does — a partially-filled column that this check does not notice is
+# exactly the failure mode a "✅ All 0 routes documented" empty-input pass
+# once had (RFC 125 T5).
+bad_rendering=$(
+  awk -F'|' '
+    /^\|[[:space:]]*(GET|POST|PUT|DELETE)[[:space:]]*\|/ {
+      method = $2; gsub(/^[ \t]+|[ \t]+$/, "", method)
+      path   = $3; gsub(/^[ \t]+`|`[ \t]*$/, "", path)
+      rendering = $7; gsub(/^[ \t]+|[ \t]+$/, "", rendering)
+      if (rendering != "server" && rendering != "client" && rendering != "n/a") {
+        printf "%s %s -> \"%s\"\n", method, path, rendering
+      }
+    }
+  ' "$CONTRACTS_MD"
+)
+
+if [ -n "$bad_rendering" ]; then
+  echo "❌  Routes with a missing or invalid Rendering value (must be server|client|n/a):" >&2
+  echo "$bad_rendering" | while read -r line; do echo "    $line" >&2; done
+  echo "" >&2
+  echo "    See docs/src/expert/view-rendering-policy.md." >&2
+  exit_code=1
+fi
+
+# ── E3 (RFC 132): a `server`-declared route's handler must not call
+#    leptos_html_shell ────────────────────────────────────────────────
+#
+# NOT YET IMPLEMENTED. A manual audit while building E2 found that
+# GET /me/security/totp/verify — declared `server` per RFC 132 §5.1's
+# "TOTP verify + recovery" — has, since v0.79.4, called
+# leptos_html_shell in its GET handler, exactly like `/` and `/login`.
+# That is a third conformance gap RFC 132 did not know about when it
+# reserved a two-path exemption budget for this check (§8: "If the
+# exemption mechanism turns out to need more than a literal list of two
+# paths, stop and report"). Landing E3 now would require deciding that
+# exemption list unilaterally, which the RFC explicitly reserves.
+# See the RFC 132 review request for the full finding and evidence.
+
 if [ "$exit_code" -eq 0 ]; then
-  if [ "$registered_count" -eq 0 ]; then
-    echo "❌  Extracted 0 registered routes from $LIB_RS." >&2
-    echo "    This is a failure, not a pass — either the file has no" >&2
-    echo "    routes (unexpected) or the extraction pattern no longer" >&2
-    echo "    matches the route-registration idiom used there." >&2
-    exit_code=1
-  else
-    echo "✅  All ${registered_count} routes are documented in route-contracts.md"
-  fi
+  echo "✅  All ${registered_count} routes are documented in route-contracts.md"
 fi
 
 exit "$exit_code"
