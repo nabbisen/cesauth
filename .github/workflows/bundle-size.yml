@@ -23,9 +23,14 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Install worker-build
-        run: cargo install worker-build --locked
-
+      # worker-build is installed by wrangler.toml's own [build] command,
+      # pinned there (RFC 131 C1-131) so every invocation of `wrangler
+      # dev`/`build`/`deploy` -- here and everywhere else -- gets the
+      # same verified version. Do not install it separately here; a
+      # second, unpinned `cargo install worker-build` in this step would
+      # be exactly the drift C1-131 exists to close, even though the
+      # deploy step below would still end up using the pinned one (its
+      # own [build] command reinstalls it immediately before running).
       - uses: cloudflare/wrangler-action@v3
         with:
           # --dry-run builds the bundle locally without uploading.

@@ -20,8 +20,22 @@ compatibility_date = "2026-04-01"
 # would fail there with `missing field 'package'`). Output paths are
 # resolved relative to that crate path, which is why `main` above is
 # `crates/backend/build/worker/shim.mjs`.
+#
+# `[build] command` runs on `wrangler dev` AND `wrangler deploy` -- this
+# is the actual deploy path, not a dev-only convenience. Pinned to an
+# exact worker-build version for the same reason C1-130 checksum-verifies
+# the Binaryen download: an unpinned `cargo install worker-build` floats
+# to whatever the latest release is, and the deploy path can break
+# without a single commit to this repository (RFC 131 C1-131, found
+# 2026-09-09: worker-build 0.8.5 unconditionally passes wasm-bindgen
+# `--force-enable-abort-handler`, which fails as of wasm-bindgen 0.2.126+
+# with "externref table required for catch wrappers" -- confirmed by
+# isolating the flag directly against the wasm-bindgen CLI. worker-build
+# 0.8.4 does not pass that flag and builds clean against the same
+# wasm-bindgen family; 0.8.3 also works. Re-verify before bumping past
+# 0.8.4 -- do not assume "newer worker-build" means "still builds."
 [build]
-command = "cargo install -q worker-build && worker-build --release crates/backend"
+command = "cargo install -q worker-build --version 0.8.4 && worker-build --release crates/backend"
 
 # --- D1: long-lived relational data --------------------------------------
 # Keep only one primary DB. Everything tx-like goes through Durable Objects

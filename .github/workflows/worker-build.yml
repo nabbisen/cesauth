@@ -1,0 +1,43 @@
+name: Worker build
+
+# RFC 131 C1-131: the deploy path was never gated. Every other gate in
+# this project checks *compilation* (`cargo check -p cesauth-backend
+# --target wasm32-unknown-unknown`); none of them ran `worker-build`,
+# which is what `wrangler.toml`'s `[build] command` actually invokes on
+# both `wrangler dev` AND `wrangler deploy`. That gap let a
+# worker-build/wasm-bindgen version mismatch break the deploy path
+# silently: `cargo check` stayed green throughout, because it never
+# reaches the wasm-bindgen post-processing step where the break was.
+#
+# This gate runs `wrangler build`, which invokes wrangler.toml's own
+# `[build] command` (installing the pinned worker-build, see that
+# file's comment) and then validates bindings and the frontend assets
+# directory -- the same thing `wrangler deploy` does, minus the actual
+# upload. `--dry-run` is implicit in `build` (it never talks to
+# Cloudflare's API), so this needs no credentials and is safe in CI on
+# a fork or a PR from an external contributor.
+#
+# RFC 130 M2b: toolchain version below must match rust-toolchain.toml
+# (repo root) and every other workflow listed in that file's header
+# comment.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  worker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: make build-frontend
+        run: make build-frontend
+
+      - name: wrangler build
+        run: npx wrangler build
