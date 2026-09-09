@@ -8,6 +8,28 @@ regenerate the "Unchanged" list.
 
 ---
 
+## Mockup import source (RFC 131 R2a)
+
+`crates/frontend/src/view_models/`, `icons/`, and `components/primitives/`
+are imported from the `cesauth-mockup` repository
+(`~/Desktop/cesauth/cesauth-mockup-git`), pinned at:
+
+```
+commit df3d9d0e62b101736a53c09da50093d104312d11
+tag    v0.14.0
+```
+
+The mockup repository is frozen (read-only reference), not archived — RFC 131
+§10 q3. No further commits are made to it; fixes belong in this tree. R2a
+imports `view_models` (651 LOC, 7 files) and `icons` (136 LOC, 1 file) in
+full, plus 16 of 19 `components/primitives` files (702 LOC total across all
+17 imported files, `mod.rs` included) — `permission_denied.rs` and
+`suspended_notice.rs` are excluded, deferred to R2b, because they depend on
+the mockup's Leptos-reactive locale mechanism (RFC 131 §5 R2, RFC 132 §13
+q1). Re-verify this hash before importing anything further from the mockup.
+
+---
+
 ## Added in v0.81.0 (RFC 116 — security-type baseline)
 
 | Crate | Version | Scope | Rationale |

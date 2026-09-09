@@ -168,6 +168,19 @@ pub mod app;
 #[cfg(feature = "csr")]
 pub mod pages;
 
+// RFC 131 R2a — mockup foundation import (view_models, icons, and the
+// i18n-free primitives). Dormant until R3 wires a screen to them; not
+// referenced by `app`/`pages` yet, so `cargo check --features csr` is
+// the only thing exercising them until then.
+#[cfg(feature = "csr")]
+pub mod components;
+
+#[cfg(feature = "csr")]
+pub mod icons;
+
+#[cfg(feature = "csr")]
+pub mod view_models;
+
 /// Browser WASM entry point.
 ///
 /// Trunk generates a `<script type="module">` that imports the
