@@ -86,6 +86,23 @@ route is genuinely appropriate for client rendering. A general "does this
 handler render what it claims" check would be fragile; this one covers the
 failure mode that has already occurred.
 
+**The `Rendering` column means two different things depending on its
+value, and that asymmetry is deliberate — but it must be read correctly.**
+For a `server` row, the value is an *enforced obligation*: E3 checks it, and
+a violation fails the build. For a `client` row, the value is a
+*permission*, not a description: nothing checks it, and at least one
+`client`-classified route does not currently match it —
+`POST /admin/console/config/log_level/preview` renders real server HTML
+today (`ui::admin::frame::admin_frame`, no Leptos shell involved), which is
+still policy-compliant (`/admin/console/*` permits either mode), just not
+what the column's plain-English reading would suggest. Do not read a
+`client` value as "this route is client-rendered" — read it as "this route
+is *permitted* to be client-rendered, and may or may not currently be."
+Auditing which `client` rows describe current behavior has no gate
+consequence and was judged disproportionate to do wholesale (RFC 132
+C1-132 review, 2026-09-09); fix it opportunistically if you're already in a
+file, not as a dedicated sweep.
+
 ## Known conformance gaps
 
 Declaring a route `server` under this policy is a statement of what it

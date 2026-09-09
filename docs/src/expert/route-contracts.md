@@ -66,7 +66,7 @@ code-review responsibility.
 | GET | `/me/security/totp/verify` | End user mid-auth | none (read) | `totp_verify_page_for` | server | `templates::tests::totp_verify_*` | N/A (GET) |
 | GET | `/me/security/totp/verify.json` | End user mid-auth | none (read) | JSON (`csrf_token`, `totp_handle`) | n/a | n/a | N/A (GET) |
 | POST | `/me/security/totp/verify` | End user mid-auth | `totp_verified` / `totp_verify_failed` | `complete_auth` redirect | server | n/a | required |
-| POST | `/me/security/totp/recover` | End user mid-auth | `totp_recovered` | `complete_auth` redirect | server | n/a | required |
+| POST | `/me/security/totp/recover` | End user mid-auth | `totp_recovered` | `complete_auth` redirect | n/a | n/a | required |
 | GET | `/me/security/totp/disable` | Authenticated user | none (read) | `totp_disable_confirm_page_for` | client | `templates::tests::totp_disable_*` | N/A (GET) |
 | GET | `/me/security/totp/disable.json` | Authenticated user | none (read) | JSON (`csrf_token`) | n/a | n/a | N/A (GET) |
 | POST | `/me/security/totp/disable` | Authenticated user | `totp_disabled` | redirect + flash | client | n/a | required |

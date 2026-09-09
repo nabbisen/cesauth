@@ -121,16 +121,138 @@ fi
 # ── E3 (RFC 132): a `server`-declared route's handler must not call
 #    leptos_html_shell ────────────────────────────────────────────────
 #
-# NOT YET IMPLEMENTED. A manual audit while building E2 found that
-# GET /me/security/totp/verify — declared `server` per RFC 132 §5.1's
-# "TOTP verify + recovery" — has, since v0.79.4, called
-# leptos_html_shell in its GET handler, exactly like `/` and `/login`.
-# That is a third conformance gap RFC 132 did not know about when it
-# reserved a two-path exemption budget for this check (§8: "If the
-# exemption mechanism turns out to need more than a literal list of two
-# paths, stop and report"). Landing E3 now would require deciding that
-# exemption list unilaterally, which the RFC explicitly reserves.
-# See the RFC 132 review request for the full finding and evidence.
+# C1-132: three named, dated exemptions — the RFC 132 review's ruling on
+# the conformance gap this check found while being built. Each entry is
+# "METHOD PATH" -> the RFC that removes it. Do NOT widen this into a
+# general exemption facility (RFC 132 §8 reserves that decision); add an
+# entry here only on an explicit review ruling, same as these three.
+#
+#   GET /                          -- RFC 131 R3 (RFC 132 §8, original)
+#   GET /login                     -- RFC 131 R3 (RFC 132 §8, original)
+#   GET /me/security/totp/verify   -- RFC 131 R3 (RFC 132 C1-132 ruling 1,
+#                                      2026-09-09 — found while building
+#                                      this check; on the *only* recovery
+#                                      path for a no-JS TOTP user, so R3
+#                                      must fix it alongside `/login`, not
+#                                      as an afterthought)
+E3_EXEMPT="GET /
+GET /login
+GET /me/security/totp/verify"
+
+# Resolve a handler's qualified name (e.g. "routes::magic_link::verify",
+# as lib.rs spells the call) to whether ITS OWN function body — not
+# anything it calls into — contains leptos_html_shell.
+#
+# Two shapes cover every route in this codebase (verified against all
+# 188): a direct function in a module file (routes::ui::login ->
+# routes/ui.rs, fn login), and a same-named single-function re-export
+# (routes::magic_link::verify -> `pub use verify::verify;` in
+# routes/magic_link.rs -> routes/magic_link/verify.rs, fn verify). Does
+# NOT resolve a *renamed* re-export (e.g. oidc.rs's `pub use
+# userinfo::handler as userinfo_handler`) — none of the current
+# `server`-declared routes need it, but if one ever does, this will
+# silently under-report rather than error, which is why E3 is
+# documented (view-rendering-policy.md) as checking one direction only.
+handler_calls_shell() {
+  local qualified="$1"
+  local fn="${qualified##*::}"
+  local modpath="${qualified%::*}"
+  local dirpath="${modpath//:://}"
+
+  # Shape 1: direct function in <dirpath>.rs
+  local f1="$REPO_ROOT/crates/backend/src/${dirpath}.rs"
+  if [ -f "$f1" ] && fn_body_has_shell "$f1" "$fn"; then
+    return 0
+  fi
+
+  # Shape 2: same-named submodule re-export, <dirpath>/<fn>.rs
+  local f2="$REPO_ROOT/crates/backend/src/${dirpath}/${fn}.rs"
+  if [ -f "$f2" ] && fn_body_has_shell "$f2" "$fn"; then
+    return 0
+  fi
+
+  return 1
+}
+
+# Does function $2's body in file $1 contain leptos_html_shell? Bounded
+# from its `pub async fn <name>` line to the next top-level `pub async
+# fn`/`pub fn`/`fn` line, or EOF.
+fn_body_has_shell() {
+  awk -v want="$2" '
+    /^pub async fn [a-zA-Z0-9_]+/ || /^pub fn [a-zA-Z0-9_]+/ || /^fn [a-zA-Z0-9_]+/ {
+      if (match($0, /fn [a-zA-Z0-9_]+/)) {
+        cur = substr($0, RSTART+3, RLENGTH-3)
+      }
+      in_target = (cur == want)
+    }
+    in_target && /leptos_html_shell/ { found=1 }
+    END { exit !found }
+  ' "$1"
+}
+
+# (method, path, qualified-handler) for every route registered in
+# lib.rs. Flattens the router chain so a registration whose closure body
+# spans multiple lines (the common case) is still one record.
+route_handlers=$(
+  awk '
+    BEGIN { chunk=""; method=""; path=""; started=0 }
+    /\.(get|post|put|delete)_async[[:space:]]*\(/ {
+      if (started) print method "\t" path "\t" chunk
+      started=1
+      chunk=$0
+      if (match($0, /\.(get|post|put|delete)_async/)) {
+        m = substr($0, RSTART+1, RLENGTH-1); gsub(/_async/, "", m); method = toupper(m)
+      }
+      if (match($0, /"[^"]+"/)) path = substr($0, RSTART+1, RLENGTH-2)
+      next
+    }
+    started && /\.run\(req/ { print method "\t" path "\t" chunk; started=0; next }
+    started { chunk = chunk " " $0 }
+  ' "$LIB_RS" | while IFS=$'\t' read -r m p c; do
+    if [[ "$c" =~ (routes::[a-zA-Z0-9_:]+) ]]; then
+      printf '%s\t%s\t%s\n' "$m" "$p" "${BASH_REMATCH[1]}"
+    fi
+  done
+)
+
+# server-declared (method, path) pairs from route-contracts.md.
+server_routes=$(
+  awk -F'|' '
+    /^\|[[:space:]]*(GET|POST|PUT|DELETE)[[:space:]]*\|/ {
+      method = $2; gsub(/^[ \t]+|[ \t]+$/, "", method)
+      path   = $3; gsub(/^[ \t]+`|`[ \t]*$/, "", path)
+      rendering = $7; gsub(/^[ \t]+|[ \t]+$/, "", rendering)
+      if (rendering == "server") print method" "path
+    }
+  ' "$CONTRACTS_MD"
+)
+
+e3_violations=""
+while IFS= read -r route; do
+  [ -z "$route" ] && continue
+  m="${route%% *}"
+  p="${route#* }"
+  handler=$(printf '%s\n' "$route_handlers" | awk -F'\t' -v m="$m" -v p="$p" '$1==m && $2==p {print $3; exit}')
+  if [ -z "$handler" ]; then
+    continue  # no handler resolved (shouldn't happen; the earlier missing/extra diff already covers registration)
+  fi
+  if handler_calls_shell "$handler"; then
+    exempted=$(printf '%s\n' "$E3_EXEMPT" | grep -Fx "$route" || true)
+    if [ -z "$exempted" ]; then
+      e3_violations="${e3_violations}${m} ${p} -> ${handler} calls leptos_html_shell, not on the exemption list
+"
+    fi
+  fi
+done <<< "$server_routes"
+
+if [ -n "$e3_violations" ]; then
+  echo "❌  server-declared route(s) whose handler calls leptos_html_shell, and are not an approved exemption:" >&2
+  printf '%s' "$e3_violations" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line" >&2; done
+  echo "" >&2
+  echo "    Either the handler needs to stop calling the shell, or this needs a reviewed," >&2
+  echo "    dated addition to E3_EXEMPT above — not a silent reclassification to client." >&2
+  exit_code=1
+fi
 
 if [ "$exit_code" -eq 0 ]; then
   echo "✅  All ${registered_count} routes are documented in route-contracts.md"
