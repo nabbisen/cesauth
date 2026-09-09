@@ -45,6 +45,17 @@ Full policy: `done/000-rfc-lifecycle-policy.md`.
 
 ## Proposed
 
+### P0 — blocks everything
+
+| ID | Title | Tier | Target |
+|----|-------|------|--------|
+| [134](./proposed/134-router-pattern-conflict.md) | **Router pattern conflict: cesauth serves no requests.** Three `:param.json` routes make `matchit` reject a pattern, which `worker` turns into a panic during router construction inside `#[event(fetch)]` — so every request fails, in all eight releases since 2026-07-07 | **P0** | next release |
+
+Awaiting owner authorization. Nothing else ships first; see
+`.git-exclude/reviewed/131-c2-index-html-and-router-panic-review.md` §7.
+
+### Other proposed
+
 UI/UX finishing track (v0.67.0 → v0.71.0). Source: v0.50.1 UI/UX design
 deck (overview onepage + dev-support PDF) compared against v0.66.0 state.
 The deck is largely shipped through v0.53/v0.62/v0.63; this batch closes
