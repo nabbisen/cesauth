@@ -158,8 +158,10 @@ started.
   **Known gap, deliberate:** the exclusion also covers `crates/` itself,
   hiding 25 stale doc-comments in Rust source pending a follow-up RFC. D5
   (adding `ROADMAP.md` to the scan paths) is not included — it would
-  surface the unresolved Management-GUI scope contradiction below and ship
-  a knowingly red gate.
+  surface the then-unresolved Management-GUI scope contradiction and ship
+  a knowingly red gate. **Ungated 2026-09-09:** the owner ruled the operator
+  console first-class and the contradictory line is gone, so D5 can now land
+  green. Scheduled with the console programme.
 
 - ✅ **v0.81.2 — RFC 130 (+ condition C1-130). Shipped 2026-09-05.** Closes
   RFC 127's acceptance criterion 3 (open since v0.81.1): the Leptos CSR
@@ -1918,8 +1920,14 @@ needs one of these, cesauth is the wrong choice.
   blocked on the entire concept of federating identity from an
   external directory. cesauth is a primary identity source.
 
-- **Management GUI.** The admin surface is an API (`/admin/*`). If
-  you need a dashboard, build one on top.
+<!-- "Management GUI" was removed from this list on 2026-09-09: the owner
+     ruled the operator console a FIRST-CLASS product surface. The line had
+     said the admin surface is an API and a dashboard was the integrator's
+     problem. That was false since v0.3.0, and RFC 012 had already corrected
+     the identical claim in the README — leaving this list asserting the
+     opposite of a correction the project had already made. The console
+     programme is RFC 131 (rfcs/accepted/131-mockup-adoption-strategy.md);
+     its four new screen groups are roadmap work, not a side investment. -->
 
 - **Implicit flow** / **hybrid flow**. Deprecated by OAuth 2.1 for
   good reasons.
