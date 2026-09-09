@@ -183,6 +183,43 @@ cares about. If the owner prefers the conservative reading, this is a minor.
 **Architect's recommendation: patch**, on the grounds that a gate protecting a
 fix is part of the fix.
 
+## 10a. Found in review: the shell's assets 404 (C1-134)
+
+**Added 2026-09-09**, reviewing the implementation. The router fix is correct
+and complete; this is a separate defect one layer below it, and the acceptance
+criteria above did not reach far enough to catch it.
+
+`crates/backend/src/routes/leptos_shell.rs` references every asset under an
+`/assets/` prefix (lines 91, 109, 110) and its module doc at `:19` asserts they
+are "served at `/assets/`". They are not: `wrangler.toml:161-162` sets
+`[assets] directory = "crates/frontend/dist"`, which Workers Static Assets
+serves from the **root**. Probed against the running Worker:
+
+```
+/assets/cesauth-frontend_bg.wasm   404      /cesauth-frontend_bg.wasm   200
+/assets/cesauth-frontend.js        404      /cesauth-frontend.js        200
+```
+
+The module script's first `import` therefore 404s, `init()` never runs, and
+`<div id="root">` stays empty on every client-rendered surface. This is the
+empty root div RFC 127 criterion 3 and RFC 130 §10 both anticipated.
+
+**Ruled fix:** `make build-frontend` outputs under `dist/assets/`, making the
+shell's paths true — *not* stripping the prefix. Serving assets at the root
+means any filename in `dist` can shadow the Worker route at that path, which is
+how `dist/index.html` swallowed `/` (RFC 131 C1-131). Moving them under a
+prefix bounds that class to `/assets/*` permanently.
+
+**And the gate lesson, which matters more than the bug.**
+`runtime-smoke-check.sh` asserted the shell is *served* — 200, `text/html`,
+non-empty body, CSP present, no panic — every one of which was true while the
+application could not load a byte of itself. Same shape as every gap in this
+sequence: `cargo check` proved compilation while the router panicked;
+`wrangler build` proved the Worker built while `/` was shadowed. C1-134
+extends the gate to derive every asset URL **from the served HTML** and assert
+each resolves. A criterion written one layer lower would have caught this on
+the first attempt; that is a defect in §9 as authored, not in the work.
+
 ## 11. Open questions
 
 1. **The `detail.json` spelling** (§5 T1) is the architect's proposal, not a
