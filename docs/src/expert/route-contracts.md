@@ -133,7 +133,7 @@ code-review responsibility.
 | GET | `/admin/tenancy/tenants` | System admin | none | tenant list | client | n/a | N/A (GET) |
 | GET | `/admin/tenancy/tenants.json` | System admin | none | JSON (`tenants`) | n/a | n/a | N/A (GET) |
 | GET | `/admin/tenancy/tenants/:tid` | System admin | none | tenant detail | client | n/a | N/A (GET) |
-| GET | `/admin/tenancy/tenants/:tid.json` | System admin | none | JSON (`csrf_token`) | n/a | n/a | N/A (GET) |
+| GET | `/admin/tenancy/tenants/:tid/detail.json` | System admin | none | JSON (`csrf_token`) | n/a | n/a | N/A (GET) |
 | GET | `/admin/tenancy/tenants/:tid/subscription/history` | System admin | none | subscription history | client | n/a | N/A (GET) |
 | GET | `/admin/tenancy/organizations/:oid` | System admin | none | org detail | client | n/a | N/A (GET) |
 | GET | `/admin/tenancy/users/:uid/role_assignments` | System admin | none | role assignments | client | n/a | N/A (GET) |
@@ -179,11 +179,11 @@ code-review responsibility.
 | Method | Path | Actor | Audit kind | View / template | Rendering | Rendering test | CSRF |
 |---|---|---|---|---|---|---|---|
 | GET | `/admin/t/:slug` | Tenant admin | none | tenant overview | client | n/a | N/A (GET) |
-| GET | `/admin/t/:slug.json` | Tenant admin | none | JSON (`tenant`, `counts`) | n/a | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/detail.json` | Tenant admin | none | JSON (`tenant`, `counts`) | n/a | n/a | N/A (GET) |
 | GET | `/admin/t/:slug/organizations` | Tenant admin | none | org list | client | n/a | N/A (GET) |
 | GET | `/admin/t/:slug/organizations.json` | Tenant admin | none | JSON (`tenant`, `organizations`) | n/a | n/a | N/A (GET) |
 | GET | `/admin/t/:slug/organizations/:oid` | Tenant admin | none | org detail | client | n/a | N/A (GET) |
-| GET | `/admin/t/:slug/organizations/:oid.json` | Tenant admin | none | JSON (`csrf_token`) | n/a | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/organizations/:oid/detail.json` | Tenant admin | none | JSON (`csrf_token`) | n/a | n/a | N/A (GET) |
 | GET | `/admin/t/:slug/users` | Tenant admin | none | user list | client | n/a | N/A (GET) |
 | GET | `/admin/t/:slug/users.json` | Tenant admin | none | JSON (`tenant`, `users`) | n/a | n/a | N/A (GET) |
 | GET | `/admin/t/:slug/users/:uid/role_assignments` | Tenant admin | none | role assignments | client | n/a | N/A (GET) |

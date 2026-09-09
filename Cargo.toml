@@ -39,7 +39,16 @@ cesauth-frontend            = { version = "0", path = "crates/frontend" }
 # --- Cloudflare Workers ---
 # Bind once at workspace level so every crate sees the same version.
 # worker 0.8.x requires edition = "2024" through its transitive graph.
-worker                      = { version = "0.8", features = ["d1", "http"] }
+#
+# Pinned exact (RFC 134 T2/T4): was `"0.8"`, floating -- the same root
+# cause C1-131 found and fixed for worker-build, left unpinned here.
+# 0.8.3 is not just "the version that happens to be resolved"; it is the
+# version the new runtime smoke gate (worker-build.yml) was measured
+# against and passed on -- GET /, GET /login, the three reshaped
+# .json routes, and a 404 all behave, with an unmigrated D1 and no
+# .dev.vars secrets. Re-verify against the smoke gate before bumping;
+# do not assume "newer worker" means "still routes."
+worker                      = { version = "=0.8.3", features = ["d1", "http"] }
 # workers-rs 0.8 no longer re-exports these transitively; adapter-cloudflare
 # depends on them directly (wasm_bindgen::JsValue, js_sys::Date). The version
 # ranges are pinned to match workers-rs 0.8's own transitive requirements.

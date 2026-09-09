@@ -65,3 +65,32 @@ jobs:
 
       - name: wrangler build
         run: npx wrangler build
+
+  runtime-smoke:
+    # RFC 134 T3 — the first gate in this project's history to boot the
+    # Worker runtime and issue a request. `worker-build` above proves the
+    # Worker *builds*; it does not prove the router *constructs* or that
+    # a request gets a real response. RFC 134 found the gap the hard way:
+    # `worker`'s router panicked on construction, on every request,
+    # across eight shipped releases (2026-07-07 through 0.81.3), and
+    # nothing in the gate set noticed, because nothing booted the
+    # runtime. See scripts/runtime-smoke-check.sh for what this asserts
+    # and why (content and headers, never status alone).
+    #
+    # No Cloudflare credentials needed -- `wrangler dev` runs entirely
+    # against Miniflare's local simulation. No `.dev.vars` secrets and
+    # no D1 migrations either: measured (RFC 134 T4) that the six checks
+    # below don't need them.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: make build-frontend
+        run: make build-frontend
+
+      - name: Runtime smoke check
+        run: bash scripts/runtime-smoke-check.sh

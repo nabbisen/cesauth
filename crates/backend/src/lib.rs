@@ -287,7 +287,7 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async("/admin/tenancy/tenants",                                    |req, ctx| async move { routes::admin::tenancy_console::tenants::page(req, ctx).await })
         .get_async("/admin/tenancy/tenants.json",                                    |req, ctx| async move { routes::admin::tenancy_console::tenants::page_json(req, ctx).await })
         .get_async("/admin/tenancy/tenants/:tid",                               |req, ctx| async move { routes::admin::tenancy_console::tenant_detail::page(req, ctx).await })
-        .get_async("/admin/tenancy/tenants/:tid.json",                               |req, ctx| async move { routes::admin::tenancy_console::tenant_detail::page_json(req, ctx).await })
+        .get_async("/admin/tenancy/tenants/:tid/detail.json",                        |req, ctx| async move { routes::admin::tenancy_console::tenant_detail::page_json(req, ctx).await })
         // RFC 068: Tenant suspend/restore (§16.8)
         .post_async("/admin/tenancy/tenants/:id/suspend",                       |req, ctx| async move { routes::admin::tenancy_console::tenant_detail::suspend(req, ctx).await })
         .post_async("/admin/tenancy/tenants/:id/restore",                       |req, ctx| async move { routes::admin::tenancy_console::tenant_detail::restore(req, ctx).await })
@@ -350,11 +350,11 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         // See `routes/admin/tenant_admin/gate.rs`. v0.13.0 ships read
         // pages only; mutation forms land in 0.14.0.
         .get_async("/admin/t/:slug",                                                     |req, ctx| async move { routes::admin::tenant_admin::overview::page(req, ctx).await })
-        .get_async("/admin/t/:slug.json",                                                     |req, ctx| async move { routes::admin::tenant_admin::overview::page_json(req, ctx).await })
+        .get_async("/admin/t/:slug/detail.json",                                              |req, ctx| async move { routes::admin::tenant_admin::overview::page_json(req, ctx).await })
         .get_async("/admin/t/:slug/organizations",                                       |req, ctx| async move { routes::admin::tenant_admin::organizations::page(req, ctx).await })
         .get_async("/admin/t/:slug/organizations.json",                                       |req, ctx| async move { routes::admin::tenant_admin::organizations::page_json(req, ctx).await })
         .get_async("/admin/t/:slug/organizations/:oid",                                  |req, ctx| async move { routes::admin::tenant_admin::organization_detail::page(req, ctx).await })
-        .get_async("/admin/t/:slug/organizations/:oid.json",                                  |req, ctx| async move { routes::admin::tenant_admin::organization_detail::page_json(req, ctx).await })
+        .get_async("/admin/t/:slug/organizations/:oid/detail.json",                           |req, ctx| async move { routes::admin::tenant_admin::organization_detail::page_json(req, ctx).await })
         .get_async("/admin/t/:slug/users",                                               |req, ctx| async move { routes::admin::tenant_admin::users::page(req, ctx).await })
         .get_async("/admin/t/:slug/users.json",                                                |req, ctx| async move { routes::admin::tenant_admin::users::page_json(req, ctx).await })
         .get_async("/admin/t/:slug/users/:uid/role_assignments",                         |req, ctx| async move { routes::admin::tenant_admin::role_assignments::page(req, ctx).await })
