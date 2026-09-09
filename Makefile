@@ -132,6 +132,19 @@ build-frontend: wasm-opt-fetch
 			-o "$$f" "$$f"; \
 	done
 	cp crates/frontend/static/* crates/frontend/dist/
+	# RFC 131 C2-131: Trunk always emits dist/index.html — its own dev
+	# template, whose module doc already says it is "NOT served directly"
+	# in production. It was: Cloudflare Workers Static Assets serves a
+	# matching static file before the Worker script runs at all, so `/`
+	# was resolving to this file instead of routes::ui::login, with none
+	# of the Worker's security headers (no CSP, nothing) applied. Removing
+	# it makes the Worker's leptos_shell.rs shell the only shell — which
+	# is what both implementations already claimed — and turns "no .html
+	# in the deployed asset directory" into an assertable invariant
+	# (route-contracts-check.sh). `trunk serve` is unaffected: it reads
+	# the source template at crates/frontend/index.html directly, which
+	# this does not touch.
+	rm -f crates/frontend/dist/index.html
 
 ## Compile the Cloudflare Workers backend.
 ## Output: crates/backend/build/worker/shim.mjs + *.wasm

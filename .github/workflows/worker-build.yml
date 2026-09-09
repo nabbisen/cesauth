@@ -39,5 +39,29 @@ jobs:
       - name: make build-frontend
         run: make build-frontend
 
+      # RFC 131 C2-131: Trunk always emits dist/index.html, and the
+      # Makefile's build-frontend target now deletes it (see that
+      # target's comment) because Cloudflare Workers Static Assets was
+      # serving it directly at `/` -- ahead of the Worker script, with
+      # none of the Worker's security headers applied. This assertion
+      # is the invariant that removal exists to guarantee: nothing
+      # under the deployed asset directory is HTML. A `.html` file
+      # reappearing here (a Trunk upgrade re-adding it under a
+      # different name, a future static asset genuinely needing to be
+      # HTML) is worth a human decision, not a silent pass.
+      - name: Assert no .html in the deployed asset directory
+        run: |
+          set -euo pipefail
+          html_files=$(find crates/frontend/dist -name '*.html')
+          if [ -n "$html_files" ]; then
+            echo "❌  .html file(s) found in crates/frontend/dist/ -- Cloudflare" >&2
+            echo "    Workers Static Assets will serve these ahead of the Worker" >&2
+            echo "    script, bypassing routes::ui::login and every security header" >&2
+            echo "    it applies (RFC 131 C1-131/C2-131)." >&2
+            echo "$html_files" >&2
+            exit 1
+          fi
+          echo "✅  No .html in crates/frontend/dist/"
+
       - name: wrangler build
         run: npx wrangler build

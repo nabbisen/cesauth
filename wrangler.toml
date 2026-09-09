@@ -34,6 +34,15 @@ compatibility_date = "2026-04-01"
 # 0.8.4 does not pass that flag and builds clean against the same
 # wasm-bindgen family; 0.8.3 also works. Re-verify before bumping past
 # 0.8.4 -- do not assume "newer worker-build" means "still builds."
+#
+# The flag this pin drops is not cosmetic: `--force-enable-abort-handler`
+# is what turns a Rust panic in the wasm module into a proper HTTP error
+# response. Without it, a panic can leave the Workers runtime waiting on
+# a promise that will never resolve, which surfaces as "your Worker's
+# code had hung" -- indistinguishable from an actual infinite loop or a
+# stuck await from the outside. If a request hangs under this pin, check
+# `wrangler tail` for a panic message before assuming the handler itself
+# is stuck; the pin may be hiding the real error rather than causing one.
 [build]
 command = "cargo install -q worker-build --version 0.8.4 && worker-build --release crates/backend"
 
