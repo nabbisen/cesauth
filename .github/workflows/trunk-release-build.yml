@@ -40,12 +40,16 @@ jobs:
       - name: make build-frontend
         run: make build-frontend
 
-      - name: Assert dist/ contains the filenames leptos_shell.rs hardcodes
+      # RFC 134 C1-134: built files land under dist/assets/, matching
+      # leptos_shell.rs's own `/assets/...` request paths (previously
+      # they landed at dist/'s root, which Static Assets served
+      # unprefixed -- so every asset the shell asked for 404'd).
+      - name: Assert dist/assets/ contains the filenames leptos_shell.rs hardcodes
         run: |
           set -euo pipefail
           for f in $(grep -oP '^const LEPTOS_\w+:\s*&str\s*=\s*"\K[^"]+' \
                      crates/backend/src/routes/leptos_shell.rs); do
-            test -f "crates/frontend/dist/$f" \
+            test -f "crates/frontend/dist/assets/$f" \
               && echo "OK      $f" \
               || { echo "MISSING $f — leptos_shell.rs's constants no longer match what Trunk emits" >&2; exit 1; }
           done

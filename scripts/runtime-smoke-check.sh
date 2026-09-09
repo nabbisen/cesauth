@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# runtime-smoke-check.sh — RFC 134 T3
+# runtime-smoke-check.sh — RFC 134 T3, extended by C1-134
 #
 # The first gate in this project's history to boot the Worker runtime and
 # issue a request. Every other gate proves compilation, artifact
@@ -12,14 +12,22 @@
 # a missing content-security-policy header is invisible to a status
 # check, and a panic's 500 looks like any other 500), then tears the
 # server down. No `.dev.vars` secrets and no D1 migrations are applied:
-# measured (RFC 134 T4) that none of the six checks below need them, and
-# a gate that requires less setup is a gate more likely to keep running.
+# measured (RFC 134 T4) that none of the checks below need them, and a
+# gate that requires less setup is a gate more likely to keep running.
+#
+# C1-134: RFC 134's original six checks proved the *shell* is served —
+# 200, text/html, CSP present — while every asset URL the shell itself
+# references 404'd (leptos_shell.rs asked for `/assets/...`; the built
+# files landed at dist/'s root), so Leptos never mounted. A "the shell
+# renders" check cannot see that; the fix is to derive the asset URLs
+# from the served HTML — never hardcode them, or this drifts again the
+# same way — and assert each one resolves.
 #
 # Run from the repository root:
 #   bash scripts/runtime-smoke-check.sh
 #
 # Exit codes:
-#   0 — all six checks passed, no panic in the console output
+#   0 — all checks passed, no panic in the console output
 #   1 — a check failed, or a panic was observed
 #   2 — the server never became ready (a different failure than "a check
 #       failed" — the build broke, or `wrangler dev` itself errored)
@@ -63,7 +71,11 @@ if [ "$ready" -ne 1 ] || ! grep -q "Ready on" "$LOG"; then
 fi
 
 fail=0
+ROOT_BODY=""
 
+# Sets $LAST_BODY as a side effect (bash functions can't return strings),
+# so the asset-URL extraction below can reuse the same response instead
+# of re-fetching.
 check_html() {
   local path="$1" name="$2"
   local resp
@@ -73,6 +85,7 @@ check_html() {
   ctype="$(printf '%s' "$resp" | grep -i '^content-type:' | head -1)"
   csp="$(printf '%s' "$resp" | grep -i '^content-security-policy:' | head -1)"
   body="$(printf '%s' "$resp" | awk 'BEGIN{blank=0} /^\r?$/{blank++; next} blank>0{print}' )"
+  LAST_BODY="$body"
 
   local ok=1
   [ "$status" = "200" ] || { echo "❌  $name: expected 200, got '${status:-<none>}'" >&2; ok=0; }
@@ -98,12 +111,50 @@ check_status() {
   fi
 }
 
+# RFC 134 C1-134: every asset URL the served page itself references
+# (href="...", src="...", import ... from "...") must resolve. Parsed
+# from the response body, never hardcoded — a hardcoded list is exactly
+# how this class of drift (leptos_shell.rs asking for a path Static
+# Assets does not serve) goes unnoticed a second time.
+check_referenced_assets() {
+  local body="$1" name="$2"
+  # Two shapes: HTML attributes (href="...", src="...", no space before
+  # the quote) and JS import statements (`from "..."`, always a space —
+  # it's JavaScript syntax, not an HTML attribute, so `from="..."` alone
+  # would silently miss every `import ... from "/assets/...";` line).
+  local urls
+  urls="$( { printf '%s' "$body" | grep -oE '(href|src)="[^"]+"' | sed -E 's/^(href|src)="//; s/"$//'; \
+             printf '%s' "$body" | grep -oE 'from[[:space:]]+"[^"]+"' | sed -E 's/^from[[:space:]]+"//; s/"$//'; } \
+    | grep -E '^/' \
+    | sort -u)"
+
+  if [ -z "$urls" ]; then
+    echo "❌  $name: found no asset URLs to check — the extraction pattern may no longer match the shell's markup" >&2
+    fail=1
+    return
+  fi
+
+  local url status
+  while IFS= read -r url; do
+    [ -z "$url" ] && continue
+    status="$(curl -s -o /dev/null -w '%{http_code}' "${BASE}${url}" 2>/dev/null)"
+    if [ "$status" = "200" ]; then
+      echo "✅  $name: $url -> 200"
+    else
+      echo "❌  $name: $url -> $status (expected 200)" >&2
+      fail=1
+    fi
+  done <<< "$urls"
+}
+
 check_html "/"                                                       "GET /"
+ROOT_BODY="$LAST_BODY"
 check_html "/login"                                                  "GET /login"
 check_status "/admin/tenancy/tenants/foo/detail.json"          401  "GET /admin/tenancy/tenants/:tid/detail.json"
 check_status "/admin/t/acme/detail.json"                        401  "GET /admin/t/:slug/detail.json"
 check_status "/admin/t/acme/organizations/org1/detail.json"    401  "GET /admin/t/:slug/organizations/:oid/detail.json"
 check_status "/definitely-not-a-route"                          404  "GET /definitely-not-a-route (unregistered)"
+check_referenced_assets "$ROOT_BODY"                                 "GET / referenced assets"
 
 if grep -qi "Rust panic" "$LOG"; then
   echo "❌  Rust panic observed in the runtime console output:" >&2

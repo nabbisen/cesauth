@@ -110,8 +110,8 @@ wasm-opt-fetch:
 		rm -f target/$(BINARYEN_ASSET); \
 	fi
 
-## Compile the Leptos CSR bundle with Trunk + copy static assets to dist/.
-## Output: crates/frontend/dist/
+## Compile the Leptos CSR bundle with Trunk + copy static assets to
+## dist/assets/. Output: crates/frontend/dist/assets/
 ##
 ## Trunk's own optimize step is disabled (see wasm-opt-fetch above); the
 ## wasm-opt invocation below applies the flags Trunk cannot pass. Runs
@@ -124,6 +124,17 @@ wasm-opt-fetch:
 ## --filehash false: deterministic `cesauth-frontend.js` /
 ## `cesauth-frontend_bg.wasm`, matching crates/backend/src/routes/
 ## leptos_shell.rs's LEPTOS_JS / LEPTOS_WASM constants (RFC 130 S2).
+##
+## RFC 134 C1-134: built files land under dist/assets/, not dist/ itself.
+## leptos_shell.rs has always requested them at `/assets/...` — its own
+## module doc said so — but `[assets] directory = "crates/frontend/dist"`
+## in wrangler.toml serves flat from the root, so every asset 404'd and
+## Leptos never mounted. Nesting under assets/ makes the shell's existing
+## paths true instead of stripping the prefix from the shell: a flat
+## dist/ means *any* built filename can shadow an application route at
+## that path (exactly how dist/index.html swallowed `/` in C2-131);
+## bounding built output to /assets/* closes that whole class, not just
+## the one instance already found.
 build-frontend: wasm-opt-fetch
 	cd crates/frontend && trunk build --release --filehash false
 	for f in crates/frontend/dist/*_bg.wasm; do \
@@ -131,9 +142,8 @@ build-frontend: wasm-opt-fetch
 			--enable-bulk-memory --enable-bulk-memory-opt -Oz \
 			-o "$$f" "$$f"; \
 	done
-	cp crates/frontend/static/* crates/frontend/dist/
 	# RFC 131 C2-131: Trunk always emits dist/index.html — its own dev
-	# template, whose module doc already says it is "NOT served directly"
+	# template, whose module doc already said it is "NOT served directly"
 	# in production. It was: Cloudflare Workers Static Assets serves a
 	# matching static file before the Worker script runs at all, so `/`
 	# was resolving to this file instead of routes::ui::login, with none
@@ -143,8 +153,12 @@ build-frontend: wasm-opt-fetch
 	# in the deployed asset directory" into an assertable invariant
 	# (route-contracts-check.sh). `trunk serve` is unaffected: it reads
 	# the source template at crates/frontend/index.html directly, which
-	# this does not touch.
+	# this does not touch. Removed before the assets/ move below so it
+	# never has a chance to land there either.
 	rm -f crates/frontend/dist/index.html
+	mkdir -p crates/frontend/dist/assets
+	mv crates/frontend/dist/*.js crates/frontend/dist/*_bg.wasm crates/frontend/dist/assets/
+	cp crates/frontend/static/* crates/frontend/dist/assets/
 
 ## Compile the Cloudflare Workers backend.
 ## Output: crates/backend/build/worker/shim.mjs + *.wasm
