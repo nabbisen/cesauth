@@ -45,17 +45,6 @@ Full policy: `done/000-rfc-lifecycle-policy.md`.
 
 ## Proposed
 
-### P0 — blocks everything
-
-| ID | Title | Tier | Target |
-|----|-------|------|--------|
-| [134](./proposed/134-router-pattern-conflict.md) | **Router pattern conflict: cesauth serves no requests.** Three `:param.json` routes make `matchit` reject a pattern, which `worker` turns into a panic during router construction inside `#[event(fetch)]` — so every request fails, in all eight releases since 2026-07-07 | **P0** | next release |
-
-Awaiting owner authorization. Nothing else ships first; see
-`.git-exclude/reviewed/131-c2-index-html-and-router-panic-review.md` §7.
-
-### Other proposed
-
 UI/UX finishing track (v0.67.0 → v0.71.0). Source: v0.50.1 UI/UX design
 deck (overview onepage + dev-support PDF) compared against v0.66.0 state.
 The deck is largely shipped through v0.53/v0.62/v0.63; this batch closes
@@ -107,8 +96,9 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 
 | ID | Title | Tier | Dispatched | Depends on |
 |----|-------|------|---|---|
-| [132](./accepted/132-view-rendering-policy.md) | View rendering policy — supersedes RFC 131 R0; blocks R3 | P1 | 0.81.4 | — |
-| [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | 0.81.4 — R2 + R5; R3 awaits 132 | 130, 132 |
+| [134](./accepted/134-router-pattern-conflict.md) | **Router pattern conflict — P0.** Three `:param.json` routes panic `worker`'s router during construction inside `#[event(fetch)]`, so every request fails; live in all eight releases since 2026-07-07 | **P0** | next release | — |
+| [132](./accepted/132-view-rendering-policy.md) | View rendering policy — supersedes RFC 131 R0; blocks R3 | P1 | landed on `main`; ships with 134 | — |
+| [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | R2a landed; R2b awaits 132 §13 q1; R5b–e behind 134; R3 awaits 132 | 130, 132, 134 |
 
 Numbers are assignment order and are never reused or renumbered (RFC 000), so
 a higher number can be earlier work: 130 continues 127, and 131 continues 130.
@@ -181,7 +171,7 @@ discussion happened.
 
 ## Adding a new RFC
 
-Next number: **134**. Create `rfcs/proposed/134-slug.md` with `**Status.** Proposed`
+Next number: **135**. Create `rfcs/proposed/135-slug.md` with `**Status.** Proposed`
 and add a row above, in the same commit.
 
 Transitions (folder is authoritative; update Status and this index in the same
