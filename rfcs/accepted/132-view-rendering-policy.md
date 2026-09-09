@@ -100,14 +100,16 @@ the mode with fewer failure modes and it is what ABDD implies.
 
 | Surface | Q-path | Mode |
 |---|---|---|
-| `/`, `/login`, `/magic-link/*`, `/accept-invite`, TOTP verify + recovery, terminal errors | Q1 no / Q2 yes | **Server HTML.** Non-negotiable |
+| `/`, `/login`, `/magic-link/*`, `/accept-invite`, TOTP verify + recovery-code entry, terminal errors | Q1 no / Q2 yes | **Server HTML.** Non-negotiable |
 | `/webauthn/*` ceremonies | **Q4** | **N/A — these render nothing.** All four are `POST` JSON (`route-contracts.md:34-37`: view "JSON (challenge)" / "JSON", rendering test "N/A (JSON)"). *Corrected 2026-09-09: this row previously classified a "Server HTML page + scripted ceremony." No such page exists; I invented it. Where the passkey affordance lives is a property of `/login` and `/me/security`, both classified above — see §13 q1.* |
 | `/me/security*` (authenticated self-service) | Q1 yes — a session exists, support paths exist | Client, permitted |
 | `/admin/t/*`, `/admin/tenancy/*`, `/admin/console/*` | Q1 yes, Q3 yes | Client, permitted |
 | `*.json`, OIDC, `/api/v1/*` | Q4 | N/A |
 
-**The existing split becomes principled**, and one live defect falls out of it
-immediately: `/` and `/login` are on the wrong side of the line.
+**The existing split becomes principled**, and live defects fall out of it
+immediately: `/` and `/login` are on the wrong side of the line — and so is
+`GET /me/security/totp/verify`, which this RFC's original inventory missed
+entirely. See §8, amended 2026-09-09.
 
 ## 6. Enforcement — the part that stops this recurring
 
@@ -148,14 +150,46 @@ Q3 interactivity — where SSR+hydrate would be the way to have both. No surface
 in §5.1 currently does. If one arises, the spike gets scoped then, with a time
 bound and a "renders correct HTML under `wrangler dev`" bar.
 
-## 8. Conformance gap
+## 8. Conformance gaps
 
-One, and it is the significant one: **`/` and `/login` render client-side and
-must not.** Fixing it is RFC 131 R3 work under the new classification, not this
-RFC.
+**Amended 2026-09-09**, after the C1-132 review. This section said "one, and it
+is the significant one." There are **three**, and the third is the worst.
 
-The other server-rendered pre-auth routes already conform, which is why R4 must
-not delete their templates — RFC 131 already carries that constraint.
+1. **`/` and `/login` render client-side and must not.**
+   `crates/backend/src/routes/ui.rs:29` — one handler, two routes.
+2. **`GET /me/security/totp/verify` renders client-side and must not.**
+   `crates/backend/src/routes/me/totp/verify.rs:143-147` —
+   `VerifyGetDecision::RenderPage` calls `leptos_html_shell`, and has since
+   v0.79.4. Found by the dev team while building E3; it was not in this RFC's
+   inventory, and §3's claim that only `/` and `/login` are non-conforming was
+   wrong.
+
+   **Why it is worse than the other two.** They deny a no-JS user the sign-in
+   page. This denies a no-JS user *with TOTP enabled* the **second factor**,
+   on the only path they have — so fixing `/` and `/login` alone leaves them
+   still unable to sign in. The server template that would serve them,
+   `templates::totp_verify_page_for`, still exists but now has exactly one
+   caller (`verify.rs:466`, the POST retry branch), which a no-JS user can
+   never reach because they cannot render the form that posts to it.
+   **R3 must fix this in the same slice as `/login`, or the fix is cosmetic.**
+3. **`POST /me/security/totp/recover` gives a no-JS user a dead end.** Not a
+   rendering-mode gap — it renders nothing, and is `n/a` — but a mistyped
+   recovery code returns a bare `Response::error("Bad Request", 400)`
+   (`recover.rs:226`) where `magic_link/verify.rs`'s `form_retry`
+   (`verify.rs:31-38`) re-renders the form with an inline error and a fresh
+   CSRF token. Worst possible audience: the user who has already lost their
+   authenticator. **Out of scope for this RFC** (§10 is documentation and one
+   script); recorded so it is not rediscovered as new.
+
+`magic_link/request.rs`, `magic_link/verify.rs` and
+`me/security/totp/enroll/confirm` do conform. `me/totp/enroll.rs` also calls
+the shell, and that is **correct** — `/me/security/totp/enroll` is
+post-authentication self-service behind a full session, so Q1 answers yes and
+it is `client`. §5.1 never placed enroll in the server bucket; a handoff
+summary that grouped it with verify was imprecise.
+
+E3's exemption list is therefore **three** entries — gaps 1 and 2 — each dated
+and naming RFC 131 R3 as its exit.
 
 ## 9. Testing strategy
 
