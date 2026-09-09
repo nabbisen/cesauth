@@ -1,5 +1,15 @@
 # RFC 006: CSP without `'unsafe-inline'` (per-request nonces)
 
+> **Regression recorded 2026-09-09 (RFC 131 C1-131 M1).** This RFC's CSP is
+> applied by `security_headers::apply` (`crates/backend/src/lib.rs:497`) to
+> every *Worker* response. `GET /` does not produce one: Workers Static Assets
+> serves `crates/frontend/dist/index.html` before the Worker is invoked, and
+> the asset directory has no `_headers` file — so **the login page currently
+> carries no CSP and no security headers**. Not a defect in this RFC's design;
+> a deployment-configuration defect that bypasses it, invisible because nothing
+> in the project asserts a response header. Fix ruled in the C1-131 review §4
+> and tracked as C2-131; see also RFC 132 §8.
+
 **Status**: Implemented (v0.52.0)
 **ROADMAP**: `## Planned (0.x) / Later` — "CSP without `'unsafe-inline'`"
 **ADR**: ADR-007 §Q3 documents the v0.23.0 limitation

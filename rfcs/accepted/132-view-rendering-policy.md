@@ -157,6 +157,29 @@ is the significant one." There are **three**, and the third is the worst.
 
 1. **`/` and `/login` render client-side and must not.**
    `crates/backend/src/routes/ui.rs:29` — one handler, two routes.
+
+   **Amended 2026-09-09 (C1-131's M1): at `/` the handler is not reached at
+   all, and the real defect is worse than a rendering mode.** Workers Static
+   Assets serves `crates/frontend/dist/index.html` — Trunk's build template,
+   whose own comment says it is *not* served in production — before the Worker
+   script is invoked, because `wrangler.toml`'s `[assets]` sets no
+   `run_worker_first` and a file matches `/`. Consequences:
+
+   - `crates/backend/src/lib.rs:497` applies `security_headers::apply` to
+     every **Worker** response. `/` has none, and there is no `_headers` file
+     in the asset directory, so **the login page is served with no
+     Content-Security-Policy and no security headers at all** — a live
+     regression against `rfcs/done/006-csp-without-unsafe-inline.md`.
+   - `/` serves Trunk's template while `/login` serves the Worker's shell with
+     a per-request nonce: **two shells for one page.**
+   - A **green E3 therefore says nothing about `/`.** Its handler does call
+     the shell, and the exemption is correct to hold, but the code E3 inspects
+     is currently off the request path.
+
+   Ruled fix (C1-131 review §4): `make build-frontend` removes
+   `dist/index.html`, making the Worker's shell the only shell — not
+   `run_worker_first`, which would route every request to a Worker that has no
+   assets fetcher binding and would 404 the JS and wasm.
 2. **`GET /me/security/totp/verify` renders client-side and must not.**
    `crates/backend/src/routes/me/totp/verify.rs:143-147` —
    `VerifyGetDecision::RenderPage` calls `leptos_html_shell`, and has since
