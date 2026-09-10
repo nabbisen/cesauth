@@ -158,6 +158,36 @@ A release that mixes fixes and new capability takes the **higher** level.
   produced.
 - Version bumps require explicit owner confirmation; `1.0.0` requires
   confirmation *and* sufficient test coverage.
+
+## Publishing to crates.io
+
+**Only the name `cesauth` is published, and it holds nothing.**
+[`crates.io/crates/cesauth`](https://crates.io/crates/cesauth) — version
+`0.0.0`, Apache-2.0, published 2026-09-10 by the owner. It is a name
+reservation with no API. `0.0.0` was chosen over `0.0.1` so the placeholder
+reads as one and leaves `0.0.1` free if the name is ever used for real.
+
+**The seven workspace crates are deliberately *not* published and *not*
+reserved.** That is a decision, not an oversight:
+
+- Reserving names a project does not intend to use is discouraged on
+  crates.io, and a placeholder buys a weaker claim than a real published
+  crate — names are first-come-first-served, and an unused name whose holder
+  does not respond can be reassigned. Treat reservation as brand assurance,
+  not as a security control.
+- The name that would actually carry impersonation risk is **`cesauth-core`**
+  — a genuine library, referenced throughout these docs, and the one someone
+  might plausibly `cargo add`. The real protection for it is publishing it for
+  real when there is a reason to, not holding it with a stub.
+
+**Every workspace crate carries `publish = false`.** A crates.io token lives in
+`~/.cargo/credentials.toml` on a machine where `cargo publish` is one command
+away, and publishing is permanent — crates.io never deletes a version, only
+yanks it. The guard makes publishing an explicit act rather than an accident.
+
+If a crate is ever genuinely to be published, flip `publish` for **that crate
+only**, deliberately, as part of the change that publishes it — never by
+leaving it unset.
 - **A readiness report states what would ship; it never contains the steps to
   ship it.** Authorization is the boundary between the two documents, so there
   is nothing executable to run early. 0.82.0 was tagged and pushed before the

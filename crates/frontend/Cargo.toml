@@ -2,6 +2,11 @@
 name        = "cesauth-frontend"
 description = "Typed, accessible UI components and HTML templates for cesauth login flows."
 version.workspace       = true
+# Not published to crates.io. Only the name `cesauth` is reserved
+# (0.0.0 placeholder, 2026-09-10). Flip this to `true` deliberately,
+# per crate, if this one is ever genuinely published -- never by
+# leaving it unset. See docs/src/expert/contributing.md.
+publish     = false
 edition.workspace       = true
 rust-version.workspace  = true
 license.workspace       = true
