@@ -45,6 +45,14 @@ Full policy: `done/000-rfc-lifecycle-policy.md`.
 
 ## Proposed
 
+### Awaiting owner authorization
+
+| ID | Title | Tier | Target |
+|----|-------|------|--------|
+| [129](./proposed/129-drift-scan-coverage.md) | Drift-scan coverage: the `crates/` blind spot. 25 stale references in 24 files, of three kinds — 19 dead pointers, 6 true historical statements a blanket sweep would falsify, 1 command that errors. Also adopts RFC 126's deferred D5 (`ROADMAP.md` into the scan paths), ungated by the 2026-09-09 Management-GUI ruling | P2 | 0.83.0 |
+
+### Other proposed
+
 UI/UX finishing track (v0.67.0 → v0.71.0). Source: v0.50.1 UI/UX design
 deck (overview onepage + dev-support PDF) compared against v0.66.0 state.
 The deck is largely shipped through v0.53/v0.62/v0.63; this batch closes
