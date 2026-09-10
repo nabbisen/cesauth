@@ -71,7 +71,21 @@ declare -a PATTERNS=(
     # Pattern is specific enough: `code_plaintext:` (field declaration) not a string literal.
     "pub code_plaintext	renamed to delivery_payload in v0.50.3 (RFC 008); field should not re-appear"
     # README claim corrected in v0.52.1 (RFC 012).
-    "No management GUI	README claim corrected in v0.52.1 (RFC 012)"
+    #
+    # RFC 129 C1-129: excluded on ROADMAP.md. RFC 129 D4 added ROADMAP.md to
+    # SCAN_PATHS; this pattern then matched ROADMAP.md:781, which quotes the
+    # README's old "No management GUI" claim inside a past-tense description
+    # of the RFC 012 fix that corrected it. Rephrasing a quotation of what a
+    # doc used to say would falsify the record of what it said — the same
+    # reasoning that excludes docs/changelog-archive/ above, applied here
+    # because ROADMAP.md's per-release entries are the same kind of
+    # historical record, verified by reading all matches in context.
+    # Cost: ROADMAP.md's forward-looking planning sections are unprotected
+    # from this pattern too — a file-level regex can't isolate the
+    # historical entries from the planning ones. Every *other* pattern in
+    # this file still scans ROADMAP.md in full; only these five are
+    # exempted (see the crates/worker block below for the other four).
+    "No management GUI	README claim corrected in v0.52.1 (RFC 012)	ROADMAP\.md"
     # RFC 039: OTP must never appear in audit reason (fixed in v0.50.3 / v0.54.1).
     "dev-delivery handle=	OTP dev-delivery format must not appear in non-runbook docs (RFC 030/039)"
     # RFC 039: nodejs_compat removed in RFC 038 — catch if it re-appears in wrangler.toml
@@ -104,10 +118,22 @@ declare -a PATTERNS=(
     # RFC 129 D3 dropped the former `crates/` exclusion: RFC 129 D1/D2
     # fixed the 19 dead pointers and rephrased the 6 historical
     # statements found under crates/, so the gate now covers it.
-    "crates/worker	RFC 114 renamed crates/worker -> crates/backend	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md"
-    "crates/ui	RFC 114 renamed crates/ui -> crates/frontend	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md"
-    "cesauth-worker	RFC 114 renamed cesauth-worker -> cesauth-backend	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md"
-    "cesauth-ui	RFC 114 renamed cesauth-ui -> cesauth-frontend; the name is wrong in this tree whether it means the crate RFC 114 renamed or the mockup's own crate of the same name — neither belongs here	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md"
+    #
+    # RFC 129 C1-129: added ROADMAP.md to all four rules below. Same
+    # reasoning as the "No management GUI" rule above — ROADMAP.md:154
+    # names these exact four patterns while describing RFC 126's fix
+    # ("crates/worker / cesauth-ui references... fixed"); rephrasing it
+    # would make the entry stop describing what RFC 126 actually did.
+    # ROADMAP.md:1262 quotes a TODO that lived at
+    # crates/worker/src/flash.rs:215 during the v0.31.0 era — a
+    # quotation, not a live claim. Read all eleven matches in context
+    # before this exclusion was added (RFC 129 review). Cost and scope:
+    # same note as above — ROADMAP.md's planning sections lose coverage
+    # from these four patterns only; every other pattern still scans it.
+    "crates/worker	RFC 114 renamed crates/worker -> crates/backend	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md|ROADMAP\.md"
+    "crates/ui	RFC 114 renamed crates/ui -> crates/frontend	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md|ROADMAP\.md"
+    "cesauth-worker	RFC 114 renamed cesauth-worker -> cesauth-backend	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md|ROADMAP\.md"
+    "cesauth-ui	RFC 114 renamed cesauth-ui -> cesauth-frontend; the name is wrong in this tree whether it means the crate RFC 114 renamed or the mockup's own crate of the same name — neither belongs here	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md|ROADMAP\.md"
     # RFC 128: audit events moved from R2 objects to D1 rows in v0.32.0
     # (ADR-010), but observability.md described the pre-move architecture
     # until this RFC. Both patterns are specific to the storage-model
@@ -139,7 +165,7 @@ for entry in "${PATTERNS[@]}"; do
                     continue
                 fi
                 matches+=("$line")
-            done < <(grep -rn --include="*.rs" --include="*.md" --include="*.toml" \
+            done < <(grep -rHn --include="*.rs" --include="*.md" --include="*.toml" \
                          -E "$pattern" "$path" 2>/dev/null || true)
         fi
     done
