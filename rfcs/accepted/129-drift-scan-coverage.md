@@ -163,6 +163,45 @@ browser harness. Stated per `docs/src/expert/contributing.md`
 §"Choosing the version level" — the release takes the higher level, and this
 RFC is not the reason.
 
+## 10a. What D4 surfaced, and my failure to measure it (C1-129)
+
+**Added 2026-09-10**, from the implementation review.
+
+§2 measured `crates/` and nothing else. **D4 was written without running a
+single grep to see what putting `ROADMAP.md` in the scan paths would surface.**
+It surfaces **eleven** hits across all five patterns — and one command would
+have told me, so this RFC would have carried the ruling instead of needing a
+correction cycle. Same class as RFC 134's acceptance criteria being written a
+layer above the evidence, and precisely the "state the command behind the
+number" discipline this project imposes everywhere else.
+
+**The eleven are legitimate history**, read in context: per-release entries in
+`ROADMAP.md`'s Shipped section. Three settle it beyond argument —
+
+- `:781` quotes the README's false *"No management GUI"* claim, the very text
+  RFC 012 corrected;
+- `:1262` quotes a TODO that lived at `crates/worker/src/flash.rs:215`;
+- `:154` describes RFC 126's fix by naming the patterns it fixed.
+
+**A quotation cannot be rephrased without falsifying it**, so the technique that
+worked for §5's six is unavailable. Exclusion is correct.
+
+**Ruled: exclude `ROADMAP.md` on those five patterns only — per pattern, not per
+file.** Every other pattern still scans it, which is what D4 actually buys.
+
+**And the cost, recorded rather than inherited:** unlike `CHANGELOG.md`,
+`ROADMAP.md` is **mixed** — historical entries *plus* forward-looking planning
+sections, and the planning sections are exactly where a stale crate name would
+be a real defect. Those are unprotected for these five patterns. The
+`exclude_regex` mechanism matches file paths, not sections, so finer granularity
+is not available today.
+
+**Noted, not actioned:** that `ROADMAP.md` needs the same exclusion as
+`CHANGELOG.md`, for the same reason, is evidence its Shipped section duplicates
+`CHANGELOG.md`. Whether one file should hold both a plan and a release history
+is a documentation-architecture question and belongs to neither this RFC nor
+this cycle.
+
 ## 11. Open questions — resolved on acceptance
 
 1. **Should `rfcs/` be scanned?** RFCs are decision records and legitimately
