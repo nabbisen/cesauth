@@ -1,4 +1,4 @@
-//! Unit tests for the parent `crates/ui/src/templates/` module.
+//! Unit tests for the parent `crates/frontend/src/templates/` module.
 //!
 //! **v0.75.0 modularization.** The single-file version of this module
 //! exceeded 2,000 lines (4x the dev-guideline 500-ELOC "strongly

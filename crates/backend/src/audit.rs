@@ -30,7 +30,7 @@
 //!
 //! Enforced by the test
 //! `no_audit_reason_format_string_contains_secret_substring`
-//! in `crates/worker/src/audit/tests.rs` at build time.
+//! in `crates/backend/src/audit/tests.rs` at build time.
 //!
 //! Violations historically existed in
 //! `routes::magic_link::request` and `routes::api_v1::anonymous`

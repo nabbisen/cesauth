@@ -105,7 +105,7 @@ pub fn tenancy_console_frame_for(
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{title_esc} — cesauth tenancy console</title>
   <style nonce="{nonce}">
-    /* RFC 105: semantic + scope tokens injected from crates/ui/src/design_tokens.rs.
+    /* RFC 105: semantic + scope tokens injected from crates/frontend/src/design_tokens.rs.
        Single source of truth — do not duplicate values here. */
     {tokens}
     {scope_tokens}

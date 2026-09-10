@@ -1,4 +1,4 @@
-//! Shared test helpers for the `crates/ui/src/templates/tests/` submodules.
+//! Shared test helpers for the `crates/frontend/src/templates/tests/` submodules.
 //!
 //! `templates/tests.rs` exceeded 2,000 lines, well over the 500-ELOC
 //! "strongly recommended split" threshold from the development

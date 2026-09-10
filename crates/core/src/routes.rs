@@ -11,7 +11,7 @@
 //! - Parameterized paths: `pub fn` returning `String` — the function
 //!   interpolates parameters verbatim; the **template** is responsible
 //!   for HTML-escaping the result before embedding it in an attribute.
-//!   See `crates/ui/src/templates/security_center.rs::render_session_row_for`
+//!   See `crates/frontend/src/templates/security_center.rs::render_session_row_for`
 //!   for the canonical pattern.
 //! - Admin surfaces are under [`admin`], [`tenant_admin`], and [`tenancy_console`]
 //! - End-user self-service is under [`me`]

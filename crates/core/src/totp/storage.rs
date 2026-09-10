@@ -119,7 +119,7 @@ pub trait TotpAuthenticatorRepository {
     /// rather than list+per-row delete because there's no per-row
     /// audit invariant to preserve here (TOTP rows are credentials
     /// not principals — see anonymous-sweep contrast in
-    /// `crates/worker/src/sweep.rs` module doc).
+    /// `crates/backend/src/sweep.rs` module doc).
     ///
     /// No-op when the user has no rows. Idempotent across retries.
     async fn delete_all_for_user(&self, user_id: &str) -> PortResult<()>;

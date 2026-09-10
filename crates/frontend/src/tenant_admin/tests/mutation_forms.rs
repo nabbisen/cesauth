@@ -1,5 +1,6 @@
-//! Originally part of `crates/ui/src/tenant_admin/tests.rs`. Split
-//! into a sibling file in v0.77.0 — test-file modularization track.
+//! Originally part of the pre-RFC-114 UI crate's `tenant_admin/tests.rs`,
+//! before it was renamed to `crates/frontend`. Split into a sibling file
+//! in v0.77.0 — test-file modularization track.
 
 use super::common::*;            // shared fixtures (sample_tenant, sample_principal, etc.)
 use super::super::*;             // reaches the tenant_admin module

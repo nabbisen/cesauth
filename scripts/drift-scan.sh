@@ -20,7 +20,25 @@ VERBOSE=0
 [[ "${1:-}" == "--verbose" ]] && VERBOSE=1
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCAN_PATHS=("${REPO_ROOT}/crates" "${REPO_ROOT}/docs" "${REPO_ROOT}/README.md")
+SCAN_PATHS=("${REPO_ROOT}/crates" "${REPO_ROOT}/docs" "${REPO_ROOT}/README.md" "${REPO_ROOT}/ROADMAP.md")
+
+# ---------------------------------------------------------------------------
+# Coverage (RFC 129 D5).
+#
+# SCAN_PATHS covers: crates/, docs/, README.md, ROADMAP.md.
+#
+# Everything else is out by omission: rfcs/, CHANGELOG.md, migrations/,
+# .github/, Makefile, wrangler.toml, scripts/. Nobody has audited these for
+# stale phrases or decided whether they belong in SCAN_PATHS — recorded here
+# so the next blind spot found in one of them is a known gap, not a surprise.
+# A future change that adds one of these to SCAN_PATHS should move it out of
+# this list and into the line above.
+#
+# Within docs/, individual PATTERNS entries additionally exclude specific
+# historical-record subpaths (ADRs, the changelog archive) via their
+# exclude_regex field — see the PATTERNS comment block below. That is a
+# per-rule exclusion, distinct from the SCAN_PATHS-level omissions above.
+# ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # Stale-phrase registry.
@@ -68,14 +86,10 @@ declare -a PATTERNS=(
     # CHANGELOG, ROADMAP, and docs may reference bare version numbers without parens;
     # those are historical records and are intentionally excluded by this narrow pattern.
     "v0\.[0-9]\+\.[0-9]\+ (	Hardcoded version-with-caption in source (RFC 071) — remove the version string from footers"
-    # RFC 126 D4: RFC 114 renamed crates/worker -> crates/backend and
-    # crates/ui -> crates/frontend. Excluded:
+    # RFC 126 D4 / RFC 129 D3: RFC 114 renamed crates/worker -> crates/backend
+    # and crates/ui -> crates/frontend. Excluded:
     #   - docs/src/expert/adr/     — historical decision records.
     #   - docs/changelog-archive/  — historical release notes.
-    #   - crates/                  — RFC 126's audit scoped only
-    #     `docs/src/`; stale references inside crates/*.rs doc-comments
-    #     were found but are a separate, not-yet-authorized sweep — see
-    #     the RFC 126 review request.
     #   - docs/src/expert/tenancy.md — its "## What ships in v0.4.x"
     #     section (roughly lines 351-1099) is a per-subsystem changelog
     #     embedded in a docs/ page, structurally identical to
@@ -87,10 +101,13 @@ declare -a PATTERNS=(
     #     exclude a byte range within one file. A future stale reference
     #     introduced in this file's *live* sections will not be caught
     #     by this rule.
-    "crates/worker	RFC 114 renamed crates/worker -> crates/backend	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md|crates/"
-    "crates/ui	RFC 114 renamed crates/ui -> crates/frontend	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md|crates/"
-    "cesauth-worker	RFC 114 renamed cesauth-worker -> cesauth-backend	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md|crates/"
-    "cesauth-ui	RFC 114 renamed cesauth-ui -> cesauth-frontend (also the mockup's own crate name if RFC 126 risk #2 materializes; re-scope this rule if the mockup is adopted)	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md|crates/"
+    # RFC 129 D3 dropped the former `crates/` exclusion: RFC 129 D1/D2
+    # fixed the 19 dead pointers and rephrased the 6 historical
+    # statements found under crates/, so the gate now covers it.
+    "crates/worker	RFC 114 renamed crates/worker -> crates/backend	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md"
+    "crates/ui	RFC 114 renamed crates/ui -> crates/frontend	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md"
+    "cesauth-worker	RFC 114 renamed cesauth-worker -> cesauth-backend	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md"
+    "cesauth-ui	RFC 114 renamed cesauth-ui -> cesauth-frontend; the name is wrong in this tree whether it means the crate RFC 114 renamed or the mockup's own crate of the same name — neither belongs here	docs/src/expert/adr/|docs/changelog-archive/|docs/src/expert/tenancy\.md"
     # RFC 128: audit events moved from R2 objects to D1 rows in v0.32.0
     # (ADR-010), but observability.md described the pre-move architecture
     # until this RFC. Both patterns are specific to the storage-model

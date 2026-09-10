@@ -31,7 +31,7 @@
 //! `cesauth-core` already holds the domain types
 //! (`SessionState`, `FlashKey`-equivalent enums, etc.) and is
 //! the single crate every other crate depends on. Putting
-//! the catalog here lets `cesauth-ui` templates and worker
+//! the catalog here lets `cesauth-frontend` templates and worker
 //! audit dispatch share the same canonical source.
 //!
 //! ## Migration path

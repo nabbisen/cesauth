@@ -121,7 +121,7 @@ button:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
 }
 
 /* v0.31.0: flash banners. One-shot notifications rendered from the
- * __Host-cesauth_flash cookie (see crates/worker/src/flash.rs). The
+ * __Host-cesauth_flash cookie (see crates/backend/src/flash.rs). The
  * .flash root carries role + aria-live so screen readers announce
  * without a focus-grab; level-specific styling lives on the
  * modifier classes. Each flash MUST include an icon + text label

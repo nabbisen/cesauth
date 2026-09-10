@@ -33,7 +33,7 @@ use crate::ports::{PortError, PortResult};
 /// refresh-token reuse (RFC 9700 §4.14.2 telemetry).
 ///
 /// The corresponding `EventKind` enum lives in
-/// `crates/worker/src/audit.rs` (wasm32-only); from `core` we use the
+/// `crates/backend/src/audit.rs` (wasm32-only); from `core` we use the
 /// stable string contract directly. Tested via
 /// `count_refresh_reuse_ignores_other_event_kinds` and the worker's
 /// own kind-string test in `audit.rs`.

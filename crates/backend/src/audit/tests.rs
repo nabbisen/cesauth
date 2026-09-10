@@ -49,7 +49,7 @@ fn no_audit_reason_format_string_contains_secret_substring() {
     // Walk from the workspace crates/ root, not just this crate.
     let crates_dir = Path::new(manifest_dir)
         .parent() // src/
-        .and_then(|p| p.parent()) // crates/worker/
+        .and_then(|p| p.parent()) // crates/backend/
         .and_then(|p| p.parent()) // crates/
         .and_then(|p| p.parent()) // workspace root
         .map(|p| p.join("crates"))
@@ -100,7 +100,7 @@ fn no_audit_reason_format_string_contains_secret_substring() {
         violations.is_empty(),
         "Audit secret-substring denylist matched. \
          No audit::write_* call may pass token material. \
-         See RFC 008 and crates/worker/src/audit.rs module doc.\n\nViolations:\n{}",
+         See RFC 008 and crates/backend/src/audit.rs module doc.\n\nViolations:\n{}",
         violations.join("\n")
     );
 }

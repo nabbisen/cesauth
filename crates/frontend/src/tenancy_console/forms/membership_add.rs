@@ -14,7 +14,7 @@
 //!
 //! The three `form action=` URLs above (the bare `.../memberships`
 //! collection POSTs) are **not** registered by
-//! `crates/worker/src/lib.rs`. The worker only handles the
+//! `crates/backend/src/lib.rs`. The worker only handles the
 //! `.../memberships/new` and `.../memberships/:uid/delete` variants.
 //! The form submission goes to a route that returns 404 in production.
 //!

@@ -8,7 +8,7 @@
 //! ## Why a dedicated adapter file
 //!
 //! Pre-v0.49.0 the reconcile cron's D1 reads were inline
-//! in `crates/worker/src/session_index_audit.rs` (see
+//! in `crates/backend/src/session_index_audit.rs` (see
 //! `fetch_active_rows`). v0.49.0 introduces the
 //! `SessionIndexRepo` port in core, so the read +
 //! mutation methods live in this adapter instead. The

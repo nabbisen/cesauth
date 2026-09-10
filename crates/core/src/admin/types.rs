@@ -318,7 +318,7 @@ pub struct DataSafetyReport {
 /// secrets. `turnstile_configured` and `totp_key_configured` are
 /// booleans derived from env-var presence; the secret bytes themselves
 /// never enter this struct. The forward-looking pin in
-/// `crates/ui/src/admin/tests.rs::rfc_110::safety_page_never_exposes_secret_material`
+/// `crates/frontend/src/admin/tests.rs::rfc_110::safety_page_never_exposes_secret_material`
 /// guards this contract at the rendered-HTML level.
 ///
 /// **Optional field — RFC 110a deferred.** `rate_limit_status` is

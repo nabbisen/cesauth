@@ -12,7 +12,7 @@ pub mod totp;
 pub mod security_center;
 
 // Re-exports — public API surface identical to the old single-file layout
-// escape is defined in crate root (crates/ui/src/lib.rs)
+// escape is defined in crate root (crates/frontend/src/lib.rs)
 pub use chrome::{flash_block, FlashView, frame_for, frame_with_flash, BASE_CSS};
 pub use login::{
     error_page, error_page_for,

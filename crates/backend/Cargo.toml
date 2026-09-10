@@ -16,7 +16,7 @@ repository.workspace    = true
 [lib]
 # `cdylib` is the format wasm-bindgen / worker-build expects so the
 # Workers runtime can find the exported functions. `rlib` is kept so
-# we can still run `cargo test -p cesauth-worker` on the host for the
+# we can still run `cargo test -p cesauth-backend` on the host for the
 # pure-Rust pieces (error mapping, route parsing).
 crate-type = ["cdylib", "rlib"]
 path       = "src/lib.rs"

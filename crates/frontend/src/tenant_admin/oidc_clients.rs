@@ -8,7 +8,7 @@
 //!
 //! The URLs in this template (`/admin/t/{slug}/oidc-clients` and
 //! `/admin/t/{slug}/oidc-clients/{cid}/audience`) are **not** registered
-//! by `crates/worker/src/lib.rs`. RFC 017 introduced the UI but never
+//! by `crates/backend/src/lib.rs`. RFC 017 introduced the UI but never
 //! wired the worker handler — pre-existing tracking issue.
 //!
 //! Policy (RFC 108): the catalog in `cesauth_core::routes` mirrors
