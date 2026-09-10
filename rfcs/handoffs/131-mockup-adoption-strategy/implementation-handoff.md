@@ -11,6 +11,13 @@ carries RFC 132's patch along with it.
 **Blocked on.** Nothing — but R5 has a report-and-stop gate that may end the
 slice early, and that is a success condition, not a failure. See §5.
 
+> **Superseded in part, 2026-09-10.** R2a and M1 are complete (R2a landed
+> in 0.82.0; M1's three blockers are all fixed). **R5b–e now live in
+> [`r5-browser-harness-handoff.md`](./r5-browser-harness-handoff.md)** —
+> use that document, not this one's R5 sections. This file is kept as the
+> record of what was dispatched and reviewed for R2a.
+
+
 ---
 
 ## 1. Purpose

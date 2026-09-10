@@ -1,6 +1,6 @@
 # RFC 129 — Drift-scan coverage: the `crates/` blind spot
 
-**Status.** Proposed — needs owner authorization.
+**Status.** Accepted — approved by the owner 2026-09-10.
 **Author.** Architect · **Date.** 2026-09-10
 **Priority.** P2 — no user-visible impact; it protects the thing that protects
 everything else.
@@ -163,7 +163,7 @@ browser harness. Stated per `docs/src/expert/contributing.md`
 §"Choosing the version level" — the release takes the higher level, and this
 RFC is not the reason.
 
-## 11. Open questions
+## 11. Open questions — resolved on acceptance
 
 1. **Should `rfcs/` be scanned?** RFCs are decision records and legitimately
    describe superseded states in the past tense — the same argument that
