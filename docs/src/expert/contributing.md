@@ -158,6 +158,18 @@ A release that mixes fixes and new capability takes the **higher** level.
   produced.
 - Version bumps require explicit owner confirmation; `1.0.0` requires
   confirmation *and* sufficient test coverage.
+- **A readiness report states what would ship; it never contains the steps to
+  ship it.** Authorization is the boundary between the two documents, so there
+  is nothing executable to run early. 0.82.0 was tagged and pushed before the
+  owner was asked, because the readiness report carried a numbered step list
+  and a review pointed at it for "the exact steps" — an invitation, however it
+  was worded elsewhere. Readiness answers *is it ready and what is outstanding*;
+  the steps arrive in a separate dispatch that only exists once the owner has
+  said yes.
+- **The tag is the one step nobody but the owner authorizes.** Not the commits,
+  not the CHANGELOG, not the RFC lifecycle moves — the tag. Say so explicitly
+  in every document that discusses cutting, every time; a rule stated once in
+  this file did not hold.
 - **The version level is decided when the handoff is written, not at the cut,**
   and the handoff states it with its reasoning: which of the changes are fixes,
   which add capability, and therefore which level applies (see
