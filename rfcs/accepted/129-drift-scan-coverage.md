@@ -202,6 +202,38 @@ is not available today.
 is a documentation-architecture question and belongs to neither this RFC nor
 this cycle.
 
+## 10b. The exclusion mechanism was inert for bare files (C1-129)
+
+**Added 2026-09-10**, from the C1-129 review.
+
+Adding `ROADMAP\.md` to the five `exclude_regex` fields did not turn the gate
+green. The cause: `${line%%:*}` extracts a file path from a `grep -rn` line, but
+grep emits **no filename prefix for a single non-directory path**, so for a
+bare-file `SCAN_PATHS` entry the extraction silently yielded the **line number**
+— `[[ 781 =~ ROADMAP\.md ]]` can never match. An exclusion that looks
+configured and does nothing.
+
+**Not environment-specific.** The implementer attributed it to this machine's
+`ugrep`; GNU grep 3.12 behaves identically, verified. **CI was affected exactly
+as much.** `README.md` has been in `SCAN_PATHS` since RFC 012, so any exclusion
+targeting it would have failed silently on every platform for that whole time —
+none ever did, so nothing was missed, but the mechanism was inert for bare files
+from the day it was written.
+
+**Fixed** by adding `-H` to the grep invocation, forcing the filename prefix
+unconditionally. Incidentally fixes `--verbose` output for bare-file hits, which
+previously showed `781:…` with no filename — ambiguous between `README.md` and
+`ROADMAP.md`.
+
+**And the class, which matters more than the instance.** This is the third time
+in this programme that a check quietly did less than it appeared to: RFC 132's
+E3 resolver returned "clean" when it could not locate a handler; RFC 134's smoke
+gate proved the shell was served while its own assets 404'd; here an exclusion
+field parsed a line number as a path. Each looked configured and was doing
+nothing. The standing answer, applied all three times: **an extraction or
+resolution that fails must fail loudly, never silently succeed.** A guard to
+that effect lands with the release.
+
 ## 11. Open questions — resolved on acceptance
 
 1. **Should `rfcs/` be scanned?** RFCs are decision records and legitimately
