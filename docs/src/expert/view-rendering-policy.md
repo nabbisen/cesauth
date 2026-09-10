@@ -1,6 +1,6 @@
 # View rendering policy
 
-**Status.** Established by [RFC 132](../../../rfcs/accepted/132-view-rendering-policy.md)
+**Status.** Established by [RFC 132](../../../rfcs/done/132-view-rendering-policy.md)
 (2026-09-05, amended 2026-09-09). Supersedes [RFC 131](../../../rfcs/accepted/131-mockup-adoption-strategy.md)'s
 R0 as originally framed.
 **Enforced by.** [`route-contracts.md`](./route-contracts.md)'s `Rendering`

@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 132, View rendering policy
 
-**Governing RFC.** [`rfcs/accepted/132-view-rendering-policy.md`](../../accepted/132-view-rendering-policy.md)
+**Governing RFC.** [`rfcs/done/132-view-rendering-policy.md`](../../done/132-view-rendering-policy.md)
 **Target release.** 0.82.0 — **and why that level:** RFC 132 on its own is a
 **patch**. It corrects a governing document that asserts something false and
 adds a gate that stops the correction eroding; nothing here is new capability.

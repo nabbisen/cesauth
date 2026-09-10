@@ -26,11 +26,24 @@
 //! **There is no `dist/manifest.json`.** An earlier version of this
 //! comment claimed Trunk emits one and that a "Phase C" would read it to
 //! inject a hashed name automatically; that was wrong — `trunk build
-//! --help` has no such output, and `dist/` only ever contains the `.js`,
-//! `_bg.wasm`, and `index.html` (RFC 130 §2.1). What Trunk *does* emit is
-//! `dist/index.html` itself, containing the real `href="…"` — a future
-//! change that wants hashed names back would parse that file into a
-//! manifest at build time, not read one Trunk already wrote.
+//! --help` has no such output. A future change that wants hashed names
+//! back would need its own mechanism, not a manifest Trunk never wrote.
+//!
+//! **Layout, current as of RFC 134 C1-134.** `dist/` contains only an
+//! `assets/` subdirectory — `assets/cesauth-frontend.js`,
+//! `assets/cesauth-frontend_bg.wasm`, `assets/webauthn.js` — matching
+//! the `/assets/...` paths this shell requests above. Trunk itself still
+//! emits `dist/index.html` as a build template on every run; `Makefile`'s
+//! `build-frontend` target deletes it (RFC 131 C2-131) rather than
+//! shipping it, because Cloudflare Workers Static Assets would otherwise
+//! serve that file directly at `/` — ahead of this shell, with none of
+//! its security headers — and nests everything else under `assets/`
+//! rather than `dist/`'s root, so no future built filename can shadow an
+//! application route the same way (RFC 134 C1-134). This paragraph has
+//! been wrong twice before (the `manifest.json` claim above, then a
+//! `dist/index.html`-and-nothing-nested description that C1-134 made
+//! false); re-verify it against `Makefile`'s `build-frontend` target
+//! before trusting it a third time.
 //!
 //! ## CSP note
 //!

@@ -1,6 +1,6 @@
 # RFC 134 — Router pattern conflict: cesauth serves no requests
 
-**Status.** Accepted — approved by the owner 2026-09-09.
+**Status.** Implemented (v0.82.0)
 **Author.** Architect · **Date.** 2026-09-09
 **Priority.** **P0.** Nothing else ships first.
 **Target release.** The next one, whatever it is numbered.

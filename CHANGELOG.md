@@ -14,6 +14,124 @@ changes will always be called out here.
 
 ---
 
+## [0.82.0] - 2026-09-10
+
+### cesauth serves a request — RFC 134
+
+Every release since **0.79.6** (2026-07-07) shipped a Worker whose router
+panicked on construction, on every request, before any handler ran — see
+the dated note further down this file for the full history. This release
+fixes it.
+
+Three route patterns put a `.json` suffix on a **parameter** segment
+(`/admin/tenancy/tenants/:tid.json`, `/admin/t/:slug.json`,
+`/admin/t/:slug/organizations/:oid.json`). `matchit`, the matcher inside
+the `worker` crate, rejects such a pattern when the bare `:param` sibling
+is already registered, and `worker` turns that rejection into a Rust
+panic rather than a recoverable error. The router is built inside
+`#[event(fetch)]`, so the panic fired per request, ahead of dispatch, on
+**every** route — not only the three conflicting ones.
+
+- **Reshaped the three patterns** so `.json` sits on a literal segment
+  instead (`.../:tid/detail.json` and siblings). This is the one place
+  this project has ever changed a route string outside a minor-version
+  contract change: justified because these three strings never
+  successfully served a request in any release, so there was no
+  contract to break. No handler changed — only the strings that route to
+  them moved.
+- **`worker` pinned** `=0.8.3` (was floating on `"0.8"`) — the same class
+  of gap C1-131 closed for `worker-build` last release, left open here
+  until now.
+- **New runtime smoke gate.** Every prior gate proved compilation,
+  artifact production, or documentation consistency; none of them booted
+  the runtime and issued a request, which is why this went undetected for
+  eight releases. `scripts/runtime-smoke-check.sh` now boots `wrangler
+  dev` (no Cloudflare credentials, no secrets, no D1 migrations needed)
+  and asserts **content and headers**, never status alone: `GET /` and
+  `GET /login` return HTML with a `content-security-policy` header
+  present, the three reshaped routes resolve (401, proving they reached
+  their handler), an unregistered route 404s, and no panic appears in the
+  console.
+- **The shell's own assets now resolve.** Fixing the router surfaced a
+  second, independent defect: `leptos_shell.rs` has always requested its
+  JS/wasm bundle at `/assets/...`, but `make build-frontend` placed the
+  built files at `dist/`'s root, where Cloudflare Workers Static Assets
+  served them unprefixed — so every asset 404'd, `init()` never ran, and
+  Leptos never mounted, on every client-rendered surface. Built output
+  now nests under `crates/frontend/dist/assets/`, matching what the shell
+  already asked for; this also bounds a shadowing risk this release found
+  independently (see below) to `/assets/*` instead of leaving it open
+  against `dist/`'s root. The smoke gate now parses every asset URL out
+  of the served HTML and asserts each resolves, rather than only checking
+  that the shell itself renders.
+- **Trunk's dev-only `index.html` is no longer shipped.** It was being
+  served directly at `/` by Cloudflare Workers Static Assets — ahead of
+  the Worker script, with none of the Worker's security headers (no CSP,
+  nothing) applied, a live regression against RFC 006. `make
+  build-frontend` now deletes it after the build; `trunk serve` is
+  unaffected.
+
+**Not claimed:** that the app mounts in a browser. `init()` is now
+reached rather than throwing on a 404, but nothing here has run
+JavaScript — whether Leptos renders into `<div id="root">` is
+unverified and belongs to RFC 131 R5. Not claimed for Cloudflare either:
+everything above was observed under Miniflare (`wrangler dev`) only;
+nobody has deployed this tree.
+
+### View rendering policy — RFC 132
+
+cesauth had a stated rendering policy — External Design v2 §4, "server-side
+rendering only (no client framework)" — that RFC 115's migration to Leptos
+CSR silently abandoned without amendment. The result was internally
+inconsistent: `/` and `/login` rendered client-side and failed without
+JavaScript, while `/magic-link/*` next door rendered server HTML and
+worked fine, with no rule governing which was which.
+
+- **The rule.** Rendering mode is derived per surface, not chosen
+  globally: can the user route around a failure (Q1), is it
+  pre-authentication (Q2), does it need client interactivity server HTML
+  can't express (Q3), is it machine-facing (Q4). Recorded in
+  `docs/src/expert/view-rendering-policy.md`.
+- **Enforcement.** All 188 routes in `route-contracts.md` now declare a
+  `Rendering` value (`server` | `client` | `n/a`); a missing value fails
+  the same way an undocumented route does. A `server`-declared route's
+  handler must not call the Leptos shell — checked by resolving the
+  handler to its actual defining function (not just a name match), which
+  catches re-exports a naive scan would miss.
+- **Three named conformance gaps**, each an exemption naming the RFC that
+  removes it: `GET /`, `GET /login`, and `GET /me/security/totp/verify`
+  all declare `server` but currently render client-side. The third is on
+  the *only* path a no-JS user with TOTP enabled has to complete sign-in
+  — RFC 131 R3 must fix it in the same slice as `/login`, not as an
+  afterthought.
+- External Design v2 §4 amended to record the new rule and that the old
+  statement was abandoned rather than superseded.
+
+**Not claimed:** that the rendering policy is satisfied. It is stated and
+enforced, with three known violations still open.
+
+### Mockup foundation imported (dormant) — RFC 131 R2a
+
+`view_models`, `icons`, and 17 of 19 i18n-free `components/primitives`
+files imported from the `cesauth-mockup` reference repository (pinned at
+`df3d9d0`, v0.14.0) as modules inside `crates/frontend/src/` — a merge,
+not a new crate. ~1,489 LOC, gated behind the existing `csr` feature,
+referenced by nothing yet; a future RFC wires them to real data. Two
+files excluded (`permission_denied.rs`, `suspended_notice.rs`) pending a
+locale-mechanism decision.
+
+No mock data, no `cesauth-ui` name collision, no new crate dependency.
+
+### Notes
+
+No wire format, D1 schema, Durable Object payload, cookie, or permission
+slug changed. `core::ports` traits unchanged. MSRV unchanged at 1.85.
+**Minor**, not patch: RFC 134 and RFC 132 are each fixes on their own, but
+RFC 131 R2a adds new module surface and RFC 134's smoke gate is new
+blocking CI capability — a release mixing levels takes the higher one.
+
+---
+
 ## [0.81.3] - 2026-09-08
 
 ### Audit architecture corrected in the observability guide — RFC 128
@@ -371,6 +489,26 @@ Applied compatible updates from `cargo update --dry-run`:
 
 ---
 
+
+## Note — 0.79.6 through 0.81.3 could not serve a request
+
+**Added 2026-09-10, discovered by RFC 134.** Every release from `0.79.6`
+through `0.81.3` — the eight entries below this note, all the way up to
+(but not including) `0.82.0` — shipped a Worker whose router panicked on
+construction on **every** request, before any handler ran. Three route
+patterns (`.json` suffixed onto a parameter segment) collided with
+sibling routes in `matchit`, the matcher `worker` uses; `worker` turns a
+rejected pattern into a Rust panic rather than a recoverable error, and
+the router was built inside `#[event(fetch)]` — so the panic fired per
+request, on the very first line of routing, regardless of which path was
+requested. See [RFC 134](rfcs/done/134-router-pattern-conflict.md) for
+the full mechanism, the fix, and the new gate that would have caught it.
+
+These eight releases are not corrected retroactively — they shipped, and
+they stay as they were tagged. `0.82.0` is the first release since
+`0.79.5` capable of serving a request.
+
+---
 
 ## [0.80.0] - 2026-05-20
 

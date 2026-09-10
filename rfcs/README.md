@@ -96,28 +96,30 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 
 | ID | Title | Tier | Dispatched | Depends on |
 |----|-------|------|---|---|
-| [134](./accepted/134-router-pattern-conflict.md) | **Router pattern conflict — P0.** Three `:param.json` routes panic `worker`'s router during construction inside `#[event(fetch)]`, so every request fails; live in all eight releases since 2026-07-07 | **P0** | next release | — |
-| [132](./accepted/132-view-rendering-policy.md) | View rendering policy — supersedes RFC 131 R0; blocks R3 | P1 | landed on `main`; ships with 134 | — |
-| [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | R2a landed; R2b awaits 132 §13 q1; R5b–e behind 134; R3 awaits 132 | 130, 132, 134 |
+| [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | R2a shipped v0.82.0; R2b awaits 132 §13 q1; R5b–e need a re-scoped baseline; R3 awaits 132 §13 q1 | 130, 132, 134 |
 
 Numbers are assignment order and are never reused or renumbered (RFC 000), so
 a higher number can be earlier work: 130 continues 127, and 131 continues 130.
 
 RFC 130 shipped in v0.81.2 and is in [`done/`](./done/130-deployable-frontend-bundle.md):
 `make build-frontend` produces a verified, optimized, correctly-named artifact.
-131 replaces what that bundle *contains*, and 132 governs how each surface
+131 replaces what that bundle *contains*, and 132 (shipped v0.82.0, in
+[`done/`](./done/132-view-rendering-policy.md)) governs how each surface
 renders it.
 
 RFC 128 shipped in v0.81.3 and is in [`done/`](./done/128-observability-audit-architecture-correction.md).
+RFC 134 shipped in v0.82.0 and is in [`done/`](./done/134-router-pattern-conflict.md):
+the router no longer panics on construction, and cesauth serves a request for
+the first time since 2026-07-07.
 
-Everything to this point is build-time verified only. Whether the app mounts in
-a browser is still unverified; RFC 131 R5 brings the harness that closes it.
+Whether the app mounts in a browser is still unverified; RFC 131 R5 brings the
+harness that closes it.
 
 ---
 
 ## Done
 
-120 RFCs shipped between v0.50.3 and v0.81.3 (001–106, 107, 108–111, 110b–110e, 113, 116, 125, 126, 127, 128, 130). Full
+122 RFCs shipped between v0.50.3 and v0.82.0 (001–106, 107, 108–111, 110b–110e, 113, 116, 125, 126, 127, 128, 130, 132, 134). Full
 list with shipped-in versions: see ROADMAP.md "Shipped" section and
 CHANGELOG.md release entries. Selected highlights only listed here; the
 canonical catalogue is the filesystem at `done/`.
@@ -151,6 +153,8 @@ canonical catalogue is the filesystem at `done/`.
 | [130](./done/130-deployable-frontend-bundle.md) | Deployable frontend bundle (Trunk release build, artifact naming, toolchain pin, Binaryen checksum) | v0.81.2 |
 | [126](./done/126-documentation-rename-sweep-and-drift-rule.md) | Documentation rename sweep + drift-scan crate-name rule (D5 deferred) | v0.81.1 |
 | [128](./done/128-observability-audit-architecture-correction.md) | Correct the audit architecture in the observability guide (audit is D1, not R2, since v0.32.0; + conditions C1-128, C2-128) | v0.81.3 |
+| [134](./done/134-router-pattern-conflict.md) | Router pattern conflict — `:param.json` routes panicked `worker`'s router on construction, every request, since 2026-07-07 (+ condition C1-134: the shell's assets resolve) | v0.82.0 |
+| [132](./done/132-view-rendering-policy.md) | View rendering policy — Q1–Q4 derived per surface, `Rendering` column on all 188 routes, E2/E3 blocking gates (+ conditions C1-132, C2-132) | v0.82.0 |
 
 For the full mapping (every shipped RFC with its release tag), the
 authoritative record is each file's own `**Status**: Implemented (vX.Y.Z)`

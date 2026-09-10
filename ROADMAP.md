@@ -208,6 +208,52 @@ started.
   them have zero callers — because populating them is a real product
   decision (an unmasked IP in an audit row), not a documentation fix.
 
+- ✅ **v0.82.0 — RFC 134 (+ condition C1-134), RFC 132 (+ conditions
+  C1-132, C2-132), RFC 131 R2a. Shipped 2026-09-10.** Every release since
+  v0.79.6 (2026-07-07 — eight tags) shipped a Worker whose router panicked
+  on construction, on every request, before any handler ran: three route
+  patterns put a `.json` suffix on a parameter segment, `matchit` rejected
+  the pattern, and `worker` turned the rejection into a Rust panic instead
+  of a recoverable error. Found by RFC 131 R5's M1 baseline check on its
+  third attempt — the first time in 120 shipped RFCs anything booted the
+  runtime and issued a request. **RFC 134** reshapes the three patterns
+  (`.../:tid/detail.json` and siblings — the one route-string change this
+  project has made outside a minor-version contract, justified because
+  none of the three ever served a request), pins `worker` to the version
+  a new runtime smoke gate passed on (`=0.8.3`), and adds that gate:
+  `scripts/runtime-smoke-check.sh` boots `wrangler dev` and asserts
+  content and headers (never status alone) on six requests, blocking in
+  CI, no Cloudflare credentials needed. **Condition C1-134** closed a
+  second, independent defect the fix surfaced: `leptos_shell.rs` always
+  requested its JS/wasm bundle at `/assets/...`, but built output landed
+  at `dist/`'s root, so every asset 404'd and Leptos never mounted, on
+  every client-rendered surface. Built output now nests under
+  `dist/assets/`, and the smoke gate parses every asset URL out of the
+  served HTML rather than checking a hardcoded list. **RFC 132**
+  establishes cesauth's first working rendering policy — mode derived
+  per surface (Q1-Q4: can the user route around a failure, is it
+  pre-auth, does it need client interactivity, is it machine-facing) —
+  after the prior *stated* policy ("server-side rendering only") was
+  silently abandoned by the Leptos CSR migration with no replacement
+  written. All 188 routes now declare a `Rendering` value, and a
+  `server`-declared route's handler is asserted (by resolving to its
+  actual defining function, not a name match — catches re-exports) to
+  never call the Leptos shell. Three conformance gaps remain, named and
+  exempted rather than hidden: `/`, `/login`, and
+  `/me/security/totp/verify` — the last on the only path a no-JS TOTP
+  user has to complete sign-in, so RFC 131 R3 must fix it alongside
+  `/login`, not separately. **RFC 131 R2a** imports the mockup's
+  mechanism-free presentation foundation (`view_models`, `icons`, 17
+  i18n-free primitives; ~1,489 LOC) as dormant modules inside
+  `crates/frontend/src/` — a merge, not a new crate — pinned at the
+  mockup's `df3d9d0` (v0.14.0). **Minor**, not patch: 134 and 132 are
+  each fixes on their own, but R2a's new module surface and the new
+  blocking smoke gate are added capability. **Not claimed:** that the
+  app mounts in a browser (nothing has run JavaScript; RFC 131 R5 owns
+  that) or that it works on Cloudflare (observed under Miniflare only).
+  RFC 131 itself stays in `accepted/` — R2a shipped, R2b/R3/R4/R5b–e have
+  not.
+
 - **Security-critical assurance track (RFCs 116–124).** RFC 116 shipped in
   v0.81.0 (`rfcs/done/`), with two carve-outs deferred: secret-newtype
   adoption at the remaining credential call sites, and `ports::repo`, which

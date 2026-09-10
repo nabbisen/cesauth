@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 134, Router pattern conflict (P0)
 
-**Governing RFC.** [`rfcs/accepted/134-router-pattern-conflict.md`](../../accepted/134-router-pattern-conflict.md)
+**Governing RFC.** [`rfcs/done/134-router-pattern-conflict.md`](../../done/134-router-pattern-conflict.md)
 **Target release.** 0.82.0 — **and why that level:** RFC 134 *itself* is a
 **patch** (a fix; the three route strings it changes have never served a
 request, so nothing depended on them). But it cannot ship alone: RFC 131 R2a is
