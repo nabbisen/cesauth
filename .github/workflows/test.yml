@@ -1,8 +1,22 @@
 name: Host tests
 
 # RFC 035: Run all host-compilable tests on every PR.
-# Excludes cesauth-adapter-cloudflare and cesauth-backend which require
-# the wasm32-unknown-unknown target and worker-build toolchain.
+#
+# RFC 136: every workspace crate's tests run here. cesauth-backend and
+# cesauth-adapter-cloudflare were excluded until 0.83.0+ with the stated
+# reason that they "require the wasm32-unknown-unknown target and
+# worker-build toolchain." That reason was false. Both crates' test
+# targets compile on the host; they had simply stopped compiling for
+# ordinary reasons — 36 API-drift errors in the backend's 159 tests, and
+# a missing `tokio` dev-dependency in the adapter's one — and the
+# exclusion meant nothing ever noticed. **No test in either crate is
+# wasm-only.** The backend's route handlers take `worker::Request`, but
+# its tests exercise the decision functions underneath, which are
+# ordinary host code.
+#
+# If a genuinely wasm-only test is ever added, gate that test with
+# `#[cfg(target_arch = "wasm32")]` and say so here — do not re-exclude
+# the crate, which is how 159 tests rotted unnoticed for two months.
 #
 # RFC 130 M2/M2b: toolchain pinned via dtolnay/rust-toolchain, replacing
 # the apt-based install below — apt does not carry arbitrary Rust patch
@@ -32,6 +46,13 @@ jobs:
                      -p cesauth-adapter-test \
                      -p cesauth-frontend \
                      --lib
+          # RFC 136: the two formerly-excluded crates. Run WITHOUT --lib
+          # so their doc-tests are gated too — an unannotated ``` fence
+          # in a module doc is compiled as Rust, and two such fences in
+          # cesauth-adapter-cloudflare were failing undetected for the
+          # same reason the unit tests were: nothing ran them.
+          cargo test -p cesauth-backend \
+                     -p cesauth-adapter-cloudflare
 
       - name: Run migration integration tests
         run: |

@@ -11,13 +11,13 @@
 //! ## Local login flow
 //!
 //! 1. Create `.dev.vars` in the repo root (git-ignored) with:
-//!    ```
+//!    ```text
 //!    WRANGLER_LOCAL = "1"
 //!    ```
 //! 2. Run `wrangler dev`.
 //! 3. Request a magic link at `/magic-link/request`.
 //! 4. Watch the **wrangler dev terminal** — you will see a log line like:
-//!    ```
+//!    ```text
 //!    [magic_link dev] recipient=you@example.com  handle=abc123  code=ABCD2345
 //!    ```
 //! 5. Enter `ABCD2345` into the code field on the verification page
