@@ -363,9 +363,12 @@ The sign-in page ends with no WASM directive.
   matters: unquoted, `unsafe-eval` is a substring of
   `'wasm-unsafe-eval'`, so an unquoted assertion would conflate
   the two directives.
-- `crates/backend/src/routes/leptos_shell.rs` — the shell's CSP
-  contains `'wasm-unsafe-eval'` and does not contain
-  `'unsafe-eval'`.
+- `crates/backend/src/routes/leptos_shell.rs` — a test asserting the
+  shell's CSP contains `'wasm-unsafe-eval'` and does not contain
+  `'unsafe-eval'`. **It exists and does not execute:** `cesauth-backend`'s
+  test target does not compile (RFC 136), so until that lands this bullet
+  is a written intent, not a running gate. The smoke check below is the
+  guard that runs.
 - `scripts/runtime-smoke-check.sh` — the same two assertions
   against the **served** `/login` response, plus the negative:
   a server-rendered route's response carries no WASM directive.

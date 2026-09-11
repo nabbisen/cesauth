@@ -154,6 +154,30 @@ None. One response header on client surfaces gains one directive.
 0.83.0, which is minor because of R5. Stated per `contributing.md`
 §"Choosing the version level".
 
+## 10a. Found in implementation and review
+
+**Added 2026-09-12.**
+
+- **W3's backend test cannot execute.** `cargo test -p cesauth-backend --lib`
+  fails with 36 pre-existing errors — 34 of them API drift in test code, not
+  wasm/host boundary — so the crate's 159 tests have never been compiled by any
+  gate. The exclusion in `test.yml:4-5` gives a reason ("requires wasm32 and
+  worker-build") that covers two of the thirty-six. **RFC 136** owns it. W6, the
+  smoke check against the served response, is the running guard for the
+  directive until then; the ADR-007 amendment's gate list was corrected to say
+  so rather than claim a gate that does not run.
+- **No unauthenticated server-rendered HTML route exists** to give a
+  CSP-versus-CSP contrast for the negative check. `POST /magic-link/request` is
+  JSON and carries no CSP at all, so the negative was implemented as a scan of
+  the full header block for the directive — a definite property of present
+  bytes, which cannot pass vacuously. The first server-rendered HTML CSP
+  reachable without a session arrives with RFC 131 R3;
+  `admin/console/render.rs:66` (`script-src 'none'`) is the contrast to use
+  then.
+- `security_headers.rs:187` emits `bluetooth=()` in Permissions-Policy, which
+  Chromium does not recognise (console warning in every probe). Harmless; one
+  line; folds into whichever release next touches that file.
+
 ## 11. Open questions
 
 None the RFC can settle. The one decision is the owner's: whether to amend

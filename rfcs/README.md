@@ -45,6 +45,14 @@ Full policy: `done/000-rfc-lifecycle-policy.md`.
 
 ## Proposed
 
+### Awaiting owner authorization
+
+| ID | Title | Tier | Target |
+|----|-------|------|--------|
+| [136](./proposed/136-backend-test-rot.md) | **Backend test rot.** `cesauth-backend`'s 159 tests across 18 modules do not compile — 36 errors, 34 of them API drift — behind an exclusion whose stated reason ("requires wasm32") covers two. Includes the TOTP verify and recover paths. Found when RFC 135 tried to add one test | P1 | after 0.83.0, ahead of RFC 117 |
+
+### Other proposed
+
 UI/UX finishing track (v0.67.0 → v0.71.0). Source: v0.50.1 UI/UX design
 deck (overview onepage + dev-support PDF) compared against v0.66.0 state.
 The deck is largely shipped through v0.53/v0.62/v0.63; this batch closes
@@ -177,7 +185,7 @@ discussion happened.
 
 ## Adding a new RFC
 
-Next number: **136**. Create `rfcs/proposed/136-slug.md` with `**Status.** Proposed`
+Next number: **137**. Create `rfcs/proposed/137-slug.md` with `**Status.** Proposed`
 and add a row above, in the same commit.
 
 Transitions (folder is authoritative; update Status and this index in the same
