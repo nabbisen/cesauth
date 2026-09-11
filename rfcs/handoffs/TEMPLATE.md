@@ -110,6 +110,15 @@ Anything a reviewer would otherwise eyeball is a thing a reviewer will miss.
 # example: every constant resolves to a real file
 ```
 
+Two assertion shapes that have now over-matched three times each — do not
+reuse them:
+
+- **"No non-test code changed" by filename** (`grep -v tests.rs`) misses
+  inline `#[cfg(test)]` modules. Assert on git's hunk headers instead:
+  `git diff -U0 | grep '^@@'` — every hunk should read `@@ … mod tests {`.
+- **Counting `-->` lines as errors.** They appear in warnings, notes and help
+  text too. Count the first `-->` *per error block*, and state the command.
+
 ## 10. Required tests and evidence
 
 The full gate set as runnable commands with output redirection:

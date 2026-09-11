@@ -42,18 +42,36 @@ backend lib compiles on the host. **All 36 are test drift; D3 is expected to be
 empty.** The handoff has D1 confirm that per error rather than inherit my
 miscount.
 
-**Where they are** (errors per file, top eight):
+**Where they are** — corrected 2026-09-12 in review. The table this RFC
+originally carried listed eight files including five admin-console modules
+with **zero** errors. It counted `-->` lines, which also occur in the build's
+190 warnings and in note/help context. The same method produced the "2 wasm
+lines" figure corrected in the handoff. Three counts, one artefact, all the
+architect's. The correct method is *first `-->` per error block*:
+
+```sh
+awk '/^error(\[E[0-9]+\])?:/{e=1;next} e && /-->/{sub(/^ *--> */,"");sub(/:[0-9]+:[0-9]+$/,"");print;e=0}' bt.log | sort | uniq -c | sort -rn
+```
 
 ```
 14  crates/backend/src/routes/me/totp/verify/tests.rs
 10  crates/backend/src/routes/me/totp/recover/tests.rs
-10  crates/backend/src/routes/admin/tenant_admin/role_assignments.rs
- 9  crates/backend/src/routes/admin/tenancy_console/tenant_detail.rs
- 8  crates/backend/src/routes/admin/tenant_admin/organization_detail.rs
- 8  crates/backend/src/routes/admin/tenancy_console/subscription.rs
- 8  crates/backend/src/routes/admin/console/overview.rs
- 8  crates/backend/src/routes/admin/console/cost.rs
+ 5  crates/backend/src/error.rs
+ 2  crates/backend/src/routes/me/totp/enroll/tests.rs
+ 2  crates/backend/src/routes/me/totp/disable/tests.rs
+ 2  crates/backend/src/log/tests.rs
+ 1  crates/backend/src/csrf/tests.rs
 ```
+
+**Seven files, not eighteen.** And **16 files carry `#[test]`**, not "18
+modules"; the total test attribute count including `#[tokio::test]` across
+both crates is **200**. The admin-console modules §3 worried about by volume
+were never broken.
+
+**By cause**, all drift against signatures that legitimately changed: 20 from
+`AuthChallengeStore` taking `&ChallengeHandle` (RFC 116 newtypes); 9 from
+`csrf::mint()` returning `Result`; 5 from `Jti` losing `From<&str>` (RFC 116);
+2 from `log::Record` gaining `request_id`.
 
 **The exclusion, and its stated reason:**
 
@@ -128,6 +146,25 @@ count, run, gate — an architect's ruling bounded to that one line, made becaus
 the measurement turned out trivial.
 
 Order: **D1 → report → D2 → D3 → report → D4.** Gate last, so it lands green.
+
+## 5a. Found in implementation (C1-136)
+
+**Added 2026-09-12.** Two runtime failures once the tests compiled, both
+reported per the handoff's §7 rather than resolved:
+
+- **`audit::tests::no_audit_reason_format_string_contains_secret_substring`
+  has never executed.** It walks `CARGO_MANIFEST_DIR` up four levels to reach
+  `crates/`; two would. The chain predates RFC 114. Replicating its scan outside
+  the test over 413 files found two hits — both **window overrun**: it scans the
+  `audit::write` line plus seven more, and at both sites that runs past
+  `).await.ok();` into the next statement, where a renderer shows the admin a
+  freshly minted token once. **The RFC 008 invariant holds; the test would have
+  reported it broken.** Ruled: depth to two; scan bounded to the call
+  expression, not a line count; no allowlist.
+- **Two doc-tests in `cesauth-adapter-cloudflare`** fail because unannotated
+  fences in a module doc are compiled as Rust. Ruled: ` ```text `.
+
+Neither test is known to have passed before. Nothing compiled them.
 
 ## 6. Testing strategy
 
