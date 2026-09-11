@@ -161,8 +161,28 @@ for entry in "${PATTERNS[@]}"; do
                 # would otherwise spuriously self-exclude (e.g. a pattern
                 # for "crates/worker" would match "crates/" inside its own
                 # matched text on every hit, everywhere).
-                if [[ -n "$exclude_regex" ]] && [[ "${line%%:*}" =~ $exclude_regex ]]; then
-                    continue
+                if [[ -n "$exclude_regex" ]]; then
+                    hit_path="${line%%:*}"
+                    # RFC 129 C1-129: fail loudly if the extraction did not
+                    # produce something path-shaped. `grep` omits the filename
+                    # prefix for a single bare-file argument (standard
+                    # behaviour, GNU and otherwise) — without `-H` above, this
+                    # silently yielded the *line number*, so every exclusion on
+                    # a bare-file SCAN_PATHS entry matched nothing and looked
+                    # configured while doing nothing. `-H` prevents that case;
+                    # this guard catches the class, so the next variant is
+                    # loud instead of inert.
+                    if [[ "$hit_path" != */* ]] && [[ "$hit_path" != *.rs && "$hit_path" != *.md && "$hit_path" != *.toml ]]; then
+                        echo "drift-scan: BROKEN — exclude_regex cannot be applied." >&2
+                        echo "  pattern:        $pattern" >&2
+                        echo "  extracted path: '$hit_path' (not path-shaped)" >&2
+                        echo "  from line:      $line" >&2
+                        echo "  grep is not emitting a filename prefix; the exclusion would be inert." >&2
+                        exit 2
+                    fi
+                    if [[ "$hit_path" =~ $exclude_regex ]]; then
+                        continue
+                    fi
                 fi
                 matches+=("$line")
             done < <(grep -rHn --include="*.rs" --include="*.md" --include="*.toml" \
