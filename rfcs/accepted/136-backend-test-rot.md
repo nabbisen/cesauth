@@ -1,6 +1,6 @@
 # RFC 136 — Backend test rot: 159 tests that do not compile, behind a false exclusion
 
-**Status.** Proposed — needs owner authorization.
+**Status.** Accepted — approved by the owner 2026-09-12.
 **Author.** Architect · **Date.** 2026-09-12
 **Priority.** **P1.** Nothing user-facing; but the Worker's own tests — including
 the TOTP second-factor and recovery-code paths — do not build, and nothing has
@@ -34,6 +34,13 @@ what broke.
 | lines in the error output mentioning `worker`/`wasm_bindgen`/`js_sys`/`web_sys` | **2** |
 
 (`cargo test -p cesauth-backend --lib --no-run 2>&1`, deduplicated by kind.)
+
+**Corrected 2026-09-12, before dispatch.** The "2" above is two *lines*, not
+two errors — `leptos_shell.rs:74` (`use worker::{…}`) and `:95`
+(`env: &worker::Env`), appearing as context inside type-mismatch messages. The
+backend lib compiles on the host. **All 36 are test drift; D3 is expected to be
+empty.** The handoff has D1 confirm that per error rather than inherit my
+miscount.
 
 **Where they are** (errors per file, top eight):
 
@@ -112,8 +119,13 @@ the choice affects how much of the crate is host-testable at all.
 comment in both places to say what is actually true: which tests (if any)
 remain wasm-only, and why.
 
-**D5 — The same measurement for `cesauth-adapter-cloudflare`**, excluded by the
-same sentence for the same stated reason. Report; do not act in this RFC.
+**D5 — `cesauth-adapter-cloudflare`.** Pre-measured before dispatch: its test
+target fails on **one** error — `E0433: cannot find module or crate tokio` at
+`mailer/unconfigured.rs:33`, a `#[tokio::test]` with no `tokio` dev-dependency.
+Not wasm. One `#[cfg(test)]` module. The stated exclusion reason is false there
+too. **Scope expanded from "report" to "act"** — add the dev-dependency, compile,
+count, run, gate — an architect's ruling bounded to that one line, made because
+the measurement turned out trivial.
 
 Order: **D1 → report → D2 → D3 → report → D4.** Gate last, so it lands green.
 
@@ -127,9 +139,9 @@ Order: **D1 → report → D2 → D3 → report → D4.** Gate last, so it lands
 
 ## 7. Open questions
 
-1. **`cesauth-adapter-cloudflare`** — same exclusion, same stated reason. How
-   many tests does it have, and do they compile? D5 measures; the owner decides
-   whether it becomes RFC 137 or folds in here.
+1. ~~**`cesauth-adapter-cloudflare`** — how many tests, do they compile?~~
+   **Answered before dispatch:** one test module, blocked by a missing `tokio`
+   dev-dependency. Folded into D5.
 2. **Should any backend tests run on wasm32?** Route handlers take
    `worker::Request`; some behaviour may only be testable in the Workers
    runtime. Out of scope here, but D3's report will say how much.

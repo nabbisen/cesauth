@@ -45,14 +45,6 @@ Full policy: `done/000-rfc-lifecycle-policy.md`.
 
 ## Proposed
 
-### Awaiting owner authorization
-
-| ID | Title | Tier | Target |
-|----|-------|------|--------|
-| [136](./proposed/136-backend-test-rot.md) | **Backend test rot.** `cesauth-backend`'s 159 tests across 18 modules do not compile — 36 errors, 34 of them API drift — behind an exclusion whose stated reason ("requires wasm32") covers two. Includes the TOTP verify and recover paths. Found when RFC 135 tried to add one test | P1 | after 0.83.0, ahead of RFC 117 |
-
-### Other proposed
-
 UI/UX finishing track (v0.67.0 → v0.71.0). Source: v0.50.1 UI/UX design
 deck (overview onepage + dev-support PDF) compared against v0.66.0 state.
 The deck is largely shipped through v0.53/v0.62/v0.63; this batch closes
@@ -105,6 +97,7 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 | ID | Title | Tier | Dispatched | Depends on |
 |----|-------|------|---|---|
 | [135](./accepted/135-wasm-under-csp.md) | **WebAssembly under the CSP — P0.** The browser refuses to compile the bundle; every `client` surface is blank. `'wasm-unsafe-eval'` scoped to the Leptos shell, E3 enforcing the boundary; ADR-007 amended; mount into `#root` | **P0** | 0.83.0 | 132 (E3) |
+| [136](./accepted/136-backend-test-rot.md) | Backend test rot: 159 tests in 18 modules do not compile (36 errors, 34 API drift) behind an exclusion whose stated reason covers two. TOTP verify/recover paths included | P1 | after 0.83.0, ahead of 117 | — |
 | [129](./accepted/129-drift-scan-coverage.md) | Drift-scan coverage: the `crates/` blind spot (19 dead pointers, 6 true historical statements, 1 broken command) + RFC 126's deferred D5 | P2 | 0.83.0 | — |
 | [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | R2a shipped v0.82.0; R2b awaits 132 §13 q1; R5b–e need a re-scoped baseline; R3 awaits 132 §13 q1 | 130, 132, 134 |
 
