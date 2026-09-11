@@ -45,6 +45,16 @@ Full policy: `done/000-rfc-lifecycle-policy.md`.
 
 ## Proposed
 
+### P0 — blocks R5
+
+| ID | Title | Tier | Target |
+|----|-------|------|--------|
+| [135](./proposed/135-wasm-under-csp.md) | **WebAssembly under the CSP.** The browser refuses to compile the WASM bundle — no `'wasm-unsafe-eval'` — so every `client` surface is a blank page that ten `curl` checks rate healthy. Found by R5's first browser run. Amends ADR-007's "amend to cross" clause narrowly: `'unsafe-eval'` stays barred; the directive is scoped to the Leptos shell, i.e. `client` surfaces, with RFC 132's E3 enforcing the boundary | **P0** | 0.83.0 |
+
+Awaiting owner authorization — it amends a security ADR.
+
+### Other proposed
+
 UI/UX finishing track (v0.67.0 → v0.71.0). Source: v0.50.1 UI/UX design
 deck (overview onepage + dev-support PDF) compared against v0.66.0 state.
 The deck is largely shipped through v0.53/v0.62/v0.63; this batch closes
@@ -176,7 +186,7 @@ discussion happened.
 
 ## Adding a new RFC
 
-Next number: **135**. Create `rfcs/proposed/135-slug.md` with `**Status.** Proposed`
+Next number: **136**. Create `rfcs/proposed/136-slug.md` with `**Status.** Proposed`
 and add a row above, in the same commit.
 
 Transitions (folder is authoritative; update Status and this index in the same

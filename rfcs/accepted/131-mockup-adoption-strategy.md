@@ -206,6 +206,27 @@ One conformance gap falls out of RFC 132 and belongs to this step: `/` and
 early rather than last: it is the only check that would catch a screen that
 compiles, is served, and does not work.
 
+**R5's M2 gate ran on 2026-09-12 and found outcome 2: the application does not
+mount.** The browser refuses to compile the WASM bundle because the CSP grants
+neither `'wasm-unsafe-eval'` nor `'unsafe-eval'` — a policy ADR-007 wrote for a
+server-rendered application two months before RFC 115 built a WASM frontend
+under it. Ten `curl` assertions in `runtime-smoke-check.sh` rate that blank page
+as healthy. **RFC 135** owns the fix; **R5b–e are blocked on it**, because a
+suite landed against today's behaviour would encode the outage as expected.
+
+Two further facts M2 established, recorded here so they are not rediscovered:
+
+- **The app mounts with `mount_to_body`, not into `#root`** (`lib.rs:196`), so
+  the shell's *"Leptos mounts into this div"* and `lib.rs:186-190` are both
+  false. RFC 135 mounts into `#root`, making the R5 assertion true rather than
+  weakening it.
+- **The CSR app has no styling path.** With CSP removed in-browser the login
+  page rendered fully — and completely unstyled. No stylesheet exists in
+  Trunk's template or in `dist/assets/`; the `design_tokens.rs` CSS strings are
+  consumed only by the three server-rendered frames (`admin/frame.rs`,
+  `tenancy_console/frame.rs`, `tenant_admin/frame.rs`). The Leptos `App` never
+  injects them. That is **R3's** presentation wiring, not a CSP artifact.
+
 ## 6. Data model / API impact
 
 None. The `.json` endpoints documented in RFC 125's C1 are the contract

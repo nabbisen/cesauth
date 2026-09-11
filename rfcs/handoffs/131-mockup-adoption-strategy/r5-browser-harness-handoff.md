@@ -9,7 +9,10 @@ then; this one supersedes its R5 sections.
 browser suite is capability this project has never had, and it changes what
 "green" means for every future contributor. Nothing here is a fix.
 **Prepared by.** Architect · **Implemented by.** Mid-capability model
-**Blocked on.** Nothing. M1's three blockers are cleared (§3).
+**Blocked on.** **RFC 135.** M2 ran on 2026-09-12 and found §5 outcome 2: the
+CSP forbids WASM compilation, so nothing mounts. R5b–e do not start until RFC
+135 lands and its §9 criterion — this handoff's M2 probe reporting `MOUNTED`
+against the real CSP — is met. M1's three blockers remain cleared (§3).
 
 ---
 
@@ -29,6 +32,10 @@ R5's job is the layer `curl` structurally cannot reach:
 
 - Does the WASM bundle **instantiate**?
 - Does Leptos **mount** — is `<div id="root">` non-empty after load?
+  *(Amended 2026-09-12: M2 found the app mounts with `mount_to_body`, so this
+  assertion was false against current code. RFC 135 W4 mounts into `#root`.
+  After it lands the assertion is correct **and** it is the one to keep — do not
+  weaken it to "body has content." Pair it with **zero page errors**.)*
 - Are there **console errors** or unhandled rejections?
 - Does the rendered page satisfy the accessibility, duplicate-id, focus and
   viewport properties the mockup's specs already encode?
