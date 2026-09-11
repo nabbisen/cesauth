@@ -185,13 +185,34 @@ pub mod view_models;
 ///
 /// Trunk generates a `<script type="module">` that imports the
 /// compiled WASM and calls the `#[wasm_bindgen(start)]`-tagged
-/// export.  That calls into `leptos::mount::mount_to_body`, which
-/// mounts the Leptos root component into the `<div id="root">` that
-/// the backend's HTML shell provides.
+/// export.  That calls into `leptos::mount::mount_to`, which mounts
+/// the Leptos root component into the `<div id="root">` that the
+/// backend's HTML shell provides.
+///
+/// RFC 135 W4: this used `mount_to_body`, which appends to `<body>`
+/// and leaves `#root` empty — so the shell's own comment, and this
+/// one, were false. Mounting into `#root` makes both true and keeps
+/// the app's subtree separate from `<noscript>`.
 #[cfg(feature = "csr")]
 #[wasm_bindgen::prelude::wasm_bindgen(start)]
 pub fn leptos_start() {
     // Surface Rust panics as readable console errors in the browser.
     console_error_panic_hook::set_once();
-    leptos::mount::mount_to_body(app::App);
+
+    use wasm_bindgen::JsCast;
+    let root = web_sys::window()
+        .expect("no `window` — not running in a browser")
+        .document()
+        .expect("`window` has no `document`")
+        .get_element_by_id("root")
+        .expect("shell defect: no element with id `root` to mount into")
+        .dyn_into::<web_sys::HtmlElement>()
+        .expect("shell defect: `#root` is not an HtmlElement");
+
+    // `.forget()` is required, not decorative: `UnmountHandle`'s `Drop`
+    // unmounts the app, so dropping it here would mount and immediately
+    // unmount, leaving `#root` empty with no error — indistinguishable
+    // from the outage this fixes. `mount_to_body` calls `.forget()`
+    // internally for the same reason.
+    leptos::mount::mount_to(root, app::App).forget();
 }

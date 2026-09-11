@@ -73,6 +73,10 @@ web-sys                     = {
         "Window", "Navigator", "Location",
         "Request", "RequestInit", "RequestMode",
         "Response", "Headers",
+        # RFC 135 W4: resolving `#root` for `mount_to` needs the DOM
+        # traversal chain — Document for get_element_by_id, Element for
+        # its return type, HtmlElement for the cast mount_to requires.
+        "Document", "Element", "HtmlElement",
     ],
     optional = true
 }

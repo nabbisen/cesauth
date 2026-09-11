@@ -345,7 +345,14 @@ mod tests {
         // remain strict. A future maintainer relaxing it without
         // amending the ADR fails this test.
         assert!(!DEFAULT_CSP.contains("unsafe-inline"));
-        assert!(!DEFAULT_CSP.contains("unsafe-eval"));
+        // RFC 135 W3: quoted, so it asserts what it means. Unquoted,
+        // `"unsafe-eval"` is a substring of `'wasm-unsafe-eval'` — a
+        // distinct directive that permits WASM compilation without
+        // permitting JavaScript eval — so the unquoted form would
+        // conflate the two and fire on a policy ADR-007 allows.
+        // `DEFAULT_CSP` grants neither; the WASM directive lives only
+        // in the Leptos shell's own CSP (leptos_shell.rs).
+        assert!(!DEFAULT_CSP.contains("'unsafe-eval'"));
     }
 
     #[test]

@@ -309,3 +309,63 @@ inherit the security headers — no per-feature work needed.
 When the audit log hash chain (planned) emits HTML status
 pages, those pages get the same CSP. When admin operations
 v0.25.0 surfaces sessions/authenticators UIs, same.
+
+## Amendment — 2026-09-12: `'wasm-unsafe-eval'` on client-rendered surfaces
+
+**Status**: Accepted (RFC 135, owner-approved 2026-09-12). Amends
+Q3. The original text above is unchanged.
+
+**The hard bar on `'unsafe-eval'` is unchanged.** Nothing below
+relaxes it. A future maintainer adding `'unsafe-eval'` to any CSP
+still must amend this ADR explicitly.
+
+**What is added.** `'wasm-unsafe-eval'` is a **distinct CSP Level 3
+directive**. It permits WebAssembly compilation — specifically
+`WebAssembly.instantiateStreaming` and its siblings — **without**
+permitting JavaScript `eval`. It is not a weaker spelling of
+`'unsafe-eval'` and does not imply it. The two are separate source
+expressions with separate effects, and a policy may grant one while
+barring the other. cesauth does exactly that.
+
+**Why it is needed.** Q3 chose a policy for a server-rendered
+application. RFC 115 subsequently built a WebAssembly frontend
+(Leptos, client-side rendered) under that policy **without amending
+this ADR** — the gap this amendment closes. Under a `script-src`
+carrying only a nonce, the browser refuses to compile the WASM
+module: the nonce authorises the bootstrap *script*, not the
+*module* that script instantiates. The result was that every
+client-rendered surface served a blank page, with the console
+error `CompileError: ... violates the following Content Security
+Policy directive`. No route resolved at all before 0.82.0
+(RFC 134), so this was not observable until RFC 131 R5's browser
+probe opened `/login` — the first time anything had.
+
+**Scope — and why the scope is structural, not a convention.** The
+directive is added to one `format!` string, in the Leptos shell
+(`crates/backend/src/routes/leptos_shell.rs`). Only routes that
+call `leptos_html_shell` receive it. `DEFAULT_CSP` is unchanged,
+so every server-rendered surface — the entire JSON API, and every
+`format!`-templated HTML page — carries no WASM directive at all.
+
+RFC 132's E3 gate asserts that no `server`-declared route calls
+`leptos_html_shell`. While that holds, a server-rendered surface
+**cannot** acquire this permission. It also means the migration
+runs the safe direction: when RFC 131 R3 converts the remaining
+client-rendered pages (`/`, `/login`,
+`/me/security/totp/verify`) to server rendering, they stop calling
+the shell and **fall back to the strict policy automatically**.
+The sign-in page ends with no WASM directive.
+
+**Enforcing gates.** Three, in both directions:
+
+- `crates/core/src/security_headers.rs` — `DEFAULT_CSP` contains
+  no `'unsafe-eval'`, asserted in the **quoted** form. Quoting
+  matters: unquoted, `unsafe-eval` is a substring of
+  `'wasm-unsafe-eval'`, so an unquoted assertion would conflate
+  the two directives.
+- `crates/backend/src/routes/leptos_shell.rs` — the shell's CSP
+  contains `'wasm-unsafe-eval'` and does not contain
+  `'unsafe-eval'`.
+- `scripts/runtime-smoke-check.sh` — the same two assertions
+  against the **served** `/login` response, plus the negative:
+  a server-rendered route's response carries no WASM directive.

@@ -47,10 +47,29 @@
 //!
 //! ## CSP note
 //!
-//! `'wasm-unsafe-eval'` is NOT required.  Leptos compiles to a
-//! standard WASM binary loaded via `WebAssembly.instantiateStreaming`;
-//! that pathway is permitted by `default-src 'self'` and does not
-//! need an extra CSP directive in modern browsers.
+//! `'wasm-unsafe-eval'` **is** required, and this shell's `script-src`
+//! grants it (RFC 135 W1). `WebAssembly.instantiateStreaming` — the
+//! call the bootstrap script's `init()` reaches — is exactly what CSP
+//! gates: compiling a WASM module is a distinct capability from
+//! running a script, so a `nonce` authorises the loader but not the
+//! module it loads. Without the directive the browser throws
+//! `CompileError: ... violates the following Content Security Policy
+//! directive`, `#root` stays empty, and every `client` surface is a
+//! blank page — which is what RFC 131 R5's M2 browser probe found.
+//!
+//! This paragraph previously asserted the opposite, citing
+//! `instantiateStreaming` as the reason none was needed. It is the
+//! reason one is.
+//!
+//! `'unsafe-eval'` remains barred (ADR-007, amended 2026-09-12). The
+//! two are distinct directives: `'wasm-unsafe-eval'` permits WASM
+//! compilation *without* permitting JavaScript `eval`. Both directions
+//! are asserted by tests in this file and by
+//! `scripts/runtime-smoke-check.sh`.
+//!
+//! The directive is scoped to this shell by construction: only routes
+//! calling `leptos_html_shell` receive it, and RFC 132's E3 asserts no
+//! `server`-declared route does.
 
 use worker::{Request, Response, Result, RouteContext};
 
@@ -115,8 +134,11 @@ pub async fn leptos_html_shell(
   </noscript>
   <!--
     Bootstrap script.  The `nonce` attribute satisfies the CSP
-    `script-src 'nonce-{n}'` directive.  No inline event handlers or
-    eval are used; 'unsafe-eval' and 'wasm-unsafe-eval' are not needed.
+    `script-src 'nonce-{n}'` directive.  No inline event handlers and
+    no JavaScript eval are used, so 'unsafe-eval' is not needed and is
+    not granted.  'wasm-unsafe-eval' IS needed and IS granted: init()
+    reaches WebAssembly.instantiateStreaming, and compiling a WASM
+    module is a capability the nonce does not cover (RFC 135).
   -->
   <script type="module" nonce="{n}">
     import init from "/assets/{js}";
@@ -137,9 +159,29 @@ pub async fn leptos_html_shell(
     let mut resp = Response::from_html(shell)?;
     let h = resp.headers_mut();
 
-    let csp = format!(
+    let csp = shell_csp(n);
+    let _ = h.set("content-security-policy", &csp);
+    let _ = h.set("cache-control",           "no-store");
+    let _ = h.set("x-content-type-options",  "nosniff");
+    let _ = h.set("x-frame-options",         "DENY");
+    let _ = h.set("referrer-policy",         "strict-origin-when-cross-origin");
+
+    Ok(resp)
+}
+
+/// The Content-Security-Policy served with the Leptos shell.
+///
+/// Extracted from the handler (RFC 135 W3) so the directive can be
+/// asserted directly rather than only through a live HTTP response.
+///
+/// `'wasm-unsafe-eval'` is required here and only here: it permits
+/// `WebAssembly.instantiateStreaming`, which the bootstrap script's
+/// `init()` reaches. `'unsafe-eval'` is a different directive — it
+/// permits JavaScript `eval` — and is barred by ADR-007.
+fn shell_csp(nonce: &str) -> String {
+    format!(
         "default-src 'self'; \
-         script-src 'nonce-{n}'; \
+         script-src 'nonce-{n}' 'wasm-unsafe-eval'; \
          style-src 'self' 'nonce-{n}'; \
          img-src 'self' data:; \
          font-src 'self'; \
@@ -148,13 +190,45 @@ pub async fn leptos_html_shell(
          form-action 'self'; \
          base-uri 'self'; \
          object-src 'none'",
-        n = n,
-    );
-    let _ = h.set("content-security-policy", &csp);
-    let _ = h.set("cache-control",           "no-store");
-    let _ = h.set("x-content-type-options",  "nosniff");
-    let _ = h.set("x-frame-options",         "DENY");
-    let _ = h.set("referrer-policy",         "strict-origin-when-cross-origin");
+        n = nonce,
+    )
+}
 
-    Ok(resp)
+#[cfg(test)]
+mod tests {
+    use super::shell_csp;
+
+    /// RFC 135 W3. Both directions: the WASM directive is present, and
+    /// the JavaScript-eval directive ADR-007 bars is absent.
+    ///
+    /// Quoted forms throughout — `"unsafe-eval"` unquoted is a
+    /// substring of `'wasm-unsafe-eval'`, so an unquoted assertion
+    /// would conflate the two directives and pass (or fail) for the
+    /// wrong reason.
+    #[test]
+    fn shell_csp_grants_wasm_but_not_js_eval() {
+        let csp = shell_csp("test-nonce");
+
+        assert!(
+            csp.contains("'wasm-unsafe-eval'"),
+            "the Leptos shell must grant 'wasm-unsafe-eval' or the WASM \
+             bundle cannot compile and every client surface is blank \
+             (RFC 135): {csp}"
+        );
+
+        let without_wasm_directive = csp.replace("'wasm-unsafe-eval'", "");
+        assert!(
+            !without_wasm_directive.contains("'unsafe-eval'"),
+            "ADR-007 bars 'unsafe-eval'; only 'wasm-unsafe-eval' is \
+             permitted here: {csp}"
+        );
+    }
+
+    /// The nonce reaches both directives that need it.
+    #[test]
+    fn shell_csp_carries_the_nonce() {
+        let csp = shell_csp("abc123");
+        assert!(csp.contains("script-src 'nonce-abc123' 'wasm-unsafe-eval'"), "{csp}");
+        assert!(csp.contains("style-src 'self' 'nonce-abc123'"), "{csp}");
+    }
 }

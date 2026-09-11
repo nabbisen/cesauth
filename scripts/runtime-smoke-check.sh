@@ -147,6 +147,85 @@ check_referenced_assets() {
   done <<< "$urls"
 }
 
+# RFC 135 W6: the WASM directive, asserted on the served response.
+#
+# Honest about what this proves: that the directive is *present*, not
+# that the bundle mounts. Only a browser can prove the mount (RFC 131
+# R5); this is a guard against the directive being silently removed,
+# which would return every client surface to a blank page while every
+# other check here stayed green — the exact failure RFC 135 fixed.
+#
+# Both helpers strip `'wasm-unsafe-eval'` before testing for
+# `'unsafe-eval'`: the latter is a substring of the former, so a naive
+# test would conflate two directives that ADR-007 treats differently.
+check_csp_grants_wasm() {
+  local path="$1" name="$2"
+  local csp stripped
+  csp="$(curl -si "${BASE}${path}" 2>/dev/null | grep -i '^content-security-policy:' | head -1)"
+
+  if [ -z "$csp" ]; then
+    echo "❌  $name: no content-security-policy header at all" >&2
+    fail=1
+    return
+  fi
+
+  local ok=1
+  printf '%s' "$csp" | grep -q "'wasm-unsafe-eval'" || {
+    echo "❌  $name: CSP lacks 'wasm-unsafe-eval' — the WASM bundle cannot compile and this surface is a blank page (RFC 135)" >&2
+    echo "    $csp" >&2
+    ok=0; }
+
+  stripped="$(printf '%s' "$csp" | sed "s/'wasm-unsafe-eval'//g")"
+  printf '%s' "$stripped" | grep -q "'unsafe-eval'" && {
+    echo "❌  $name: CSP contains 'unsafe-eval' — barred by ADR-007" >&2
+    echo "    $csp" >&2
+    ok=0; }
+
+  if [ "$ok" -eq 1 ]; then
+    echo "✅  $name: CSP grants 'wasm-unsafe-eval', bars 'unsafe-eval'"
+  else
+    fail=1
+  fi
+}
+
+# The negative. A server-rendered route must NOT carry the WASM
+# directive anywhere — that scoping is RFC 135's design, not a side
+# effect, and RFC 135 §8's first risk is the permission leaking to a
+# server surface.
+#
+# Scans the whole header block rather than the CSP line. Deliberate:
+# `POST /magic-link/request` is a JSON route, and per ADR-007 JSON
+# responses carry the universal header set with **no CSP at all**
+# (`json_response_gets_universal_set_only` in security_headers.rs).
+# An assertion phrased as "its CSP does not contain the directive"
+# would therefore pass without inspecting anything — true of a header
+# that does not exist. Scanning the full block asserts a definite
+# property of bytes that are actually there, and it catches the
+# directive arriving through any header, not only this one.
+check_csp_lacks_wasm() {
+  local method="$1" path="$2" name="$3"
+  local headers csp
+  headers="$(curl -si -X "$method" "${BASE}${path}" 2>/dev/null | sed '/^\r*$/q')"
+
+  if [ -z "$headers" ]; then
+    echo "❌  $name: no response headers at all" >&2
+    fail=1
+    return
+  fi
+
+  csp="$(printf '%s' "$headers" | grep -i '^content-security-policy:' | head -1)"
+
+  if printf '%s' "$headers" | grep -q "'wasm-unsafe-eval'"; then
+    echo "❌  $name: a server-rendered route carries 'wasm-unsafe-eval'; the directive must be scoped to the Leptos shell (RFC 135)" >&2
+    printf '%s\n' "$headers" >&2
+    fail=1
+  elif [ -n "$csp" ]; then
+    echo "✅  $name: carries a CSP, and it grants no WASM directive"
+  else
+    echo "✅  $name: no WASM directive in any response header (this route carries no CSP — JSON surfaces get the universal set only, ADR-007)"
+  fi
+}
+
 check_html "/"                                                       "GET /"
 ROOT_BODY="$LAST_BODY"
 check_html "/login"                                                  "GET /login"
@@ -155,6 +234,8 @@ check_status "/admin/t/acme/detail.json"                        401  "GET /admin
 check_status "/admin/t/acme/organizations/org1/detail.json"    401  "GET /admin/t/:slug/organizations/:oid/detail.json"
 check_status "/definitely-not-a-route"                          404  "GET /definitely-not-a-route (unregistered)"
 check_referenced_assets "$ROOT_BODY"                                 "GET / referenced assets"
+check_csp_grants_wasm "/login"                                       "GET /login CSP (client surface)"
+check_csp_lacks_wasm  POST "/magic-link/request"                     "POST /magic-link/request CSP (server surface)"
 
 if grep -qi "Rust panic" "$LOG"; then
   echo "❌  Rust panic observed in the runtime console output:" >&2
