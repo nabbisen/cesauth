@@ -1,7 +1,7 @@
 # RFC 135 — WebAssembly under the Content Security Policy
 
-**Status.** Proposed — **needs owner authorization.** It amends ADR-007's
-explicit "amend the ADR to cross this" clause.
+**Status.** Accepted — approved by the owner 2026-09-12, including the
+ADR-007 amendment (W2).
 **Author.** Architect · **Date.** 2026-09-12
 **Priority.** **P0.** The CSR frontend cannot run. Every `client` surface is a
 blank page.
