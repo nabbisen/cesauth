@@ -18,6 +18,13 @@ repository.workspace    = true
 name = "cesauth_cf"
 path = "src/lib.rs"
 
+[dev-dependencies]
+# RFC 136 D5: `mailer/unconfigured.rs` has used `#[tokio::test]` since it
+# was written, with no `tokio` dev-dependency to provide it — so the test
+# target failed to compile and the crate's tests never ran. Same
+# declaration as cesauth-adapter-test and cesauth-core use.
+tokio                       = { version = "1", features = ["macros", "rt"] }
+
 [dependencies]
 cesauth-core                = { workspace = true }
 

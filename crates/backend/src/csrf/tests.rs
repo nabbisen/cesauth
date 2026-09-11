@@ -54,8 +54,8 @@ fn verify_passes_when_equal() {
 
 #[test]
 fn mint_produces_unique_nonempty_tokens() {
-    let a = mint();
-    let b = mint();
+    let a = mint().expect("mint");
+    let b = mint().expect("mint");
     assert!(!a.is_empty());
     assert_ne!(a, b);
 }

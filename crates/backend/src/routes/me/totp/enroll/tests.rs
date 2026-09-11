@@ -186,7 +186,7 @@ use cesauth_core::totp::{
 const NOW_UNIX: i64 = 1_700_000_000;
 
 fn matched_csrf_e() -> (String, String) {
-    let token = csrf::mint();
+    let token = csrf::mint().expect("mint");
     (token.clone(), token)
 }
 

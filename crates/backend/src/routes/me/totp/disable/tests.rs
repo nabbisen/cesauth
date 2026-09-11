@@ -92,7 +92,7 @@ impl cesauth_core::totp::storage::TotpAuthenticatorRepository for FailingAuthRep
 }
 
 fn matched_csrf() -> (String, String) {
-    let token = csrf::mint();
+    let token = csrf::mint().expect("mint");
     (token.clone(), token)
 }
 

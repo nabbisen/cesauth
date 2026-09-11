@@ -35,7 +35,7 @@ fn sensitive_categories_are_flagged() {
 fn record_serializes_without_subject() {
     let rec = Record {
         ts: 1000, level: Level::Info, category: "http",
-        msg: "hello", subject: None,
+        msg: "hello", subject: None, request_id: None,
     };
     let out = serde_json::to_string(&rec).unwrap();
     assert!(out.contains(r#""ts":1000"#));
@@ -49,7 +49,7 @@ fn record_serializes_without_subject() {
 fn record_serializes_with_subject() {
     let rec = Record {
         ts: 1, level: Level::Warn, category: "auth",
-        msg: "x", subject: Some("u-1"),
+        msg: "x", subject: Some("u-1"), request_id: None,
     };
     let out = serde_json::to_string(&rec).unwrap();
     assert!(out.contains(r#""subject":"u-1""#));

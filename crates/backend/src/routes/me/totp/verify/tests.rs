@@ -12,6 +12,14 @@ use cesauth_core::ports::store::{AuthMethod, Challenge};
 
 const TOTP_HANDLE: &str = "handle_test";
 
+/// RFC 136: `AuthChallengeStore`'s methods take `&ChallengeHandle`
+/// (RFC 116 id newtypes). The handlers under test still take the
+/// handle as `&str` and convert internally, so the constant stays a
+/// `&str` and this mirrors exactly what the production call sites do.
+fn totp_handle() -> cesauth_core::types::ChallengeHandle {
+    cesauth_core::types::ChallengeHandle::from_storage(TOTP_HANDLE)
+}
+
 fn parked_pending_totp() -> Challenge {
     Challenge::PendingTotp {
         user_id:                 "usr_a".to_owned(),
@@ -72,14 +80,14 @@ fn max_attempts_is_in_reasonable_range() {
 #[tokio::test]
 async fn verify_get_with_live_pending_totp_renders() {
     let store = InMemoryAuthChallengeStore::default();
-    store.put(TOTP_HANDLE, &parked_pending_totp()).await.unwrap();
+    store.put(&totp_handle(), &parked_pending_totp()).await.unwrap();
 
     let decision = decide_verify_get(TOTP_HANDLE, &store).await;
     assert_eq!(decision, VerifyGetDecision::RenderPage);
 
     // Critical: peek (not take). The challenge MUST still be
     // there after the GET so the POST that follows can take it.
-    assert!(store.peek(TOTP_HANDLE).await.unwrap().is_some(),
+    assert!(store.peek(&totp_handle()).await.unwrap().is_some(),
         "GET must not consume the challenge");
 }
 
@@ -104,7 +112,7 @@ async fn verify_get_with_wrong_challenge_kind_is_stale_gate() {
         code_challenge_method: "S256".to_owned(),
         expires_at:            i64::MAX,
     };
-    store.put(TOTP_HANDLE, &other).await.unwrap();
+    store.put(&totp_handle(), &other).await.unwrap();
 
     let decision = decide_verify_get(TOTP_HANDLE, &store).await;
     assert_eq!(decision, VerifyGetDecision::StaleGate);
@@ -117,8 +125,8 @@ async fn verify_get_after_take_is_stale_gate() {
     // on /login, not on a verify page with a non-existent
     // challenge.
     let store = InMemoryAuthChallengeStore::default();
-    store.put(TOTP_HANDLE, &parked_pending_totp()).await.unwrap();
-    store.take(TOTP_HANDLE).await.unwrap(); // consume
+    store.put(&totp_handle(), &parked_pending_totp()).await.unwrap();
+    store.take(&totp_handle()).await.unwrap(); // consume
 
     let decision = decide_verify_get(TOTP_HANDLE, &store).await;
     assert_eq!(decision, VerifyGetDecision::StaleGate);
@@ -183,7 +191,7 @@ async fn fixture_totp_pending(
 ) -> (InMemoryAuthChallengeStore, InMemoryTotpAuthenticatorRepository, Secret, i64) {
     let store = InMemoryAuthChallengeStore::default();
     let now_unix = 1_700_000_000_i64;
-    store.put(TOTP_HANDLE, &Challenge::PendingTotp {
+    store.put(&totp_handle(), &Challenge::PendingTotp {
         user_id:                 USER_ID.to_owned(),
         auth_method:             AuthMethod::MagicLink,
         ar_client_id:            None,
@@ -205,7 +213,7 @@ async fn fixture_totp_pending(
 }
 
 fn matched_csrf_v() -> (String, String) {
-    let token = csrf::mint();
+    let token = csrf::mint().expect("mint");
     (token.clone(), token)
 }
 
@@ -239,7 +247,7 @@ async fn verify_post_correct_code_returns_success_and_persists_last_used_step() 
     assert!(stored.last_used_at.is_some());
 
     // Challenge consumed.
-    assert!(store.peek(TOTP_HANDLE).await.unwrap().is_none());
+    assert!(store.peek(&totp_handle()).await.unwrap().is_none());
 }
 
 // ----- CSRF -----
@@ -255,7 +263,7 @@ async fn verify_post_csrf_failure_does_not_take_challenge_or_touch_state() {
     assert!(matches!(decision, VerifyPostDecision::CsrfFailure));
 
     // Challenge preserved.
-    assert!(store.peek(TOTP_HANDLE).await.unwrap().is_some());
+    assert!(store.peek(&totp_handle()).await.unwrap().is_some());
     // last_used_step untouched.
     let stored = totp_repo.find_by_id(AUTH_ID).await.unwrap().unwrap();
     assert_eq!(stored.last_used_step, 0);
@@ -314,7 +322,7 @@ async fn verify_post_wrong_encryption_key_returns_decrypt_failed() {
     ).await;
     assert!(matches!(decision, VerifyPostDecision::DecryptFailed));
     // Challenge consumed (we passed the take step).
-    assert!(store.peek(TOTP_HANDLE).await.unwrap().is_none());
+    assert!(store.peek(&totp_handle()).await.unwrap().is_none());
 }
 
 // ----- wrong code under threshold: re-park with BadCode -----
@@ -333,7 +341,7 @@ async fn verify_post_wrong_code_under_threshold_returns_bad_code_and_reparks() {
     assert!(matches!(decision, VerifyPostDecision::BadCode));
 
     // Challenge re-parked with attempts incremented.
-    let parked = store.peek(TOTP_HANDLE).await.unwrap().expect("re-parked");
+    let parked = store.peek(&totp_handle()).await.unwrap().expect("re-parked");
     match parked {
         Challenge::PendingTotp { attempts, .. } => assert_eq!(attempts, 3),
         other => panic!("expected PendingTotp, got {other:?}"),
@@ -361,7 +369,7 @@ async fn verify_post_wrong_code_at_threshold_returns_lockout_no_repark() {
     // Challenge consumed (taken at step 2) and NOT re-parked
     // (lockout branch returns before put). The user must restart
     // from /login.
-    assert!(store.peek(TOTP_HANDLE).await.unwrap().is_none(),
+    assert!(store.peek(&totp_handle()).await.unwrap().is_none(),
         "lockout must not re-park the challenge");
 }
 
@@ -381,7 +389,7 @@ async fn verify_post_malformed_code_treated_as_bad_code() {
     ).await;
     assert!(matches!(decision, VerifyPostDecision::BadCode));
 
-    let parked = store.peek(TOTP_HANDLE).await.unwrap().expect("re-parked");
+    let parked = store.peek(&totp_handle()).await.unwrap().expect("re-parked");
     match parked {
         Challenge::PendingTotp { attempts, .. } => assert_eq!(attempts, 1),
         _ => panic!(),

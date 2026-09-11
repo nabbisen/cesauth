@@ -128,7 +128,7 @@ mod tests {
     #[test]
     fn refresh_token_reuse_maps_to_same_wire_code_and_status_as_invalid_grant() {
         let reuse = oauth_error_code_status(&CoreError::RefreshTokenReuse {
-            reused_jti:  "any".into(),
+            reused_jti:  cesauth_core::types::Jti::from_storage("any"),
             was_retired: true,
         });
         let revoked = oauth_error_code_status(
@@ -149,11 +149,11 @@ mod tests {
     #[test]
     fn refresh_token_reuse_same_response_regardless_of_was_retired() {
         let retired_reuse = oauth_error_code_status(&CoreError::RefreshTokenReuse {
-            reused_jti:  "any".into(),
+            reused_jti:  cesauth_core::types::Jti::from_storage("any"),
             was_retired: true,
         });
         let unknown_reuse = oauth_error_code_status(&CoreError::RefreshTokenReuse {
-            reused_jti:  "any".into(),
+            reused_jti:  cesauth_core::types::Jti::from_storage("any"),
             was_retired: false,
         });
         assert_eq!(retired_reuse, unknown_reuse,
@@ -172,7 +172,7 @@ mod tests {
     #[test]
     fn refresh_token_reuse_uses_invalid_grant_per_rfc_6749() {
         let (code, _) = oauth_error_code_status(&CoreError::RefreshTokenReuse {
-            reused_jti:  "any".into(),
+            reused_jti:  cesauth_core::types::Jti::from_storage("any"),
             was_retired: false,
         });
         assert_eq!(code, "invalid_grant");
@@ -231,7 +231,7 @@ mod tests {
         let invalid_grant = oauth_error_code_status(&CoreError::InvalidGrant("x"));
         let invalid_client = oauth_error_code_status(&CoreError::InvalidClient);
         let reuse = oauth_error_code_status(&CoreError::RefreshTokenReuse {
-            reused_jti:  "x".into(),
+            reused_jti:  cesauth_core::types::Jti::from_storage("x"),
             was_retired: true,
         });
 
