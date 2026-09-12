@@ -91,7 +91,7 @@ Build integrity.
 
 | ID | Title | Tier | Category | Depends on |
 |----|-------|------|----------|------------|
-| [133](./proposed/133-build-reproducibility.md) | Frontend build reproducibility (run-reproducible, not environment-reproducible) | P2 | B | — |
+| [133](./proposed/133-build-reproducibility.md) | Build reproducibility. **Narrowed 2026-09-13:** `wasm-opt -Oz` is not idempotent and the Makefile applies it in place, so the bundle depends on build history — a one-line fix (§5 F1). Version string, host-drift-over-time and incremental compilation all eliminated; `wasm-bindgen` determinism is the last cheap suspect | P2 → reconsider | after 137/138 |
 
 Security-critical assurance track, continued.
 

@@ -18,6 +18,13 @@ nominal toolchain produced 750,151 bytes on 2026-09-05 and 751,714 bytes on
 2026-09-06. We cannot currently assert that a deployed bundle was built from a
 given commit.
 
+> **Status note, 2026-09-13.** This RFC was written as an investigation. It now
+> carries a concrete defect with a one-line fix (**§5 F1** — `wasm-opt` is
+> applied in place and is not idempotent), three eliminated causes (§2.4), and
+> one named suspect for the residual. It is closer to *fix and re-measure* than
+> to *investigate*, and its priority should be reconsidered on that basis: P2
+> was set when nothing was identified.
+
 ## 2. What is established
 
 Measured across two sessions, on identical source:
@@ -86,6 +93,73 @@ machine.
 byte-identical, which is what §2's first row actually measured. The claim that
 fails is specifically that recompiling the same source yields the same bytes.
 
+### 2.3 `wasm-opt` is not idempotent, and the Makefile applies it in place
+
+**Added 2026-09-13**, narrowing §2.2. Measured with the pinned Binaryen
+(`target/binaryen-version_123/bin/wasm-opt`, version 123) on the shipped
+bundle, each pass fed the previous pass's output:
+
+```
+pass 1 (as shipped)  753,095 / 1b539cd2…
+pass 2               752,485 / 84008d0c…     −610
+pass 3               752,414 / c969fe55…      −71
+```
+
+**`wasm-opt -Oz` is not idempotent.** And `Makefile:140-144` applies it **in
+place** — `wasm-opt … -o "$f" "$f"` over `crates/frontend/dist/*_bg.wasm`:
+
+```make
+cd crates/frontend && trunk build --release --filehash false
+for f in crates/frontend/dist/*_bg.wasm; do wasm-opt … -Oz -o "$$f" "$$f"; done
+```
+
+So the emitted bundle is a function of **how many times `wasm-opt` has been
+applied to whatever is in `dist/`**, not only of the source.
+
+**Currently latent, not active.** Trunk overwrites the wasm on every build, so
+in the normal path `wasm-opt` runs exactly once — confirmed: three builds from
+an absent `dist/`, and two more without clearing it, all produced
+`753,095 / 1b539cd2…`. But any path where Trunk does *not* overwrite — a
+skipped build, a partial failure, a `make` run after a failed `trunk` — yields
+a doubly-optimized bundle, ~600 bytes smaller, with no source change.
+
+**This is a strong candidate for §2's original 1,563-byte pair** (751,714 vs
+750,151). That gap is the right order of magnitude for one or two extra
+optimization passes, and it is the only mechanism found so far that produces a
+*large* delta from an unchanged tree.
+
+**Fix, and it belongs in this RFC's §5:** make the step a pure function of its
+input. Either optimize to a distinct output path and move it into place, or
+clear `dist/` before `trunk build`. One line either way, and afterwards the
+bundle cannot depend on the directory's history.
+
+### 2.4 Three causes eliminated; one suspect named
+
+For §2.2's ±2-byte delta, which §2.3 does **not** explain:
+
+- **Not the version string.** Reverting `0.83.0` → `0.82.0` with a forced
+  recompile produced the same bytes (§2.2).
+- **Not the host environment drifting over time.** §2.2's pair is minutes
+  apart in one shell session.
+- **Not incremental compilation.** `[profile.release]` is already
+  `codegen-units = 1`, `lto = true`; `CARGO_INCREMENTAL` is unset; and
+  `target/wasm32-unknown-unknown/release/incremental/` is **empty** — Cargo
+  disables incremental for release. The variable in §2.2 correlated with
+  `cargo clean -p cesauth-frontend`, but that command does not clear an
+  incremental cache that is not being used.
+
+**What remains suspect:** `wasm-bindgen`'s post-processing, which runs between
+`cargo` and `wasm-opt` and whose output ordering can vary per process, and
+Trunk's own staging. **M1 should test wasm-bindgen's determinism directly** —
+run it twice on the same `cargo` output and compare — before looking anywhere
+else. That is two commands and it either finds the cause or eliminates the last
+cheap candidate.
+
+**Not established:** what produced the ±2. The bundle is reproducible *now*, at
+753,095, across five consecutive builds. Whatever moved it from 753,093 has
+stopped moving, and I could not make it move back — which is itself a fact
+about the phenomenon rather than a resolution of it.
+
 ### 2.1 The same-day observation, and what it costs the kernel explanation
 
 Added 2026-09-08, from the 0.81.3 release review. The figure moved **within a
@@ -152,6 +226,23 @@ remains unavailable, not that anything currently misbehaves.
   before anyone attempts to explain it.
 
 ## 5. M1 — measure before designing
+
+**Amended 2026-09-13.** §2.3 found a concrete defect that does not need M1 to
+justify fixing: **`wasm-opt` is applied in place to a directory that may already
+contain its own output, and `wasm-opt -Oz` is not idempotent.** That makes the
+build a function of build history rather than of source, regardless of what M1
+concludes about anything else.
+
+**F1 — make the optimization step a pure function of its input.** Either
+`wasm-opt -o dist/x.opt.wasm dist/x.wasm && mv`, or clear `dist/` before
+`trunk build`. Then re-measure: three builds from a cleared tree must agree, and
+a build immediately following another must agree with them.
+
+F1 is independent of M1 and can land first. **M1's first experiment should be
+§2.4's**: run `wasm-bindgen` twice on identical `cargo` output and compare —
+the last cheap candidate for the residual ±2.
+
+
 
 **Do not attempt a fix first.** Establish whether this reproduces:
 
