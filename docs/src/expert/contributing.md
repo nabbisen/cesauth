@@ -211,6 +211,12 @@ yanks it. The guard makes publishing an explicit act rather than an accident.
 If a crate is ever genuinely to be published, flip `publish` for **that crate
 only**, deliberately, as part of the change that publishes it — never by
 leaving it unset.
+- **The dev team runs the gate set for readiness; the architect re-runs the
+  release-critical ones and any gate where a claim could hide.** Not the whole
+  set twice. Owner's correction, 2026-09-12: the architect had run all fifteen
+  gates by hand for 0.83.0's readiness while the implementer had already run
+  most of them. Independent verification earns its keep by being aimed, not by
+  being duplicated.
 - **A readiness report states what would ship; it never contains the steps to
   ship it.** Authorization is the boundary between the two documents, so there
   is nothing executable to run early. 0.82.0 was tagged and pushed before the
