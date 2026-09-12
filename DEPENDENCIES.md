@@ -30,6 +30,42 @@ q1). Re-verify this hash before importing anything further from the mockup.
 
 ---
 
+## Pinned build and test tooling
+
+Tools that CI installs rather than resolving through `Cargo.lock`. Each has
+been unpinned at some point and each has cost a release, so the version lives
+here and the install sites reference this section.
+
+| Tool | Pin | Install sites | Why |
+|---|---|---|---|
+| `trunk` | **0.21.14** | `.github/workflows/trunk-release-build.yml`, `worker-build.yml` (both jobs), `browser-tests.yml` | RFC 131 C1-R5 |
+| `worker-build` | `0.8.4` | `wrangler.toml` | RFC 131 C1-131 |
+| `worker` (crate) | `=0.8.3` | `Cargo.toml` | RFC 134 |
+| `@playwright/test` | `1.63.0` | `e2e/package.json` + committed `package-lock.json` | RFC 131 R5 §9 |
+| `axe-playwright` | `2.2.2` | `e2e/package.json` + committed `package-lock.json` | RFC 131 R5 §9 |
+
+**Trunk, 0.21.14 (RFC 131 C1-R5, 2026-09-12).** Previously
+`cargo install trunk --locked` at every site, which is not a pin:
+`--locked` honours *Trunk's own* lockfile, not a version this repository
+chose, so each CI run installed whatever the latest release happened to be.
+Two measured precedents make that unacceptable here — **RFC 130 finding 4a**
+was caused by a Trunk/`wasm-opt` version difference, and **RFC 131 C1-131**
+was `worker-build` floating to 0.8.5, raising a wasm-bindgen floor and
+breaking the deploy path with no commit to this repository at all.
+
+0.21.14 was measured locally on 2026-09-12 (`trunk --version`) and was also
+crates.io's `max_stable_version` that day, so the pin changed nothing on the
+day it landed. It freezes out the next release: 0.22.0 was in beta, and an
+unpinned install would have taken it the moment it went stable.
+
+**Bumping Trunk:** change all four `cargo install trunk --version` lines
+together (three files; `worker-build.yml` has two), update the table above,
+and re-run `make build-frontend` plus the `trunk-release-build` filename
+assertion before merging — 4a was a version difference that only showed up in
+emitted output.
+
+---
+
 ## Added in v0.81.0 (RFC 116 — security-type baseline)
 
 | Crate | Version | Scope | Rationale |

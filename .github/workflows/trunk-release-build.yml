@@ -34,8 +34,30 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      # RFC 131 C1-R5: Trunk is pinned. `cargo install trunk --locked` was
+      # unpinned — `--locked` honours *Trunk's own* lockfile, not a version
+      # this repository chose, so every run installed whatever the latest
+      # release happened to be. An unpinned build tool is not acceptable
+      # here for two measured reasons:
+      #
+      #   - RFC 130 finding 4a was caused by a Trunk/`wasm-opt` version
+      #     difference. An unpinned Trunk in CI is that failure's
+      #     recurrence condition.
+      #   - RFC 131 C1-131: `worker-build` floated to 0.8.5, which raised a
+      #     wasm-bindgen floor and broke the deploy path with no commit to
+      #     this repository at all. Same shape, different tool.
+      #
+      # 0.21.14 is the version measured locally on 2026-09-12, and is also
+      # crates.io's `max_stable_version` that day — so this pin changes
+      # nothing today and freezes the next release out until someone
+      # chooses it. 0.22.0 is in beta; when it goes stable an unpinned
+      # install would have taken it silently.
+      #
+      # Pinned at three sites — here, `worker-build.yml` (both jobs), and
+      # `browser-tests.yml`. Recorded in DEPENDENCIES.md; bump all of them
+      # together.
       - name: Install Trunk
-        run: cargo install trunk --locked
+        run: cargo install trunk --version 0.21.14 --locked
 
       - name: make build-frontend
         run: make build-frontend

@@ -36,6 +36,14 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      # RFC 131 C1-R5: `make build-frontend` invokes `trunk` directly
+      # (Makefile's build-frontend target) and nothing installs it, so
+      # both jobs in this workflow failed at the next step on a clean
+      # runner -- meaning neither gate had ever executed. See the pin
+      # rationale in trunk-release-build.yml.
+      - name: Install Trunk
+        run: cargo install trunk --version 0.21.14 --locked
+
       - name: make build-frontend
         run: make build-frontend
 
@@ -88,6 +96,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.98.1
         with:
           targets: wasm32-unknown-unknown
+
+      # RFC 131 C1-R5: `make build-frontend` invokes `trunk` directly
+      # (Makefile's build-frontend target) and nothing installs it, so
+      # both jobs in this workflow failed at the next step on a clean
+      # runner -- meaning neither gate had ever executed. See the pin
+      # rationale in trunk-release-build.yml.
+      - name: Install Trunk
+        run: cargo install trunk --version 0.21.14 --locked
 
       - name: make build-frontend
         run: make build-frontend

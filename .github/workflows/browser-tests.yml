@@ -61,8 +61,11 @@ jobs:
 
       # `make build-frontend` invokes `trunk` directly (see the Makefile), so
       # it must be installed explicitly — as trunk-release-build.yml does.
+      # Pinned (RFC 131 C1-R5): `--locked` alone honours Trunk's own
+      # lockfile, not a version this repository chose. Rationale, and the
+      # other two pin sites, in trunk-release-build.yml.
       - name: Install Trunk
-        run: cargo install trunk --locked
+        run: cargo install trunk --version 0.21.14 --locked
 
       - name: make build-frontend
         run: make build-frontend
