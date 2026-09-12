@@ -42,16 +42,16 @@ jobs:
 
       - name: Run host crate tests
         run: |
+          # RFC 136 C2-136: no --lib. Doc-tests are gated for every crate.
+          # An unannotated ``` fence in a module doc is compiled as Rust,
+          # and two such fences in cesauth-adapter-cloudflare were failing
+          # undetected for the same reason its unit test was: nothing ran
+          # them. --lib excluded that whole class repo-wide, which is the
+          # kind of quiet exclusion RFC 136 exists to remove.
           cargo test -p cesauth-core \
                      -p cesauth-adapter-test \
                      -p cesauth-frontend \
-                     --lib
-          # RFC 136: the two formerly-excluded crates. Run WITHOUT --lib
-          # so their doc-tests are gated too — an unannotated ``` fence
-          # in a module doc is compiled as Rust, and two such fences in
-          # cesauth-adapter-cloudflare were failing undetected for the
-          # same reason the unit tests were: nothing ran them.
-          cargo test -p cesauth-backend \
+                     -p cesauth-backend \
                      -p cesauth-adapter-cloudflare
 
       - name: Run migration integration tests

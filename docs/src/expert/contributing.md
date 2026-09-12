@@ -25,38 +25,42 @@ hand-alignment. If your editor format-on-saves a file you touch, check
 ## Running tests
 
 ```bash
-# Host-compilable crates (fastest, no WASM toolchain needed)
-cargo-1.91 test -p cesauth-core -p cesauth-adapter-test -p cesauth-frontend --lib
-
-# Migration chain integration tests
-cargo-1.91 test -p cesauth-migrate-test --test migration_chain
-
-# All host tests
+# Every host crate — this is the command CI runs (.github/workflows/test.yml).
+# No --lib: unit tests, integration targets and doc-tests all count.
 cargo-1.91 test -p cesauth-core \
                 -p cesauth-adapter-test \
                 -p cesauth-frontend \
-                -p cesauth-migrate-test
+                -p cesauth-backend \
+                -p cesauth-adapter-cloudflare
 
-# The Worker crate and the Cloudflare adapter (RFC 136). Run without
-# --lib so their doc-tests are covered too.
-cargo-1.91 test -p cesauth-backend -p cesauth-adapter-cloudflare
+# Migration chain integration tests
+cargo-1.91 test -p cesauth-migrate-test --test migration_chain
 ```
 
-Expect **1,233 passed, 0 failed** from the first command (RFC 125;
-`cesauth-frontend`'s 280 tests were uncounted and had no CI coverage
-before that release — see
-`rfcs/done/125-release-gate-integrity-restoration.md` for how that
-was found), and **199 passed** plus **1 passed** from the second.
+Expect **1,403 passed, 0 failed** from the first command — 789 core,
+276 frontend (plus its 4 `acceptance_harness` integration tests), 200
+backend, 133 adapter-test, 1 adapter-cloudflare, and 4 ignored
+doc-tests. The `migration_chain` command adds **31**.
 
-Both of the latter crates were excluded from the gate until 0.83.0+,
-with the stated reason that they "need WASM". **That reason was
-false**, and RFC 136 is the correction: their tests compile and run on
-the host like any other. The backend's 159 tests had accumulated 36
-API-drift errors and the adapter's single test module was missing a
-`tokio` dev-dependency, so neither crate's tests had been compiled —
-let alone run — by anything, for at least two months. **No test in
-either crate is wasm-only.** If one ever is, gate that test with
-`#[cfg(target_arch = "wasm32")]`; do not re-exclude the crate.
+(RFC 125 found `cesauth-frontend`'s 280 tests uncounted with no CI
+coverage — see `rfcs/done/125-release-gate-integrity-restoration.md`.)
+
+**`--lib` was dropped in RFC 136 C2-136.** It had excluded two whole
+classes repo-wide: doc-tests, and integration targets such as
+`cesauth-frontend`'s `tests/acceptance_harness.rs`. Two doc-tests in
+`cesauth-adapter-cloudflare` were failing the entire time — unannotated
+` ``` ` fences in a module doc, which rustdoc compiles as Rust.
+
+`cesauth-backend` and `cesauth-adapter-cloudflare` were themselves
+excluded from the gate until 0.83.0+, with the stated reason that they
+"need WASM". **That reason was false**, and RFC 136 is the correction:
+their tests compile and run on the host like any other. The backend's
+159 tests had accumulated 36 API-drift errors and the adapter's single
+test module was missing a `tokio` dev-dependency, so neither crate's
+tests had been compiled — let alone run — by anything, for at least two
+months. **No test in either crate is wasm-only.** If one ever is, gate
+that test with `#[cfg(target_arch = "wasm32")]`; do not re-exclude the
+crate.
 
 ```bash
 # wasm32 backend check (the only validation of the Worker build)
