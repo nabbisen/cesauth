@@ -25,7 +25,7 @@ Measured across two sessions, on identical source:
 | Property | Result |
 |---|---|
 | Repeat build, same session | **byte-identical**, same sha256 |
-| Clean rebuild (`cargo clean -p cesauth-frontend --target wasm32-unknown-unknown --release`) | **byte-identical**, same sha256 |
+| ~~Clean rebuild~~ | ~~byte-identical, same sha256~~ — **FALSIFIED 2026-09-13, see §2.2** |
 | Across sessions, one day apart | **751,714 vs 750,151** — a fixed 1,563-byte delta |
 | Across sessions, **same day, same host** (added 2026-09-08) | **751,714 (08:49) vs 751,711 (19:41)** — a 3-byte delta |
 | Pre-`wasm-opt` size | 881,519 vs 879,980 — so the difference originates in `cargo`/`rustc`/LTO, not Binaryen |
@@ -45,6 +45,46 @@ measurements — the kernel moved 7.2.2 → 7.2.3, implying a system update.
 The mechanism is unidentified. Bit-level diffing of two wasm binaries was
 judged disproportionate by both the implementer and the reviewer, and that
 judgement stands until this RFC is scheduled.
+
+### 2.2 Falsified: a clean rebuild is not byte-identical
+
+**Added 2026-09-13**, from the 0.83.0 release review. §2's second row said a
+clean rebuild reproduces byte-for-byte. It does not.
+
+The 0.83.0 cut reported the bundle at **753,095 bytes** against 753,093 before
+the version bump, and attributed the +2 to the version string. I tested that,
+and the version is **not** the cause:
+
+```
+version 0.83.0, clean rebuild              → 753,093 / f07a27b0…
+version 0.82.0, clean rebuild (forced)     → 753,093 / f07a27b0…   ← reverting changed nothing
+version 0.83.0, incremental (touch lib.rs) → 753,095 / 1b539cd2…
+version 0.83.0, clean rebuild again        → 753,095 / 1b539cd2…   ← same version, same commit
+```
+
+`cargo clean -p cesauth-frontend` between each, `make build-frontend` after.
+The last two lines are the finding: **two clean rebuilds of the same source at
+the same commit, minutes apart, produced different output.** Both figures occur
+at version 0.83.0.
+
+**This is the strongest evidence this RFC has**, and it removes two candidate
+causes at once:
+
+- **Not the version string.** Reverting it produced the same bytes.
+- **Not the host environment across time.** §2's first pair was two days apart
+  and §2.1's was one host-day; this is minutes apart in one shell session with
+  no intervening change of any kind.
+
+What remains is something inside the build itself — incremental-compilation
+state surviving `cargo clean -p` (which cleans one package, not the dependency
+graph), codegen-unit ordering, or `wasm-opt`'s input differing for a reason not
+yet named. **M1 should start here**, not with host images: it is the cheapest
+reproduction in the RFC, it takes two commands, and it is available on any
+machine.
+
+**Stated with its limit:** a *no-op* rebuild — nothing recompiled — remains
+byte-identical, which is what §2's first row actually measured. The claim that
+fails is specifically that recompiling the same source yields the same bytes.
 
 ### 2.1 The same-day observation, and what it costs the kernel explanation
 
