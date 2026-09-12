@@ -45,6 +45,16 @@ Full policy: `done/000-rfc-lifecycle-policy.md`.
 
 ## Proposed
 
+### P0 — security, blocks RFC 117
+
+| ID | Title | Tier | Target |
+|----|-------|------|--------|
+| [137](./proposed/137-token-endpoint-client-binding.md) | **`/token` authenticates no client and binds no code.** `client_secret` is parsed and dropped; the code's own `client_id` is discarded via `..` and never compared. Both are mandated by RFC 6749 §4.1.3, and `/introspect` and `/revoke` next door do authenticate. PKCE is the only binding left. Found measuring `exchange_code` before writing RFC 117's handoff — which had assumed both checks existed | **P0** | next release |
+
+Awaiting owner authorization.
+
+### Other proposed
+
 UI/UX finishing track (v0.67.0 → v0.71.0). Source: v0.50.1 UI/UX design
 deck (overview onepage + dev-support PDF) compared against v0.66.0 state.
 The deck is largely shipped through v0.53/v0.62/v0.63; this batch closes
@@ -79,7 +89,7 @@ Security-critical assurance track, continued.
 
 | ID | Title | Tier | Category | Depends on |
 |----|-------|------|----------|------------|
-| [117](./proposed/117-authorization-code-lifecycle-assurance.md) | Authorization code lifecycle assurance | P0 | A | 116 |
+| [117](./accepted/117-authorization-code-lifecycle-assurance.md) | Authorization code lifecycle assurance — **accepted 2026-09-12**; sequenced after RFC 137 | P0 | A | 116, 137 |
 | [118](./proposed/118-refresh-rotation-assurance.md) | Refresh token rotation & reuse-detection assurance | P0 | A | 116 |
 | [119](./proposed/119-tenant-scoped-repository-apis.md) | Tenant boundary & scoped repository APIs | P1 | B | 116 |
 | [120](./proposed/120-authz-core-sealing-and-property-tests.md) | Authorization core: sealing & property tests | P0/P1 | A/B | 116 |
@@ -97,6 +107,7 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 | ID | Title | Tier | Dispatched | Depends on |
 |----|-------|------|---|---|
 | [135](./accepted/135-wasm-under-csp.md) | **WebAssembly under the CSP — P0.** The browser refuses to compile the bundle; every `client` surface is blank. `'wasm-unsafe-eval'` scoped to the Leptos shell, E3 enforcing the boundary; ADR-007 amended; mount into `#root` | **P0** | 0.83.0 | 132 (E3) |
+| [117](./accepted/117-authorization-code-lifecycle-assurance.md) | Authorization-code lifecycle assurance — typestate pipeline making "mint before validation" unwritable, plus store-contract property tests. **Premise corrected: see §2a — one of the four checks it meant to encode does not exist (RFC 137)** | P0 | after 137 | 116, **137** |
 | [136](./accepted/136-backend-test-rot.md) | Backend test rot: 159 tests in 18 modules do not compile (36 errors, 34 API drift) behind an exclusion whose stated reason covers two. TOTP verify/recover paths included | P1 | after 0.83.0, ahead of 117 | — |
 | [129](./accepted/129-drift-scan-coverage.md) | Drift-scan coverage: the `crates/` blind spot (19 dead pointers, 6 true historical statements, 1 broken command) + RFC 126's deferred D5 | P2 | 0.83.0 | — |
 | [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | R2a shipped v0.82.0; R2b awaits 132 §13 q1; R5b–e need a re-scoped baseline; R3 awaits 132 §13 q1 | 130, 132, 134 |
@@ -178,7 +189,7 @@ discussion happened.
 
 ## Adding a new RFC
 
-Next number: **137**. Create `rfcs/proposed/137-slug.md` with `**Status.** Proposed`
+Next number: **138**. Create `rfcs/proposed/138-slug.md` with `**Status.** Proposed`
 and add a row above, in the same commit.
 
 Transitions (folder is authoritative; update Status and this index in the same

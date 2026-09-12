@@ -9,10 +9,17 @@ then; this one supersedes its R5 sections.
 browser suite is capability this project has never had, and it changes what
 "green" means for every future contributor. Nothing here is a fix.
 **Prepared by.** Architect · **Implemented by.** Mid-capability model
-**Blocked on.** **RFC 135.** M2 ran on 2026-09-12 and found §5 outcome 2: the
-CSP forbids WASM compilation, so nothing mounts. R5b–e do not start until RFC
-135 lands and its §9 criterion — this handoff's M2 probe reporting `MOUNTED`
-against the real CSP — is met. M1's three blockers remain cleared (§3).
+**Blocked on.** **Nothing — cleared 2026-09-12.** M2 found §5 outcome 2 (the
+CSP forbade WASM compilation, so nothing mounted); **RFC 135 fixed it and has
+landed.** Its §9 criterion is met: the M2 probe, byte-identical, reports
+`MOUNTED` against the real served CSP with zero page errors and `#root`
+populated (772 chars). M1's three blockers remain cleared (§3).
+
+**What changed for you since this handoff was written:** the app now mounts
+into `#root` (RFC 135 W4 replaced `mount_to_body`), so §2's assertion is
+correct as written — keep it, pair it with **zero page errors**, and do not
+weaken it to "body has content." The login page renders **unstyled**; that is
+expected and is R3's work, not a defect for R5 to report.
 
 ---
 

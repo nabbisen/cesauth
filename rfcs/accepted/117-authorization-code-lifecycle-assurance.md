@@ -1,6 +1,6 @@
 # RFC 117 — Authorization code lifecycle assurance
 
-**Status.** Proposed
+**Status.** Accepted — approved by the owner 2026-09-12.
 **Tier.** P0 · Category A
 **Size.** Medium
 **Tracks.** Strategy §5.1, §8 (RFC theme 2); audit G4.
@@ -26,6 +26,40 @@ the ordering is procedural. A refactor could mint before verifying PKCE
 and only example-based tests would notice. RFC 9700 §2.1.1 (one-time
 codes) and §4.8 (PKCE downgrade) invariants deserve structural
 enforcement: this is the single highest-value flow in an IdP.
+
+## 2a. Premise correction — one of the four checks does not exist
+
+**Added 2026-09-12, on acceptance**, from measuring `exchange_code` before
+writing this RFC's handoff.
+
+§2 above states that `exchange_code` *"currently performs the correct sequence
+(`take` → client/redirect binding checks → `pkce::verify` → mint)"*. **It does
+not.** There is no client binding check, and `/token` does not authenticate the
+client either:
+
+- `Challenge::AuthCode` carries `client_id` (`ports/store.rs:30`); the
+  destructure at `service/token.rs:128-138` discards it via `..` and nothing
+  compares it to the presented `client_id`.
+- `client_secret` is parsed at `routes/oidc/token.rs:33` and never read again —
+  `ExchangeCodeInput` has no field for it.
+
+So **§5 invariant 3 describes behaviour cesauth does not have**, and PKCE is
+the only thing binding a code to its redeemer. **RFC 137** fixes both and is
+sequenced ahead of this RFC.
+
+This sharpens rather than weakens the design. `bind_client` was going to be a
+no-op rename of an existing check; it now encodes a control RFC 137 introduces,
+and the typestate makes deleting it again unwritable. **Fix first, then encode.**
+
+Two consequences for the work here:
+
+- The pipeline's `bind_client` transition must compare against the code's own
+  stored `client_id` — not merely accept a `ClientId` argument. A transition
+  that takes the presented value and returns `ClientBoundCode` without
+  comparing would reproduce today's defect in types that claim otherwise.
+- `ConsumedCode` must carry `client_id` out of the challenge. §7.1's comment
+  says its fields come "from `Challenge::AuthCode`"; that must include the one
+  the current code drops.
 
 ## 3. Background
 
