@@ -114,11 +114,8 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 
 | ID | Title | Tier | Dispatched | Depends on |
 |----|-------|------|---|---|
-| [135](./accepted/135-wasm-under-csp.md) | **WebAssembly under the CSP — P0.** The browser refuses to compile the bundle; every `client` surface is blank. `'wasm-unsafe-eval'` scoped to the Leptos shell, E3 enforcing the boundary; ADR-007 amended; mount into `#root` | **P0** | 0.83.0 | 132 (E3) |
 | [117](./accepted/117-authorization-code-lifecycle-assurance.md) | Authorization-code lifecycle assurance — typestate pipeline making "mint before validation" unwritable, plus store-contract property tests. **Premise corrected: see §2a — one of the four checks it meant to encode does not exist (RFC 137)** | P0 | after 137 | 116, **137** |
-| [136](./accepted/136-backend-test-rot.md) | Backend test rot: 159 tests in 18 modules do not compile (36 errors, 34 API drift) behind an exclusion whose stated reason covers two. TOTP verify/recover paths included | P1 | after 0.83.0, ahead of 117 | — |
-| [129](./accepted/129-drift-scan-coverage.md) | Drift-scan coverage: the `crates/` blind spot (19 dead pointers, 6 true historical statements, 1 broken command) + RFC 126's deferred D5 | P2 | 0.83.0 | — |
-| [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | R2a shipped v0.82.0; R2b awaits 132 §13 q1; R5b–e need a re-scoped baseline; R3 awaits 132 §13 q1 | 130, 132, 134 |
+| [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | R2a shipped v0.82.0; **R5b–e shipped v0.83.0** (+ C1-R5); R2b awaits 132 §13 q1; R3 awaits 132 §13 q1 | 130, 132, 134 |
 
 Numbers are assignment order and are never reused or renumbered (RFC 000), so
 a higher number can be earlier work: 130 continues 127, and 131 continues 130.
@@ -141,7 +138,7 @@ harness that closes it.
 
 ## Done
 
-122 RFCs shipped between v0.50.3 and v0.82.0 (001–106, 107, 108–111, 110b–110e, 113, 116, 125, 126, 127, 128, 130, 132, 134). Full
+125 RFCs shipped between v0.50.3 and v0.83.0 (001–106, 107, 108–111, 110b–110e, 113, 116, 125, 126, 127, 128, 129, 130, 132, 134, 135, 136). Full
 list with shipped-in versions: see ROADMAP.md "Shipped" section and
 CHANGELOG.md release entries. Selected highlights only listed here; the
 canonical catalogue is the filesystem at `done/`.
@@ -175,6 +172,9 @@ canonical catalogue is the filesystem at `done/`.
 | [130](./done/130-deployable-frontend-bundle.md) | Deployable frontend bundle (Trunk release build, artifact naming, toolchain pin, Binaryen checksum) | v0.81.2 |
 | [126](./done/126-documentation-rename-sweep-and-drift-rule.md) | Documentation rename sweep + drift-scan crate-name rule (D5 deferred) | v0.81.1 |
 | [128](./done/128-observability-audit-architecture-correction.md) | Correct the audit architecture in the observability guide (audit is D1, not R2, since v0.32.0; + conditions C1-128, C2-128) | v0.81.3 |
+| [135](./done/135-wasm-under-csp.md) | **WebAssembly under the CSP** — the browser refused to compile the bundle, so every `client` surface was a blank page while ten `curl` assertions read healthy. `'wasm-unsafe-eval'` scoped to the Leptos shell by construction, ADR-007 amended, mount into `#root` | v0.83.0 |
+| [136](./done/136-backend-test-rot.md) | **Backend test rot** — 159 tests in the deployed crate did not compile, behind an exclusion whose stated reason covered two of 36 errors; the RFC 008 audit-secret invariant had never once executed (+ conditions C1-136, C2-136) | v0.83.0 |
+| [129](./done/129-drift-scan-coverage.md) | Drift-scan coverage — the `crates/` blind spot: 19 dead pointers, 6 true historical statements, 1 broken command; `ROADMAP.md` added to the scan (+ condition C1-129) | v0.83.0 |
 | [134](./done/134-router-pattern-conflict.md) | Router pattern conflict — `:param.json` routes panicked `worker`'s router on construction, every request, since 2026-07-07 (+ condition C1-134: the shell's assets resolve) | v0.82.0 |
 | [132](./done/132-view-rendering-policy.md) | View rendering policy — Q1–Q4 derived per surface, `Rendering` column on all 188 routes, E2/E3 blocking gates (+ conditions C1-132, C2-132) | v0.82.0 |
 

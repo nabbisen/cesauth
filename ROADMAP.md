@@ -254,6 +254,59 @@ started.
   RFC 131 itself stays in `accepted/` — R2a shipped, R2b/R3/R4/R5b–e have
   not.
 
+- ✅ **v0.83.0 — RFC 135, RFC 136 (+ conditions C1-136, C2-136), RFC 129
+  (+ condition C1-129), RFC 131 R5b–e (+ condition C1-R5). Shipped
+  2026-09-13.** **The application could not run.** Every client-rendered
+  surface served a blank page: the browser refused to compile the WASM
+  bundle, because a `script-src` carrying only a nonce authorises the
+  bootstrap *script* and not the *module* it instantiates, and cesauth's
+  CSP had never granted `'wasm-unsafe-eval'`. Ten `curl` assertions rated
+  that healthy — assets 200, CSP header present, no panic — because curl
+  does not execute WebAssembly. **RFC 135** adds the directive to the
+  Leptos shell's own CSP and nowhere else (scope follows by construction:
+  only routes calling `leptos_html_shell` receive it, and RFC 132's E3
+  asserts no `server` route does), amends ADR-007 with the distinction
+  between `'wasm-unsafe-eval'` and the still-barred `'unsafe-eval'`, and
+  mounts into `#root` via `mount_to(...).forget()` — the shell had claimed
+  `#root` since it was written while `mount_to_body` appended to `<body>`.
+  Found by RFC 131 R5's M2 probe, the first time anything opened cesauth in
+  a browser. **RFC 136:** the deployed crate's 159 tests did not compile —
+  36 errors, all ordinary API drift — behind an exclusion whose stated
+  reason ("requires the wasm32 target and worker-build toolchain") covered
+  two of them; no test in either excluded crate is wasm-only. Both crates
+  now run in CI, doc-tests and integration targets included, which also
+  restored `cesauth-frontend`'s 4-test acceptance harness. Its C1/C2
+  conditions repaired the RFC 008 audit-secret invariant, which had
+  **never once executed** since v0.50.2: it searched two directories above
+  the repository root, and its fixed eight-line scan window read past each
+  `audit::write` call into the next statement. It now holds across 413
+  files, and proves its own scanner every run. **RFC 129** closed
+  drift-scan's `crates/` blind spot — the gate could not see the largest
+  directory in the repository — and added `ROADMAP.md` to the scan.
+  **RFC 131 R5b–e** is **the first browser-level verification in this
+  project's history**: 20 Playwright tests asserting the layer curl cannot
+  reach (WASM instantiation, Leptos mount, thrown errors, axe WCAG A/AA,
+  duplicate ids, tab order, 375 px layout, and that no workbench-only
+  markup from the mockup reaches served output). Three of the mockup's
+  seven specs did not survive contact and were dropped or replaced rather
+  than adapted into something vacuous. C1-R5 installed Trunk in the two CI
+  jobs that invoked it without it — so RFC 134's deploy-path gate and
+  RFC 135's runtime smoke gate had never been able to start — and pinned
+  it, `worker-build`'s floating-version failure having already cost a
+  release. **Minor**, because R5 is added capability; 135, 136, 129 and
+  C1-R5 are fixes. **Not claimed:** that the frontend works (one rendered
+  page, one engine, unauthenticated, no interaction beyond Tab), that it is
+  styled (no stylesheet exists in the tree, so axe's zero violations say
+  nothing about contrast, focus-visible or target size — RFC 131 R3), that
+  it works on Cloudflare (**nobody has deployed this tree**), or that
+  RFC 134's and RFC 135's CI gates have run — C1-R5 makes their first
+  execution possible and it has not happened. `mdbook build docs` is in no
+  workflow at all (RFC 138), and the browser suite is non-blocking until
+  0.84.0. **RFC 137 is open:** `/token` authenticates no client and binds
+  no authorization code to the client it was issued to, both mandated by
+  RFC 6749 §4.1.3; PKCE is the only binding left, and it ships next
+  release. RFC 131 stays in `accepted/` — R2b/R3/R4 remain.
+
 - **Security-critical assurance track (RFCs 116–124).** RFC 116 shipped in
   v0.81.0 (`rfcs/done/`), with two carve-outs deferred: secret-newtype
   adoption at the remaining credential call sites, and `ports::repo`, which

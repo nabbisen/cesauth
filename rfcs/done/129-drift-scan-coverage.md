@@ -1,6 +1,6 @@
 # RFC 129 — Drift-scan coverage: the `crates/` blind spot
 
-**Status.** Accepted — approved by the owner 2026-09-10.
+**Status.** Implemented (v0.83.0)
 **Author.** Architect · **Date.** 2026-09-10
 **Priority.** P2 — no user-visible impact; it protects the thing that protects
 everything else.

@@ -14,6 +14,163 @@ changes will always be called out here.
 
 ---
 
+## [0.83.0] - 2026-09-13
+
+### The application could not run — RFC 135
+
+Every client-rendered surface served a **blank page**. The shell was
+served, the bootstrap script ran under its nonce, every asset returned
+200, `init()` was called — and the browser then refused to compile the
+WebAssembly module:
+
+```
+CompileError: WebAssembly.instantiateStreaming(): Compiling or instantiating
+WebAssembly module violates the following Content Security Policy directive
+because 'unsafe-eval' is not an allowed source of script in the following
+Content Security Policy directive: "script-src 'nonce-…'".
+```
+
+WebAssembly compilation is a **separate CSP capability**,
+`'wasm-unsafe-eval'`. A nonce authorises the bootstrap *script*; it does
+not authorise the *module* that script instantiates. cesauth's policy had
+never granted it, so `<div id="root">` stayed empty on `/` and `/login`.
+
+**Ten `curl` assertions rated this healthy** — 200 HTML, CSP header
+present, every referenced asset resolving, no panic. All true. `curl` does
+not execute WebAssembly. Only a browser decides this, and until this
+release nothing had opened one; the defect was found by RFC 131 R5's first
+browser probe.
+
+Not a regression: no route resolved at all before 0.82.0 (RFC 134), so
+nobody could have observed it.
+
+- **`'wasm-unsafe-eval'` added to the Leptos shell's own CSP, and nowhere
+  else.** The scope follows by construction rather than by convention:
+  only routes calling `leptos_html_shell` receive the directive, and
+  RFC 132's E3 gate asserts that no `server`-declared route calls it. The
+  default CSP is unchanged, so the JSON API and every `format!`-templated
+  HTML page carry no WASM directive. When RFC 131 R3 converts the
+  remaining client-rendered pages to server rendering they stop calling
+  the shell and fall back to the strict policy automatically.
+- **`'unsafe-eval'` remains barred.** The two are distinct directives, and
+  tests now assert both directions — present, absent — in the quoted form,
+  because unquoted `unsafe-eval` is a substring of `'wasm-unsafe-eval'`
+  and an unquoted assertion conflates them.
+- **ADR-007 amended** (owner-approved) to record the distinction, the
+  scope, and that RFC 115 introduced a WebAssembly frontend under a policy
+  written for a server-rendered application without amending the ADR.
+- **Leptos now mounts into `#root`** via `mount_to(…).forget()`. It used
+  `mount_to_body`, which appends to `<body>` — so the shell's own comment
+  ("Leptos mounts into this div"), and the frontend's doc comment saying
+  the same, had both been false since they were written.
+- `runtime-smoke-check.sh` gained two checks (10 → 12): `/login`'s served
+  CSP grants the WASM directive and bars `'unsafe-eval'`, and a
+  server-rendered route carries no WASM directive at all.
+
+### 159 tests in the deployed crate did not compile — RFC 136
+
+`cargo test -p cesauth-backend` failed with 36 errors. The crate has
+**159 `#[test]` functions across 16 files**, and none of them had been
+compiled — let alone run — by any gate, for at least two months.
+
+The exclusion was documented, with a reason that was false: the workflow
+and the contributing guide both said the crate "requires the
+wasm32-unknown-unknown target and worker-build toolchain". That reason
+covered **two** of the 36 errors, and on inspection neither of those two
+was an error at all — both were `worker::` type names quoted as *context*
+inside ordinary type-mismatch messages. **No test in either excluded crate
+is wasm-only.** All 36 were ordinary API drift: `AuthChallengeStore`'s
+methods had moved to a `ChallengeHandle` newtype, `csrf::mint()` had
+started returning a `Result`, `Jti` had lost `From<&str>`, and
+`log::Record` had gained a field.
+
+- **The tests were repaired to current signatures, not rewritten to
+  pass.** 199 backend tests now run and pass.
+- **`cesauth-adapter-cloudflare`** was excluded by the same false
+  sentence; its one test module needed a `tokio` dev-dependency.
+- **Both crates are now in CI**, and `--lib` was dropped from the host
+  test step so **doc-tests and integration targets are gated too**. That
+  restored two more things nothing had been running: two failing
+  doc-tests in the adapter (prose fenced blocks that rustdoc compiles as
+  Rust), and `cesauth-frontend`'s 4-test `acceptance_harness`. Host tests
+  counted by CI went from 1,198 to **1,403**.
+- **The RFC 008 audit-secret invariant had never once executed.** The test
+  pins that no `audit::write*` call passes token material. Written in
+  v0.50.2, it looked for `crates/` **two directories above the repository
+  root**, so it could not have found its own inputs even had it compiled;
+  and its scan window was a fixed eight lines, which reads past the end of
+  the call into the *next* statement. Both are fixed — the window is now
+  bounded to the call expression — and the invariant is **measured to
+  hold** across 413 files. It also proves its own scanner on every run.
+
+### drift-scan could not see the largest directory in the repository — RFC 129
+
+The stale-phrase gate's four crate-rename rules all excluded `crates/`,
+so the gate that catches renamed-away names could not see them in the
+source. 19 dead pointers were fixed, 6 true historical statements
+rephrased to stay true without the stale token (a blanket rename would
+have turned accurate history into fiction), and one broken
+copy-pasteable command corrected. `ROADMAP.md` was added to the scan.
+
+This is the first time that gate has ever been able to fire inside
+`crates/`.
+
+### The first browser-level verification in this project's history — RFC 131 R5
+
+**20 Playwright tests**, asserting the layer `curl` structurally cannot
+reach: that the WASM bundle instantiates, that Leptos mounts into a
+non-empty `#root`, that the browser threw no uncaught exception, that axe
+reports no critical or serious WCAG 2 A/AA violation, that no `id` is
+duplicated, that keyboard focus reaches every control in document order,
+that the page does not scroll sideways at 375 px, and that no
+workbench-only markup from the imported mockup reaches served output.
+
+Three of the mockup's seven specs did not survive contact with cesauth
+and were dropped or replaced rather than adapted into something vacuous:
+its hydration spec (cesauth has no SSR to hydrate), its dialog
+focus-trap spec (there are no dialogs on the public surface — the
+property was kept as a tab-order spec, the mechanism dropped), and its
+pixel-screenshot spec (no stylesheet exists to photograph, and a
+screenshot gate passes its own first run by *creating* the baseline).
+
+CI also gained a Trunk install step in the two jobs that invoked Trunk
+without installing it, and Trunk is now pinned at all four install sites.
+
+### Open, and stated rather than omitted
+
+- **RFC 137 is open.** `/token` **authenticates no client**, and binds no
+  authorization code to the client it was issued to — both mandated by
+  RFC 6749 §4.1.3. PKCE is currently the only binding between an
+  authorization request and the client redeeming it. The owner chose to
+  ship 0.83.0 first; RFC 137 ships in the next release.
+
+### What this release does NOT claim
+
+- **Not that the frontend works.** 20 tests over **one rendered page**
+  (`/` and `/login` are the same page, and they are the entire
+  unauthenticated HTML surface), one browser engine, unauthenticated, with
+  no interaction beyond Tab.
+- **Not that it is styled.** No stylesheet exists anywhere in the tree;
+  the page renders in browser defaults. Axe's zero violations therefore
+  say **nothing** about contrast, focus-visible or target size — untested
+  by construction, not passing. Both are RFC 131 R3.
+- **Not that it works on Cloudflare. Nobody has deployed this tree.**
+  Every runtime observation in this release is Miniflare.
+- **Not that RFC 134's deploy-path gate or RFC 135's runtime smoke gate
+  have run in CI.** They could not start — nothing installed Trunk. This
+  release makes their first execution possible; it has not happened yet.
+- **Not that `mdbook build docs` is gated.** It is in no workflow at all
+  (RFC 138), despite being required in every handoff and review.
+- **Not that the browser suite is blocking.** It is non-blocking for one
+  release; flipping it is an acceptance criterion of 0.84.0.
+- **Not that the rendering policy is satisfied.** Three named exemptions
+  remain (RFC 132 §8), including `/me/security/totp/verify`, which still
+  denies a no-JS user their second factor.
+- **Not that the backend is well-tested.** 199 passing tests match today's
+  code; coverage is unmeasured.
+
+---
+
 ## [0.82.0] - 2026-09-10
 
 ### cesauth serves a request — RFC 134

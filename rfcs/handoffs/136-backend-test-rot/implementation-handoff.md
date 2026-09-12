@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 136, backend test rot
 
-**Governing RFC.** [`rfcs/accepted/136-backend-test-rot.md`](../../accepted/136-backend-test-rot.md)
+**Governing RFC.** [`rfcs/done/136-backend-test-rot.md`](../../done/136-backend-test-rot.md)
 **Target release.** After 0.83.0 — the first release after it, whatever its
 number. **And why that level: patch.** Repairing tests that exist and putting
 them in the gate is a fix; nothing new becomes possible for a user. If it ships

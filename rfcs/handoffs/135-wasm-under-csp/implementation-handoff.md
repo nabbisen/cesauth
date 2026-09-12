@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 135, WebAssembly under the CSP (P0)
 
-**Governing RFC.** [`rfcs/accepted/135-wasm-under-csp.md`](../../accepted/135-wasm-under-csp.md)
+**Governing RFC.** [`rfcs/done/135-wasm-under-csp.md`](../../done/135-wasm-under-csp.md)
 **Target release.** 0.83.0 — **and why that level:** RFC 135 is a **patch** (the
 application could not run; now it can). 0.83.0 is **minor** because RFC 131 R5
 adds the browser harness. This RFC is not the reason for the level.

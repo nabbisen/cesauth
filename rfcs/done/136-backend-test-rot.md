@@ -1,6 +1,6 @@
 # RFC 136 — Backend test rot: 159 tests that do not compile, behind a false exclusion
 
-**Status.** Accepted — approved by the owner 2026-09-12.
+**Status.** Implemented (v0.83.0)
 **Author.** Architect · **Date.** 2026-09-12
 **Priority.** **P1.** Nothing user-facing; but the Worker's own tests — including
 the TOTP second-factor and recovery-code paths — do not build, and nothing has

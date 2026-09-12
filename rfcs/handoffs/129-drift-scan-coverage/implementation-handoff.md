@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 129, drift-scan coverage
 
-**Governing RFC.** [`rfcs/accepted/129-drift-scan-coverage.md`](../../accepted/129-drift-scan-coverage.md)
+**Governing RFC.** [`rfcs/done/129-drift-scan-coverage.md`](../../done/129-drift-scan-coverage.md)
 **Target release.** 0.83.0 — **and why that level:** RFC 129 is a **patch**
 (every item is a fix; nothing new becomes possible). It ships inside 0.83.0,
 which is **minor**, because RFC 131 R5 adds the browser harness. This RFC is not
