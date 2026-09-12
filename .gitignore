@@ -31,3 +31,11 @@ docs/book/
 # Corpus seeds (fuzz/corpus/) ARE committed; everything else is ephemeral.
 fuzz/target/
 fuzz/artifacts/
+
+# --- Browser harness (RFC 131 R5) ---
+# Installed dependencies and generated run output. `e2e/package-lock.json`
+# IS committed -- the pinned Playwright and axe versions are the supply-chain
+# control (RFC 131 R5 handoff §9), and `npm ci` in CI installs exactly it.
+e2e/node_modules/
+e2e/playwright-report/
+e2e/test-results/

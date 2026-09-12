@@ -1,0 +1,15 @@
+{
+  "name": "cesauth-e2e",
+  "version": "0.0.0",
+  "description": "Browser acceptance harness for cesauth (RFC 131 R5). Public pages only, unauthenticated.",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "axe-playwright": "2.2.2"
+  }
+}

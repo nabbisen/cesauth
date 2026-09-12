@@ -1,0 +1,124 @@
+name: Browser tests (non-blocking until 0.84.0)
+
+# RFC 131 R5e — cesauth's first browser gate.
+#
+# What this adds that nothing else can: `runtime-smoke-check.sh` asserts via
+# curl that `/` and `/login` return 200 HTML with a CSP header and that every
+# referenced asset resolves. All of that was true throughout the RFC 135
+# outage, when both pages rendered blank because the CSP forbade WebAssembly
+# compilation. Only a browser decides whether the bundle instantiates and
+# Leptos mounts. This job is that browser.
+#
+# ---------------------------------------------------------------------------
+# NON-BLOCKING FOR ONE RELEASE — flip to blocking in 0.84.0
+# ---------------------------------------------------------------------------
+# Added 2026-09-12 (0.83.0). **This job must be flipped to blocking as an
+# acceptance criterion of 0.84.0** (RFC 131 R5 handoff §8; the architect has
+# said they will check).
+#
+# It is non-blocking by *not being a required status check* in the
+# repository's branch-protection settings — a separate, visible workflow whose
+# result is recorded on every run. It is deliberately NOT
+# `continue-on-error: true`: that would make the job report success while
+# failing, and this project has a rule against silencing gates. A red run here
+# is red, visible, and does not block the merge.
+#
+# Why one release of grace: a browser suite's first contact with CI produces
+# flakes indistinguishable from findings — timing, fonts, viewport, cold-start
+# WASM compilation. Landing blocking means the first flake either stops the
+# project or gets silenced. One release buys the data to tell those apart.
+#
+# **To flip it:** add "browser-tests" to branch protection's required checks
+# and replace this block with a note saying when it became blocking. Nothing
+# in the file itself needs to change.
+#
+# If it has flaked by 0.84.0, the fix is to diagnose the flake, not to extend
+# the window: an indefinitely non-blocking gate is decoration.
+# ---------------------------------------------------------------------------
+#
+# Scope: public, unauthenticated pages only (handoff §7) — `/` and `/login`,
+# which are the only routes in route-contracts.md whose actor is `Anonymous`.
+# A gate that needs a session gets disabled the first time session handling
+# changes. Authenticated screens arrive with RFC 131 R3.
+#
+# RFC 130 M2b: the toolchain version below must match rust-toolchain.toml
+# (repo root) and every other workflow listed in that file's header comment.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  browser-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          targets: wasm32-unknown-unknown
+
+      # `make build-frontend` invokes `trunk` directly (see the Makefile), so
+      # it must be installed explicitly — as trunk-release-build.yml does.
+      - name: Install Trunk
+        run: cargo install trunk --locked
+
+      - name: make build-frontend
+        run: make build-frontend
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # `npm ci` installs exactly the committed lockfile — the pinned
+      # @playwright/test and axe-playwright versions, never "latest"
+      # (handoff §9).
+      - name: Install harness dependencies
+        working-directory: e2e
+        run: npm ci
+
+      # Playwright's own pinned browser revision for the pinned Playwright
+      # version. `--with-deps` adds the system libraries headless Chromium
+      # needs on a bare runner.
+      - name: Install Chromium (Playwright's pinned revision)
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      # Started explicitly rather than via Playwright's `webServer`, so a
+      # build or startup failure is reported as itself instead of as a
+      # test-runner timeout.
+      - name: Start wrangler dev
+        run: |
+          set -euo pipefail
+          npx wrangler dev --port 8787 > /tmp/wrangler-dev.log 2>&1 &
+          echo $! > /tmp/wrangler.pid
+          for _ in $(seq 1 90); do
+            if curl -sf -o /dev/null http://localhost:8787/login; then
+              echo "wrangler dev is serving"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::wrangler dev never served /login" >&2
+          cat /tmp/wrangler-dev.log >&2
+          exit 1
+
+      - name: Playwright
+        working-directory: e2e
+        run: npx playwright test
+
+      # The runtime's own output. A browser failure is often explained by
+      # something the Worker logged, and the log is gone once the job ends.
+      - name: wrangler dev log
+        if: always()
+        run: cat /tmp/wrangler-dev.log
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 14
+          if-no-files-found: ignore
