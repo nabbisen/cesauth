@@ -188,6 +188,35 @@ passes a clean one; and `--lib` dropped from the three original crates' test
 step, measured safe (their doc-tests: 1 ignored, 0, 1 ignored), so doc-tests
 are gated repo-wide.
 
+## 5c. C2-136 outcome — complete; and `--lib` was hiding a second class
+
+**Added 2026-09-12.** The scanner now proves itself: a five-case self-check
+beside the invariant asserts a denylisted token inside a call is flagged, a
+clean call is not, a denylisted word in the *next statement* is not read (the
+C1-136 false-alarm bug, pinned as a test), a `)` inside a string literal does
+not truncate the call, and an unbalanced call yields `None` so the invariant
+reports it as unparsed. To make that possible without a private copy,
+`DENYLIST` and `call_expression` were hoisted to module scope; the invariant
+test's body changed by one line and its assertions, walk, messages and doc are
+untouched. Mutating the scanner back to an eight-line window fails **both**
+tests, the invariant by reproducing its original two false alarms.
+
+**`--lib` was excluding two classes, not one.** Dropping it from the host-test
+step surfaced `cesauth-frontend`'s `tests/acceptance_harness.rs` — the RFC 113
+UI rendering acceptance harness, **4 tests, never run in CI** — alongside the
+doc-tests. Found because the after-count did not match the arithmetic and the
+implementer chased the delta. Same class as RFC 125's 280 uncounted frontend
+tests: a flag that quietly excluded a whole target kind.
+
+The host-test step is now one command over five crates with no `--lib`:
+**1,403 passed** (789 core · 276 frontend · 4 acceptance harness · 200
+backend incl. the self-check · 133 adapter-test · 1 adapter-cloudflare; four
+doc-tests, all ignored). The `migration_chain` target adds **31**.
+
+**RFC 136 is complete on `main`.** It was sequenced "after 0.83.0" and landed
+before R5 finished; 0.83.0 therefore carries it. Level unchanged — minor, for
+R5.
+
 ## 6. Testing strategy
 
 1. `cargo test -p cesauth-backend` compiles and runs; state the count.
