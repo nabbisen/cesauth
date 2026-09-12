@@ -166,6 +166,28 @@ reported per the handoff's §7 rather than resolved:
 
 Neither test is known to have passed before. Nothing compiled them.
 
+## 5b. C1-136 outcome and C2-136 scope
+
+**Added 2026-09-12.** The audit test executes and is green: depth corrected to
+two `.parent()` calls; the scan bounded to the call expression with parens in
+strings, chars, comments and raw strings ignored; any call that cannot be
+balanced fails the test by name rather than being skipped. On its first
+successful run: **413 files, 111 `audit::write` occurrences, zero violations.**
+The architect independently planted `code=` inside a call and the test flagged
+it. Both crates are in `test.yml` and `contributing.md`; the false exclusion
+reason is gone from both.
+
+**A prediction corrected.** §5 expected the adapter at 3/3; it is **1/1**.
+Annotating a fence ` ```text ` removes it from doc-test collection rather than
+making it pass — the two blocks were a `.dev.vars` snippet and a log line,
+never tests. 2 → 0 is the right count.
+
+**C2-136**, riding in the next commit under this RFC without a separate review:
+a permanent self-check that the scanner flags a synthetic denylisted call and
+passes a clean one; and `--lib` dropped from the three original crates' test
+step, measured safe (their doc-tests: 1 ignored, 0, 1 ignored), so doc-tests
+are gated repo-wide.
+
 ## 6. Testing strategy
 
 1. `cargo test -p cesauth-backend` compiles and runs; state the count.
