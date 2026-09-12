@@ -206,6 +206,31 @@ One conformance gap falls out of RFC 132 and belongs to this step: `/` and
 early rather than last: it is the only check that would catch a screen that
 compiles, is served, and does not work.
 
+**R5b–e landed 2026-09-12** (after RFC 135 fixed the mount): `e2e/`, 20
+Playwright tests over `/` and `/login` — the entire unauthenticated surface —
+covering mount, axe wcag2a/2aa, duplicate ids, keyboard order, 375 px layout,
+and the absence of workbench-only markup. Non-blocking in CI for one release;
+flipping it to blocking is an acceptance criterion of 0.84.0.
+
+Three facts recorded so they are not rediscovered:
+
+- **`focus-trap` could not be adapted and its successor has a date.** The
+  mockup's spec drives modal dialogs on authenticated admin screens via
+  `[data-testid]`; cesauth's public pages have zero of each. It was replaced by
+  a `focus-order` spec, which keeps the portable property. The real focus-trap
+  spec arrives with the first wired dialog — and the component already exists,
+  dormant, as `crates/frontend/src/components/primitives/dialog.rs` from the
+  R2a import. **R3 wiring it is the trigger.**
+- **Pixel-baseline screenshots were rejected, not deferred.** Playwright
+  *creates* a missing baseline and passes, so a screenshot gate cannot fail on
+  its first run — it cannot produce the fires/does-not-fire pair this project
+  requires. Layout properties (no sideways scroll at 375 px; controls inside the
+  viewport; controls exist at all) replaced it. Screenshots become worth having
+  against a styled page, i.e. after R3.
+- **Axe reports zero violations on a page with no CSS**, so contrast,
+  focus-visible styling and target size are untested by construction rather than
+  passing. The meaningful accessibility result is the one after R3.
+
 **R5's M2 gate ran on 2026-09-12 and found outcome 2: the application does not
 mount.** The browser refuses to compile the WASM bundle because the CSP grants
 neither `'wasm-unsafe-eval'` nor `'unsafe-eval'` — a policy ADR-007 wrote for a

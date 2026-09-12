@@ -178,6 +178,14 @@ None. One response header on client surfaces gains one directive.
   Chromium does not recognise (console warning in every probe). Harmless; one
   line; folds into whichever release next touches that file.
 
+## 10c. W6's gate has never executed in CI
+
+**Added 2026-09-12**, found while reviewing RFC 131 R5. W6 extended
+`runtime-smoke-check.sh`, which runs in `worker-build.yml`'s second job — a job
+that cannot start, because it runs `make build-frontend` and nothing installs
+Trunk (RFC 134 §10b). The 12 checks were verified locally, by the implementer
+and by me; they have not run on a runner. Fixed as C1-R5.
+
 ## 11. Open questions
 
 None the RFC can settle. The one decision is the owner's: whether to amend

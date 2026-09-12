@@ -220,6 +220,24 @@ extends the gate to derive every asset URL **from the served HTML** and assert
 each resolves. A criterion written one layer lower would have caught this on
 the first attempt; that is a defect in §9 as authored, not in the work.
 
+## 10b. The gate this RFC added has never executed
+
+**Added 2026-09-12**, found while reviewing RFC 131 R5.
+
+§3 argues that no gate booted the runtime and issued a request, and T3 added one
+that does. **That gate cannot start on a clean runner.** Both jobs in
+`.github/workflows/worker-build.yml` run `make build-frontend` (lines 40, 93);
+`Makefile:139` invokes `trunk` directly; nothing in that workflow installs
+Trunk. `trunk-release-build.yml:38` installs it — `worker-build.yml` does not.
+
+So the deploy-path gate and RFC 135's runtime smoke gate have both been failing
+at their first step, unobserved, since they were added. Neither RFC's reasoning
+is wrong; both were verified locally and neither has run in CI. Fixed as C1-R5
+(RFC 131 R5's review §6), which also **pins Trunk** at every install site — it
+is `cargo install trunk --locked`, i.e. latest, which is the floating-tool
+problem C1-131 fixed for `worker-build` and the direct cause of RFC 130's
+finding 4a.
+
 ## 11. Open questions
 
 1. **The `detail.json` spelling** (§5 T1) is the architect's proposal, not a
