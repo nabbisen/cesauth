@@ -53,6 +53,14 @@ Full policy: `done/000-rfc-lifecycle-policy.md`.
 
 Awaiting owner authorization.
 
+### P1 — gate integrity
+
+| ID | Title | Tier | Target |
+|----|-------|------|--------|
+| [138](./proposed/138-ci-gate-set-parity.md) | **The gate set we describe is not the gate set CI runs.** `mdbook build docs` is in no workflow and has never run, though every handoff requires it; `npx wrangler` is unpinned at three sites including the deploy-path gate, and wrangler governs the Static Assets defaults that produced C1-131's `/`-shadowing finding. Adds the missing gate, pins wrangler, makes both pins self-enforcing, and records the parity table | P1 | after 0.83.0 |
+
+Awaiting owner authorization.
+
 ### Other proposed
 
 UI/UX finishing track (v0.67.0 → v0.71.0). Source: v0.50.1 UI/UX design
@@ -189,7 +197,7 @@ discussion happened.
 
 ## Adding a new RFC
 
-Next number: **138**. Create `rfcs/proposed/138-slug.md` with `**Status.** Proposed`
+Next number: **139**. Create `rfcs/proposed/139-slug.md` with `**Status.** Proposed`
 and add a row above, in the same commit.
 
 Transitions (folder is authoritative; update Status and this index in the same
