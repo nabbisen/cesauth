@@ -1984,7 +1984,7 @@ needs one of these, cesauth is the wrong choice.
   these are available inside a generic container. Production
   deployment is `wrangler deploy`; local development is
   `wrangler dev`. A "build environment" container (containing
-  `cargo-1.91`, `wrangler`, `node`) for developer onboarding
+  `cargo` (pinned by `rust-toolchain.toml`), `wrangler`, `node`) for developer onboarding
   would be a pure ergonomics win, but is not on the roadmap —
   the supported install paths in `docs/src/beginner/prerequisites.md`
   cover the same ground.

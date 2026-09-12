@@ -6,7 +6,11 @@ documentation to cesauth.  For project philosophy and architecture, see
 
 ## Prerequisites
 
-- Rust 1.91 (stable).  The apt package is `rustc-1.91` / `cargo-1.91`.
+- Rust, pinned by `rust-toolchain.toml` at the repo root (currently 1.98.1 —
+  RFC 130 M2). `rustup` honours the pin automatically, so every command
+  below is plain `cargo`. Do not install `rustc-1.NN` / `cargo-1.NN` apt
+  packages; a versioned binary name bypasses the pin, which is how this
+  file said 1.91 for two releases after CI moved to 1.98.1.
 - For worker builds: `worker-build` (`cargo install worker-build --locked`)
   and `wrangler` (`npm install -g wrangler`).
 - For docs: `mdbook` (`cargo install mdbook`).
@@ -27,14 +31,14 @@ hand-alignment. If your editor format-on-saves a file you touch, check
 ```bash
 # Every host crate — this is the command CI runs (.github/workflows/test.yml).
 # No --lib: unit tests, integration targets and doc-tests all count.
-cargo-1.91 test -p cesauth-core \
+cargo test -p cesauth-core \
                 -p cesauth-adapter-test \
                 -p cesauth-frontend \
                 -p cesauth-backend \
                 -p cesauth-adapter-cloudflare
 
 # Migration chain integration tests
-cargo-1.91 test -p cesauth-migrate-test --test migration_chain
+cargo test -p cesauth-migrate-test --test migration_chain
 ```
 
 Expect **1,403 passed, 0 failed** from the first command — 789 core,

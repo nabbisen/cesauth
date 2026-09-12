@@ -144,6 +144,17 @@ declare -a PATTERNS=(
     # the past tense, correctly.
     "Each audit event is one R2 object	audit events have been D1 rows with a hash chain since v0.32.0/ADR-010 (RFC 128)	docs/src/expert/adr/|docs/changelog-archive/"
     "R2 doesn't have SQL	audit-trail query-patterns claim obsoleted by the v0.32.0/ADR-010 move to D1 (RFC 128)	docs/src/expert/adr/|docs/changelog-archive/"
+    # RFC 130 M2 pinned the toolchain via rust-toolchain.toml; versioned apt
+    # binary names bypass the pin. contributing.md said 1.91 for two releases
+    # after CI moved to 1.98.1 (found closing RFC 136). The two excluded files
+    # are dated investigation records quoting the commands as they were run.
+    # Two rules, not one alternation. Patterns are extended regexes (`grep -E`
+    # below), so `\|` is a LITERAL pipe — a first draft written as
+    # `cargo-1\.91\|rustc-1\.91` matched only that exact string, i.e. nothing,
+    # and the fires/does-not-fire pair caught it before it landed. The dots
+    # are escaped for the same reason: `.` is any character under -E.
+    "cargo-1\.91	RFC 130 pinned the toolchain in rust-toolchain.toml; use plain cargo, not a versioned apt binary	docs/src/expert/rfc-110-baseline\.md|docs/src/expert/nodejs-compat-investigation\.md|docs/changelog-archive/"
+    "rustc-1\.91	RFC 130 pinned the toolchain in rust-toolchain.toml; use plain cargo, not a versioned apt binary	docs/src/expert/rfc-110-baseline\.md|docs/src/expert/nodejs-compat-investigation\.md|docs/changelog-archive/"
 )
 
 found=0

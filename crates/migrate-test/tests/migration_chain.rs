@@ -5,7 +5,7 @@
 // otherwise go undetected until a real D1 deployment.
 //
 // Run with:
-//   cargo-1.91 test -p cesauth-migrate-test
+//   cargo test -p cesauth-migrate-test
 //
 // v0.77.0 split the original 881-line file into sibling submodules
 // under `migration_chain/`. Each group is scoped to a release or RFC
