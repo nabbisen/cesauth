@@ -45,21 +45,11 @@ Full policy: `done/000-rfc-lifecycle-policy.md`.
 
 ## Proposed
 
-### P0 — security, blocks RFC 117
+### Awaiting owner authorization
 
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
-| [137](./proposed/137-token-endpoint-client-binding.md) | **`/token` authenticates no client and binds no code.** `client_secret` is parsed and dropped; the code's own `client_id` is discarded via `..` and never compared. Both are mandated by RFC 6749 §4.1.3, and `/introspect` and `/revoke` next door do authenticate. PKCE is the only binding left. Found measuring `exchange_code` before writing RFC 117's handoff — which had assumed both checks existed | **P0** | next release |
-
-Awaiting owner authorization.
-
-### P1 — gate integrity
-
-| ID | Title | Tier | Target |
-|----|-------|------|--------|
-| [138](./proposed/138-ci-gate-set-parity.md) | **The gate set we describe is not the gate set CI runs.** `mdbook build docs` is in no workflow and has never run, though every handoff requires it; `npx wrangler` is unpinned at three sites including the deploy-path gate, and wrangler governs the Static Assets defaults that produced C1-131's `/`-shadowing finding. Adds the missing gate, pins wrangler, makes both pins self-enforcing, and records the parity table | P1 | after 0.83.0 |
-
-Awaiting owner authorization.
+| [139](./proposed/139-refresh-token-lifetime.md) | **Refresh tokens never expire.** `REFRESH_TOKEN_TTL_SECS` (30 days) is written into the unsigned token, ignored on rotation, absent from `FamilyState`, and unenforced by the DO, its oracle and the cron; introspection reports the token's own client-editable expiry as `exp`. Found measuring the refresh grant for RFC 137 | P1 | after 137 |
 
 ### Other proposed
 
@@ -114,6 +104,8 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 
 | ID | Title | Tier | Dispatched | Depends on |
 |----|-------|------|---|---|
+| [137](./accepted/137-token-endpoint-client-binding.md) | **`/token` client authentication and binding — P0, security.** Both grants authenticate confidential clients and bind codes and refresh families to their client; a refresh presented by the wrong client revokes the family. Scope extended to the refresh grant on acceptance | **P0** | next release | 116 |
+| [138](./accepted/138-ci-gate-set-parity.md) | CI gate-set parity. mdbook gated — with `create-missing = false`, without which it cannot fail; wrangler pinned at four sites behind a root `npm ci`; pins made self-enforcing by drift-scan reading workflows | P1 | next window; independent of 137 | — |
 | [117](./accepted/117-authorization-code-lifecycle-assurance.md) | Authorization-code lifecycle assurance — typestate pipeline making "mint before validation" unwritable, plus store-contract property tests. **Premise corrected: see §2a — one of the four checks it meant to encode does not exist (RFC 137)** | P0 | after 137 | 116, **137** |
 | [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | R2a shipped v0.82.0; **R5b–e shipped v0.83.0** (+ C1-R5); R2b awaits 132 §13 q1; R3 awaits 132 §13 q1 | 130, 132, 134 |
 
@@ -197,7 +189,7 @@ discussion happened.
 
 ## Adding a new RFC
 
-Next number: **139**. Create `rfcs/proposed/139-slug.md` with `**Status.** Proposed`
+Next number: **140**. Create `rfcs/proposed/140-slug.md` with `**Status.** Proposed`
 and add a row above, in the same commit.
 
 Transitions (folder is authoritative; update Status and this index in the same

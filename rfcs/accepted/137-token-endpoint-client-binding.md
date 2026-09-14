@@ -1,6 +1,6 @@
 # RFC 137 — `/token` authenticates no client and binds no code
 
-**Status.** Proposed — **needs owner authorization.**
+**Status.** Accepted — approved by the owner 2026-09-15. Scope extended to the refresh grant and open questions ruled on dispatch (§12).
 **Author.** Architect · **Date.** 2026-09-12
 **Priority.** **P0, security.** The authorization-code exchange is the highest-value
 flow in an IdP, and two of the bindings RFC 6749 §4.1.3 mandates are absent.
@@ -203,3 +203,102 @@ behind this RFC and its §2/§5 amended to say so.
    one?** It compares when present (`token.rs:144`). Whether absence should be
    rejected is adjacent and not in this scope; raising it so it is a decision
    rather than an omission.
+
+
+## 12. Rulings on acceptance (2026-09-15)
+
+Measured before writing the handoff. Each ruling states the evidence, so none
+is inherited as an assumption.
+
+### 12.1 Scope includes the refresh grant
+
+`rotate_refresh` (`service/token.rs:261`) has **both** defects:
+
+- It looks the client up (`.find(input.client_id)`) and never authenticates it.
+- `FamilyState` carries `client_id` (`ports/store.rs:166`) and **nothing reads
+  it** — the only `client_id` use in the whole refresh body is that lookup.
+
+It is worse than the code grant: no PKCE layer exists on refresh. A leaked
+refresh token plus any registered `client_id` rotates the family, and the
+access token is minted with the *presenter's* client as `aud`/`cid` and the
+victim's user and scopes. Fixing the code grant and leaving its sibling with the
+identical defect would be incoherent, so the refresh grant is in scope — an
+architect's ruling, stated here so the owner can overturn it.
+
+### 12.2 §11 q1 — a confidential client with no stored hash is **rejected**
+
+No documented setup produces one:
+
+- The beginner guide seeds a **public** client — `client_type 'public'`,
+  `client_secret_hash NULL`, `token_auth_method 'none'`
+  (`docs/src/beginner/first-local-run.md:119-135`) — and every `/token` call in
+  the OIDC walkthrough sends only `client_id=demo-cli`
+  (`first-oidc-flow.md:204-210`, `:280-284`).
+- The production guide's client insert is elided entirely —
+  `INSERT INTO oidc_clients (…) VALUES (…)` (`production.md:73`).
+- Only the D1 row mapper constructs `OidcClient` outside tests; clients exist
+  only through operator SQL.
+
+There is no production use. Rejecting locks out nothing that exists.
+
+### 12.3 The discriminator: a fail-closed intersection
+
+**A client is public only if `client_type = 'public'` AND
+`client_secret_hash IS NULL`.** Every other client must authenticate.
+
+Two tempting alternatives are both wrong, and both would have reproduced the
+defect:
+
+- **The existing helper alone.** `check_client_credentials_from_view`
+  (`service/client_auth.rs:170`) returns `PublicOrUnknown` whenever the hash is
+  `None`, **regardless of `client_type`**. That is correct for `/introspect`,
+  which rejects `PublicOrUnknown` outright. On `/token`, which must admit public
+  clients, it would silently admit a confidential client with no hash.
+- **`token_auth_method`.** The schema defaults it to `'none'` independently of
+  `client_type` (`migrations/0001_initial.sql`, `oidc_clients`), and nothing
+  enforces consistency between the two fields. A confidential client provisioned
+  with the default reads as `none`.
+
+`ClientAuthView` (`ports/repo.rs:96-101`) carries `token_auth_method` but not
+`client_type`. **Extend it with `client_type`**, preserving the single-read
+consolidation `/introspect` already relies on
+(`routes/oidc/introspect.rs:83-84`).
+
+### 12.4 Refresh-grant mismatch **revokes** the family
+
+Order on refresh: authenticate the client; `peek` the family; absent →
+`InvalidGrant`; `fam.client_id` ≠ authenticated client → **revoke the family**
+and return `InvalidGrant`; otherwise rotate exactly as today.
+
+A refresh token presented by a client it was not issued to is evidence of
+leakage — the same signal as reuse — and this codebase's established response to
+that signal is to invalidate the family (RFC 9700 §4.14.2, `FamilyState`'s reuse
+forensics). It also mirrors the code grant's "failure consumes." `client_id` is
+immutable after family init, so peek-then-rotate opens no window on the value
+being compared. The cost — a token holder can kill the family — already exists
+through reuse detection.
+
+### 12.5 Criterion 5 is amended
+
+The token tests' only client fixture is `ClientType::Confidential` with
+`client_secret_hash: None` (`service/token/tests.rs:58-62`, `:98`, `:102`) —
+**exactly the case §12.2 now rejects.** "Every existing token test passes
+unchanged" would require keeping the defect. Amended: **fixtures are corrected
+to a valid confidential client (with a hash) or a public client; assertions are
+unchanged.**
+
+### 12.6 Confirmed safe, recorded
+
+- Both authorization-code mint sites bind the requesting client —
+  `routes/oidc/authorize.rs:115` and `post_auth.rs:360`, each
+  `client_id: ar.client_id.clone()` — so T1's comparison matches legitimate
+  exchanges.
+
+### 12.7 Out of scope, recorded rather than omitted
+
+- Whether the authentication *method* presented must match the one registered
+  (Basic versus post).
+- §11 q2 — rejecting a missing `redirect_uri` when one was bound.
+- Consistency between `client_type` and `token_auth_method`.
+- **Refresh tokens never expire** — found during this measurement, a different
+  defect class, and needing a lifetime-policy decision: **RFC 139**.
