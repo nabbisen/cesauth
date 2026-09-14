@@ -19,6 +19,15 @@ use crate::log::{self, Category, Level};
 pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let cfg = Config::from_env(&ctx.env)?;
 
+    // RFC 137: read client credentials from the headers before the body is
+    // consumed. `client_auth::extract` cannot be used here -- it needs
+    // `worker::FormData`, and this route reads its body as text -- so the
+    // Basic-first precedence is applied by `resolve_token_client_credentials`
+    // below instead.
+    let authorization_header_present =
+        req.headers().get("authorization").ok().flatten().is_some();
+    let basic = crate::client_auth::extract_from_basic(req.headers());
+
     // Parse form body. RFC 6749 says the token endpoint accepts
     // application/x-www-form-urlencoded; we do not accept JSON.
     let body = req.text().await.unwrap_or_default();
@@ -93,6 +102,21 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
         Err(e) => return oauth_error_response(&e),
     };
 
+    // RFC 137 T2/T3: which client this request speaks for, and the secret it
+    // presented. Resolved once, for both grants; the service layer then
+    // authenticates it against the stored client before touching the code or
+    // the refresh family.
+    let (client_id, client_secret) =
+        match cesauth_core::service::client_auth::resolve_token_client_credentials(
+            authorization_header_present,
+            basic.as_ref().map(|c| (c.client_id.as_str(), c.client_secret.as_str())),
+            req_in.client_id.as_deref(),
+            req_in.client_secret.as_deref(),
+        ) {
+            Ok(v)  => v,
+            Err(e) => return oauth_error_response(&e),
+        };
+
     match grant {
         TokenGrant::AuthorizationCode(g) => {
             let _ch = match cesauth_core::types::ChallengeHandle::parse(g.code) {
@@ -102,7 +126,8 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
             let input = token_service::ExchangeCodeInput {
                 code:          &_ch,
                 redirect_uri:  g.redirect_uri,
-                client_id:     g.client_id,
+                client_id:     &client_id,
+                client_secret: client_secret.as_deref(),
                 code_verifier: g.code_verifier,
                 now_unix:      now,
             };
@@ -134,7 +159,8 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
         TokenGrant::RefreshToken(g) => {
             let input = token_service::RotateRefreshInput {
                 refresh_token: g.refresh_token,
-                client_id:     g.client_id,
+                client_id:     &client_id,
+                client_secret: client_secret.as_deref(),
                 scope:         g.scope,
                 now_unix:      now,
                 rate_limit_threshold:   cfg.refresh_rate_limit_threshold,

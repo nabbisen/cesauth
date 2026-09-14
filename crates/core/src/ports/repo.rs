@@ -8,7 +8,7 @@
 //! method here", that need belongs in `store`, not `repo`.
 
 use super::PortResult;
-use crate::types::{OidcClient, TokenAuthMethod, UnixSeconds, User};
+use crate::types::{ClientType, OidcClient, TokenAuthMethod, UnixSeconds, User};
 use crate::webauthn::StoredAuthenticator;
 
 /// `users` table.
@@ -87,14 +87,20 @@ pub trait ClientRepository {
     async fn create(&self, client: &OidcClient, secret_hash: Option<&str>) -> PortResult<()>;
 }
 
-/// Minimal projection of `oidc_clients` consumed by the `/introspect`
-/// authentication + audience-gate hot path (RFC 026).
+/// Minimal projection of `oidc_clients` consumed by client authentication:
+/// the `/introspect` authentication + audience-gate hot path (RFC 026), and
+/// `/token`'s client authentication on both grants (RFC 137).
 ///
 /// Intentionally omits large columns (`redirect_uris`, `allowed_scopes`)
-/// that are not needed for the introspection code path.
+/// that neither path needs.
 #[derive(Clone, Debug)]
 pub struct ClientAuthView {
     pub client_id:          String,
+    /// **RFC 137** — required by `/token`'s public-client discriminator: a
+    /// client is public only if `client_type` is `Public` **and**
+    /// `client_secret_hash` is `None`. The hash alone cannot decide it —
+    /// `None` also describes a confidential client provisioned without one.
+    pub client_type:        ClientType,
     pub client_secret_hash: Option<String>,
     pub audience:           Option<String>,
     pub token_auth_method:  TokenAuthMethod,

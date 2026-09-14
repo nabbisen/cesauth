@@ -105,7 +105,7 @@ impl ClientRepository for CloudflareClientRepository<'_> {
     async fn find_auth_view(&self, client_id: &str) -> PortResult<Option<ClientAuthView>> {
         let db   = db(self.env)?;
         let stmt = db.prepare(
-            "SELECT id, client_secret_hash, audience, token_auth_method \
+            "SELECT id, client_type, client_secret_hash, audience, token_auth_method \
              FROM oidc_clients WHERE id = ?1 LIMIT 1"
         )
             .bind(&[client_id.into()])
@@ -114,6 +114,7 @@ impl ClientRepository for CloudflareClientRepository<'_> {
         #[derive(Deserialize)]
         struct AuthRow {
             id:                 String,
+            client_type:        String,
             client_secret_hash: Option<String>,
             #[serde(default)]
             audience:           Option<String>,
@@ -122,6 +123,13 @@ impl ClientRepository for CloudflareClientRepository<'_> {
 
         match stmt.first::<AuthRow>(None).await {
             Ok(Some(row)) => {
+                // Same mapping as `ClientRow::into_domain`; an unrecognised
+                // value is a storage error, never a default.
+                let client_type = match row.client_type.as_str() {
+                    "public"       => ClientType::Public,
+                    "confidential" => ClientType::Confidential,
+                    _              => return Err(PortError::Serialization),
+                };
                 let token_auth_method = match row.token_auth_method.as_str() {
                     "none"                => TokenAuthMethod::None,
                     "client_secret_basic" => TokenAuthMethod::ClientSecretBasic,
@@ -130,6 +138,7 @@ impl ClientRepository for CloudflareClientRepository<'_> {
                 };
                 Ok(Some(ClientAuthView {
                     client_id:          row.id,
+                    client_type,
                     client_secret_hash: row.client_secret_hash,
                     audience:           row.audience,
                     token_auth_method,

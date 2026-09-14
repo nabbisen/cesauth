@@ -30,7 +30,7 @@ code-review responsibility.
 | GET | `/.well-known/openid-configuration` | RP / public | none | JSON | n/a | n/a | N/A (GET, JSON) |
 | GET | `/jwks.json` | RP / public | none | JSON | n/a | n/a | N/A (GET, JSON) |
 | GET | `/authorize` | Anonymous | none (read) | `authorize_login_page` | n/a | `templates::tests::authorize_*` | N/A (GET) |
-| POST | `/token` | RP | `token_issued` / `token_refresh_rejected` / `refresh_token_reuse_detected` / `refresh_rate_limited` | JSON | n/a | n/a | N/A (CORS preflight) |
+| POST | `/token` | RP — authenticated on both grants (RFC 137): a client is public only if `client_type = public` with no stored secret hash; every other client must present its secret via `client_secret_basic` or `client_secret_post`. Codes and refresh families are bound to the client they were issued to | `token_issued` / `token_refresh_rejected` / `refresh_token_reuse_detected` / `refresh_rate_limited` | JSON | n/a | n/a | N/A (CORS preflight) |
 | POST | `/revoke` | RP | `revocation_requested` | JSON | n/a | n/a | N/A (RFC 7009) |
 | POST | `/introspect` | RS (confidential) | `token_introspected` / `introspection_audience_mismatch` / `introspection_rate_limited` | JSON | n/a | n/a | N/A (Authorization-only) |
 

@@ -68,6 +68,26 @@ mod id_token_tests {
         }
     }
 
+    /// The secret every confidential test client authenticates with.
+    const TEST_SECRET: &str = "test-client-secret-0123456789abcdef";
+
+    /// A **valid** confidential client: `client_type = Confidential` with a
+    /// stored hash. RFC 137 §12.5: the fixture previously carried no hash —
+    /// exactly the case `/token` now rejects — so the fixture is corrected
+    /// and every assertion below is unchanged.
+    fn confidential_client(id: &str) -> (OidcClient, Option<String>) {
+        (test_client(id), Some(crate::service::client_auth::sha256_hex(TEST_SECRET.as_bytes())))
+    }
+
+    /// A public PKCE-only client, shaped like the beginner guide's `demo-cli`:
+    /// `client_type = Public`, no stored hash, `token_auth_method = none`.
+    fn public_client(id: &str) -> (OidcClient, Option<String>) {
+        let mut c = test_client(id);
+        c.client_type       = ClientType::Public;
+        c.token_auth_method = TokenAuthMethod::None;
+        (c, None)
+    }
+
     fn test_user(id: &str) -> User {
         User {
             id:             id.to_owned(),
@@ -90,16 +110,20 @@ mod id_token_tests {
 
     // ── stubs ────────────────────────────────────────────────────────
 
-    struct StubClients(HashMap<String, OidcClient>);
+    /// Client plus its stored secret hash, as `oidc_clients` holds them.
+    struct StubClients(HashMap<String, (OidcClient, Option<String>)>);
     impl ClientRepository for StubClients {
         async fn find(&self, id: &str) -> PortResult<Option<OidcClient>> {
-            Ok(self.0.get(id).cloned())
+            Ok(self.0.get(id).map(|(c, _)| c.clone()))
         }
-        async fn client_secret_hash(&self, _: &str) -> PortResult<Option<String>> { Ok(None) }
+        async fn client_secret_hash(&self, id: &str) -> PortResult<Option<String>> {
+            Ok(self.0.get(id).and_then(|(_, h)| h.clone()))
+        }
         async fn find_auth_view(&self, id: &str) -> PortResult<Option<ClientAuthView>> {
-            Ok(self.0.get(id).map(|c| ClientAuthView {
+            Ok(self.0.get(id).map(|(c, h)| ClientAuthView {
                 client_id: c.id.clone(),
-                client_secret_hash: None,
+                client_type: c.client_type,
+                client_secret_hash: h.clone(),
                 audience: c.audience.clone(),
                 token_auth_method: c.token_auth_method,
             }))
@@ -145,6 +169,15 @@ mod id_token_tests {
         async fn rotate(&self, family_id: &crate::types::FamilyId, presented_jti: &crate::types::Jti, new_jti: &crate::types::Jti, now: i64) -> PortResult<RotateOutcome> {
             let mut m = self.0.borrow_mut();
             if let Some(fam) = m.get_mut(family_id) {
+                // RFC 137 T5: honour revocation first, as the real family DO
+                // (`adapter-cloudflare/src/refresh_token_family.rs:103`) and
+                // the in-memory store (`adapter-test/src/store/
+                // refresh_token_family.rs:56`) both do. This stub previously
+                // rotated a revoked family, so no test that revocation stops
+                // the owner's next refresh could have passed against it.
+                if fam.revoked_at.is_some() {
+                    return Ok(RotateOutcome::AlreadyRevoked);
+                }
                 if &fam.current_jti != presented_jti {
                     return Ok(RotateOutcome::ReusedAndRevoked { reused_jti: presented_jti.clone(), was_retired: false });
                 }
@@ -208,7 +241,7 @@ mod id_token_tests {
         -> (StubClients, StubCodes, StubFamilies, StubGrants, StubUsers)
     {
         let mut clients = HashMap::new();
-        clients.insert("c-1".to_owned(), test_client("c-1"));
+        clients.insert("c-1".to_owned(), confidential_client("c-1"));
         let mut users = HashMap::new();
         users.insert("u-1".to_owned(), test_user("u-1"));
 
@@ -260,6 +293,7 @@ mod id_token_tests {
             code:          &_code_handle,
             redirect_uri:  "https://app.test/cb",
             client_id:     "c-1",
+            client_secret: Some(TEST_SECRET),
             code_verifier: "test-verifier-padded-to-exactly-43chars-xxx",
             now_unix:      1_700_000_000,
         };
@@ -306,7 +340,7 @@ mod id_token_tests {
     #[tokio::test]
     async fn rotate_refresh_with_openid_scope_returns_id_token() {
         let mut client_map = HashMap::new();
-        client_map.insert("c-r".to_owned(), test_client("c-r"));
+        client_map.insert("c-r".to_owned(), confidential_client("c-r"));
         let mut user_map = HashMap::new();
         user_map.insert("u-r".to_owned(), test_user("u-r"));
         let orig_auth_time = 1_699_900_000i64;
@@ -325,6 +359,7 @@ mod id_token_tests {
         let input = RotateRefreshInput {
             refresh_token: &rt,
             client_id:     "c-r",
+            client_secret: Some(TEST_SECRET),
             scope:         None,
             now_unix:      1_700_000_050,
             rate_limit_threshold:   0,
@@ -344,7 +379,7 @@ mod id_token_tests {
     #[tokio::test]
     async fn rotate_refresh_id_token_auth_time_preserves_family_auth_time() {
         let mut client_map = HashMap::new();
-        client_map.insert("c-at".to_owned(), test_client("c-at"));
+        client_map.insert("c-at".to_owned(), confidential_client("c-at"));
         let mut user_map = HashMap::new();
         user_map.insert("u-at".to_owned(), test_user("u-at"));
         let orig_auth_time = 1_699_900_000i64;
@@ -362,6 +397,7 @@ mod id_token_tests {
         let input = RotateRefreshInput {
             refresh_token:        &rt,
             client_id:            "c-at",
+            client_secret:        Some(TEST_SECRET),
             scope:                None,
             now_unix:             1_700_001_000, // 1000 seconds later
             rate_limit_threshold:   0,
@@ -384,7 +420,7 @@ mod id_token_tests {
     #[tokio::test]
     async fn rotate_refresh_without_openid_no_id_token() {
         let mut client_map = HashMap::new();
-        client_map.insert("c-no".to_owned(), test_client("c-no"));
+        client_map.insert("c-no".to_owned(), confidential_client("c-no"));
         let mut user_map = HashMap::new();
         user_map.insert("u-no".to_owned(), test_user("u-no"));
         let families = StubFamilies(RefCell::new(HashMap::new()));
@@ -401,6 +437,7 @@ mod id_token_tests {
         let input = RotateRefreshInput {
             refresh_token:        &rt,
             client_id:            "c-no",
+            client_secret:        Some(TEST_SECRET),
             scope:                None,
             now_unix:             1_700_000_010,
             rate_limit_threshold:   0,
@@ -450,6 +487,7 @@ mod id_token_tests {
             code:          &_code_handle,
             redirect_uri:  "https://app.test/cb",
             client_id:     "c-1",
+            client_secret: Some(TEST_SECRET),
             code_verifier: verifier,
             now_unix:      1_700_000_000,
         };
@@ -470,5 +508,238 @@ mod id_token_tests {
         let c = decode_id_claims(resp.id_token.as_deref().unwrap());
         assert!(c.nonce.is_none(),
             "RFC 033: nonce must be absent when authorize did not include one");
+    }
+
+    // ── RFC 137: client authentication and binding on /token ─────────
+
+    const VERIFIER: &str = "test-verifier-padded-to-exactly-43chars-xxx";
+
+    /// A code store holding one code, `code-1`, issued to `issued_to`.
+    fn codes_issued_to(issued_to: &str) -> StubCodes {
+        let codes = StubCodes(RefCell::new(HashMap::new()));
+        codes.0.borrow_mut().insert("code-1".to_owned(), Challenge::AuthCode {
+            client_id:             issued_to.to_owned(),
+            redirect_uri:          "https://app.test/cb".to_owned(),
+            user_id:               "u-1".to_owned(),
+            scopes:                Scopes(vec!["openid".to_owned()]),
+            nonce:                 None,
+            code_challenge:        s256_challenge(VERIFIER),
+            code_challenge_method: "S256".to_owned(),
+            issued_at:             1_700_000_000,
+            expires_at:            1_700_000_300,
+            auth_time:             1_699_999_900,
+        });
+        codes
+    }
+
+    fn clients_of(entries: Vec<(&str, (OidcClient, Option<String>))>) -> StubClients {
+        StubClients(entries.into_iter().map(|(k, v)| (k.to_owned(), v)).collect())
+    }
+
+    fn users_with_u1() -> StubUsers {
+        let mut users = HashMap::new();
+        users.insert("u-1".to_owned(), test_user("u-1"));
+        StubUsers(users)
+    }
+
+    /// Redeem `code-1` as `client_id`, presenting `secret`, with the correct
+    /// verifier and redirect URI — so only client identity can fail it.
+    async fn redeem(
+        clients:   &StubClients,
+        codes:     &StubCodes,
+        client_id: &str,
+        secret:    Option<&str>,
+    ) -> CoreResult<TokenResponse> {
+        let families = StubFamilies(RefCell::new(HashMap::new()));
+        let users    = users_with_u1();
+        let handle   = crate::types::ChallengeHandle::from_storage("code-1");
+        let input = ExchangeCodeInput {
+            code:          &handle,
+            redirect_uri:  "https://app.test/cb",
+            client_id,
+            client_secret: secret,
+            code_verifier: VERIFIER,
+            now_unix:      1_700_000_000,
+        };
+        let (deps, cfg) = make_deps_cfg(clients, codes, &families, &StubGrants, &users, &StubRates, "https://t.test");
+        exchange_code(&deps, &test_signer(), &cfg, &input).await
+    }
+
+    /// A family `fam-x` issued to `issued_to`, current jti `j-1`, and the
+    /// refresh token that presents it.
+    async fn family_issued_to(issued_to: &str) -> (StubFamilies, String) {
+        let families = StubFamilies(RefCell::new(HashMap::new()));
+        families.init(&FamilyInit {
+            family_id: crate::types::FamilyId::from_storage("fam-x"),
+            user_id:   crate::types::UserId::from_storage("u-1"),
+            client_id: crate::types::ClientId::from_storage(issued_to),
+            scopes:    vec!["openid".to_owned()],
+            first_jti: crate::types::Jti::from_storage("j-1"),
+            now_unix:  1_700_000_000,
+            auth_time: 1_699_999_900,
+        }).await.unwrap();
+        let rt = encode_refresh(
+            &crate::types::FamilyId::from_storage("fam-x"),
+            &crate::types::Jti::from_storage("j-1"),
+            86400, 1_700_000_000,
+        );
+        (families, rt)
+    }
+
+    async fn refresh(
+        clients:       &StubClients,
+        families:      &StubFamilies,
+        refresh_token: &str,
+        client_id:     &str,
+        secret:        Option<&str>,
+    ) -> CoreResult<TokenResponse> {
+        let users = users_with_u1();
+        let codes = StubCodes(RefCell::new(HashMap::new()));
+        let input = RotateRefreshInput {
+            refresh_token,
+            client_id,
+            client_secret:          secret,
+            scope:                  None,
+            now_unix:               1_700_000_050,
+            rate_limit_threshold:   0,
+            rate_limit_window_secs: 60,
+        };
+        let deps = TokenDeps { clients, codes: &codes, families, grants: &StubGrants, users: &users, rates: &StubRates };
+        let cfg  = TokenConfig { access_ttl_secs: 3600, refresh_ttl_secs: 86400, iss: "https://t.test" };
+        rotate_refresh(&deps, &test_signer(), &cfg, &input).await
+    }
+
+    fn fam_x() -> crate::types::FamilyId { crate::types::FamilyId::from_storage("fam-x") }
+
+    // ── code grant ──
+
+    /// Test 1 — a code issued to A, redeemed by B holding valid credentials,
+    /// the correct verifier and the correct redirect URI, is refused.
+    #[tokio::test]
+    async fn code_issued_to_one_client_is_refused_to_another() {
+        let clients = clients_of(vec![("c-a", confidential_client("c-a")), ("c-b", confidential_client("c-b"))]);
+        let codes   = codes_issued_to("c-a");
+        let err = redeem(&clients, &codes, "c-b", Some(TEST_SECRET)).await.unwrap_err();
+        assert!(matches!(err, CoreError::InvalidGrant(_)),
+            "a code redeemed by a client it was not issued to must be invalid_grant, got {err:?}");
+    }
+
+    /// Test 2 — the refused attempt consumed the code, so A's correct
+    /// redemption afterwards fails too.
+    #[tokio::test]
+    async fn wrong_client_redemption_consumes_the_code() {
+        let clients = clients_of(vec![("c-a", confidential_client("c-a")), ("c-b", confidential_client("c-b"))]);
+        let codes   = codes_issued_to("c-a");
+        let _ = redeem(&clients, &codes, "c-b", Some(TEST_SECRET)).await.unwrap_err();
+        let err = redeem(&clients, &codes, "c-a", Some(TEST_SECRET)).await.unwrap_err();
+        assert!(matches!(err, CoreError::InvalidGrant(_)),
+            "the wrong-client attempt must have consumed the code, got {err:?}");
+    }
+
+    /// Test 3 — confidential client, wrong secret. Authentication precedes the
+    /// code, so the failed attempt must not consume it.
+    #[tokio::test]
+    async fn confidential_client_with_wrong_secret_is_invalid_client() {
+        let clients = clients_of(vec![("c-a", confidential_client("c-a"))]);
+        let codes   = codes_issued_to("c-a");
+        let err = redeem(&clients, &codes, "c-a", Some("not-the-secret")).await.unwrap_err();
+        assert!(matches!(err, CoreError::InvalidClient), "got {err:?}");
+        assert!(codes.0.borrow().contains_key("code-1"),
+            "a failed authentication must not consume the code");
+    }
+
+    /// Test 4 — confidential client, no secret presented.
+    #[tokio::test]
+    async fn confidential_client_without_a_secret_is_invalid_client() {
+        let clients = clients_of(vec![("c-a", confidential_client("c-a"))]);
+        let codes   = codes_issued_to("c-a");
+        let err = redeem(&clients, &codes, "c-a", None).await.unwrap_err();
+        assert!(matches!(err, CoreError::InvalidClient), "got {err:?}");
+    }
+
+    /// Test 5 — a confidential client with **no stored hash** is rejected
+    /// (RFC 137 §12.2), whether or not it presents a secret. This is the case
+    /// `check_client_credentials_from_view` alone would have admitted as
+    /// `PublicOrUnknown`.
+    #[tokio::test]
+    async fn confidential_client_with_no_stored_hash_is_rejected() {
+        let clients = clients_of(vec![("c-a", (test_client("c-a"), None))]);
+        let codes   = codes_issued_to("c-a");
+        let with_secret = redeem(&clients, &codes, "c-a", Some(TEST_SECRET)).await.unwrap_err();
+        assert!(matches!(with_secret, CoreError::InvalidClient), "got {with_secret:?}");
+        let without = redeem(&clients, &codes, "c-a", None).await.unwrap_err();
+        assert!(matches!(without, CoreError::InvalidClient), "got {without:?}");
+        assert!(codes.0.borrow().contains_key("code-1"),
+            "rejected authentication must not consume the code");
+    }
+
+    /// Test 6 — a public client shaped like the beginner guide's `demo-cli`,
+    /// presenting no secret, redeems its own code.
+    #[tokio::test]
+    async fn public_client_without_a_secret_redeems_its_own_code() {
+        let clients = clients_of(vec![("demo-cli", public_client("demo-cli"))]);
+        let codes   = codes_issued_to("demo-cli");
+        let resp = redeem(&clients, &codes, "demo-cli", None).await
+            .expect("a public client must redeem its own code without a secret");
+        assert!(resp.refresh_token.is_some());
+    }
+
+    // ── refresh grant ──
+
+    /// Test 7 — a family issued to A, rotated by B holding valid
+    /// credentials, is refused.
+    #[tokio::test]
+    async fn refresh_family_issued_to_one_client_is_refused_to_another() {
+        let clients = clients_of(vec![("c-a", confidential_client("c-a")), ("c-b", confidential_client("c-b"))]);
+        let (families, rt) = family_issued_to("c-a").await;
+        let err = refresh(&clients, &families, &rt, "c-b", Some(TEST_SECRET)).await.unwrap_err();
+        assert!(matches!(err, CoreError::InvalidGrant(_)),
+            "a refresh token presented by a client it was not issued to must be invalid_grant, got {err:?}");
+    }
+
+    /// Test 8 — the mismatch **revokes the family**: A's own correct refresh
+    /// afterwards fails (RFC 137 §12.4).
+    #[tokio::test]
+    async fn wrong_client_refresh_revokes_the_family() {
+        let clients = clients_of(vec![("c-a", confidential_client("c-a")), ("c-b", confidential_client("c-b"))]);
+        let (families, rt) = family_issued_to("c-a").await;
+        let _ = refresh(&clients, &families, &rt, "c-b", Some(TEST_SECRET)).await.unwrap_err();
+
+        let fam = families.peek(&fam_x()).await.unwrap().expect("family still exists");
+        assert!(fam.revoked_at.is_some(), "a wrong-client refresh must revoke the family");
+
+        let err = refresh(&clients, &families, &rt, "c-a", Some(TEST_SECRET)).await.unwrap_err();
+        assert!(matches!(err, CoreError::InvalidGrant(_)),
+            "the owner's refresh must fail once the family is revoked, got {err:?}");
+    }
+
+    /// Test 9 — confidential client, wrong secret: `InvalidClient`, and the
+    /// family is **untouched**, because authentication precedes the family.
+    #[tokio::test]
+    async fn refresh_with_wrong_secret_leaves_the_family_untouched() {
+        let clients = clients_of(vec![("c-a", confidential_client("c-a"))]);
+        let (families, rt) = family_issued_to("c-a").await;
+        let before = families.peek(&fam_x()).await.unwrap().unwrap();
+
+        let err = refresh(&clients, &families, &rt, "c-a", Some("not-the-secret")).await.unwrap_err();
+        assert!(matches!(err, CoreError::InvalidClient), "got {err:?}");
+
+        let after = families.peek(&fam_x()).await.unwrap().unwrap();
+        assert_eq!(after.current_jti,     before.current_jti,     "family must not have rotated");
+        assert_eq!(after.retired_jtis,    before.retired_jtis,    "family must not have rotated");
+        assert_eq!(after.last_rotated_at, before.last_rotated_at, "family must not have rotated");
+        assert_eq!(after.revoked_at,      before.revoked_at,      "family must not have been revoked");
+    }
+
+    /// Test 10 — a public client, no secret, rotates its own family.
+    #[tokio::test]
+    async fn public_client_without_a_secret_rotates_its_own_family() {
+        let clients = clients_of(vec![("demo-cli", public_client("demo-cli"))]);
+        let (families, rt) = family_issued_to("demo-cli").await;
+        let resp = refresh(&clients, &families, &rt, "demo-cli", None).await
+            .expect("a public client must rotate its own family without a secret");
+        assert!(resp.refresh_token.is_some());
+        let fam = families.peek(&fam_x()).await.unwrap().unwrap();
+        assert_ne!(fam.current_jti.as_str(), "j-1", "the family must have rotated");
     }
 }

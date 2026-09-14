@@ -28,6 +28,7 @@ impl ClientRepository for InMemoryClientRepository {
         let m = self.inner.lock().map_err(|_| PortError::Unavailable)?;
         Ok(m.get(client_id).map(|(client, secret_hash)| ClientAuthView {
             client_id:          client.id.clone(),
+            client_type:        client.client_type,
             client_secret_hash: secret_hash.clone(),
             audience:           client.audience.clone(),
             token_auth_method:  client.token_auth_method,

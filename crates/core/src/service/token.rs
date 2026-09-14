@@ -18,6 +18,7 @@ use crate::oidc::id_token::{build_id_token_claims, sign_id_token};
 use crate::oidc::pkce::{self, ChallengeMethod};
 use crate::types::{ClientId, FamilyId, Jti, UserId};
 use crate::oidc::token::TokenResponse;
+use crate::service::client_auth::authenticate_token_client;
 use crate::ports::repo::{ClientRepository, Grant, GrantRepository, UserRepository};
 use crate::ports::store::{
     AuthChallengeStore, Challenge, FamilyInit, RateLimitStore, RefreshTokenFamilyStore,
@@ -74,6 +75,10 @@ pub struct ExchangeCodeInput<'a> {
     pub code:          &'a crate::types::ChallengeHandle,
     pub redirect_uri:  &'a str,
     pub client_id:     &'a str,
+    /// **RFC 137** — the secret the client presented, from HTTP Basic or the
+    /// form body; `None` when it presented none. Required for every client
+    /// that is not public (see `authenticate_token_client`).
+    pub client_secret: Option<&'a str>,
     pub code_verifier: &'a str,
     pub now_unix:      i64,
 }
@@ -82,7 +87,9 @@ pub struct ExchangeCodeInput<'a> {
 ///
 /// Consistency story, step by step:
 ///
-/// 1. Load the client (eventual-consistency okay: clients change slowly).
+/// 1. Load and authenticate the client (eventual-consistency okay: clients
+///    change slowly). Authentication precedes the code, so a failed attempt
+///    does not consume it.
 /// 2. `take` the challenge from the `AuthChallengeStore`. This is the
 ///    single-consumption step and MUST be atomic - a parallel call
 ///    here must see `None`.
@@ -110,12 +117,13 @@ where
     UR: UserRepository,
     RL: RateLimitStore,
 {
-    // 1. Client.
+    // 1. Client — one read (RFC 026), then authenticate (RFC 137 T2).
     let client = deps.clients
-        .find(input.client_id)
+        .find_auth_view(input.client_id)
         .await
         .map_err(|_| CoreError::Internal)?
         .ok_or(CoreError::InvalidClient)?;
+    authenticate_token_client(&client, input.client_secret)?;
 
     // 2. Consume the code.
     let challenge = deps.codes
@@ -124,9 +132,10 @@ where
         .map_err(|_| CoreError::Internal)?
         .ok_or(CoreError::InvalidGrant("code is unknown or already used"))?;
 
-    let (user_id, scopes, code_challenge, code_challenge_method, redirect_uri, challenge_nonce, challenge_auth_time) =
+    let (code_client_id, user_id, scopes, code_challenge, code_challenge_method, redirect_uri, challenge_nonce, challenge_auth_time) =
         match challenge {
             Challenge::AuthCode {
+                client_id,
                 user_id,
                 scopes,
                 code_challenge,
@@ -135,9 +144,18 @@ where
                 nonce,
                 auth_time,
                 ..
-            } => (user_id, scopes, code_challenge, code_challenge_method, redirect_uri, nonce, auth_time),
+            } => (client_id, user_id, scopes, code_challenge, code_challenge_method, redirect_uri, nonce, auth_time),
             _ => return Err(CoreError::InvalidGrant("handle is not a code")),
         };
+
+    // RFC 137 T1 / RFC 6749 §4.1.3: the code must be redeemed by the client
+    // it was issued to. Checked after `take`, so a rejected attempt consumes
+    // the code and a wrong-client redeemer cannot leave it in place for a
+    // retry. The wire error is the same `invalid_grant` as an unknown or
+    // already-used code; the distinct message reaches logs and audit only.
+    if code_client_id != client.client_id {
+        return Err(CoreError::InvalidGrant("code was issued to a different client"));
+    }
 
     // Sanity: the redirect_uri submitted at /token must match what was
     // bound to the code at /authorize (RFC 6749 §4.1.3).
@@ -157,12 +175,12 @@ where
     let claims = AccessTokenClaims {
         iss:   signer.issuer().to_owned(),
         sub:   user_id.clone(),
-        aud:   client.id.clone(),
+        aud:   client.client_id.clone(),
         exp:   input.now_unix + cfg.access_ttl_secs,
         iat:   input.now_unix,
         jti:   access_jti,
         scope: scopes.to_space_separated(),
-        cid:   client.id.clone(),
+        cid:   client.client_id.clone(),
     };
     let access_token = signer.sign(&claims)?;
 
@@ -171,7 +189,7 @@ where
         .init(&FamilyInit {
             family_id: family_id.clone(),
             user_id:   UserId::from_storage(user_id.clone()),
-            client_id: ClientId::from_storage(client.id.clone()),
+            client_id: ClientId::from_storage(client.client_id.clone()),
             scopes:    scopes.0.clone(),
             first_jti: refresh_jti.clone(),
             now_unix:  input.now_unix,
@@ -184,7 +202,7 @@ where
         .create(&Grant {
             id:         family_id.to_string(),
             user_id:    user_id.clone(),
-            client_id:  client.id.clone(),
+            client_id:  client.client_id.clone(),
             scopes:     scopes.0.clone(),
             issued_at:  input.now_unix,
             revoked_at: None,
@@ -204,7 +222,7 @@ where
         let claims = build_id_token_claims(
             cfg.iss,
             &user,
-            &client.id,
+            &client.client_id,
             &scopes.0,
             // RFC 033 / OIDC Core §3.1.3.6: nonce from the authorization
             // request MUST be reflected in the id_token when present.
@@ -234,6 +252,9 @@ where
 pub struct RotateRefreshInput<'a> {
     pub refresh_token: &'a str,
     pub client_id:     &'a str,
+    /// **RFC 137** — the secret the client presented; `None` when it presented
+    /// none. Same rule as `ExchangeCodeInput::client_secret`.
+    pub client_secret: Option<&'a str>,
     pub scope:         Option<&'a str>,
     pub now_unix:      i64,
     /// **v0.37.0** — Per-family rate-limit configuration
@@ -301,11 +322,42 @@ where
         }
     }
 
+    // RFC 137 T3: authenticate before the family is read, so a client that
+    // fails authentication learns nothing about it and cannot revoke it.
     let client = deps.clients
-        .find(input.client_id)
+        .find_auth_view(input.client_id)
         .await
         .map_err(|_| CoreError::Internal)?
         .ok_or(CoreError::InvalidClient)?;
+    authenticate_token_client(&client, input.client_secret)?;
+
+    // RFC 137 T4: a refresh token may only be redeemed by the client it was
+    // issued to. The refresh grant has no PKCE layer, so before this nothing
+    // bound a family to its client at all.
+    //
+    // Peek and compare BEFORE rotate — rotating first would let a mismatched
+    // client advance the family before being rejected. `client_id` is
+    // immutable after family init, so peek-then-rotate opens no window on the
+    // value being compared (RFC 137 §12.4). The `fam` re-read inside the
+    // `Rotated` arm below shadows this one; every field it uses there
+    // (user_id, scopes, auth_time) is equally immutable.
+    let fam = deps.families
+        .peek(&family_id)
+        .await
+        .map_err(|_| CoreError::Internal)?
+        .ok_or(CoreError::InvalidGrant("refresh token revoked"))?;
+
+    if fam.client_id.as_str() != client.client_id {
+        // Presentation by a client the token was not issued to is evidence
+        // of leakage — the same signal as reuse — so the established response
+        // applies: invalidate the whole family (RFC 9700 §4.14.2). The wire
+        // error is the same `invalid_grant` as an unknown or revoked family.
+        deps.families
+            .revoke(&family_id, input.now_unix)
+            .await
+            .map_err(|_| CoreError::Internal)?;
+        return Err(CoreError::InvalidGrant("refresh token was issued to a different client"));
+    }
 
     let new_jti = Jti::mint();
     let outcome = deps.families
@@ -342,12 +394,12 @@ where
             let claims = AccessTokenClaims {
                 iss:   signer.issuer().to_owned(),
                 sub:   fam.user_id.to_string(),
-                aud:   client.id.clone(),
+                aud:   client.client_id.clone(),
                 exp:   input.now_unix + cfg.access_ttl_secs,
                 iat:   input.now_unix,
                 jti:   Uuid::new_v4().to_string(),
                 scope: scopes.to_space_separated(),
-                cid:   client.id.clone(),
+                cid:   client.client_id.clone(),
             };
             let access_token = signer.sign(&claims)?;
             let refresh_token = encode_refresh(&family_id, &new_current_jti, cfg.refresh_ttl_secs, input.now_unix);
@@ -364,7 +416,7 @@ where
                 let claims_id = build_id_token_claims(
                     cfg.iss,
                     &user,
-                    &client.id,
+                    &client.client_id,
                     &scopes.0,
                     None, // no nonce on refresh (already consumed at authorization)
                     fam.auth_time,         // original auth event time

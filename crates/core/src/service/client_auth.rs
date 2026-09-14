@@ -31,6 +31,7 @@ use sha2::{Digest, Sha256};
 
 use crate::error::{CoreError, CoreResult};
 use crate::ports::repo::{ClientAuthView, ClientRepository};
+use crate::types::ClientType;
 
 /// Verify a presented `client_secret` against the stored hash for
 /// `client_id`. Returns `Ok(())` on success, `Err(CoreError::InvalidClient)`
@@ -180,6 +181,92 @@ pub fn check_client_credentials_from_view(
     } else {
         ClientAuthOutcome::AuthenticationFailed
     }
+}
+
+/// **RFC 137** — authenticate the client at `/token`, on both grants.
+///
+/// `/token` must admit public clients, so it cannot reuse `/introspect`'s rule
+/// (reject everything but `Authenticated`). Nor can it read
+/// [`check_client_credentials_from_view`]'s `PublicOrUnknown` as "proceed":
+/// that outcome means only "no hash on file", **regardless of `client_type`**,
+/// and would silently admit a confidential client provisioned without one.
+///
+/// The discriminator is a fail-closed intersection (RFC 137 §12.3):
+///
+/// ```text
+/// public client  <=>  client_type = Public  AND  client_secret_hash IS NULL
+/// otherwise       ->  must authenticate:
+///                       Authenticated                          -> proceed
+///                       AuthenticationFailed | PublicOrUnknown -> InvalidClient
+/// ```
+///
+/// Every secret comparison goes through `check_client_credentials_from_view`'s
+/// constant-time path; nothing here compares secret material itself.
+///
+/// A public client that also presents a secret is still admitted as public.
+/// Whether the presented method must match the registered one is out of
+/// scope (RFC 137 §12.7).
+pub fn authenticate_token_client(
+    view:             &ClientAuthView,
+    presented_secret: Option<&str>,
+) -> CoreResult<()> {
+    if matches!(view.client_type, ClientType::Public) && view.client_secret_hash.is_none() {
+        return Ok(());
+    }
+    let Some(secret) = presented_secret else {
+        return Err(CoreError::InvalidClient);
+    };
+    match check_client_credentials_from_view(view, secret) {
+        ClientAuthOutcome::Authenticated => Ok(()),
+        ClientAuthOutcome::AuthenticationFailed | ClientAuthOutcome::PublicOrUnknown => {
+            Err(CoreError::InvalidClient)
+        }
+    }
+}
+
+/// **RFC 137** — resolve which client a `/token` request speaks for, and the
+/// secret it presented, from the two places RFC 6749 §2.3.1 allows.
+///
+/// Precedence matches the backend's `client_auth::extract`, which `/token`
+/// cannot call because it reads its body as text rather than `FormData`:
+///
+/// - **An `Authorization` header is present** — HTTP Basic is the only path.
+///   A malformed header (`basic` is `None`) is rejected and does **not** fall
+///   through to the form; a broken Basic attempt must not retry itself as
+///   `client_secret_post`.
+/// - **No header** — `client_id` and an optional `client_secret` come from the
+///   form. An empty `client_secret` is treated as absent, as `extract_from_form`
+///   does.
+///
+/// With Basic, a form `client_id` that disagrees with the header is one
+/// client presenting two identities, and is rejected (RFC 6749 §2.3: a client
+/// MUST NOT use more than one authentication method per request).
+///
+/// Pure, taking primitives, so the precedence is testable on the host —
+/// `worker::Headers` cannot be constructed off wasm32.
+pub fn resolve_token_client_credentials(
+    authorization_header_present: bool,
+    basic:                        Option<(&str, &str)>,
+    form_client_id:               Option<&str>,
+    form_client_secret:           Option<&str>,
+) -> CoreResult<(String, Option<String>)> {
+    if authorization_header_present {
+        let Some((basic_id, basic_secret)) = basic else {
+            return Err(CoreError::InvalidClient);
+        };
+        if let Some(form_id) = form_client_id {
+            if form_id != basic_id {
+                return Err(CoreError::InvalidClient);
+            }
+        }
+        return Ok((basic_id.to_owned(), Some(basic_secret.to_owned())));
+    }
+
+    let client_id = form_client_id
+        .filter(|id| !id.is_empty())
+        .ok_or(CoreError::InvalidRequest("client_id is required"))?;
+    let secret = form_client_secret.filter(|s| !s.is_empty()).map(str::to_owned);
+    Ok((client_id.to_owned(), secret))
 }
 
 /// SHA-256, lowercase hex. The format that `ClientRepository::create`

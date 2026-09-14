@@ -26,6 +26,7 @@ impl ClientRepository for StubClients {
         use crate::types::TokenAuthMethod;
         Ok(self.map.get(client_id).map(|hash| ClientAuthView {
             client_id:          client_id.to_owned(),
+            client_type:        crate::types::ClientType::Confidential,
             client_secret_hash: hash.clone(),
             audience:           None,
             token_auth_method:  TokenAuthMethod::ClientSecretBasic,
@@ -223,6 +224,7 @@ fn make_view(secret: Option<&str>, audience: Option<&str>) -> ClientAuthView {
     });
     ClientAuthView {
         client_id:          "test-client".to_owned(),
+        client_type:        crate::types::ClientType::Confidential,
         client_secret_hash: hash,
         audience:           audience.map(str::to_owned),
         token_auth_method:  TokenAuthMethod::ClientSecretBasic,
@@ -269,4 +271,49 @@ fn from_view_empty_secret_returns_auth_failed() {
         check_client_credentials_from_view(&view, ""),
         ClientAuthOutcome::AuthenticationFailed
     );
+}
+
+// -----------------------------------------------------------------------
+// RFC 137 — `/token` client-credential precedence
+// (`resolve_token_client_credentials`). Pure, so the route's rules are
+// testable on the host: `worker::Headers` cannot be constructed off wasm32.
+// -----------------------------------------------------------------------
+
+/// Test 11 — a Basic header and a disagreeing form `client_id` is one client
+/// presenting two identities in one request (RFC 6749 §2.3).
+#[test]
+fn token_basic_header_with_disagreeing_form_client_id_is_invalid_client() {
+    let r = crate::service::client_auth::resolve_token_client_credentials(
+        true, Some(("client-a", "secret-a")), Some("client-b"), None,
+    );
+    assert!(matches!(r, Err(crate::error::CoreError::InvalidClient)), "got {r:?}");
+}
+
+/// §7.2 — a malformed Basic header must not fall through to the form body, or
+/// a broken Basic attempt would silently retry itself as `client_secret_post`.
+#[test]
+fn token_malformed_basic_header_does_not_fall_through_to_the_form() {
+    let r = crate::service::client_auth::resolve_token_client_credentials(
+        true, None, Some("client-a"), Some("secret-a"),
+    );
+    assert!(matches!(r, Err(crate::error::CoreError::InvalidClient)), "got {r:?}");
+}
+
+/// Basic with an agreeing form `client_id` resolves to the header's credentials.
+#[test]
+fn token_basic_header_with_agreeing_form_client_id_resolves() {
+    let r = crate::service::client_auth::resolve_token_client_credentials(
+        true, Some(("client-a", "secret-a")), Some("client-a"), None,
+    ).expect("agreeing identities must resolve");
+    assert_eq!(r, ("client-a".to_owned(), Some("secret-a".to_owned())));
+}
+
+/// No header — the form supplies the client, and an empty secret is absent,
+/// matching `extract_from_form`. This is the beginner guide's `demo-cli` path.
+#[test]
+fn token_form_credentials_treat_an_empty_secret_as_absent() {
+    let r = crate::service::client_auth::resolve_token_client_credentials(
+        false, None, Some("demo-cli"), Some(""),
+    ).expect("a public client with no secret must resolve");
+    assert_eq!(r, ("demo-cli".to_owned(), None));
 }
