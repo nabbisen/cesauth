@@ -71,6 +71,16 @@ jobs:
           fi
           echo "✅  No .html in crates/frontend/dist/"
 
+      # RFC 138 D2: `npx wrangler` resolves the root package.json's pinned
+      # wrangler only if a root install ran first in THIS job. Without one,
+      # npx fetches the latest release no matter what the lockfile says.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pinned wrangler (root npm ci)
+        run: npm ci
+
       - name: wrangler build
         run: npx wrangler build
 
@@ -107,6 +117,15 @@ jobs:
 
       - name: make build-frontend
         run: make build-frontend
+
+      # RFC 138 D2: runtime-smoke-check.sh starts `npx wrangler dev`; pin it
+      # the same way, with a root install in this job.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pinned wrangler (root npm ci)
+        run: npm ci
 
       - name: Runtime smoke check
         run: bash scripts/runtime-smoke-check.sh

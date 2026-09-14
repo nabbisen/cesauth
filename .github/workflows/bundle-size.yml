@@ -31,8 +31,15 @@ jobs:
       # be exactly the drift C1-131 exists to close, even though the
       # deploy step below would still end up using the pinned one (its
       # own [build] command reinstalls it immediately before running).
-      - uses: cloudflare/wrangler-action@v3
+      # RFC 138 D2/D4 (§11.8): an exact action version AND an explicit
+      # wranglerVersion. This action installs and runs wrangler, whose version
+      # decides the bundle this gate measures, so neither may float. @v3
+      # resolved to v3.15.0 on 2026-09-15 (git ls-remote); 4.131.2 is the
+      # version the root package.json pins (see DEPENDENCIES.md). v4.0.0 of
+      # the action exists; moving to it is a major upgrade outside RFC 138.
+      - uses: cloudflare/wrangler-action@v3.15.0
         with:
+          wranglerVersion: '4.131.2'
           # --dry-run builds the bundle locally without uploading.
           # No API_TOKEN is needed.
           command: deploy --dry-run --outdir bundled/

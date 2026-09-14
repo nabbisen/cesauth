@@ -43,6 +43,29 @@ here and the install sites reference this section.
 | `worker` (crate) | `=0.8.3` | `Cargo.toml` | RFC 134 |
 | `@playwright/test` | `1.63.0` | `e2e/package.json` + committed `package-lock.json` | RFC 131 R5 §9 |
 | `axe-playwright` | `2.2.2` | `e2e/package.json` + committed `package-lock.json` | RFC 131 R5 §9 |
+| `mdbook` | **0.5.4** | `.github/workflows/docs.yml` | RFC 138 D1 |
+| `wrangler` | **4.131.2** | root `package.json` + committed `package-lock.json`; `wranglerVersion` in `bundle-size.yml` | RFC 138 D2 |
+
+**wrangler, 4.131.2 (RFC 138 D2, 2026-09-15).** wrangler is the deploy tool,
+and the one that governs the Workers Static Assets defaults behind RFC 131
+C1-131's `/`-shadowing finding. It was unpinned at four sites — three
+`npx wrangler` calls and `bundle-size.yml`'s `wrangler-action` — and moved
+4.131.1 → 4.131.2 between 2026-09-12 and 2026-09-15 with no commit to this
+repository. 4.131.2 was **measured from a root `npm install`**, not from a
+global: on the machine it was measured on, a bare `wrangler` resolved a bun
+global at 4.97.0, while `npx wrangler` resolved the npx cache at 4.131.2.
+
+**A lockfile pins nothing unless something installs from it.** Every CI job
+that runs `npx wrangler` does a root `npm ci` earlier in the same job;
+`wrangler-action`, which installs its own wrangler, is given `wranglerVersion`
+explicitly. **Bumping wrangler:** change root `package.json`, regenerate the
+lock with `npm install --package-lock-only`, update `wranglerVersion` in
+`bundle-size.yml` and the table above, and re-run `wrangler build`, the runtime
+smoke check and the browser suite — all three run through wrangler.
+
+**mdbook, 0.5.4 (RFC 138 D1, 2026-09-15).** The version measured locally
+(`mdbook --version`). `docs/book.toml` declares no preprocessors, so mdbook is
+the whole install. Bump `docs.yml` and the table together.
 
 **Trunk, 0.21.14 (RFC 131 C1-R5, 2026-09-12).** Previously
 `cargo install trunk --locked` at every site, which is not a pin:

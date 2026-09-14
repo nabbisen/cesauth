@@ -1,0 +1,45 @@
+name: Docs build
+
+# RFC 138 D1 — `mdbook build docs`, as a gate.
+#
+# Every handoff, review and release-readiness report in this programme required
+# `mdbook build docs`, and until this workflow it ran in no workflow at all: it
+# was a command the implementer and architect ran locally, and nothing else.
+#
+# It could not have failed usefully even then. `docs/book.toml` had no `[build]`
+# section, so mdbook's default `create-missing = true` applied: a SUMMARY.md link
+# to a chapter that does not exist made mdbook CREATE the missing file and exit
+# 0. RFC 138 sets `create-missing = false`, under which the same broken link
+# exits 101 with "failed to read chapter" and creates nothing — measured both
+# ways (RFC 138 §11.6 and its review request).
+#
+# BLOCKING. Unlike browser-tests.yml's one-release window, this lands blocking:
+# the real tree builds clean with `create-missing = false`, so a failure here is
+# real news rather than first-contact flake. Blocking is a branch-protection
+# setting, not a property of this file — add "Docs build" to the required
+# checks. It is deliberately NOT `continue-on-error`.
+#
+# mdbook is pinned (DEPENDENCIES.md). `book.toml` declares no
+# `[preprocessor.*]`, so mdbook itself is the only tool this job needs.
+#
+# RFC 130 M2b: the toolchain version below must match rust-toolchain.toml (repo
+# root) and every other workflow listed in that file's header comment.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  mdbook:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.98.1
+
+      - name: Install mdbook (pinned)
+        run: cargo install mdbook --version 0.5.4 --locked
+
+      - name: mdbook build docs
+        run: mdbook build docs

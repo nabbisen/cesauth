@@ -88,6 +88,12 @@ jobs:
         working-directory: e2e
         run: npx playwright install --with-deps chromium
 
+      # RFC 138 D2: a root install, so `npx wrangler dev` below resolves the
+      # root package.json's pinned wrangler. The e2e `npm ci` above installs
+      # only e2e/'s tree and pins nothing at the repository root.
+      - name: Install pinned wrangler (root npm ci)
+        run: npm ci
+
       # Started explicitly rather than via Playwright's `webServer`, so a
       # build or startup failure is reported as itself instead of as a
       # test-runner timeout.

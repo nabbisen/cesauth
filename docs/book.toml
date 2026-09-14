@@ -5,6 +5,13 @@ authors     = ["nabbisen"]
 language    = "en"
 src         = "src"
 
+# RFC 138 D1: fail the build on a SUMMARY.md link to a chapter that does not
+# exist. mdbook's default (create-missing = true) instead CREATES the missing
+# file and exits 0 -- so a broken chapter link silently became a stub someone
+# could commit, and `mdbook build docs` as a gate could never fail on one.
+[build]
+create-missing = false
+
 [output.html]
 default-theme       = "light"
 preferred-dark-theme = "navy"

@@ -16,7 +16,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      # RFC 138 D4 (§11.8): exact version, not a major tag. This action installs
+      # and runs cargo-deny, whose version decides the gate's verdict, so a
+      # moving @v2 could change the verdict with no commit here. v2.1.1 is the
+      # commit @v2 resolved to on 2026-09-15 (git ls-remote), so this pin
+      # changes nothing today.
+      - uses: EmbarkStudios/cargo-deny-action@v2.1.1
         with:
           log-level: warn
           command: check

@@ -1,0 +1,8 @@
+{
+  "name": "cesauth-tooling",
+  "private": true,
+  "description": "Pinned CI tooling for cesauth. RFC 138: exists so npx wrangler resolves a chosen version, not the latest release.",
+  "devDependencies": {
+    "wrangler": "4.131.2"
+  }
+}

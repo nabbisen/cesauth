@@ -11,9 +11,14 @@ documentation to cesauth.  For project philosophy and architecture, see
   below is plain `cargo`. Do not install `rustc-1.NN` / `cargo-1.NN` apt
   packages; a versioned binary name bypasses the pin, which is how this
   file said 1.91 for two releases after CI moved to 1.98.1.
-- For worker builds: `worker-build` (`cargo install worker-build --locked`)
-  and `wrangler` (`npm install -g wrangler`).
-- For docs: `mdbook` (`cargo install mdbook`).
+- For worker builds, install neither `worker-build` nor `wrangler` by hand
+  (RFC 138). `wrangler.toml`'s `[build] command` installs
+  `worker-build --version 0.8.4` itself, and `wrangler` is pinned by the
+  repository root's `package.json`: run `npm ci` at the root, then invoke it as
+  `npx wrangler`. A global `npm install -g wrangler` resolves a different,
+  unpinned binary — on the machine RFC 138 was measured on, 4.97.0 against the
+  pinned 4.131.2.
+- For docs: `mdbook` (`cargo install mdbook --version 0.5.4 --locked`).
 
 ## Code formatting
 
@@ -81,6 +86,61 @@ cargo deny check
 bash scripts/route-contracts-check.sh
 bash scripts/drift-scan.sh
 ```
+
+### CI gate parity
+
+The gates above, and the ones handoffs require for a release, are the
+**described** gate set. What CI runs is a separate set of workflow files. Where
+the two differ, the difference is recorded here as a decision rather than
+discovered later (RFC 138). Which checks *block* a merge is a branch-protection
+setting this repository cannot show; the table records what runs.
+
+| Gate (as described) | Where CI runs it | Difference |
+|---|---|---|
+| Host tests — the five-crate `cargo test` above | `test.yml` | none |
+| `cargo test -p cesauth-migrate-test --test migration_chain` | `test.yml` | none |
+| `cargo check -p cesauth-backend --target wasm32-unknown-unknown` | **no job of its own** | **Deliberate.** Covered in substance, and more strongly, by `worker-build.yml`'s `wrangler build`, which compiles the backend for wasm32 and builds the Worker |
+| `cargo check -p cesauth-frontend --features csr --target wasm32-unknown-unknown` | `csr-bundle-check.yml` | none |
+| `cargo clippy` over core, adapter-test, migrate-test, frontend | `clippy.yml` | Same four crates. **A shared gap, not a parity difference:** neither covers `cesauth-backend` or `cesauth-adapter-cloudflare` |
+| `cargo deny check` | `deny.yml` | Run through `EmbarkStudios/cargo-deny-action@v2.1.1` |
+| `cargo audit` | `audit.yml` | Run through `rustsec/audit-check@v2.0.0`; also on a schedule |
+| `bash scripts/drift-scan.sh` | `drift-scan.yml` | Runs with `--verbose`, on every pull request, no path filter |
+| `bash scripts/route-contracts-check.sh` | `route-contracts.yml` | none |
+| `mdbook build docs` | `docs.yml` | **Ran in no workflow before RFC 138.** `create-missing = false` makes a broken chapter link fail it |
+| `make build-frontend` | `trunk-release-build.yml`; also a step in `worker-build.yml` and `browser-tests.yml` | CI adds an assertion that the built filenames match what `leptos_shell.rs` requests |
+| `npx wrangler build` | `worker-build.yml` (`worker-build` job) | none. **Has not yet executed in CI** — it could not start until RFC 131 C1-R5 installed Trunk |
+| `bash scripts/runtime-smoke-check.sh` | `worker-build.yml` (`runtime-smoke` job) | none. **Has not yet executed in CI**, for the same reason |
+| `npx playwright test` in `e2e/`, against `npx wrangler dev` | `browser-tests.yml` | **Non-blocking until 0.84.0** (RFC 131 R5 §8) |
+| — | `bundle-size.yml` | **CI-only.** A gzip budget on a `wrangler deploy --dry-run` bundle; not in the described set |
+| — | `fuzz.yml` | **CI-only, deliberately outside the gate set.** Nightly toolchain; runs only on pull requests touching `crates/core/src/jwt/**` or `fuzz/**`, or by manual dispatch |
+
+**Not yet covered — local entry points that bypass the wrangler pin.**
+`make build-backend` and `make dev-backend` (the `Makefile`), and
+`scripts/bundle-bloat.sh`, call a bare `wrangler`, which resolves whatever is on
+`PATH` rather than the root `package.json`'s pin. None of them is a CI gate. They
+are recorded here, not changed: RFC 138's scope is the gates CI runs.
+
+### Pinning tools in CI
+
+A gate is only as reproducible as the tool it runs. The convention
+(RFC 138 §11.8):
+
+- **Actions that only orchestrate take a major tag** — `actions/checkout`,
+  `actions/upload-artifact`, `actions/cache`, `actions/setup-node`. Their
+  version does not decide any gate's verdict.
+- **Actions that install and run a tool whose version decides a verdict take an
+  exact version** — `rustsec/audit-check@v2.0.0`,
+  `EmbarkStudios/cargo-deny-action@v2.1.1`, `cloudflare/wrangler-action@v3.15.0`
+  (which also sets `wranglerVersion`). A moving major tag there can change a
+  verdict with no commit to this repository.
+- **`dtolnay/rust-toolchain@1.98.1` is a toolchain selector**, governed by
+  `rust-toolchain.toml` (RFC 130). `@nightly` in `fuzz.yml` is deliberate.
+- **Tools installed by command are pinned by version** — `cargo install … --version
+  X --locked`, never `--locked` alone, which honours the *tool's* lockfile and
+  still installs its latest release. Versions live in `DEPENDENCIES.md`.
+- **npm-installed tools are pinned by a committed lockfile *and* an install in
+  the same job.** `npx wrangler` resolves the root `package.json`'s pin only if a
+  root `npm ci` ran first in that job; otherwise npx fetches the latest release.
 
 ## Adding a new route
 

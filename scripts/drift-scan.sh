@@ -20,15 +20,27 @@ VERBOSE=0
 [[ "${1:-}" == "--verbose" ]] && VERBOSE=1
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCAN_PATHS=("${REPO_ROOT}/crates" "${REPO_ROOT}/docs" "${REPO_ROOT}/README.md" "${REPO_ROOT}/ROADMAP.md")
+SCAN_PATHS=("${REPO_ROOT}/crates" "${REPO_ROOT}/docs" "${REPO_ROOT}/README.md" "${REPO_ROOT}/ROADMAP.md" "${REPO_ROOT}/.github/workflows" "${REPO_ROOT}/package.json")
 
 # ---------------------------------------------------------------------------
 # Coverage (RFC 129 D5).
 #
-# SCAN_PATHS covers: crates/, docs/, README.md, ROADMAP.md.
+# SCAN_PATHS covers: crates/, docs/, README.md, ROADMAP.md, and — since RFC 138
+# D3 — .github/workflows/ and the root package.json, so rules about how CI
+# installs tools can see the files that install them.
 #
-# Everything else is out by omission: rfcs/, CHANGELOG.md, migrations/,
-# .github/, Makefile, wrangler.toml, scripts/. Nobody has audited these for
+# Deliberately never scanned: lockfiles. They are large, generated, full of
+# version strings, and not authored text (RFC 138 §8.5). The root package.json
+# is named as a single file rather than reached by recursion, and
+# `--exclude="package-lock.json"` keeps any lockfile out of the directory walks.
+#
+# Reached only locally: generated, gitignored build output under a scanned
+# directory — today crates/backend/build/package.json, written by
+# `wrangler build`, and absent in CI. No current pattern matches it (RFC 138
+# M2). A future pattern that did would pass in CI and fail locally.
+#
+# Everything else is out by omission: rfcs/, CHANGELOG.md, migrations/, the rest
+# of .github/, Makefile, wrangler.toml, scripts/. Nobody has audited these for
 # stale phrases or decided whether they belong in SCAN_PATHS — recorded here
 # so the next blind spot found in one of them is a known gap, not a surprise.
 # A future change that adds one of these to SCAN_PATHS should move it out of
@@ -155,6 +167,23 @@ declare -a PATTERNS=(
     # are escaped for the same reason: `.` is any character under -E.
     "cargo-1\.91	RFC 130 pinned the toolchain in rust-toolchain.toml; use plain cargo, not a versioned apt binary	docs/src/expert/rfc-110-baseline\.md|docs/src/expert/nodejs-compat-investigation\.md|docs/changelog-archive/"
     "rustc-1\.91	RFC 130 pinned the toolchain in rust-toolchain.toml; use plain cargo, not a versioned apt binary	docs/src/expert/rfc-110-baseline\.md|docs/src/expert/nodejs-compat-investigation\.md|docs/changelog-archive/"
+    # RFC 138 D3: pins made self-enforcing, by reading the files that install
+    # the tools. These are pin guards rather than stale-narrative rules: a hit
+    # means an install site no longer names the version DEPENDENCIES.md records.
+    #
+    # Trunk (RFC 131 C1-R5): `cargo install trunk` without `--version`, with or
+    # without `--locked`. `--locked` honours Trunk's own lockfile and still
+    # installs its latest release. Anchored at end of line, so it misses both
+    # pinned orderings (`--version ... --locked`, `--locked --version ...`) and
+    # prose quoting the old command mid-sentence (RFC 138 §11.5, verified).
+    "install trunk( --locked)?\s*$	Trunk install without --version; pin it (RFC 131 C1-R5, DEPENDENCIES.md)"
+    # wrangler (RFC 138 D2): the root package.json must pin wrangler exactly. A
+    # range (^, ~, >) lets `npm install` move it and the lockfile moves with it.
+    # This does NOT ban `npx wrangler`, which is correct once a lockfile exists
+    # (RFC 138 §11.5). The literal quotes are escaped for this bash array. The
+    # exclusion scopes it to the root package.json alone -- never a lockfile,
+    # never generated output such as crates/backend/build/package.json.
+    "\"wrangler\": *\"[\\^~>]	root package.json must pin wrangler exactly, not a range (RFC 138 D2, DEPENDENCIES.md)	crates/|docs/|\.github/|README\.md|ROADMAP\.md"
 )
 
 found=0
@@ -183,7 +212,7 @@ for entry in "${PATTERNS[@]}"; do
                     # configured while doing nothing. `-H` prevents that case;
                     # this guard catches the class, so the next variant is
                     # loud instead of inert.
-                    if [[ "$hit_path" != */* ]] && [[ "$hit_path" != *.rs && "$hit_path" != *.md && "$hit_path" != *.toml ]]; then
+                    if [[ "$hit_path" != */* ]] && [[ "$hit_path" != *.rs && "$hit_path" != *.md && "$hit_path" != *.toml && "$hit_path" != *.yml && "$hit_path" != *.json ]]; then
                         echo "drift-scan: BROKEN — exclude_regex cannot be applied." >&2
                         echo "  pattern:        $pattern" >&2
                         echo "  extracted path: '$hit_path' (not path-shaped)" >&2
@@ -196,7 +225,7 @@ for entry in "${PATTERNS[@]}"; do
                     fi
                 fi
                 matches+=("$line")
-            done < <(grep -rHn --include="*.rs" --include="*.md" --include="*.toml" \
+            done < <(grep -rHn --include="*.rs" --include="*.md" --include="*.toml" --include="*.yml" --include="*.json" --exclude="package-lock.json" \
                          -E "$pattern" "$path" 2>/dev/null || true)
         fi
     done
