@@ -187,3 +187,25 @@ rejected.
 
 **Patch.** A contract clause the code already claims is not implemented. Nothing
 new becomes possible.
+
+## 10. Implementation review (2026-09-15)
+
+Landed in `4b22cb5` and accepted without a correction cycle.
+
+- **Verified:**
+  - 1,436 host tests (1,429 + 7), with all seven new tests by name.
+  - The runtime smoke check.
+  - Both sides of the DO wire carry `now_unix` under the same name and tag.
+  - Every production `now` comes from `OffsetDateTime::now_utc()` or
+    `input.now_unix`.
+  - **Live:** an unknown code at `/token` returns `400 invalid_grant`, not the
+    `500` a command mismatch would produce.
+- **The TOTP GET path now reads a clock.** It read none before. Rendering the
+  page for an expired gate was the defect, so reading the real clock is the
+  intent of §4.3, not a departure from it.
+- **Test 5 runs against core's `StubCodes`, not the in-memory store.** `cesauth-core`
+  cannot dev-depend on `cesauth-adapter-test`. Each store has its own fires pair.
+- **WebAuthn expiry has no host test.** The finish handlers take
+  `worker::Request`. They are covered by the shared store rule.
+- **Recorded, no change:** the DO's `Peek`/`Take` turn a storage *read* error into
+  "absent" (`.ok().flatten()`). This predates the RFC and fails closed.
