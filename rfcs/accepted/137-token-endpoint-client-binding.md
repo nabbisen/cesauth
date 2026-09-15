@@ -302,3 +302,41 @@ unchanged.**
 - Consistency between `client_type` and `token_auth_method`.
 - **Refresh tokens never expire** — found during this measurement, a different
   defect class, and needing a lifetime-policy decision: **RFC 139**.
+
+
+## 13. Implementation review (2026-09-15)
+
+T1–T7 landed in `202c149` and are accepted. Three gaps surfaced by the
+implementation are corrected in **C1-137**, and one is recorded for another RFC.
+
+### 13.1 Ruled on the implementer's questions
+
+- **Authentication precedes consumption.** A failed authentication does not
+  consume the code or touch the family. The alternative lets any holder of a code
+  for a confidential client burn it without the secret, and turns code
+  disappearance into a validity oracle. Guessing a server-minted 256-bit secret
+  against one short-lived code is infeasible. Matches the refresh grant's order.
+- **Distinct internal messages for wire-identical errors are acceptable.**
+  `oauth_error_response` emits `{"error": code}` only (`error.rs:84`); the
+  message reaches logs and audit, never the wire.
+
+### 13.2 C1-137 — three standards gaps
+
+1. **Basic plus a form `client_secret` is rejected.** RFC 6749 §2.3: at most one
+   authentication method per request. The implementation had rejected only a
+   disagreeing `client_id`.
+2. **`client_id` is optional in the body when the client authenticates with
+   Basic.** `classify` (`core/src/oidc/token.rs:60-80`) required it on both
+   grants, before credentials were resolved, so a standards-conforming
+   Basic-only confidential client got `invalid_request` — RFC 6749 §4.1.3
+   requires it only for clients that are not authenticating.
+3. **`401 invalid_client` carries `WWW-Authenticate: Basic realm="cesauth"`
+   when the request used Basic** (RFC 6749 §5.2), mirroring
+   `routes/oidc/introspect.rs:342`.
+
+### 13.3 Recorded for RFC 123
+
+Credential-resolution rejections — a malformed Basic header, two identities —
+return before the service and write **no audit event**, while a wrong secret
+does. That asymmetry is RFC 123's subject (audit event completeness), not a P0
+authentication fix.

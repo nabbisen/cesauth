@@ -297,3 +297,61 @@ needs only mdbook itself.
 
 Whether Node itself is pinned wherever `setup-node` runs. Same class; a separate
 decision.
+
+## 12. Implementation review (2026-09-15)
+
+M1–M3 and D1–D5 landed in `637591a` and are accepted. Pins as measured:
+**wrangler 4.131.2**, `cargo-deny-action@v2.1.1`, `wrangler-action@v3.15.0`,
+which are the exact tags at the commits the major tags resolved to. Neither
+action pin changes anything today. `wrangler-action` v4.0.0 exists and is a major
+upgrade outside this RFC.
+
+### 12.1 §11.4 corrected — where the drift came from
+
+The 4.131.1 → 4.131.2 figures came from the **npx cache**
+(`~/.npm/_npx/…/node_modules/wrangler`). The bun global (`~/.bun/bin/wrangler`,
+4.97.0) is what a **bare** `wrangler` resolves. There were three local wranglers
+before the root pin existed, not two.
+
+### 12.2 §11.5 corrected — `npx wrangler` is not fail-closed
+
+§11.5 ruled that with a root lockfile, `npx wrangler` is the correct invocation.
+That assumed `npx` fails without a local install. It does not. Measured in an
+empty directory:
+
+```
+$ npx --no-install wrangler --version
+4.131.2          exit 0          (the npx cache's copy)
+```
+
+Without a root `npm ci`, `npx wrangler` silently runs the cached binary locally,
+or the latest release in CI. D2 is correct as landed only because every call is
+preceded by a root `npm ci`. **Ruling:** every invocation uses
+`node_modules/.bin/wrangler`, which fails when the install is missing instead of
+resolving a different version. A drift rule forbids `npx wrangler` in
+`.github/workflows`. The Makefile and `scripts/` are outside drift-scan's scan
+paths and are held by C1-138's mechanical assertion instead.
+
+### 12.3 C1-138
+
+1. `node_modules/.bin/wrangler` at every call site: `Makefile` `build-backend`
+   and `dev-backend`, `bundle-bloat.sh`, `runtime-smoke-check.sh`,
+   `worker-build.yml`, `browser-tests.yml`. A missing install fails with a
+   message naming `npm ci`.
+2. The `npx wrangler` drift rule, scoped to workflows.
+3. The docs' global installs (`beginner/prerequisites.md`,
+   `deployment/backup-restore.md`) are replaced by a root `npm ci` or, where the
+   example runs outside this repository, an exact `wrangler@4.131.2`.
+4. Prose claiming `npx wrangler` resolves the pin is corrected.
+5. Clippy (`-D clippy::correctness`) covers `cesauth-backend` and
+   `cesauth-adapter-cloudflare` in CI and in the described gate. This is a gap
+   shared by both sets, found under D5; it measured zero errors.
+
+### 12.4 Recorded, no change
+
+- `crates/backend/build/package.json` is generated and gitignored, and is the
+  only file the `*.json` include reaches that CI never sees.
+- The wasm32 backend check has no job of its own. `worker-build.yml`'s
+  `wrangler build` covers it, and more strongly.
+- Workflow YAML validity is unverified locally; no YAML parser is installed.
+  GitHub's first run is the evidence.
