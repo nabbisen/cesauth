@@ -149,7 +149,8 @@ now_unix <  last_rotated_at + REFRESH_TOKEN_IDLE_TIMEOUT_SECS   (idle)
 - **Boundary:** expired when `now_unix >= deadline`, the same rule as RFC 140
   and `AnonymousSession::is_expired`.
 - **Defaults:** absolute stays 30 days; idle **14 days**. Configuration is
-  refused at startup if absolute ≤ 0, idle < 0, or idle > absolute. Idle `0`
+  refused if absolute ≤ 0, idle < 0, or idle > absolute: every request that
+  loads it fails closed (§11 — not "at startup"; a Worker has none). Idle `0`
   disables the idle check, as it does for sessions; the absolute cap cannot be
   disabled.
 
@@ -255,3 +256,28 @@ token route's comment already lists "expired" among those causes. Dedicated
 `RefreshIdleTimeout` / `RefreshAbsoluteTimeout` events, mirroring
 `SessionIdleTimeout` / `SessionAbsoluteTimeout`, belong to RFC 123 (audit event
 completeness).
+
+## 11. Implementation review (2026-09-16)
+
+Landed in `633c602`; L1–L9 accepted.
+
+- **Verified:**
+  - 1,453 host tests (1,436 + 17), with all 17 new tests by name.
+  - The decision function, both stores and introspection, read against §9–§10.
+  - **Live:** under an idle window of 5 s, a refresh inside the window returns
+    200, and a refresh 7 s later returns `400 invalid_grant`.
+- **The one assertion changed** (`refresh_token_active_returns_active_response_with_claims`)
+  pinned the defect. It asserted introspection's `exp` came from the token's
+  unsigned third field. §9.4 made the old assertion unsatisfiable, and the
+  handoff should have named it as the exception.
+- **Introspection classifies before comparing jtis**, so an expired family is
+  `Expired` even for a forged jti. That reveals the family exists, but only to an
+  authenticated caller who already knows a UUIDv4 family id. The same was already
+  true of `Revoked`. **Recorded for RFC 118**, if it tightens classification for
+  every inactive state.
+- **C1-139: "refused at startup" is false.** A Worker has no startup that can
+  fail; configuration loads per request. An invalid pair deploys successfully,
+  and every request that loads configuration then fails with 500. That
+  fail-closed behaviour is right. §9.1's word "startup", repeated in the
+  handoff, docs and comments, is corrected to describe it. Deploy-time
+  validation would be a new capability, and it is not part of this RFC.
