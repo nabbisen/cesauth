@@ -88,19 +88,19 @@ jobs:
         working-directory: e2e
         run: npx playwright install --with-deps chromium
 
-      # RFC 138 D2: a root install, so `npx wrangler dev` below resolves the
-      # root package.json's pinned wrangler. The e2e `npm ci` above installs
-      # only e2e/'s tree and pins nothing at the repository root.
+      # RFC 138: the root install providing node_modules/.bin/wrangler, which
+      # the next step runs. The e2e `npm ci` above installs only e2e/'s tree.
       - name: Install pinned wrangler (root npm ci)
         run: npm ci
 
       # Started explicitly rather than via Playwright's `webServer`, so a
       # build or startup failure is reported as itself instead of as a
       # test-runner timeout.
-      - name: Start wrangler dev
+      - name: Start the Worker (pinned wrangler)
         run: |
           set -euo pipefail
-          npx wrangler dev --port 8787 > /tmp/wrangler-dev.log 2>&1 &
+          test -x node_modules/.bin/wrangler || { echo "::error::wrangler is not installed: run npm ci at the repository root (RFC 138)"; exit 1; }
+          node_modules/.bin/wrangler dev --port 8787 > /tmp/wrangler-dev.log 2>&1 &
           echo $! > /tmp/wrangler.pid
           for _ in $(seq 1 90); do
             if curl -sf -o /dev/null http://localhost:8787/login; then
@@ -119,7 +119,7 @@ jobs:
 
       # The runtime's own output. A browser failure is often explained by
       # something the Worker logged, and the log is gone once the job ends.
-      - name: wrangler dev log
+      - name: Worker dev-server log
         if: always()
         run: cat /tmp/wrangler-dev.log
 

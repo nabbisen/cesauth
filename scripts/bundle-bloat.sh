@@ -42,7 +42,8 @@ ${BLOAT_OUTPUT}
 To measure the actual deployed gzip size:
 
 \`\`\`bash
-wrangler deploy --dry-run --outdir bundled/
+npm ci    # at the repository root: provides the pinned wrangler (RFC 138)
+node_modules/.bin/wrangler deploy --dry-run --outdir bundled/
 gzip -c bundled/*.js | wc -c
 \`\`\`
 MDEOF

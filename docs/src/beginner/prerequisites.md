@@ -10,7 +10,8 @@ table and skip to the next chapter.
 |--------------------------|------------------------------------------|-------------|
 | Rust 1.85+               | Required by the `worker-rs` dep graph    | 1.85, 1.86  |
 | `wasm32-unknown-unknown` | WASM build target                        | —           |
-| `wrangler` 3.x or 4.x    | Runs the Worker and manages CF resources | 3.76+, 4.x  |
+| `wrangler` (pinned)      | Runs the Worker and manages CF resources | 4.131.2, from the root `package.json` |
+| Node.js with `npm`       | Installs the pinned `wrangler`           | 22          |
 | `worker-build`           | Rust → JS+WASM glue                      | auto-installed by the build command |
 | `curl`                   | Exercise endpoints                       | any         |
 | `jq`                     | Pretty-print JSON                        | any         |
@@ -25,11 +26,25 @@ rustup target add wasm32-unknown-unknown --toolchain stable
 
 ## Install Wrangler
 
-Via npm, which is Cloudflare's preferred distribution:
+cesauth pins wrangler in the repository root's `package.json`. Once you have
+cloned the repository (next section), install it from the repository root:
 
 ```sh
-npm install -g wrangler
-wrangler --version
+npm ci
+node_modules/.bin/wrangler --version
+```
+
+Do not install wrangler globally, and do not call it through `npx`. Either
+one bypasses the pin: a global runs whatever version is installed, and `npx`
+without the root install silently runs its cache's copy or the latest release.
+The local binary does not run at all without `npm ci`, which is the point
+(RFC 138).
+
+Later chapters write commands as `wrangler …`. They mean the pinned binary. To
+type them as written, put it on your shell's `PATH` from the repository root:
+
+```sh
+export PATH="$PWD/node_modules/.bin:$PATH"
 ```
 
 ## Verify the host build

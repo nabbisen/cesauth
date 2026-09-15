@@ -71,9 +71,10 @@ jobs:
           fi
           echo "✅  No .html in crates/frontend/dist/"
 
-      # RFC 138 D2: `npx wrangler` resolves the root package.json's pinned
-      # wrangler only if a root install ran first in THIS job. Without one,
-      # npx fetches the latest release no matter what the lockfile says.
+      # RFC 138: the root install that provides node_modules/.bin/wrangler, the
+      # pinned binary the next step runs. Never `npx` (C1-138): without this
+      # install npx silently fetches the latest release; the local binary is
+      # simply absent, and the next step says so.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -81,8 +82,10 @@ jobs:
       - name: Install pinned wrangler (root npm ci)
         run: npm ci
 
-      - name: wrangler build
-        run: npx wrangler build
+      - name: Build the Worker (pinned wrangler)
+        run: |
+          test -x node_modules/.bin/wrangler || { echo "::error::wrangler is not installed: run npm ci at the repository root (RFC 138)"; exit 1; }
+          node_modules/.bin/wrangler build
 
   runtime-smoke:
     # RFC 134 T3 — the first gate in this project's history to boot the
@@ -118,8 +121,8 @@ jobs:
       - name: make build-frontend
         run: make build-frontend
 
-      # RFC 138 D2: runtime-smoke-check.sh starts `npx wrangler dev`; pin it
-      # the same way, with a root install in this job.
+      # RFC 138: the root install runtime-smoke-check.sh needs. The script runs
+      # node_modules/.bin/wrangler and exits 2 with an npm ci message without it.
       - uses: actions/setup-node@v4
         with:
           node-version: 22

@@ -15,7 +15,9 @@
 # Prerequisites:
 #   rustup target add wasm32-unknown-unknown
 #   cargo install trunk
-#   npm install -g wrangler   (or use npx wrangler)
+#   npm ci                    (at the repository root: the pinned wrangler,
+#                              run as node_modules/.bin/wrangler -- never a
+#                              global or npx, which bypass the pin; RFC 138)
 #   curl, tar                 (fetches wasm-opt; see wasm-opt-fetch below)
 #
 # Usage:
@@ -25,7 +27,14 @@
 #   make clean       — remove all build artefacts
 
 .PHONY: build build-frontend build-backend dev dev-frontend dev-backend \
-        test clean wasm-opt-fetch
+        test clean wasm-opt-fetch wrangler-installed
+
+# RFC 138 C1-138: the wrangler pinned by the root package.json's lockfile. A
+# forgotten `npm ci` stops with a message instead of running another version.
+WRANGLER := node_modules/.bin/wrangler
+
+wrangler-installed:
+	@test -x $(WRANGLER) || { echo "wrangler is not installed: run \`npm ci\` at the repository root (RFC 138)" >&2; exit 1; }
 
 # ── Build ────────────────────────────────────────────────────────────────────
 
@@ -162,8 +171,8 @@ build-frontend: wasm-opt-fetch
 
 ## Compile the Cloudflare Workers backend.
 ## Output: crates/backend/build/worker/shim.mjs + *.wasm
-build-backend:
-	wrangler build
+build-backend: wrangler-installed
+	$(WRANGLER) build
 
 # ── Development ──────────────────────────────────────────────────────────────
 
@@ -184,8 +193,8 @@ dev: build-frontend
 dev-frontend:
 	cd crates/frontend && trunk watch
 
-dev-backend:
-	wrangler dev
+dev-backend: wrangler-installed
+	$(WRANGLER) dev
 
 # ── Tests ────────────────────────────────────────────────────────────────────
 

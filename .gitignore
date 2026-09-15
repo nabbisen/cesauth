@@ -41,7 +41,7 @@ e2e/playwright-report/
 e2e/test-results/
 
 # --- Root CI tooling (RFC 138) ---
-# The root package.json pins wrangler for `npx wrangler`. Its package-lock.json
-# IS committed -- a lockfile nothing installs from pins nothing, which is why
-# every CI job that runs `npx wrangler` does a root `npm ci` first.
+# The root package.json pins wrangler, invoked as node_modules/.bin/wrangler.
+# Its package-lock.json IS committed -- a lockfile nothing installs from pins
+# nothing, which is why every job runs a root `npm ci` before calling it.
 /node_modules/

@@ -9,7 +9,8 @@ import { defineConfig, devices } from '@playwright/test';
  *
  * ```sh
  * make build-frontend
- * npx wrangler dev --port 8787
+ * npm ci                                          # at the repository root
+ * node_modules/.bin/wrangler dev --port 8787
  * cd e2e && npx playwright test
  * ```
  *

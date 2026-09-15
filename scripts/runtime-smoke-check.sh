@@ -30,7 +30,8 @@
 #   0 — all checks passed, no panic in the console output
 #   1 — a check failed, or a panic was observed
 #   2 — the server never became ready (a different failure than "a check
-#       failed" — the build broke, or `wrangler dev` itself errored)
+#       failed" — the build broke, or `wrangler dev` itself errored), or the
+#       pinned wrangler is not installed: run `npm ci` at the repository root
 
 set -uo pipefail
 # NOT `set -e`: this script's whole job is to keep going after a failed
@@ -52,7 +53,16 @@ cleanup() {
 trap cleanup EXIT
 
 cd "$REPO_ROOT"
-( npx wrangler dev --port "$PORT" --persist-to "$STATE_DIR" > "$LOG" 2>&1 & echo $! > "$STATE_DIR/pid" )
+# RFC 138 C1-138: the pinned wrangler from the root package.json's lockfile.
+# Never `npx`: without the root install it does not fail, it silently runs the
+# npx cache's copy (or fetches the latest release). The local binary does not
+# exist without the install, so a forgotten `npm ci` stops here, loudly.
+WRANGLER="$REPO_ROOT/node_modules/.bin/wrangler"
+if [ ! -x "$WRANGLER" ]; then
+  echo "❌  wrangler is not installed: run \`npm ci\` at the repository root (RFC 138)" >&2
+  exit 2
+fi
+( "$WRANGLER" dev --port "$PORT" --persist-to "$STATE_DIR" > "$LOG" 2>&1 & echo $! > "$STATE_DIR/pid" )
 WRANGLER_PID="$(cat "$STATE_DIR/pid")"
 
 ready=0

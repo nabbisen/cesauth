@@ -55,10 +55,13 @@ repository. 4.131.2 was **measured from a root `npm install`**, not from a
 global: on the machine it was measured on, a bare `wrangler` resolved a bun
 global at 4.97.0, while `npx wrangler` resolved the npx cache at 4.131.2.
 
-**A lockfile pins nothing unless something installs from it.** Every CI job
-that runs `npx wrangler` does a root `npm ci` earlier in the same job;
-`wrangler-action`, which installs its own wrangler, is given `wranglerVersion`
-explicitly. **Bumping wrangler:** change root `package.json`, regenerate the
+**A lockfile pins nothing unless something installs from it, and nothing calls
+around it.** Every invocation — CI jobs, `Makefile` targets, scripts — runs
+`node_modules/.bin/wrangler`, which exists only after a root `npm ci` and fails
+with a message saying so when it is missing (RFC 138 C1-138). `npx wrangler` is
+not used: without the install it silently runs the npx cache's copy, or fetches
+the latest release. `wrangler-action`, which installs its own wrangler, is given
+`wranglerVersion` explicitly. **Bumping wrangler:** change root `package.json`, regenerate the
 lock with `npm install --package-lock-only`, update `wranglerVersion` in
 `bundle-size.yml` and the table above, and re-run `wrangler build`, the runtime
 smoke check and the browser suite — all three run through wrangler.

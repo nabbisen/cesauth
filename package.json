@@ -1,7 +1,7 @@
 {
   "name": "cesauth-tooling",
   "private": true,
-  "description": "Pinned CI tooling for cesauth. RFC 138: exists so npx wrangler resolves a chosen version, not the latest release.",
+  "description": "Pinned tooling for cesauth (RFC 138). Run npm ci at the repository root, then call node_modules/.bin/wrangler; npx would bypass the pin.",
   "devDependencies": {
     "wrangler": "4.131.2"
   }

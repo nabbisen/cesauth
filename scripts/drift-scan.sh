@@ -179,11 +179,22 @@ declare -a PATTERNS=(
     "install trunk( --locked)?\s*$	Trunk install without --version; pin it (RFC 131 C1-R5, DEPENDENCIES.md)"
     # wrangler (RFC 138 D2): the root package.json must pin wrangler exactly. A
     # range (^, ~, >) lets `npm install` move it and the lockfile moves with it.
-    # This does NOT ban `npx wrangler`, which is correct once a lockfile exists
-    # (RFC 138 §11.5). The literal quotes are escaped for this bash array. The
+    # `npx wrangler` itself is rejected in workflows by the next rule (RFC 138
+    # C1-138). The literal quotes are escaped for this bash array. The
     # exclusion scopes it to the root package.json alone -- never a lockfile,
     # never generated output such as crates/backend/build/package.json.
     "\"wrangler\": *\"[\\^~>]	root package.json must pin wrangler exactly, not a range (RFC 138 D2, DEPENDENCIES.md)	crates/|docs/|\.github/|README\.md|ROADMAP\.md"
+    # npx wrangler (RFC 138 C1-138): `npx` does not fail when the root install is
+    # missing -- it silently runs the npx cache's copy, or in CI fetches the
+    # latest release -- so the lockfile protects nothing a job forgets to install.
+    # Workflows call node_modules/.bin/wrangler, which fails loudly instead.
+    # Scoped by exclusion to .github/workflows: the other scan paths carry prose
+    # that names the phrase in order to warn against it.
+    # Known limits, recorded: a `#` earlier on the line hides a call, as in
+    # `run: echo "#" && npx wrangler`, because comment lines must not match. The
+    # Makefile and scripts/ are outside SCAN_PATHS, so this rule does not guard
+    # them, and nothing else does automatically.
+    "^[^#]*npx wrangler	npx wrangler bypasses the pin when the root install is missing; call node_modules/.bin/wrangler (RFC 138 C1-138)	crates/|docs/|README\.md|ROADMAP\.md|package\.json"
 )
 
 found=0

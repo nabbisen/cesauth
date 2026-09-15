@@ -15,9 +15,12 @@ documentation to cesauth.  For project philosophy and architecture, see
   (RFC 138). `wrangler.toml`'s `[build] command` installs
   `worker-build --version 0.8.4` itself, and `wrangler` is pinned by the
   repository root's `package.json`: run `npm ci` at the root, then invoke it as
-  `npx wrangler`. A global `npm install -g wrangler` resolves a different,
-  unpinned binary — on the machine RFC 138 was measured on, 4.97.0 against the
-  pinned 4.131.2.
+  `node_modules/.bin/wrangler`. Use neither `npx wrangler` nor a global
+  `npm install -g wrangler`. Without the root install, `npx` silently runs its
+  cache's copy or fetches the latest release, and a global resolves whatever is
+  installed — on the machine RFC 138 was measured on, 4.97.0 against the pinned
+  4.131.2. The local binary does not run at all without the install, which is
+  the point (RFC 138 C1-138).
 - For docs: `mdbook` (`cargo install mdbook --version 0.5.4 --locked`).
 
 ## Code formatting
@@ -77,7 +80,8 @@ cargo check -p cesauth-backend --target wasm32-unknown-unknown
 
 # Clippy — correctness lints are blocking; style is advisory
 cargo clippy -p cesauth-core -p cesauth-adapter-test -p cesauth-migrate-test \
-             -p cesauth-frontend --all-targets -- -D clippy::correctness
+             -p cesauth-frontend -p cesauth-backend -p cesauth-adapter-cloudflare \
+             --all-targets -- -D clippy::correctness
 
 # Dependency advisories, licenses, bans, sources
 cargo deny check
@@ -101,16 +105,16 @@ setting this repository cannot show; the table records what runs.
 | `cargo test -p cesauth-migrate-test --test migration_chain` | `test.yml` | none |
 | `cargo check -p cesauth-backend --target wasm32-unknown-unknown` | **no job of its own** | **Deliberate.** Covered in substance, and more strongly, by `worker-build.yml`'s `wrangler build`, which compiles the backend for wasm32 and builds the Worker |
 | `cargo check -p cesauth-frontend --features csr --target wasm32-unknown-unknown` | `csr-bundle-check.yml` | none |
-| `cargo clippy` over core, adapter-test, migrate-test, frontend | `clippy.yml` | Same four crates. **A shared gap, not a parity difference:** neither covers `cesauth-backend` or `cesauth-adapter-cloudflare` |
+| `cargo clippy` over core, adapter-test, migrate-test, frontend, backend, adapter-cloudflare | `clippy.yml` | none. RFC 138 C1-138 added `cesauth-backend` and `cesauth-adapter-cloudflare` to both, closing a gap the two sets had shared |
 | `cargo deny check` | `deny.yml` | Run through `EmbarkStudios/cargo-deny-action@v2.1.1` |
 | `cargo audit` | `audit.yml` | Run through `rustsec/audit-check@v2.0.0`; also on a schedule |
 | `bash scripts/drift-scan.sh` | `drift-scan.yml` | Runs with `--verbose`, on every pull request, no path filter |
 | `bash scripts/route-contracts-check.sh` | `route-contracts.yml` | none |
 | `mdbook build docs` | `docs.yml` | **Ran in no workflow before RFC 138.** `create-missing = false` makes a broken chapter link fail it |
 | `make build-frontend` | `trunk-release-build.yml`; also a step in `worker-build.yml` and `browser-tests.yml` | CI adds an assertion that the built filenames match what `leptos_shell.rs` requests |
-| `npx wrangler build` | `worker-build.yml` (`worker-build` job) | none. **Has not yet executed in CI** — it could not start until RFC 131 C1-R5 installed Trunk |
+| `node_modules/.bin/wrangler build` | `worker-build.yml` (`worker-build` job) | none. **Has not yet executed in CI** — it could not start until RFC 131 C1-R5 installed Trunk |
 | `bash scripts/runtime-smoke-check.sh` | `worker-build.yml` (`runtime-smoke` job) | none. **Has not yet executed in CI**, for the same reason |
-| `npx playwright test` in `e2e/`, against `npx wrangler dev` | `browser-tests.yml` | **Non-blocking until 0.84.0** (RFC 131 R5 §8) |
+| `npx playwright test` in `e2e/`, against `node_modules/.bin/wrangler dev` | `browser-tests.yml` | **Non-blocking until 0.84.0** (RFC 131 R5 §8) |
 | — | `bundle-size.yml` | **CI-only.** A gzip budget on a `wrangler deploy --dry-run` bundle; not in the described set |
 | — | `fuzz.yml` | **CI-only, deliberately outside the gate set.** Nightly toolchain; runs only on pull requests touching `crates/core/src/jwt/**` or `fuzz/**`, or by manual dispatch |
 
@@ -138,9 +142,12 @@ A gate is only as reproducible as the tool it runs. The convention
 - **Tools installed by command are pinned by version** — `cargo install … --version
   X --locked`, never `--locked` alone, which honours the *tool's* lockfile and
   still installs its latest release. Versions live in `DEPENDENCIES.md`.
-- **npm-installed tools are pinned by a committed lockfile *and* an install in
-  the same job.** `npx wrangler` resolves the root `package.json`'s pin only if a
-  root `npm ci` ran first in that job; otherwise npx fetches the latest release.
+- **npm-installed tools are pinned by a committed lockfile, and invoked from
+  `node_modules/.bin/`.** Run `npm ci` at the root, then call
+  `node_modules/.bin/wrangler`. Never `npx wrangler`: without the root install it
+  does not fail — it silently runs the npx cache's copy, or in CI fetches the
+  latest release (RFC 138 C1-138). The local binary does not exist without the
+  install, so a forgotten `npm ci` fails loudly.
 
 ## Adding a new route
 

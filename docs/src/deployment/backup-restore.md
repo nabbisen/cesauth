@@ -69,14 +69,19 @@ shell out to `wrangler`). Practical options:
        runs-on: ubuntu-latest
        steps:
          - uses: actions/checkout@v4
-         - name: Install wrangler
-           run: npm i -g wrangler
+         - uses: actions/setup-node@v4
+           with:
+             node-version: 22
+         # The wrangler pinned by this repository's root package.json
+         # (RFC 138), not a global install, which takes the latest release.
+         - name: Install wrangler (pinned)
+           run: npm ci
          - name: Export D1
            env:
              CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
              CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
            run: |
-             wrangler d1 export cesauth-prod --remote \
+             node_modules/.bin/wrangler d1 export cesauth-prod --remote \
                --output cesauth-prod-$(date +%Y%m%d).sql
          - name: Upload to off-Cloudflare storage
            run: |
