@@ -239,8 +239,11 @@ pub fn authenticate_token_client(
 ///   does.
 ///
 /// With Basic, a form `client_id` that disagrees with the header is one
-/// client presenting two identities, and is rejected (RFC 6749 §2.3: a client
-/// MUST NOT use more than one authentication method per request).
+/// client presenting two identities, and is rejected. So is a **non-empty form
+/// `client_secret`** alongside Basic, even when the `client_id`s agree: that is
+/// two authentication methods in one request (RFC 6749 §2.3: a client MUST NOT
+/// use more than one; RFC 137 C1-137). With Basic, the form `client_id` may be
+/// absent — the header identifies the client (RFC 6749 §4.1.3).
 ///
 /// Pure, taking primitives, so the precedence is testable on the host —
 /// `worker::Headers` cannot be constructed off wasm32.
@@ -254,6 +257,9 @@ pub fn resolve_token_client_credentials(
         let Some((basic_id, basic_secret)) = basic else {
             return Err(CoreError::InvalidClient);
         };
+        if form_client_secret.is_some_and(|s| !s.is_empty()) {
+            return Err(CoreError::InvalidClient);
+        }
         if let Some(form_id) = form_client_id {
             if form_id != basic_id {
                 return Err(CoreError::InvalidClient);

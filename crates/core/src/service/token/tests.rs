@@ -742,4 +742,55 @@ mod id_token_tests {
         let fam = families.peek(&fam_x()).await.unwrap().unwrap();
         assert_ne!(fam.current_jti.as_str(), "j-1", "the family must have rotated");
     }
+
+    // ── RFC 137 C1-137: a Basic-only confidential client, no body client_id ──
+
+    fn basic_only_request(grant_type: &str, refresh_token: Option<&str>) -> crate::oidc::token::TokenRequest {
+        crate::oidc::token::TokenRequest {
+            grant_type:    grant_type.to_owned(),
+            code:          Some("code-1".to_owned()),
+            redirect_uri:  Some("https://app.test/cb".to_owned()),
+            client_id:     None,
+            client_secret: None,
+            code_verifier: Some(VERIFIER.to_owned()),
+            refresh_token: refresh_token.map(str::to_owned),
+            scope:         None,
+        }
+    }
+
+    /// The `/token` request path as the route runs it — classify, then resolve —
+    /// for a client that sends HTTP Basic and no body `client_id`.
+    fn resolve_basic_only(req: &crate::oidc::token::TokenRequest) -> (String, Option<String>) {
+        use crate::oidc::token::TokenGrant;
+        let body_client_id = match req.classify_with_authorization(true).expect("classify") {
+            TokenGrant::AuthorizationCode(g) => g.client_id,
+            TokenGrant::RefreshToken(g)      => g.client_id,
+        };
+        assert_eq!(body_client_id, None, "the request carries no body client_id");
+        crate::service::client_auth::resolve_token_client_credentials(
+            true, Some(("c-a", TEST_SECRET)), body_client_id, req.client_secret.as_deref(),
+        ).expect("resolve")
+    }
+
+    #[tokio::test]
+    async fn basic_only_confidential_client_redeems_a_code_without_a_body_client_id() {
+        let clients = clients_of(vec![("c-a", confidential_client("c-a"))]);
+        let codes   = codes_issued_to("c-a");
+        let (client_id, secret) = resolve_basic_only(&basic_only_request("authorization_code", None));
+        let resp = redeem(&clients, &codes, &client_id, secret.as_deref()).await
+            .expect("a Basic-only confidential client must redeem its code");
+        assert!(resp.refresh_token.is_some());
+    }
+
+    #[tokio::test]
+    async fn basic_only_confidential_client_rotates_a_family_without_a_body_client_id() {
+        let clients = clients_of(vec![("c-a", confidential_client("c-a"))]);
+        let (families, rt) = family_issued_to("c-a").await;
+        let (client_id, secret) = resolve_basic_only(&basic_only_request("refresh_token", Some(&rt)));
+        let resp = refresh(&clients, &families, &rt, &client_id, secret.as_deref()).await
+            .expect("a Basic-only confidential client must rotate its family");
+        assert!(resp.refresh_token.is_some());
+        let fam = families.peek(&fam_x()).await.unwrap().unwrap();
+        assert_ne!(fam.current_jti.as_str(), "j-1", "the family must have rotated");
+    }
 }

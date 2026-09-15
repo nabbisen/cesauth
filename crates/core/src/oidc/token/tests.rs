@@ -69,7 +69,7 @@ fn classify_auth_code_success() {
         TokenGrant::AuthorizationCode(ag) => {
             assert_eq!(ag.code,          "code-abc");
             assert_eq!(ag.redirect_uri,  "https://app.example/callback");
-            assert_eq!(ag.client_id,     "client-1");
+            assert_eq!(ag.client_id,     Some("client-1"));
             assert_eq!(ag.code_verifier, "verifier-xyz");
         }
         other => panic!("expected AuthorizationCode, got {other:?}"),
@@ -83,7 +83,7 @@ fn classify_refresh_success() {
     match g {
         TokenGrant::RefreshToken(rg) => {
             assert_eq!(rg.refresh_token, "rt-token-abc");
-            assert_eq!(rg.client_id,     "client-1");
+            assert_eq!(rg.client_id,     Some("client-1"));
             assert!(rg.scope.is_none());
         }
         other => panic!("expected RefreshToken, got {other:?}"),
@@ -168,4 +168,48 @@ fn token_error_serializes_snake_case() {
         serde_json::to_string(&TokenError::InvalidRequest).unwrap(),
         "\"invalid_request\""
     );
+}
+
+// ── RFC 137 C1-137: client_id is optional only under an Authorization header ──
+
+fn c1_137_req(grant_type: &str, client_id: Option<&str>) -> crate::oidc::token::TokenRequest {
+    crate::oidc::token::TokenRequest {
+        grant_type:    grant_type.to_owned(),
+        code:          Some("code-1".to_owned()),
+        redirect_uri:  Some("https://app.test/cb".to_owned()),
+        client_id:     client_id.map(str::to_owned),
+        client_secret: None,
+        code_verifier: Some("verifier".to_owned()),
+        refresh_token: Some("rt".to_owned()),
+        scope:         None,
+    }
+}
+
+/// A client authenticating with HTTP Basic need not repeat `client_id` in the
+/// body, on either grant (RFC 6749 §4.1.3).
+#[test]
+fn classify_with_authorization_header_allows_a_missing_client_id_on_both_grants() {
+    use crate::oidc::token::TokenGrant;
+    match c1_137_req("authorization_code", None).classify_with_authorization(true) {
+        Ok(TokenGrant::AuthorizationCode(g)) => assert_eq!(g.client_id, None),
+        other => panic!("expected an authorization_code grant, got {other:?}"),
+    }
+    match c1_137_req("refresh_token", None).classify_with_authorization(true) {
+        Ok(TokenGrant::RefreshToken(g)) => assert_eq!(g.client_id, None),
+        other => panic!("expected a refresh_token grant, got {other:?}"),
+    }
+}
+
+/// Without an `Authorization` header, a missing `client_id` is still
+/// `invalid_request` — unchanged, and identical to `classify()`.
+#[test]
+fn classify_without_authorization_header_still_requires_client_id() {
+    use crate::error::CoreError;
+    for gt in ["authorization_code", "refresh_token"] {
+        let req = c1_137_req(gt, None);
+        assert!(matches!(req.classify_with_authorization(false),
+            Err(CoreError::InvalidRequest("client_id is required"))), "{gt}");
+        assert!(matches!(req.classify(),
+            Err(CoreError::InvalidRequest("client_id is required"))), "{gt}: classify()");
+    }
 }

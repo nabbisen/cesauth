@@ -317,3 +317,43 @@ fn token_form_credentials_treat_an_empty_secret_as_absent() {
     ).expect("a public client with no secret must resolve");
     assert_eq!(r, ("demo-cli".to_owned(), None));
 }
+
+// -----------------------------------------------------------------------
+// RFC 137 C1-137 — one authentication method per request; Basic identifies
+// the client without a body client_id.
+// -----------------------------------------------------------------------
+
+/// Basic plus a non-empty form `client_secret` is two methods, even when the
+/// identities agree (RFC 6749 §2.3).
+#[test]
+fn token_basic_header_with_a_form_client_secret_is_invalid_client() {
+    let r = crate::service::client_auth::resolve_token_client_credentials(
+        true, Some(("client-a", "secret-a")), Some("client-a"), Some("secret-a"),
+    );
+    assert!(matches!(r, Err(crate::error::CoreError::InvalidClient)), "got {r:?}");
+}
+
+/// An empty form `client_secret` is not a second method.
+#[test]
+fn token_basic_header_with_an_empty_form_client_secret_resolves() {
+    let r = crate::service::client_auth::resolve_token_client_credentials(
+        true, Some(("client-a", "secret-a")), None, Some(""),
+    ).expect("an empty form secret is absent");
+    assert_eq!(r, ("client-a".to_owned(), Some("secret-a".to_owned())));
+}
+
+/// Basic alone, no body `client_id`: the header supplies the effective client.
+#[test]
+fn token_basic_header_without_a_form_client_id_resolves_to_the_header_identity() {
+    let r = crate::service::client_auth::resolve_token_client_credentials(
+        true, Some(("client-a", "secret-a")), None, None,
+    ).expect("Basic alone identifies the client");
+    assert_eq!(r, ("client-a".to_owned(), Some("secret-a".to_owned())));
+}
+
+/// No header and no body `client_id` is still `invalid_request`, unchanged.
+#[test]
+fn token_no_header_and_no_client_id_is_still_invalid_request() {
+    let r = crate::service::client_auth::resolve_token_client_credentials(false, None, None, None);
+    assert!(matches!(r, Err(crate::error::CoreError::InvalidRequest(_))), "got {r:?}");
+}

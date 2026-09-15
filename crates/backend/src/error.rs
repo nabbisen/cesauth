@@ -100,6 +100,25 @@ pub fn oauth_error_response(err: &CoreError) -> Result<Response> {
     Ok(resp)
 }
 
+/// **RFC 137 C1-137** — the `WWW-Authenticate` challenge a `/token` error
+/// response must carry, if any.
+///
+/// RFC 6749 §5.2: when the client attempted to authenticate with the
+/// `Authorization` header, an `invalid_client` response MUST be 401 **and**
+/// include `WWW-Authenticate` matching the scheme used. `/token` accepts only
+/// Basic there, so the value is the one `/introspect` already sends. Pure,
+/// because `oauth_error_response` cannot know whether the header was sent; the
+/// status mapping is unchanged.
+pub(crate) fn token_www_authenticate(
+    err:                          &CoreError,
+    authorization_header_present: bool,
+) -> Option<&'static str> {
+    match err {
+        CoreError::InvalidClient if authorization_header_present => Some(r#"Basic realm="cesauth""#),
+        _ => None,
+    }
+}
+
 /// Same shape but for the WWW-Authenticate Bearer realm per RFC 6750.
 /// Use on protected resource endpoints, not on `/token`.
 pub fn bearer_error_response(code: &str, status: u16) -> Result<Response> {
@@ -295,5 +314,33 @@ mod tests {
         for s in &all {
             assert!(seen.insert(*s), "duplicate kind value: {s}");
         }
+    }
+}
+
+#[cfg(test)]
+mod token_www_authenticate_tests {
+    use super::*;
+
+    #[test]
+    fn invalid_client_under_an_authorization_header_gets_the_basic_challenge() {
+        assert_eq!(token_www_authenticate(&CoreError::InvalidClient, true),
+                   Some(r#"Basic realm="cesauth""#));
+    }
+
+    #[test]
+    fn invalid_client_without_an_authorization_header_gets_no_challenge() {
+        assert_eq!(token_www_authenticate(&CoreError::InvalidClient, false), None);
+    }
+
+    #[test]
+    fn other_errors_never_get_a_challenge_even_under_the_header() {
+        for e in [CoreError::InvalidGrant("x"), CoreError::InvalidRequest("x"), CoreError::Internal] {
+            assert_eq!(token_www_authenticate(&e, true), None, "{e:?}");
+        }
+    }
+
+    #[test]
+    fn the_invalid_client_status_mapping_is_unchanged() {
+        assert_eq!(oauth_error_code_status(&CoreError::InvalidClient), ("invalid_client", 401));
     }
 }

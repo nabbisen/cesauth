@@ -97,9 +97,9 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
         iss:              &cfg.issuer,
     };
 
-    let grant = match req_in.classify() {
+    let grant = match req_in.classify_with_authorization(authorization_header_present) {
         Ok(g)  => g,
-        Err(e) => return oauth_error_response(&e),
+        Err(e) => return token_error_response(&e, authorization_header_present),
     };
 
     // RFC 137 T2/T3: which client this request speaks for, and the secret it
@@ -114,7 +114,7 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
             req_in.client_secret.as_deref(),
         ) {
             Ok(v)  => v,
-            Err(e) => return oauth_error_response(&e),
+            Err(e) => return token_error_response(&e, authorization_header_present),
         };
 
     match grant {
@@ -135,7 +135,7 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
                 Ok(tr) => {
                     audit::write_owned(
                         &ctx.env, EventKind::TokenIssued,
-                        None, Some(g.client_id.to_owned()), None,
+                        None, Some(client_id.clone()), None,
                     ).await.ok();
                     let mut resp = Response::from_json(&tr)?;
                     let _ = resp.headers_mut().set("cache-control", "no-store");
@@ -145,13 +145,13 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
                 Err(e) => {
                     log::emit(&cfg.log, Level::Warn, Category::Auth,
                         &format!("exchange_code failed: {e:?}"),
-                        Some(&g.client_id));
+                        Some(&client_id));
                     audit::write_owned(
                         &ctx.env, EventKind::AuthFailed,
-                        None, Some(g.client_id.to_owned()),
+                        None, Some(client_id.clone()),
                         Some(format!("{e:?}")),
                     ).await.ok();
-                    oauth_error_response(&e)
+                    token_error_response(&e, authorization_header_present)
                 }
             }
         }
@@ -170,7 +170,7 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
                 Ok(tr) => {
                     audit::write_owned(
                         &ctx.env, EventKind::TokenRefreshed,
-                        None, Some(g.client_id.to_owned()), None,
+                        None, Some(client_id.clone()), None,
                     ).await.ok();
                     let mut resp = Response::from_json(&tr)?;
                     let _ = resp.headers_mut().set("cache-control", "no-store");
@@ -179,7 +179,7 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
                 Err(e) => {
                     log::emit(&cfg.log, Level::Warn, Category::Auth,
                         &format!("rotate_refresh failed: {e:?}"),
-                        Some(&g.client_id));
+                        Some(&client_id));
 
                     // v0.34.0: dispatch on the variant. A reuse
                     // detection emits the dedicated audit event
@@ -200,13 +200,13 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
                             let family_id = decode_family_id_lossy(g.refresh_token);
                             let payload = serde_json::json!({
                                 "family_id":     family_id,
-                                "client_id":     g.client_id,
+                                "client_id":     client_id,
                                 "presented_jti": reused_jti,
                                 "was_retired":   was_retired,
                             }).to_string();
                             audit::write_owned(
                                 &ctx.env, EventKind::RefreshTokenReuseDetected,
-                                None, Some(g.client_id.to_owned()),
+                                None, Some(client_id.clone()),
                                 Some(payload),
                             ).await.ok();
                         }
@@ -221,30 +221,45 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
                             let family_id = decode_family_id_lossy(g.refresh_token);
                             let payload = serde_json::json!({
                                 "family_id":        family_id,
-                                "client_id":        g.client_id,
+                                "client_id":        client_id,
                                 "threshold":        cfg.refresh_rate_limit_threshold,
                                 "window_secs":      cfg.refresh_rate_limit_window_secs,
                                 "retry_after_secs": retry_after_secs,
                             }).to_string();
                             audit::write_owned(
                                 &ctx.env, EventKind::RefreshRateLimited,
-                                None, Some(g.client_id.to_owned()),
+                                None, Some(client_id.clone()),
                                 Some(payload),
                             ).await.ok();
                         }
                         _ => {
                             audit::write_owned(
                                 &ctx.env, EventKind::TokenRefreshRejected,
-                                None, Some(g.client_id.to_owned()),
+                                None, Some(client_id.clone()),
                                 Some(format!("{e:?}")),
                             ).await.ok();
                         }
                     }
-                    oauth_error_response(&e)
+                    token_error_response(&e, authorization_header_present)
                 }
             }
         }
     }
+}
+
+/// **RFC 137 C1-137** — `oauth_error_response`, plus the `WWW-Authenticate`
+/// challenge RFC 6749 §5.2 requires on `invalid_client` when the client
+/// authenticated with the `Authorization` header. The decision is the pure
+/// `error::token_www_authenticate`; the status mapping is unchanged.
+fn token_error_response(
+    err:                          &cesauth_core::CoreError,
+    authorization_header_present: bool,
+) -> Result<Response> {
+    let mut resp = oauth_error_response(err)?;
+    if let Some(challenge) = crate::error::token_www_authenticate(err, authorization_header_present) {
+        let _ = resp.headers_mut().set("www-authenticate", challenge);
+    }
+    Ok(resp)
 }
 
 /// Audit-only lossy decode of a refresh token's family_id. The
