@@ -61,6 +61,38 @@ Two consequences for the work here:
   says its fields come "from `Challenge::AuthCode`"; that must include the one
   the current code drops.
 
+## 2b. Premise corrections — measured before the handoff (2026-09-15)
+
+RFC 137 has shipped (v0.83.1), so §2a's missing checks now exist. Measuring
+the code again before writing the handoff found four more premises that do not
+hold. **The handoff waits on the first.**
+
+1. **§3's "expiry = absence" is not implemented by either store.** The
+   `AuthChallengeStore` contract requires it; the Durable Object and the
+   in-memory store both return expired entries, and only a DO alarm, whose
+   failures are discarded, removes them. No service code checks `expires_at` on
+   an authorization code. **RFC 140** fixes this and is sequenced ahead of this
+   RFC, on the same "fix first, then encode" rule as RFC 137. §5 invariant 4 and
+   §7.3's third clause describe behaviour RFC 140 introduces.
+2. **There are no PKCE property tests to extend** (§10). The `proptest!` files
+   are `jwt/proptests.rs`, `oidc/authorization/redirect_uri_proptests.rs`,
+   `types/ids/tests.rs` and `types/secret/tests.rs`
+   (`grep -rln 'proptest!' crates`). PKCE has example tests only
+   (`oidc/pkce/tests.rs`). The PKCE property test is new work, not an extension.
+3. **RFC 121 is Proposed, not accepted.** §4 and §7.3 share a harness with it.
+   This RFC builds its store state-machine test for `AuthChallengeStore` alone.
+   RFC 121 may generalise it later, and nothing here waits on RFC 121.
+4. **`MintInput` cannot be the sole input of "the token builders."**
+   `rotate_refresh` signs access tokens too (`service/token.rs:404`). The
+   typestate governs the **code-exchange** mint only. §14 criterion 1 is about
+   constructing `MintInput`, which still holds; the §7.1 sentence "cannot be
+   written" is scoped to the exchange path.
+
+**One design ruling carried into the handoff.** After RFC 137, authentication
+precedes `take`. `bind_client` must therefore take proof that the client
+authenticated, not a bare `&ClientId`. A bare `ClientId` could be the code's own
+stored id, and the transition would then compare a value with itself.
+
 ## 3. Background
 
 Codes live as `Challenge::AuthCode` in the AuthChallenge DO. The store

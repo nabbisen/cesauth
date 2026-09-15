@@ -50,6 +50,7 @@ Full policy: `done/000-rfc-lifecycle-policy.md`.
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
 | [139](./proposed/139-refresh-token-lifetime.md) | **Refresh tokens never expire.** `REFRESH_TOKEN_TTL_SECS` (30 days) is written into the unsigned token, ignored on rotation, absent from `FamilyState`, and unenforced by the DO, its oracle and the cron; introspection reports the token's own client-editable expiry as `exp`. Found measuring the refresh grant for RFC 137 | P1 | after 137 |
+| [140](./proposed/140-challenge-expiry-at-read.md) | **Challenge stores do not enforce expiry at read.** Neither the AuthChallenge DO nor the in-memory store checks `expires_at` on `peek`/`take`; only a DO alarm deletes, and it discards its own delete failure. Authorization codes, WebAuthn nonces, the TOTP gate (whose re-park extends an expired gate by 60 s) and parked ARs are exposed. Found measuring the store contract for RFC 117 | P1 | ahead of 117 |
 
 ### Other proposed
 
@@ -189,7 +190,7 @@ discussion happened.
 
 ## Adding a new RFC
 
-Next number: **140**. Create `rfcs/proposed/140-slug.md` with `**Status.** Proposed`
+Next number: **141**. Create `rfcs/proposed/141-slug.md` with `**Status.** Proposed`
 and add a row above, in the same commit.
 
 Transitions (folder is authoritative; update Status and this index in the same
