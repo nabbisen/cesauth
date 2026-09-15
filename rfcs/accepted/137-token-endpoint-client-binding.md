@@ -340,3 +340,19 @@ Credential-resolution rejections — a malformed Basic header, two identities �
 return before the service and write **no audit event**, while a wrong secret
 does. That asymmetry is RFC 123's subject (audit event completeness), not a P0
 authentication fix.
+
+### 13.4 C1-137 accepted (`5a71d1c`)
+
+All three gaps are closed and verified live, apart from the confidential
+Basic-only path. Two service tests prove that path, using a hashed secret
+through the real service.
+
+- **Any `Authorization` header gets `Basic realm="cesauth"` on
+  `invalid_client`**, including a non-Basic scheme. A challenge names the scheme
+  the server accepts (RFC 7235 §4.1), and `/token` accepts only Basic.
+- **Recorded for the registered-method work (§12.7):** a `Public` client with no
+  stored hash is accepted **whatever secret it presents**, in a Basic header or
+  in the form. `authenticate_token_client` returns before it reads the secret.
+  This is not a bypass, because there is no secret to get past and PKCE binds
+  the code. But the server accepts a confidential-style authentication against
+  a public registration. That is the question of matching the registered method.

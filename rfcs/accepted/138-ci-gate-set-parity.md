@@ -355,3 +355,16 @@ paths and are held by C1-138's mechanical assertion instead.
   `wrangler build` covers it, and more strongly.
 - Workflow YAML validity is unverified locally; no YAML parser is installed.
   GitHub's first run is the evidence.
+
+### 12.5 C1-138 accepted (`3d32fcc`)
+
+- `scripts/bundle-bloat.sh:45`, listed in §12.3 as a call site, is text inside a
+  heredoc that generates a markdown snapshot. The script never runs wrangler.
+  The text now shows the pinned form.
+- drift-scan lists matching files only under `--verbose`, and CI runs it that
+  way (`drift-scan.yml:25`).
+- **Follow-up, filler:** the operator pages under `docs/src/deployment/` write
+  commands as bare `wrangler …`, and only *Prerequisites* says those mean the
+  pinned binary. Its `PATH` note does not fail loud: without `npm ci`, `wrangler`
+  falls through to a global. Each deployment page that runs wrangler gets a
+  short callout instead of hundreds of rewritten commands.
