@@ -1,6 +1,6 @@
 # RFC 139 — Refresh tokens never expire
 
-**Status.** Proposed — needs owner authorization.
+**Status.** Accepted — approved by the owner 2026-09-16, as ruled in §9 and §10. Handoff dispatched.
 **Author.** Architect · **Date.** 2026-09-15
 **Priority.** **P1, security.** A leaked refresh token is a permanent bearer
 credential.
@@ -208,6 +208,50 @@ After RFC 140, which is authorized and dispatched. Both change
 `service/token.rs` and its tests, so they run one after the other, not in
 parallel.
 
-**Status after these rulings:** still Proposed. The design questions are
-answered; the RFC itself needs the owner's authorization before its handoff is
-written.
+**Authorized by the owner on 2026-09-16**, with these rulings and a 0.84.0
+target.
+
+## 10. Rulings made while writing the handoff (2026-09-16)
+
+Measuring the refresh path for the handoff settled four things §9 left
+implicit.
+
+### 10.1 The store records *why* a family died, not *when* it would
+
+§9.2's rule stands: no deadline is stored. But an expired family is revoked
+(§9.3), and introspection classifies a revoked family by its forensic fields:
+`reused_jti` present means `ReuseDetected`, otherwise `Explicit`
+(`service/introspect.rs`). An expiry would therefore be reported as an
+**explicit revocation**, which is false. So `FamilyState` gains
+`expired: Option<LifetimeExpiry>` (`Idle` | `Absolute`), `#[serde(default)]`,
+set in the same write as `revoked_at`. That is an `Option` defaulting to
+`None`, exactly like the v0.34.0 reuse fields beside it. It is not a legacy
+branch, because a family without it simply has not expired.
+
+### 10.2 Check order: revoked, absolute, idle, then the jti
+
+This is the session DO's order (`adapter-cloudflare/src/active_session.rs`,
+`Command::Touch`). An expired family presented with a retired jti is
+**expired, not reuse-detected**. It is dead by policy either way, and the reuse
+forensics describe an attack inside a live family. The reuse fields stay `None`.
+
+### 10.3 Introspection classifies expiry as its own state, without writing
+
+`FamilyClassification` gains `Expired`, reported when either:
+
+- `expired` is set (the DO already revoked it); or
+- the family is not revoked but `lifetime(now, policy)` is expired (nobody has
+  rotated since the deadline passed).
+
+Introspection stays read-only in both cases. `revoked_at` is surfaced only when
+stored. This adds one value to the `x_cesauth` extension and changes no
+standard field. The introspection input therefore carries the lifetime policy,
+and `introspect_refresh`'s ignored `_now` becomes used.
+
+### 10.4 No new audit event kind
+
+An expired rotation surfaces as the existing generic refresh rejection. The
+token route's comment already lists "expired" among those causes. Dedicated
+`RefreshIdleTimeout` / `RefreshAbsoluteTimeout` events, mirroring
+`SessionIdleTimeout` / `SessionAbsoluteTimeout`, belong to RFC 123 (audit event
+completeness).

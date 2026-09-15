@@ -49,7 +49,6 @@ Full policy: `done/000-rfc-lifecycle-policy.md`.
 
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
-| [139](./proposed/139-refresh-token-lifetime.md) | **Refresh tokens never expire.** `REFRESH_TOKEN_TTL_SECS` (30 days) is written into the unsigned token, ignored on rotation, absent from `FamilyState`, and unenforced by the DO, its oracle and the cron; introspection reports the token's own client-editable expiry as `exp`. Found measuring the refresh grant for RFC 137. **Design ruled (§9): idle window + absolute cap applied at check time, no stored expiry, expiry field removed from the token; minor. Awaits owner authorization** | P1 | after 140 |
 
 ### Other proposed
 
@@ -105,6 +104,7 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 | ID | Title | Tier | Dispatched | Depends on |
 |----|-------|------|---|---|
 | [140](./accepted/140-challenge-expiry-at-read.md) | **Challenge stores enforce expiry at read** — `peek`/`take` take `now_unix`; neither the AuthChallenge DO nor the in-memory store honoured the contract's "past `expires_at` is absent" clause, and the alarm discarded its own delete failure | P1 | 2026-09-15 | — |
+| [139](./accepted/139-refresh-token-lifetime.md) | **Refresh-token lifetime** — idle window plus absolute cap, applied at rotation from the family's own `created_at`/`last_rotated_at` (the session model); expiry revokes atomically and records its cause; the unsigned expiry leaves the token; introspection classifies `expired`. Minor, 0.84.0 | P1 | 2026-09-16 | 137, 140 |
 | [117](./accepted/117-authorization-code-lifecycle-assurance.md) | Authorization-code lifecycle assurance — typestate pipeline making "mint before validation" unwritable, plus store-contract property tests. **Premise corrected: see §2a — one of the four checks it meant to encode does not exist (RFC 137)** | P0 | after 140 (§2b) | 116, 137, **140** |
 | [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | R2a shipped v0.82.0; **R5b–e shipped v0.83.0** (+ C1-R5); R2b awaits 132 §13 q1; R3 awaits 132 §13 q1 | 130, 132, 134 |
 
