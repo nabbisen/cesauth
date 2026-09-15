@@ -33,7 +33,7 @@ async fn access_token_with_aud_equal_to_client_id_introspects_active() {
     let token = make_token_with_aud(AUD);
     let resp = introspect_token(
         &store, &keys, ISS, 30,
-        &IntrospectInput { token: &token, hint: None, now_unix: 200 },
+        &IntrospectInput { token: &token, hint: None, now_unix: 200, refresh_lifetime: super::test_lifetime() },
     ).await.unwrap();
     assert!(resp.active,
         "RFC 009 regression: access token with aud=client_id must be active");
@@ -54,7 +54,7 @@ async fn access_token_with_aud_equal_to_iss_is_still_active() {
     let token = make_token_with_aud(ISS);
     let resp = introspect_token(
         &store, &keys, ISS, 30,
-        &IntrospectInput { token: &token, hint: None, now_unix: 200 },
+        &IntrospectInput { token: &token, hint: None, now_unix: 200, refresh_lifetime: super::test_lifetime() },
     ).await.unwrap();
     assert!(resp.active, "token with aud==iss must still be active");
 }
@@ -72,7 +72,7 @@ async fn introspect_response_aud_reflects_token_aud_claim() {
     let token = make_token_with_aud("resource-server-A");
     let resp = introspect_token(
         &store, &keys, ISS, 30,
-        &IntrospectInput { token: &token, hint: None, now_unix: 200 },
+        &IntrospectInput { token: &token, hint: None, now_unix: 200, refresh_lifetime: super::test_lifetime() },
     ).await.unwrap();
     assert!(resp.active);
     assert_eq!(resp.aud.as_deref(), Some("resource-server-A"));

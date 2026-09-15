@@ -93,7 +93,7 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
     };
     let tok_cfg = token_service::TokenConfig {
         access_ttl_secs:  cfg.access_token_ttl_secs,
-        refresh_ttl_secs: cfg.refresh_token_ttl_secs,
+        refresh_lifetime: cfg.refresh_lifetime,
         iss:              &cfg.issuer,
     };
 

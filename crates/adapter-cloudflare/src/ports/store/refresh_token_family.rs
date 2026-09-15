@@ -1,7 +1,7 @@
 //! `RefreshTokenFamilyStore` DO adapter.
 
 use cesauth_core::ports::store::{
-    FamilyInit, FamilyState, RefreshTokenFamilyStore, RotateOutcome,
+    FamilyInit, FamilyState, LifetimeExpiry, RefreshLifetime, RefreshTokenFamilyStore, RotateOutcome,
 };
 use cesauth_core::ports::{PortError, PortResult};
 use serde::{Deserialize, Serialize};
@@ -14,7 +14,8 @@ use super::rpc_call;
 #[serde(tag = "op", rename_all = "snake_case")]
 enum FamilyCmd<'a> {
     Init   { init:          &'a FamilyInit },
-    Rotate { presented_jti: &'a cesauth_core::types::Jti, new_jti: &'a cesauth_core::types::Jti, now_unix: i64 },
+    // RFC 139: must match `Command::Rotate` in `refresh_token_family.rs` (the DO).
+    Rotate { presented_jti: &'a cesauth_core::types::Jti, new_jti: &'a cesauth_core::types::Jti, now_unix: i64, absolute_secs: i64, idle_secs: i64 },
     Peek,
     Revoke { now_unix:      i64 },
 }
@@ -29,6 +30,8 @@ enum FamilyReply {
     /// distinct audit event (`refresh_token_reuse_detected`) and so
     /// `peek` results post-revocation surface the cause.
     ReusedAndRevoked { reused_jti: cesauth_core::types::Jti, was_retired: bool },
+    /// RFC 139: past the absolute cap or idle window; the DO revoked it.
+    Expired { kind: LifetimeExpiry },
     NotInitialized,
     Conflict,
     State { state: FamilyState },
@@ -77,11 +80,18 @@ impl RefreshTokenFamilyStore for CloudflareRefreshTokenFamilyStore<'_> {
         presented_jti: &cesauth_core::types::Jti,
         new_jti:       &cesauth_core::types::Jti,
         now_unix:      i64,
+        lifetime:      &RefreshLifetime,
     ) -> PortResult<RotateOutcome> {
         let stub  = self.stub(family_id.as_str())?;
         let reply: FamilyReply = rpc_call(
             &stub,
-            &FamilyCmd::Rotate { presented_jti, new_jti, now_unix },
+            &FamilyCmd::Rotate {
+                presented_jti,
+                new_jti,
+                now_unix,
+                absolute_secs: lifetime.absolute_secs(),
+                idle_secs:     lifetime.idle_secs(),
+            },
         ).await?;
         match reply {
             FamilyReply::Rotated { new_current_jti } =>
@@ -89,6 +99,7 @@ impl RefreshTokenFamilyStore for CloudflareRefreshTokenFamilyStore<'_> {
             FamilyReply::AlreadyRevoked              => Ok(RotateOutcome::AlreadyRevoked),
             FamilyReply::ReusedAndRevoked { reused_jti, was_retired } =>
                 Ok(RotateOutcome::ReusedAndRevoked { reused_jti, was_retired }),
+            FamilyReply::Expired { kind }            => Ok(RotateOutcome::Expired(kind)),
             FamilyReply::NotInitialized              => Err(PortError::NotFound),
             _                                        => Err(PortError::Unavailable),
         }

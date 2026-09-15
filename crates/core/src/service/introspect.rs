@@ -90,7 +90,7 @@ where
                 introspect_access(keys, iss, leeway_secs, input.token).await
             }
             TokenKind::Refresh => {
-                introspect_refresh(families, input.token, input.now_unix).await
+                introspect_refresh(families, input.token, input.now_unix, &input.refresh_lifetime).await
             }
         };
         match result {
@@ -285,7 +285,8 @@ async fn introspect_access(
 async fn introspect_refresh<FS>(
     families: &FS,
     token:    &str,
-    _now:     i64,
+    now:      i64,
+    lifetime: &crate::ports::store::RefreshLifetime,
 ) -> CoreResult<Option<IntrospectionResponse>>
 where
     FS: RefreshTokenFamilyStore,
@@ -294,7 +295,7 @@ where
         CesauthIntrospectionExt, FamilyClassification, RevokeReason,
     };
 
-    let Some((family_id, presented_jti, exp)) = decode_refresh_token(token) else {
+    let Some((family_id, presented_jti)) = decode_refresh_token(token) else {
         // Token didn't parse as a refresh token shape.
         // Don't surface x_cesauth — we have no signal to
         // give. Return None so the orchestrator falls
@@ -323,6 +324,25 @@ where
             },
         )));
     };
+
+    // **RFC 139 §10.3** — expiry is its own classification, reported
+    // read-only. Either the store already expired the family at a rotation
+    // (`expired` is set, together with `revoked_at`), or nothing has rotated
+    // it since a deadline passed — decided by core's one function. In the
+    // second case nothing is written: introspection never mutates a family.
+    // `revoked_at` is surfaced only when it is stored.
+    let past_a_deadline = fam.revoked_at.is_none()
+        && matches!(fam.lifetime(now, lifetime), crate::ports::store::Lifetime::Expired(_));
+    if fam.expired.is_some() || past_a_deadline {
+        return Ok(Some(IntrospectionResponse::inactive_with_ext(
+            CesauthIntrospectionExt {
+                family_state:  Some(FamilyClassification::Expired),
+                revoked_at:    fam.revoked_at,
+                revoke_reason: None,
+                current_jti:   None,
+            },
+        )));
+    }
 
     // **v0.46.0** — revoked-family path now surfaces
     // revocation metadata. Pre-v0.46.0 we returned a
@@ -401,7 +421,9 @@ where
         fam.user_id.to_string(),
         presented_jti.to_string(),
         fam.created_at,
-        exp,
+        // RFC 139 §9.4: the family's earlier deadline under the current
+        // policy — never a value the (unsigned) token carries.
+        fam.deadline(lifetime),
     )))
 }
 
@@ -409,14 +431,14 @@ where
 /// without fate-sharing on the rotation path. The authoritative
 /// decoder lives there; this is a duplicate of the read-side
 /// to keep introspection independent.
-fn decode_refresh_token(token: &str) -> Option<(FamilyId, Jti, i64)> {
+fn decode_refresh_token(token: &str) -> Option<(FamilyId, Jti)> {
     let bytes = URL_SAFE_NO_PAD.decode(token.as_bytes()).ok()?;
     let s = std::str::from_utf8(&bytes).ok()?;
-    let mut parts = s.splitn(3, '.');
-    let family_id = FamilyId::from_storage(parts.next()?.to_owned());
-    let jti       = Jti::from_storage(parts.next()?.to_owned());
-    let exp       = parts.next()?.parse::<i64>().ok()?;
-    Some((family_id, jti, exp))
+    // Exactly two parts (RFC 139 §9.4). A third part — the removed unsigned
+    // expiry, or anything else — means this is not a refresh token.
+    let parts: Vec<&str> = s.split('.').collect();
+    let [family_id, jti] = parts.as_slice() else { return None };
+    Some((FamilyId::from_storage((*family_id).to_owned()), Jti::from_storage((*jti).to_owned())))
 }
 
 #[cfg(test)]

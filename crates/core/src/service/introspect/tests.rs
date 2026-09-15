@@ -43,6 +43,7 @@ impl RefreshTokenFamilyStore for StubFamilyStore {
             reused_jti:        None,
             reused_at:         None,
             reuse_was_retired: None,
+            expired:           None,
             auth_time:         init.auth_time,
         });
         Ok(())
@@ -50,6 +51,7 @@ impl RefreshTokenFamilyStore for StubFamilyStore {
 
     async fn rotate(
         &self, _family_id: &crate::types::FamilyId, _presented_jti: &crate::types::Jti, _new_jti: &crate::types::Jti, _now_unix: i64,
+        _lifetime: &crate::ports::store::RefreshLifetime,
     ) -> PortResult<RotateOutcome> {
         unimplemented!("introspect_token must not call rotate")
     }
@@ -70,8 +72,9 @@ impl RefreshTokenFamilyStore for StubFamilyStore {
     }
 }
 
-fn encode_token(family_id: &str, jti: &str, exp: i64) -> String {
-    let raw = format!("{family_id}.{jti}.{exp}");
+/// The RFC 139 refresh-token format: `base64url("{family_id}.{jti}")`.
+fn encode_token(family_id: &str, jti: &str) -> String {
+    let raw = format!("{family_id}.{jti}");
     URL_SAFE_NO_PAD.encode(raw.as_bytes())
 }
 
@@ -121,13 +124,13 @@ async fn refresh_token_active_returns_active_response_with_claims() {
     install_family(&store, "fam1", "user_alice", "client_X",
                    "jti_current", &["openid", "profile"]).await;
 
-    let token = encode_token("fam1", "jti_current", 999_999);
+    let token = encode_token("fam1", "jti_current");
     let resp = introspect_token(
         &store, &fake_keys(), ISS, 30,
         &IntrospectInput {
             token: &token,
             hint:  Some(TokenTypeHint::RefreshToken),
-            now_unix: 200,
+            now_unix: 200, refresh_lifetime: test_lifetime()
         },
     ).await.unwrap();
 
@@ -138,8 +141,10 @@ async fn refresh_token_active_returns_active_response_with_claims() {
     assert_eq!(resp.scope.as_deref(),     Some("openid profile"));
     assert_eq!(resp.token_type, None,
         "refresh tokens have no Bearer Authorization-header role");
-    // exp comes from the encoded token's third field.
-    assert_eq!(resp.exp, Some(999_999));
+    // RFC 139 §9.4: exp is the family's earlier deadline under the policy —
+    // created and last rotated at 100, so 100 + the 14-day idle window —
+    // never a value carried by the token, which no longer has one.
+    assert_eq!(resp.exp, Some(100 + crate::ports::store::DEFAULT_REFRESH_IDLE_TIMEOUT_SECS));
 }
 
 #[tokio::test]
@@ -156,10 +161,10 @@ async fn refresh_token_with_retired_jti_is_inactive_with_no_other_claims() {
         m.get_mut(&crate::types::FamilyId::from_storage("fam1")).unwrap().retired_jtis.push(crate::types::Jti::from_storage("old_jti"));
     }
 
-    let token = encode_token("fam1", "old_jti", 999_999);
+    let token = encode_token("fam1", "old_jti");
     let resp = introspect_token(
         &store, &fake_keys(), ISS, 30,
-        &IntrospectInput { token: &token, hint: Some(TokenTypeHint::RefreshToken), now_unix: 200  },
+        &IntrospectInput { token: &token, hint: Some(TokenTypeHint::RefreshToken), now_unix: 200, refresh_lifetime: test_lifetime()  },
     ).await.unwrap();
 
     assert!(!resp.active);
@@ -178,10 +183,10 @@ async fn refresh_token_revoked_family_is_inactive() {
     install_family(&store, "fam_dead", "u", "c", "j1", &["openid"]).await;
     store.revoke(&crate::types::FamilyId::from_storage("fam_dead"), 150).await.unwrap();
 
-    let token = encode_token("fam_dead", "j1", 999_999);
+    let token = encode_token("fam_dead", "j1");
     let resp = introspect_token(
         &store, &fake_keys(), ISS, 30,
-        &IntrospectInput { token: &token, hint: Some(TokenTypeHint::RefreshToken), now_unix: 200  },
+        &IntrospectInput { token: &token, hint: Some(TokenTypeHint::RefreshToken), now_unix: 200, refresh_lifetime: test_lifetime()  },
     ).await.unwrap();
 
     assert!(!resp.active,
@@ -193,10 +198,10 @@ async fn refresh_token_revoked_family_is_inactive() {
 #[tokio::test]
 async fn refresh_token_unknown_family_is_inactive() {
     let store = StubFamilyStore::default();
-    let token = encode_token("never_existed", "j1", 999_999);
+    let token = encode_token("never_existed", "j1");
     let resp = introspect_token(
         &store, &fake_keys(), ISS, 30,
-        &IntrospectInput { token: &token, hint: Some(TokenTypeHint::RefreshToken), now_unix: 200  },
+        &IntrospectInput { token: &token, hint: Some(TokenTypeHint::RefreshToken), now_unix: 200, refresh_lifetime: test_lifetime()  },
     ).await.unwrap();
 
     assert!(!resp.active);
@@ -212,7 +217,7 @@ async fn malformed_token_is_inactive_not_error() {
     let store = StubFamilyStore::default();
     let resp = introspect_token(
         &store, &fake_keys(), ISS, 30,
-        &IntrospectInput { token: "this is not a valid token", hint: None, now_unix: 200  },
+        &IntrospectInput { token: "this is not a valid token", hint: None, now_unix: 200, refresh_lifetime: test_lifetime()  },
     ).await.unwrap();
 
     assert!(!resp.active);
@@ -223,7 +228,7 @@ async fn empty_token_is_inactive_not_error() {
     let store = StubFamilyStore::default();
     let resp = introspect_token(
         &store, &fake_keys(), ISS, 30,
-        &IntrospectInput { token: "", hint: None, now_unix: 200  },
+        &IntrospectInput { token: "", hint: None, now_unix: 200, refresh_lifetime: test_lifetime()  },
     ).await.unwrap();
     assert!(!resp.active);
 }
@@ -236,13 +241,13 @@ async fn hint_access_with_actually_refresh_token_falls_through_to_refresh_check(
     let store = StubFamilyStore::default();
     install_family(&store, "fam2", "u", "c", "jti_current", &["openid"]).await;
 
-    let token = encode_token("fam2", "jti_current", 999_999);
+    let token = encode_token("fam2", "jti_current");
     let resp = introspect_token(
         &store, &fake_keys(), ISS, 30,
         &IntrospectInput {
             token: &token,
             hint: Some(TokenTypeHint::AccessToken),  // wrong hint
-            now_unix: 200,
+            now_unix: 200, refresh_lifetime: test_lifetime()
         },
     ).await.unwrap();
 
@@ -346,3 +351,93 @@ mod rate_limit;
 mod refresh_ext;
 mod audience_gate;
 mod rfc009_aud_correctness;
+
+// =====================================================================
+// RFC 139 — introspection under the lifetime policy (tests 10–13)
+// =====================================================================
+
+/// The shipped defaults: 30 d absolute, 14 d idle. Existing tests' families
+/// are created at 100 and introspected by 700, inside both windows.
+fn test_lifetime() -> crate::ports::store::RefreshLifetime {
+    crate::ports::store::RefreshLifetime::new(2_592_000, crate::ports::store::DEFAULT_REFRESH_IDLE_TIMEOUT_SECS).unwrap()
+}
+
+fn rfc139_policy(absolute: i64, idle: i64) -> crate::ports::store::RefreshLifetime {
+    crate::ports::store::RefreshLifetime::new(absolute, idle).unwrap()
+}
+
+async fn rfc139_introspect(store: &StubFamilyStore, token: &str, now_unix: i64, p: crate::ports::store::RefreshLifetime) -> IntrospectionResponse {
+    introspect_token(store, &fake_keys(), ISS, 30, &IntrospectInput {
+        token, hint: Some(TokenTypeHint::RefreshToken), now_unix, refresh_lifetime: p,
+    }).await.unwrap()
+}
+
+/// Test 10 — a live family is active, and `exp` is the earlier deadline.
+#[tokio::test]
+async fn rfc139_live_family_reports_the_earlier_deadline_as_exp() {
+    let store = StubFamilyStore::default();
+    install_family(&store, "fam139", "u", "c", "j", &["openid"]).await; // created 100
+    let token = encode_token("fam139", "j");
+
+    // absolute 100 + 1_000 = 1_100; idle 100 + 300 = 400 → exp 400
+    let resp = rfc139_introspect(&store, &token, 399, rfc139_policy(1_000, 300)).await;
+    assert!(resp.active);
+    assert_eq!(resp.exp, Some(400));
+
+    // idle disabled → only the absolute term
+    let resp = rfc139_introspect(&store, &token, 399, rfc139_policy(1_000, 0)).await;
+    assert!(resp.active);
+    assert_eq!(resp.exp, Some(1_100));
+}
+
+/// Test 11 — a family past a deadline that nothing has rotated is inactive
+/// `Expired`, and introspection wrote nothing: `revoked_at` stays `None`.
+#[tokio::test]
+async fn rfc139_unrotated_family_past_a_deadline_is_expired_and_untouched() {
+    use crate::oidc::introspect::FamilyClassification;
+    let store = StubFamilyStore::default();
+    install_family(&store, "fam139", "u", "c", "j", &["openid"]).await; // created 100
+    let token = encode_token("fam139", "j");
+
+    for (now, p) in [(400, rfc139_policy(1_000, 300)), (1_100, rfc139_policy(1_000, 0))] {
+        let resp = rfc139_introspect(&store, &token, now, p).await;
+        assert!(!resp.active, "past a deadline at {now}");
+        assert!(resp.exp.is_none(), "inactive responses carry no claims");
+        let ext = resp.x_cesauth.expect("x_cesauth on an expired family");
+        assert_eq!(ext.family_state, Some(FamilyClassification::Expired));
+        assert_eq!(ext.revoked_at, None, "not revoked: nothing wrote");
+        assert_eq!(ext.revoke_reason, None);
+    }
+    let fam = store.peek(&crate::types::FamilyId::from_storage("fam139")).await.unwrap().unwrap();
+    assert_eq!(fam.revoked_at, None, "introspection must not revoke");
+    assert_eq!(fam.expired, None, "introspection must not record expiry");
+}
+
+/// Test 12 — a family the store already expired is `Expired`, not
+/// `Revoked`/`Explicit`, even when the clock alone would call it live.
+#[tokio::test]
+async fn rfc139_store_expired_family_is_expired_not_explicitly_revoked() {
+    use crate::oidc::introspect::FamilyClassification;
+    let store = StubFamilyStore::default();
+    install_family(&store, "fam139", "u", "c", "j", &["openid"]).await;
+    {
+        let mut m = store.map.lock().unwrap();
+        let f = m.get_mut(&crate::types::FamilyId::from_storage("fam139")).unwrap();
+        f.revoked_at = Some(500);
+        f.expired    = Some(crate::ports::store::LifetimeExpiry::Absolute);
+    }
+    let resp = rfc139_introspect(&store, &encode_token("fam139", "j"), 600, test_lifetime()).await;
+    assert!(!resp.active);
+    let ext = resp.x_cesauth.unwrap();
+    assert_eq!(ext.family_state, Some(FamilyClassification::Expired));
+    assert_eq!(ext.revoked_at, Some(500), "a stored revoked_at is surfaced");
+    assert_eq!(ext.revoke_reason, None, "an expiry is not an explicit revocation");
+}
+
+/// Test 13 (introspection decoder) — exactly two parts.
+#[test]
+fn rfc139_introspection_decoder_accepts_exactly_two_parts() {
+    assert!(super::decode_refresh_token(&encode_token("fam", "jti")).is_some());
+    assert!(super::decode_refresh_token(&URL_SAFE_NO_PAD.encode("fam.jti.999999")).is_none(), "three parts");
+    assert!(super::decode_refresh_token(&URL_SAFE_NO_PAD.encode("fam")).is_none(), "one part");
+}

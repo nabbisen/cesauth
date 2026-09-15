@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use cesauth_core::ports::store::{
-    FamilyInit, FamilyState, RefreshTokenFamilyStore, RotateOutcome,
+    FamilyInit, FamilyState, Lifetime, RefreshLifetime, RefreshTokenFamilyStore, RotateOutcome,
 };
 use cesauth_core::ports::{PortError, PortResult};
 
@@ -38,6 +38,7 @@ impl RefreshTokenFamilyStore for InMemoryRefreshTokenFamilyStore {
                 reused_jti:        None,
                 reused_at:         None,
                 reuse_was_retired: None,
+                expired:           None,
             },
         );
         Ok(())
@@ -49,12 +50,23 @@ impl RefreshTokenFamilyStore for InMemoryRefreshTokenFamilyStore {
         presented_jti: &cesauth_core::types::Jti,
         new_jti:       &cesauth_core::types::Jti,
         now_unix:      i64,
+        lifetime:      &RefreshLifetime,
     ) -> PortResult<RotateOutcome> {
         let mut m = self.map.lock().map_err(|_| PortError::Unavailable)?;
         let fam = m.get_mut(family_id).ok_or(PortError::NotFound)?;
 
         if fam.revoked_at.is_some() {
             return Ok(RotateOutcome::AlreadyRevoked);
+        }
+
+        // RFC 139 §10.2: lifetime before the jti — absolute, then idle, both
+        // decided by core's one function. An expired family presented with a
+        // retired jti is expired, not reuse-detected, so the reuse forensics
+        // stay None. Revocation and the reason land together.
+        if let Lifetime::Expired(kind) = fam.lifetime(now_unix, lifetime) {
+            fam.revoked_at = Some(now_unix);
+            fam.expired    = Some(kind);
+            return Ok(RotateOutcome::Expired(kind));
         }
 
         if presented_jti == &fam.current_jti {

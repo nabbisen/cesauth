@@ -63,7 +63,9 @@ where
 #[derive(Debug, Clone)]
 pub struct TokenConfig<'a> {
     pub access_ttl_secs:  i64,
-    pub refresh_ttl_secs: i64,
+    /// **RFC 139** — the refresh-family lifetime policy (absolute cap and
+    /// idle window), enforced by the family store at rotation.
+    pub refresh_lifetime: crate::ports::store::RefreshLifetime,
     /// Issuer URL, e.g. `"https://auth.example.com"`.
     pub iss:              &'a str,
 }
@@ -210,7 +212,7 @@ where
         .await
         .map_err(|_| CoreError::Internal)?;
 
-    let refresh_token = encode_refresh(&family_id, &refresh_jti, cfg.refresh_ttl_secs, input.now_unix);
+    let refresh_token = encode_refresh(&family_id, &refresh_jti);
 
     // RFC 001: issue id_token when the scopes include "openid".
     let id_token = if scopes.0.iter().any(|s| s == "openid") {
@@ -361,7 +363,7 @@ where
 
     let new_jti = Jti::mint();
     let outcome = deps.families
-        .rotate(&family_id, &presented_jti, &new_jti, input.now_unix)
+        .rotate(&family_id, &presented_jti, &new_jti, input.now_unix, &cfg.refresh_lifetime)
         .await
         .map_err(|_| CoreError::Internal)?;
 
@@ -402,7 +404,7 @@ where
                 cid:   client.client_id.clone(),
             };
             let access_token = signer.sign(&claims)?;
-            let refresh_token = encode_refresh(&family_id, &new_current_jti, cfg.refresh_ttl_secs, input.now_unix);
+            let refresh_token = encode_refresh(&family_id, &new_current_jti);
 
             // RFC 001: issue fresh id_token when scopes include "openid".
             // ADR-008 §Q10: auth_time is the family's original auth time,
@@ -440,6 +442,13 @@ where
         RotateOutcome::AlreadyRevoked => {
             Err(CoreError::InvalidGrant("refresh token revoked"))
         }
+        RotateOutcome::Expired(_) => {
+            // RFC 139: past the absolute cap or the idle window. The store has
+            // already revoked the family in the same write. On the wire this is
+            // `invalid_grant`, the same as a revoked family. No expiry check
+            // happens here: the store decided (§7.4).
+            Err(CoreError::InvalidGrant("refresh token expired"))
+        }
         RotateOutcome::ReusedAndRevoked { reused_jti, was_retired } => {
             // Distinct error from AlreadyRevoked. The worker
             // dispatches on the variant to emit a
@@ -461,16 +470,17 @@ where
 // -------------------------------------------------------------------------
 // Refresh token encoding.
 //
-// We encode the opaque refresh token as `family_id.jti.expiry` joined by
-// `.` and base64url-encoded. This is not cryptographically protected -
-// the DO check is authoritative. It's a convenient non-opaque form that
-// keeps `/token` stateless on the HTTP edge.
+// The opaque refresh token is `base64url("{family_id}.{jti}")`. It is not
+// cryptographically protected - the family store is authoritative. RFC 139
+// §9.4 removed the third field, an unsigned expiry that rotation ignored and
+// introspection echoed as `exp`: a family's lifetime lives in the store and
+// the policy, never in the token. All three decoders (here, `introspect`,
+// `revoke`) accept exactly two parts; a third part is malformed.
 // -------------------------------------------------------------------------
 
-fn encode_refresh(family_id: &FamilyId, jti: &Jti, ttl_secs: i64, now_unix: i64) -> String {
+fn encode_refresh(family_id: &FamilyId, jti: &Jti) -> String {
     use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-    let expiry = now_unix.saturating_add(ttl_secs);
-    let raw = format!("{}.{}.{expiry}", family_id.as_str(), jti.as_str());
+    let raw = format!("{}.{}", family_id.as_str(), jti.as_str());
     URL_SAFE_NO_PAD.encode(raw.as_bytes())
 }
 
@@ -480,13 +490,12 @@ fn decode_refresh(token: &str) -> CoreResult<(FamilyId, Jti)> {
         .decode(token.as_bytes())
         .map_err(|_| CoreError::InvalidGrant("malformed refresh token"))?;
     let s = std::str::from_utf8(&bytes).map_err(|_| CoreError::InvalidGrant("malformed refresh token"))?;
-    let mut parts = s.split('.');
-    let family_id = parts.next().ok_or(CoreError::InvalidGrant("malformed refresh token"))?;
-    let jti       = parts.next().ok_or(CoreError::InvalidGrant("malformed refresh token"))?;
-    // We don't consult the third part (expiry) here; the DO is the
-    // authority. It only exists for debugging / future eager rejection.
-    let _expiry = parts.next();
-    Ok((FamilyId::from_storage(family_id), Jti::from_storage(jti)))
+    // Exactly two parts (RFC 139 §9.4): a third part is malformed, not ignored.
+    let parts: Vec<&str> = s.split('.').collect();
+    let [family_id, jti] = parts.as_slice() else {
+        return Err(CoreError::InvalidGrant("malformed refresh token"));
+    };
+    Ok((FamilyId::from_storage(*family_id), Jti::from_storage(*jti)))
 }
 
 #[cfg(test)]

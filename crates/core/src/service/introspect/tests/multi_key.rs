@@ -107,7 +107,7 @@ async fn empty_keys_returns_inactive() {
         &IntrospectInput {
             token: "eyJhbGc.payload.sig",
             hint:  Some(TokenTypeHint::AccessToken),
-            now_unix: 200,
+            now_unix: 200, refresh_lifetime: super::test_lifetime()
         },
     ).await.unwrap();
     assert!(!resp.active,
@@ -125,13 +125,13 @@ async fn refresh_path_isolated_from_empty_access_keys() {
     install_family(&store, "fam_iso", "user_iso", "client_iso",
                    "jti_iso", &["openid"]).await;
 
-    let token = encode_token("fam_iso", "jti_iso", 999_999);
+    let token = encode_token("fam_iso", "jti_iso");
     let resp = introspect_token(
         &store, &[], ISS, 30,
         &IntrospectInput {
             token: &token,
             hint:  Some(TokenTypeHint::RefreshToken),
-            now_unix: 200,
+            now_unix: 200, refresh_lifetime: super::test_lifetime()
         },
     ).await.unwrap();
     assert!(resp.active,
@@ -155,7 +155,7 @@ async fn single_key_match_verifies_active() {
         &IntrospectInput {
             token: &token,
             hint:  Some(TokenTypeHint::AccessToken),
-            now_unix: 200,
+            now_unix: 200, refresh_lifetime: super::test_lifetime()
         },
     ).await.unwrap();
     assert!(resp.active, "kid-matched single key must verify");
@@ -193,7 +193,7 @@ async fn multi_key_kid_directed_lookup_picks_correct_key() {
         &IntrospectInput {
             token: &token,
             hint:  Some(TokenTypeHint::AccessToken),
-            now_unix: 200,
+            now_unix: 200, refresh_lifetime: super::test_lifetime()
         },
     ).await.unwrap();
     assert!(resp.active,
@@ -226,7 +226,7 @@ async fn multi_key_try_each_fallback_when_kid_unknown() {
         &IntrospectInput {
             token: &token,
             hint:  Some(TokenTypeHint::AccessToken),
-            now_unix: 200,
+            now_unix: 200, refresh_lifetime: super::test_lifetime()
         },
     ).await.unwrap();
     assert!(resp.active,
@@ -256,7 +256,7 @@ async fn forged_kid_with_unknown_signature_rejected() {
         &IntrospectInput {
             token: &token,
             hint:  Some(TokenTypeHint::AccessToken),
-            now_unix: 200,
+            now_unix: 200, refresh_lifetime: super::test_lifetime()
         },
     ).await.unwrap();
     assert!(!resp.active,
@@ -286,7 +286,7 @@ async fn token_signed_by_retired_key_reports_inactive() {
         &IntrospectInput {
             token: &token,
             hint:  Some(TokenTypeHint::AccessToken),
-            now_unix: 200,
+            now_unix: 200, refresh_lifetime: super::test_lifetime()
         },
     ).await.unwrap();
     assert!(!resp.active,

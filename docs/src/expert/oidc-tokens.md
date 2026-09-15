@@ -141,11 +141,31 @@ All configurable via `wrangler.toml` `[vars]`:
 | Var                          | Default        | Applies to                   |
 |------------------------------|----------------|------------------------------|
 | `ACCESS_TOKEN_TTL_SECS`      | `600` (10 min) | JWT `exp`                    |
-| `REFRESH_TOKEN_TTL_SECS`     | `2592000` (30 days) | Refresh family     |
+| `REFRESH_TOKEN_TTL_SECS`     | `2592000` (30 days) | Refresh family **absolute cap** |
+| `REFRESH_TOKEN_IDLE_TIMEOUT_SECS` | `1209600` (14 days) | Refresh family **idle window**; `0` disables |
 | `MAGIC_LINK_TTL_SECS`        | `600` (10 min) | OTP validity                 |
 | `SESSION_TTL_SECS`           | `2592000` (30 days) | Session cookie     |
 | `PENDING_AUTHORIZE_TTL_SECS` | `300` (5 min)  | `/authorize` cold-path park  |
 | `AUTH_CODE_TTL_SECS`         | `300` (5 min)  | Issued auth codes            |
+
+**Refresh family lifetime (RFC 139).** A refresh family stops working at the
+earlier of two deadlines: `created_at + REFRESH_TOKEN_TTL_SECS` (the absolute
+cap, however often it is rotated) and `last_rotated_at +
+REFRESH_TOKEN_IDLE_TIMEOUT_SECS` (the idle window, which moves with every
+rotation). Expired means `now >= deadline`. `0` disables the idle window; the
+absolute cap cannot be disabled. The worker refuses to start if the cap is not
+positive, the idle window is negative, or the idle window exceeds the cap.
+
+- **Enforced by the family store at rotation.** An expired family is revoked in
+  the same write, and `/token` answers `invalid_grant`, as for a revoked family.
+- **No deadline is stored.** Both are computed at check time from the current
+  configuration, so lowering either value shortens every live family at once.
+- **The refresh token carries no expiry.** Its format is
+  `base64url("{family_id}.{jti}")`; a token with any other number of parts is
+  malformed.
+- **Introspection** reports a live family's `exp` as the earlier deadline, and a
+  family past a deadline as inactive with `x_cesauth.family_state = "expired"`.
+  Introspection never revokes.
 
 The short `AUTH_CODE_TTL_SECS` is why the beginner tutorial
 sometimes gets `invalid_grant` — the staged code expired mid-typing.

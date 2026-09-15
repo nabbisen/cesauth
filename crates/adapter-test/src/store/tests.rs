@@ -140,7 +140,7 @@ async fn refresh_reuse_burns_family() {
     store.init(&init).await.unwrap();
 
     // Rotate once legitimately.
-    let out = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("j1"), &cesauth_core::types::Jti::from_storage("j2"), 10).await.unwrap();
+    let out = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("j1"), &cesauth_core::types::Jti::from_storage("j2"), 10, &default_lifetime()).await.unwrap();
     assert!(matches!(out, RotateOutcome::Rotated { .. }));
 
     // Present the old jti - reuse detection must fire. v0.34.0:
@@ -150,7 +150,7 @@ async fn refresh_reuse_burns_family() {
     // distinguishes the recognized-retired case (= real but
     // rotated-out token) from an unknown-jti case (= forged or
     // shotgun).
-    let out = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("j1"), &cesauth_core::types::Jti::from_storage("j3"), 20).await.unwrap();
+    let out = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("j1"), &cesauth_core::types::Jti::from_storage("j3"), 20, &default_lifetime()).await.unwrap();
     match out {
         RotateOutcome::ReusedAndRevoked { reused_jti, was_retired } => {
             assert_eq!(reused_jti.as_str(), "j1");
@@ -170,7 +170,7 @@ async fn refresh_reuse_burns_family() {
     assert_eq!(fam.revoked_at, Some(20));
 
     // Even the legitimate new jti no longer rotates - family is dead.
-    let out = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("j2"), &cesauth_core::types::Jti::from_storage("j4"), 30).await.unwrap();
+    let out = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("j2"), &cesauth_core::types::Jti::from_storage("j4"), 30, &default_lifetime()).await.unwrap();
     assert!(matches!(out, RotateOutcome::AlreadyRevoked));
 }
 
@@ -196,7 +196,7 @@ async fn refresh_reuse_with_unknown_jti_marks_was_retired_false() {
 
     // Present a jti the family has never seen (current is j1,
     // retired is empty).
-    let out = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("totally-fake-jti"), &cesauth_core::types::Jti::from_storage("j2"), 10).await.unwrap();
+    let out = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("totally-fake-jti"), &cesauth_core::types::Jti::from_storage("j2"), 10, &default_lifetime()).await.unwrap();
     match out {
         RotateOutcome::ReusedAndRevoked { reused_jti, was_retired } => {
             assert_eq!(reused_jti.as_str(), "totally-fake-jti");
@@ -233,8 +233,8 @@ async fn refresh_reuse_then_more_attempts_preserve_first_forensics() {
     store.init(&init).await.unwrap();
 
     // Rotate, then trigger reuse.
-    let _ = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("j1"), &cesauth_core::types::Jti::from_storage("j2"), 10).await.unwrap();
-    let _ = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("j1"), &cesauth_core::types::Jti::from_storage("j3"), 20).await.unwrap();
+    let _ = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("j1"), &cesauth_core::types::Jti::from_storage("j2"), 10, &default_lifetime()).await.unwrap();
+    let _ = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("j1"), &cesauth_core::types::Jti::from_storage("j3"), 20, &default_lifetime()).await.unwrap();
 
     let fam_first = store.peek(&cesauth_core::types::FamilyId::from_storage("f")).await.unwrap().unwrap();
     assert_eq!(fam_first.reused_jti.as_ref().map(|j| j.as_str()), Some("j1"));
@@ -242,10 +242,10 @@ async fn refresh_reuse_then_more_attempts_preserve_first_forensics() {
 
     // More attempts, all of which see AlreadyRevoked. The
     // forensic record must NOT mutate.
-    let out = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("another-jti"), &cesauth_core::types::Jti::from_storage("j4"), 30).await.unwrap();
+    let out = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("another-jti"), &cesauth_core::types::Jti::from_storage("j4"), 30, &default_lifetime()).await.unwrap();
     assert!(matches!(out, RotateOutcome::AlreadyRevoked));
 
-    let out = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("j2"), &cesauth_core::types::Jti::from_storage("j5"), 40).await.unwrap();
+    let out = store.rotate(&cesauth_core::types::FamilyId::from_storage("f"), &cesauth_core::types::Jti::from_storage("j2"), &cesauth_core::types::Jti::from_storage("j5"), 40, &default_lifetime()).await.unwrap();
     assert!(matches!(out, RotateOutcome::AlreadyRevoked));
 
     let fam_after = store.peek(&cesauth_core::types::FamilyId::from_storage("f")).await.unwrap().unwrap();
@@ -564,4 +564,118 @@ async fn refresh_rate_limit_resets_after_window_rolls() {
         "after the rate-limit window rolls, attempts must be allowed again");
     assert_eq!(after_window.count, 1,
         "counter must reset to 1 (this attempt) after window roll");
+}
+
+// -----------------------------------------------------------------------
+// RFC 139 — the family store enforces the lifetime policy at rotation.
+// Existing tests above pass the shipped defaults (30 d absolute, 14 d idle),
+// inside whose windows their clocks (0..=40) already sit.
+// -----------------------------------------------------------------------
+
+fn default_lifetime() -> cesauth_core::ports::store::RefreshLifetime {
+    cesauth_core::ports::store::RefreshLifetime::new(
+        2_592_000, cesauth_core::ports::store::DEFAULT_REFRESH_IDLE_TIMEOUT_SECS,
+    ).expect("shipped defaults are valid")
+}
+
+/// Absolute cap 100, idle window 30 — small enough to walk every boundary.
+fn rfc139_policy() -> cesauth_core::ports::store::RefreshLifetime {
+    cesauth_core::ports::store::RefreshLifetime::new(100, 30).expect("valid policy")
+}
+
+fn rfc139_fid() -> cesauth_core::types::FamilyId { cesauth_core::types::FamilyId::from_storage("f139") }
+fn rfc139_jti(s: &str) -> cesauth_core::types::Jti { cesauth_core::types::Jti::from_storage(s) }
+
+/// A family created at t=0 with current jti `j1`.
+async fn rfc139_family() -> InMemoryRefreshTokenFamilyStore {
+    let store = InMemoryRefreshTokenFamilyStore::default();
+    store.init(&FamilyInit {
+        family_id: rfc139_fid(),
+        user_id:   cesauth_core::types::UserId::from_storage("u"),
+        client_id: cesauth_core::types::ClientId::from_storage("c"),
+        scopes:    vec!["openid".into()],
+        first_jti: rfc139_jti("j1"),
+        now_unix:  0,
+        auth_time: 0,
+    }).await.unwrap();
+    store
+}
+
+/// Test 4 — rotation inside both windows rotates, and `last_rotated_at`
+/// advances, so the idle window moves with it.
+#[tokio::test]
+async fn rfc139_rotation_inside_both_windows_moves_the_idle_window() {
+    let store = rfc139_family().await;
+    let p = rfc139_policy();
+
+    let out = store.rotate(&rfc139_fid(), &rfc139_jti("j1"), &rfc139_jti("j2"), 29, &p).await.unwrap();
+    assert!(matches!(out, RotateOutcome::Rotated { .. }), "got {out:?}");
+    assert_eq!(store.peek(&rfc139_fid()).await.unwrap().unwrap().last_rotated_at, 29);
+
+    // 58 is past 0 + 30 (the idle deadline had the window not moved) but
+    // before 29 + 30: the window moved, so this rotates too.
+    let out = store.rotate(&rfc139_fid(), &rfc139_jti("j2"), &rfc139_jti("j3"), 58, &p).await.unwrap();
+    assert!(matches!(out, RotateOutcome::Rotated { .. }), "got {out:?}");
+    let fam = store.peek(&rfc139_fid()).await.unwrap().unwrap();
+    assert_eq!(fam.last_rotated_at, 58);
+    assert_eq!(fam.revoked_at, None);
+    assert_eq!(fam.expired, None);
+}
+
+/// Test 5 — idle-expired rotate → `Expired(Idle)`; `revoked_at` and `expired`
+/// set in the same write, the family not rotated; a later rotate is
+/// `AlreadyRevoked`.
+#[tokio::test]
+async fn rfc139_idle_expired_rotate_revokes_and_records_idle() {
+    let store = rfc139_family().await;
+    let p = rfc139_policy();
+
+    let out = store.rotate(&rfc139_fid(), &rfc139_jti("j1"), &rfc139_jti("j2"), 30, &p).await.unwrap();
+    assert!(matches!(out, RotateOutcome::Expired(cesauth_core::ports::store::LifetimeExpiry::Idle)), "got {out:?}");
+
+    let fam = store.peek(&rfc139_fid()).await.unwrap().unwrap();
+    assert_eq!(fam.revoked_at, Some(30));
+    assert_eq!(fam.expired, Some(cesauth_core::ports::store::LifetimeExpiry::Idle));
+    assert_eq!(fam.current_jti.as_str(), "j1", "an expired family is not rotated");
+
+    let out = store.rotate(&rfc139_fid(), &rfc139_jti("j1"), &rfc139_jti("j3"), 31, &p).await.unwrap();
+    assert!(matches!(out, RotateOutcome::AlreadyRevoked), "got {out:?}");
+}
+
+/// Test 6 — absolute-expired while recently rotated → `Expired(Absolute)`.
+#[tokio::test]
+async fn rfc139_absolute_expiry_applies_to_a_recently_rotated_family() {
+    let store = rfc139_family().await;
+    let p = rfc139_policy();
+    for (from, to, at) in [("j1", "j2", 29), ("j2", "j3", 58), ("j3", "j4", 87)] {
+        let out = store.rotate(&rfc139_fid(), &rfc139_jti(from), &rfc139_jti(to), at, &p).await.unwrap();
+        assert!(matches!(out, RotateOutcome::Rotated { .. }), "rotation at {at}: {out:?}");
+    }
+    // Idle deadline is 87 + 30 = 117; the absolute cap 0 + 100 comes first.
+    let out = store.rotate(&rfc139_fid(), &rfc139_jti("j4"), &rfc139_jti("j5"), 100, &p).await.unwrap();
+    assert!(matches!(out, RotateOutcome::Expired(cesauth_core::ports::store::LifetimeExpiry::Absolute)), "got {out:?}");
+    let fam = store.peek(&rfc139_fid()).await.unwrap().unwrap();
+    assert_eq!(fam.expired, Some(cesauth_core::ports::store::LifetimeExpiry::Absolute));
+    assert_eq!(fam.revoked_at, Some(100));
+}
+
+/// Test 7 — an expired family presented with a **retired** jti is `Expired`,
+/// not reuse-detected; the reuse forensics stay `None` (§10.2's order).
+#[tokio::test]
+async fn rfc139_expired_family_with_retired_jti_is_expired_not_reuse() {
+    let store = rfc139_family().await;
+    let p = rfc139_policy();
+    let out = store.rotate(&rfc139_fid(), &rfc139_jti("j1"), &rfc139_jti("j2"), 10, &p).await.unwrap();
+    assert!(matches!(out, RotateOutcome::Rotated { .. }));
+
+    // j1 is now retired. Present it at 10 + 30 = 40, the idle deadline.
+    let out = store.rotate(&rfc139_fid(), &rfc139_jti("j1"), &rfc139_jti("j3"), 40, &p).await.unwrap();
+    assert!(matches!(out, RotateOutcome::Expired(cesauth_core::ports::store::LifetimeExpiry::Idle)), "got {out:?}");
+
+    let fam = store.peek(&rfc139_fid()).await.unwrap().unwrap();
+    assert_eq!(fam.reused_jti, None);
+    assert_eq!(fam.reused_at, None);
+    assert_eq!(fam.reuse_was_retired, None);
+    assert_eq!(fam.expired, Some(cesauth_core::ports::store::LifetimeExpiry::Idle));
+    assert_eq!(fam.revoked_at, Some(40));
 }

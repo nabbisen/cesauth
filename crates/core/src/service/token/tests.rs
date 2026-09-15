@@ -5,7 +5,7 @@ use super::*;
 
 #[test]
 fn refresh_round_trip() {
-    let encoded = encode_refresh(&crate::types::FamilyId::from_storage("fam"), &crate::types::Jti::from_storage("jti-1"), 3600, 1_000_000);
+    let encoded = encode_refresh(&crate::types::FamilyId::from_storage("fam"), &crate::types::Jti::from_storage("jti-1"));
     let (fam, jti) = decode_refresh(&encoded).unwrap();
     assert_eq!(fam.as_str(), "fam");
     assert_eq!(jti.as_str(), "jti-1");
@@ -165,11 +165,12 @@ mod id_token_tests {
                 reused_jti:      None,
                 reused_at:       None,
                 reuse_was_retired: None,
+                expired:           None,
                 auth_time:       init.auth_time,
             });
             Ok(())
         }
-        async fn rotate(&self, family_id: &crate::types::FamilyId, presented_jti: &crate::types::Jti, new_jti: &crate::types::Jti, now: i64) -> PortResult<RotateOutcome> {
+        async fn rotate(&self, family_id: &crate::types::FamilyId, presented_jti: &crate::types::Jti, new_jti: &crate::types::Jti, now: i64, lifetime: &crate::ports::store::RefreshLifetime) -> PortResult<RotateOutcome> {
             let mut m = self.0.borrow_mut();
             if let Some(fam) = m.get_mut(family_id) {
                 // RFC 137 T5: honour revocation first, as the real family DO
@@ -180,6 +181,13 @@ mod id_token_tests {
                 // the owner's next refresh could have passed against it.
                 if fam.revoked_at.is_some() {
                     return Ok(RotateOutcome::AlreadyRevoked);
+                }
+                // RFC 139: a store, so it enforces the lifetime policy in the
+                // port's order — revoked, lifetime (core's function), then jti.
+                if let crate::ports::store::Lifetime::Expired(kind) = fam.lifetime(now, lifetime) {
+                    fam.revoked_at = Some(now);
+                    fam.expired    = Some(kind);
+                    return Ok(RotateOutcome::Expired(kind));
                 }
                 if &fam.current_jti != presented_jti {
                     return Ok(RotateOutcome::ReusedAndRevoked { reused_jti: presented_jti.clone(), was_retired: false });
@@ -283,7 +291,7 @@ mod id_token_tests {
         iss:      &'a str,
     ) -> (TokenDeps<'a, StubClients, StubCodes, StubFamilies, StubGrants, StubUsers, StubRates>, TokenConfig<'a>) {
         let deps = TokenDeps { clients, codes, families, grants, users, rates };
-        let cfg  = TokenConfig { access_ttl_secs: 3600, refresh_ttl_secs: 86400, iss };
+        let cfg  = TokenConfig { access_ttl_secs: 3600, refresh_lifetime: crate::ports::store::RefreshLifetime::new(2_592_000, crate::ports::store::DEFAULT_REFRESH_IDLE_TIMEOUT_SECS).unwrap(), iss };
         (deps, cfg)
     }
 
@@ -392,7 +400,7 @@ mod id_token_tests {
             auth_time: orig_auth_time,
         };
         families.init(&init).await.unwrap();
-        let rt = encode_refresh(&crate::types::FamilyId::from_storage("fam-r"), &crate::types::Jti::from_storage("j-first"), 86400, 1_700_000_000);
+        let rt = encode_refresh(&crate::types::FamilyId::from_storage("fam-r"), &crate::types::Jti::from_storage("j-first"));
         let input = RotateRefreshInput {
             refresh_token: &rt,
             client_id:     "c-r",
@@ -407,7 +415,7 @@ mod id_token_tests {
             let users_s   = StubUsers(user_map);
             let codes_s   = StubCodes(RefCell::new(HashMap::new()));
             let deps = TokenDeps { clients: &clients_s, codes: &codes_s, families: &families, grants: &StubGrants, users: &users_s, rates: &StubRates };
-            let tok_cfg = TokenConfig { access_ttl_secs: 3600, refresh_ttl_secs: 86400, iss: "https://t.test" };
+            let tok_cfg = TokenConfig { access_ttl_secs: 3600, refresh_lifetime: crate::ports::store::RefreshLifetime::new(2_592_000, crate::ports::store::DEFAULT_REFRESH_IDLE_TIMEOUT_SECS).unwrap(), iss: "https://t.test" };
             rotate_refresh(&deps, &test_signer(), &tok_cfg, &input).await
         }.unwrap();
         assert!(resp.id_token.is_some(), "rotate openid → id_token");
@@ -430,7 +438,7 @@ mod id_token_tests {
             now_unix:  1_700_000_000,
             auth_time: orig_auth_time,
         }).await.unwrap();
-        let rt = encode_refresh(&crate::types::FamilyId::from_storage("fam-at"), &crate::types::Jti::from_storage("j-at"), 86400, 1_700_000_000);
+        let rt = encode_refresh(&crate::types::FamilyId::from_storage("fam-at"), &crate::types::Jti::from_storage("j-at"));
         let input = RotateRefreshInput {
             refresh_token:        &rt,
             client_id:            "c-at",
@@ -445,7 +453,7 @@ mod id_token_tests {
             let users_s   = StubUsers(user_map);
             let codes_s   = StubCodes(RefCell::new(HashMap::new()));
             let deps = TokenDeps { clients: &clients_s, codes: &codes_s, families: &families, grants: &StubGrants, users: &users_s, rates: &StubRates };
-            let tok_cfg = TokenConfig { access_ttl_secs: 3600, refresh_ttl_secs: 86400, iss: "https://t.test" };
+            let tok_cfg = TokenConfig { access_ttl_secs: 3600, refresh_lifetime: crate::ports::store::RefreshLifetime::new(2_592_000, crate::ports::store::DEFAULT_REFRESH_IDLE_TIMEOUT_SECS).unwrap(), iss: "https://t.test" };
             rotate_refresh(&deps, &test_signer(), &tok_cfg, &input).await
         }.unwrap();
         let c = decode_id_claims(resp.id_token.as_deref().unwrap());
@@ -470,7 +478,7 @@ mod id_token_tests {
             now_unix:  1_700_000_000,
             auth_time: 0,
         }).await.unwrap();
-        let rt = encode_refresh(&crate::types::FamilyId::from_storage("fam-no"), &crate::types::Jti::from_storage("j-no"), 86400, 1_700_000_000);
+        let rt = encode_refresh(&crate::types::FamilyId::from_storage("fam-no"), &crate::types::Jti::from_storage("j-no"));
         let input = RotateRefreshInput {
             refresh_token:        &rt,
             client_id:            "c-no",
@@ -485,7 +493,7 @@ mod id_token_tests {
             let users_s   = StubUsers(user_map);
             let codes_s   = StubCodes(RefCell::new(HashMap::new()));
             let deps = TokenDeps { clients: &clients_s, codes: &codes_s, families: &families, grants: &StubGrants, users: &users_s, rates: &StubRates };
-            let tok_cfg = TokenConfig { access_ttl_secs: 3600, refresh_ttl_secs: 86400, iss: "https://t.test" };
+            let tok_cfg = TokenConfig { access_ttl_secs: 3600, refresh_lifetime: crate::ports::store::RefreshLifetime::new(2_592_000, crate::ports::store::DEFAULT_REFRESH_IDLE_TIMEOUT_SECS).unwrap(), iss: "https://t.test" };
             rotate_refresh(&deps, &test_signer(), &tok_cfg, &input).await
         }.unwrap();
         assert!(resp.id_token.is_none(), "no openid → no id_token on refresh");
@@ -615,11 +623,7 @@ mod id_token_tests {
             now_unix:  1_700_000_000,
             auth_time: 1_699_999_900,
         }).await.unwrap();
-        let rt = encode_refresh(
-            &crate::types::FamilyId::from_storage("fam-x"),
-            &crate::types::Jti::from_storage("j-1"),
-            86400, 1_700_000_000,
-        );
+        let rt = encode_refresh(&crate::types::FamilyId::from_storage("fam-x"), &crate::types::Jti::from_storage("j-1"));
         (families, rt)
     }
 
@@ -642,11 +646,98 @@ mod id_token_tests {
             rate_limit_window_secs: 60,
         };
         let deps = TokenDeps { clients, codes: &codes, families, grants: &StubGrants, users: &users, rates: &StubRates };
-        let cfg  = TokenConfig { access_ttl_secs: 3600, refresh_ttl_secs: 86400, iss: "https://t.test" };
+        let cfg  = TokenConfig { access_ttl_secs: 3600, refresh_lifetime: crate::ports::store::RefreshLifetime::new(2_592_000, crate::ports::store::DEFAULT_REFRESH_IDLE_TIMEOUT_SECS).unwrap(), iss: "https://t.test" };
         rotate_refresh(&deps, &test_signer(), &cfg, &input).await
     }
 
     fn fam_x() -> crate::types::FamilyId { crate::types::FamilyId::from_storage("fam-x") }
+
+    // ── RFC 139: the refresh grant under a lifetime policy ──
+
+    /// `refresh`, at an explicit clock and lifetime policy.
+    async fn refresh_at(
+        clients:       &StubClients,
+        families:      &StubFamilies,
+        refresh_token: &str,
+        client_id:     &str,
+        secret:        Option<&str>,
+        now_unix:      i64,
+        lifetime:      crate::ports::store::RefreshLifetime,
+    ) -> CoreResult<TokenResponse> {
+        let users = users_with_u1();
+        let codes = StubCodes(RefCell::new(HashMap::new()));
+        let input = RotateRefreshInput {
+            refresh_token,
+            client_id,
+            client_secret:          secret,
+            scope:                  None,
+            now_unix,
+            rate_limit_threshold:   0,
+            rate_limit_window_secs: 60,
+        };
+        let deps = TokenDeps { clients, codes: &codes, families, grants: &StubGrants, users: &users, rates: &StubRates };
+        let cfg  = TokenConfig { access_ttl_secs: 3600, refresh_lifetime: lifetime, iss: "https://t.test" };
+        rotate_refresh(&deps, &test_signer(), &cfg, &input).await
+    }
+
+    /// RFC 139 test 8 — `/token` refresh on an expired family is `InvalidGrant`
+    /// (the variant a revoked family gets, so the same wire code — pinned in
+    /// the backend's `error.rs`), and the store revoked it recording why. One
+    /// second earlier it rotates.
+    #[tokio::test]
+    async fn rfc139_refresh_on_an_expired_family_is_invalid_grant() {
+        use crate::ports::store::{LifetimeExpiry, RefreshLifetime};
+        let clients = clients_of(vec![("c-a", confidential_client("c-a"))]);
+        let policy  = RefreshLifetime::new(86_400, 3_600).unwrap(); // idle 1 h
+
+        let (live, rt_live) = family_issued_to("c-a").await; // created 1_700_000_000
+        refresh_at(&clients, &live, &rt_live, "c-a", Some(TEST_SECRET), 1_700_000_000 + 3_599, policy).await
+            .expect("one second before the idle deadline the family rotates");
+
+        let (families, rt) = family_issued_to("c-a").await;
+        let err = refresh_at(&clients, &families, &rt, "c-a", Some(TEST_SECRET), 1_700_000_000 + 3_600, policy).await.unwrap_err();
+        assert!(matches!(err, CoreError::InvalidGrant(_)), "got {err:?}");
+        let fam = families.peek(&fam_x()).await.unwrap().unwrap();
+        assert!(fam.revoked_at.is_some(), "expiry revokes the family");
+        assert_eq!(fam.expired, Some(LifetimeExpiry::Idle));
+    }
+
+    /// RFC 139 test 9 — lowering the policy shortens a live family: rotated
+    /// under 30 days, the family is then expired under a 1-day policy once
+    /// `created_at + 1 d` has passed (§9.2's incident property).
+    #[tokio::test]
+    async fn rfc139_lowering_the_policy_shortens_a_live_family() {
+        use crate::ports::store::{LifetimeExpiry, RefreshLifetime, DEFAULT_REFRESH_IDLE_TIMEOUT_SECS};
+        let clients = clients_of(vec![("c-a", confidential_client("c-a"))]);
+        let thirty_days = RefreshLifetime::new(2_592_000, DEFAULT_REFRESH_IDLE_TIMEOUT_SECS).unwrap();
+        let one_day     = RefreshLifetime::new(86_400, 0).unwrap();
+
+        let (families, rt) = family_issued_to("c-a").await; // created 1_700_000_000
+        let resp = refresh_at(&clients, &families, &rt, "c-a", Some(TEST_SECRET), 1_700_000_100, thirty_days).await
+            .expect("live under the 30-day policy");
+        let rt2 = resp.refresh_token.expect("rotation returns a new refresh token");
+
+        let err = refresh_at(&clients, &families, &rt2, "c-a", Some(TEST_SECRET), 1_700_000_000 + 86_400, one_day).await.unwrap_err();
+        assert!(matches!(err, CoreError::InvalidGrant(_)), "got {err:?}");
+        let fam = families.peek(&fam_x()).await.unwrap().unwrap();
+        assert_eq!(fam.expired, Some(LifetimeExpiry::Absolute),
+            "the lowered cap applies to a family created under the old one");
+    }
+
+    /// RFC 139 test 13 (token decoder) — exactly two parts; a three-part token,
+    /// the pre-RFC 139 format, is malformed.
+    #[test]
+    fn rfc139_token_decoder_accepts_exactly_two_parts() {
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+        let fid = crate::types::FamilyId::from_storage("fam");
+        let jti = crate::types::Jti::from_storage("jti");
+        let (f, j) = crate::service::token::decode_refresh(&crate::service::token::encode_refresh(&fid, &jti))
+            .expect("encode/decode round-trip");
+        assert_eq!((f.as_str(), j.as_str()), ("fam", "jti"));
+        assert!(matches!(crate::service::token::decode_refresh(&URL_SAFE_NO_PAD.encode("fam.jti.1700000000")),
+            Err(CoreError::InvalidGrant(_))), "three parts must be malformed");
+        assert!(crate::service::token::decode_refresh(&URL_SAFE_NO_PAD.encode("fam")).is_err(), "one part");
+    }
 
     // ── code grant ──
 

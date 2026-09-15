@@ -47,6 +47,7 @@ impl StubFamilyStore {
             reused_jti:        None,
             reused_at:         None,
             reuse_was_retired: None,
+            expired:           None,
         });
     }
 }
@@ -55,7 +56,7 @@ impl RefreshTokenFamilyStore for StubFamilyStore {
     async fn init(&self, _: &FamilyInit) -> PortResult<()> {
         unimplemented!("revoke must not init")
     }
-    async fn rotate(&self, _: &crate::types::FamilyId, _: &crate::types::Jti, _: &crate::types::Jti, _: i64) -> PortResult<RotateOutcome> {
+    async fn rotate(&self, _: &crate::types::FamilyId, _: &crate::types::Jti, _: &crate::types::Jti, _: i64, _: &crate::ports::store::RefreshLifetime) -> PortResult<RotateOutcome> {
         unimplemented!("revoke must not rotate")
     }
     async fn peek(&self, family_id: &crate::types::FamilyId) -> PortResult<Option<FamilyState>> {
@@ -102,7 +103,8 @@ fn clients_public(client_id: &str) -> StubClients {
 }
 
 fn encode_token(family_id: &str, jti: &str) -> String {
-    let raw = format!("{family_id}.{jti}.unused");
+    // RFC 139 format: exactly two parts.
+    let raw = format!("{family_id}.{jti}");
     URL_SAFE_NO_PAD.encode(raw.as_bytes())
 }
 
@@ -436,4 +438,12 @@ async fn already_revoked_family_revokes_again_idempotently() {
     assert!(matches!(outcome2, RevokeOutcome::Revoked { .. }),
         "second revoke must succeed idempotently, got {outcome2:?}");
     assert_eq!(store.revoke_calls.borrow().as_slice(), &[crate::types::FamilyId::from_storage("fam_2x"), crate::types::FamilyId::from_storage("fam_2x")]);
+}
+
+/// RFC 139 test 13 (revoke decoder) — exactly two parts.
+#[test]
+fn rfc139_revoke_decoder_accepts_exactly_two_parts() {
+    assert!(super::decode_refresh_best_effort(&encode_token("fam", "jti")).is_some());
+    assert!(super::decode_refresh_best_effort(&URL_SAFE_NO_PAD.encode("fam.jti.unused")).is_none(), "three parts");
+    assert!(super::decode_refresh_best_effort(&URL_SAFE_NO_PAD.encode("fam")).is_none(), "one part");
 }

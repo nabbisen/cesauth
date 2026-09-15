@@ -329,15 +329,15 @@ where
 /// decoder only exists to recover the `family_id` so
 /// we know which DO to consult.
 ///
-/// Format (matching v0.27.0): `b64url(<family_id>.<jti>.<other>)`.
+/// Format (RFC 139 §9.4): `b64url(<family_id>.<jti>)`, exactly two parts.
 fn decode_refresh_best_effort(token: &str) -> Option<(FamilyId, String)> {
     use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     let bytes = URL_SAFE_NO_PAD.decode(token.as_bytes()).ok()?;
     let s     = std::str::from_utf8(&bytes).ok()?;
-    let mut parts = s.split('.');
-    let family_id = FamilyId::from_storage(parts.next()?.to_owned());
-    let jti       = parts.next()?.to_owned();
-    Some((family_id, jti))
+    // Exactly two parts: a third is malformed, not ignored (RFC 139 §9.4).
+    let parts: Vec<&str> = s.split('.').collect();
+    let [family_id, jti] = parts.as_slice() else { return None };
+    Some((FamilyId::from_storage((*family_id).to_owned()), (*jti).to_owned()))
 }
 
 #[cfg(test)]

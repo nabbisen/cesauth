@@ -16,7 +16,11 @@ pub struct Config {
     pub issuer:                 String,
     pub jwt_kid:                String,
     pub access_token_ttl_secs:  i64,
-    pub refresh_token_ttl_secs: i64,
+    /// **RFC 139** — refresh-family lifetime policy, built and validated once
+    /// at load from `REFRESH_TOKEN_TTL_SECS` (absolute cap) and
+    /// `REFRESH_TOKEN_IDLE_TIMEOUT_SECS` (idle window, default 14 days, `0`
+    /// disables it). An invalid pair fails startup.
+    pub refresh_lifetime: cesauth_core::ports::store::RefreshLifetime,
     pub magic_link_ttl_secs:    i64,
     /// Session cookie lifetime. Separate from access/refresh TTLs -
     /// we do not want the browser to surface a login prompt every
@@ -127,11 +131,22 @@ impl Config {
             }
         };
 
+        // RFC 139: the absolute cap and idle window, validated together.
+        // Refused at startup if the cap is not positive, idle is negative, or
+        // idle exceeds the cap — never silently applied.
+        let refresh_lifetime = cesauth_core::ports::store::RefreshLifetime::new(
+            var_parsed("REFRESH_TOKEN_TTL_SECS")?,
+            var_parsed_default(
+                "REFRESH_TOKEN_IDLE_TIMEOUT_SECS",
+                cesauth_core::ports::store::DEFAULT_REFRESH_IDLE_TIMEOUT_SECS,
+            )?,
+        ).map_err(|e| worker::Error::RustError(format!("invalid refresh token lifetime: {e}")))?;
+
         Ok(Self {
             issuer:                 var("ISSUER")?,
             jwt_kid:                var("JWT_KID")?,
             access_token_ttl_secs:  var_parsed("ACCESS_TOKEN_TTL_SECS")?,
-            refresh_token_ttl_secs: var_parsed("REFRESH_TOKEN_TTL_SECS")?,
+            refresh_lifetime,
             magic_link_ttl_secs:    var_parsed("MAGIC_LINK_TTL_SECS")?,
             // Defaults chosen for passkey-first UX: 7-day session, 10-
             // minute pending-authorize window, 1-minute AuthCode.

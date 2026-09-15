@@ -8,8 +8,13 @@
 //! revokes the whole family. This is enforced below and also covered
 //! by the in-memory adapter's tests - whichever you break first, CI
 //! fails.
+//!
+//! **RFC 139:** `Rotate` also enforces the lifetime policy it is sent —
+//! revoked, then absolute cap, then idle window, then the jti — using
+//! core's `FamilyState::lifetime`, and an expiry revokes and records
+//! `expired` in the same `put`.
 
-use cesauth_core::ports::store::{FamilyInit, FamilyState};
+use cesauth_core::ports::store::{FamilyInit, FamilyState, Lifetime, LifetimeExpiry, RefreshLifetime};
 use serde::{Deserialize, Serialize};
 #[allow(clippy::wildcard_imports)]
 use worker::*;
@@ -18,7 +23,10 @@ use worker::*;
 #[serde(tag = "op", rename_all = "snake_case")]
 enum Command {
     Init   { init:           FamilyInit },
-    Rotate { presented_jti:  String, new_jti: String, now_unix: i64 },
+    // RFC 139: the policy travels with the command. Must match
+    // `FamilyCmd::Rotate` in `ports/store/refresh_token_family.rs`; a field on
+    // one side only compiles and fails at runtime ("bad command").
+    Rotate { presented_jti:  String, new_jti: String, now_unix: i64, absolute_secs: i64, idle_secs: i64 },
     Peek,
     Revoke { now_unix:       i64 },
 }
@@ -40,6 +48,8 @@ enum Outcome {
     Rotated { new_current_jti: String },
     AlreadyRevoked,
     ReusedAndRevoked { reused_jti: String, was_retired: bool },
+    /// RFC 139: past the absolute cap or idle window; revoked in this write.
+    Expired { kind: LifetimeExpiry },
     NotInitialized,
     Conflict,
     State { state: FamilyState },
@@ -89,19 +99,34 @@ impl DurableObject for RefreshTokenFamily {
                     reused_jti:        None,
                     reused_at:         None,
                     reuse_was_retired: None,
+                    expired:           None,
                     auth_time:         init.auth_time,
                 };
                 storage.put(KEY, &fam).await?;
                 Response::from_json(&Outcome::Ok)
             }
 
-            Command::Rotate { presented_jti, new_jti, now_unix } => {
+            Command::Rotate { presented_jti, new_jti, now_unix, absolute_secs, idle_secs } => {
+                // Rebuilt through the validator: a policy that would disable
+                // the absolute cap is refused, never applied (RFC 139 §7.2).
+                let Ok(lifetime) = RefreshLifetime::new(absolute_secs, idle_secs) else {
+                    return Response::error("invalid refresh lifetime policy", 400);
+                };
                 let Some(mut fam) = storage.get::<FamilyState>(KEY).await? else {
                     return Response::from_json(&Outcome::NotInitialized);
                 };
 
                 if fam.revoked_at.is_some() {
                     return Response::from_json(&Outcome::AlreadyRevoked);
+                }
+
+                // RFC 139 §10.2: lifetime before the jti. An expired family
+                // presented with a retired jti is expired, not reuse-detected.
+                if let Lifetime::Expired(kind) = fam.lifetime(now_unix, &lifetime) {
+                    fam.revoked_at = Some(now_unix);
+                    fam.expired    = Some(kind);
+                    storage.put(KEY, &fam).await?;
+                    return Response::from_json(&Outcome::Expired { kind });
                 }
 
                 if presented_jti.as_str() == fam.current_jti.as_str() {

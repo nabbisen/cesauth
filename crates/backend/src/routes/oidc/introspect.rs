@@ -203,7 +203,7 @@ pub async fn handler<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
         // Note: expected_aud removed in v0.50.3 (RFC 009).
         // The audience gate below is the canonical aud check.
         30,           // leeway_secs
-        &IntrospectInput { token: &token, hint, now_unix: now },
+        &IntrospectInput { token: &token, hint, now_unix: now, refresh_lifetime: cfg.refresh_lifetime },
     ).await
         .map_err(|e| worker::Error::RustError(format!("introspect failed: {e:?}")))?;
 
@@ -274,13 +274,15 @@ pub async fn handler<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
     // The fields are present only on refresh-token
     // introspection paths that surface x_cesauth (current,
     // retired, revoked, unknown); access-token paths set
-    // them all to None and the JSON omits them.
+    // them all to None and the JSON omits them. RFC 139 adds `expired`:
+    // a new value in this existing field, not a new audit event kind.
     let ext_family_state = resp.x_cesauth.as_ref()
         .and_then(|e| e.family_state)
         .map(|c| match c {
             cesauth_core::oidc::introspect::FamilyClassification::Current => "current",
             cesauth_core::oidc::introspect::FamilyClassification::Retired => "retired",
             cesauth_core::oidc::introspect::FamilyClassification::Revoked => "revoked",
+            cesauth_core::oidc::introspect::FamilyClassification::Expired => "expired",
             cesauth_core::oidc::introspect::FamilyClassification::Unknown => "unknown",
         });
     let ext_revoke_reason = resp.x_cesauth.as_ref()

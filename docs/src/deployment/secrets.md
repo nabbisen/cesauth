@@ -76,7 +76,8 @@ overwritten atomically.
 | `ISSUER`                     | `https://auth.example.com` | Must match the discovery doc's `issuer` |
 | `JWT_KID`                    | `cesauth-2026-01`   | Stamped on every issued JWT               |
 | `ACCESS_TOKEN_TTL_SECS`      | `600`               | JWT `exp` offset                          |
-| `REFRESH_TOKEN_TTL_SECS`     | `2592000`           | Refresh family lifetime                   |
+| `REFRESH_TOKEN_TTL_SECS`     | `2592000`           | Refresh family absolute cap (RFC 139): ends a family this long after creation, however often it is rotated. Must be positive |
+| `REFRESH_TOKEN_IDLE_TIMEOUT_SECS` | `1209600`      | Refresh family idle window (RFC 139): ends a family not rotated for this long. `0` disables it; must not exceed `REFRESH_TOKEN_TTL_SECS` or the worker refuses to start |
 | `MAGIC_LINK_TTL_SECS`        | `600`               | OTP validity                              |
 | `SESSION_TTL_SECS`           | `2592000`           | Session cookie lifetime                   |
 | `PENDING_AUTHORIZE_TTL_SECS` | `300`               | `/authorize` cold-path park               |

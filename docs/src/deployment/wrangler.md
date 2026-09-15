@@ -65,6 +65,10 @@ local-dev equivalent via `.dev.vars`.
 - `ACCESS_TOKEN_TTL_SECS`, `REFRESH_TOKEN_TTL_SECS`,
   `MAGIC_LINK_TTL_SECS`, `SESSION_TTL_SECS`,
   `PENDING_AUTHORIZE_TTL_SECS`, `AUTH_CODE_TTL_SECS`.
+- `REFRESH_TOKEN_IDLE_TIMEOUT_SECS` — the refresh family idle window
+  (RFC 139), default `1209600` (14 days); `"0"` disables it. It must not
+  exceed `REFRESH_TOKEN_TTL_SECS`, which is the absolute cap, or the worker
+  refuses to start.
 - `LOG_LEVEL` — `trace` | `debug` | `info` | `warn` | `error`.
 - `LOG_EMIT_SENSITIVE` — `"0"` or `"1"`. Default `"0"`.
 - `WRANGLER_LOCAL` — `"0"` in production. MUST NOT be `"1"` on any

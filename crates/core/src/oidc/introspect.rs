@@ -79,6 +79,9 @@ pub struct IntrospectInput<'a> {
     pub token:    &'a str,
     pub hint:     Option<TokenTypeHint>,
     pub now_unix: i64,
+    /// **RFC 139** — the refresh-family lifetime policy: classifies an expired
+    /// family and gives a live one its `exp`.
+    pub refresh_lifetime: crate::ports::store::RefreshLifetime,
 }
 
 /// RFC 7662 §2.2 introspection response.
@@ -197,7 +200,7 @@ pub struct CesauthIntrospectionExt {
     /// dashboard wants to break those down. A token with
     /// `active=true` always has `family_state="current"`;
     /// a token with `active=false` has one of the other
-    /// three (`retired`, `revoked`, or `unknown`).
+    /// four (`retired`, `revoked`, `expired` — RFC 139 — or `unknown`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub family_state: Option<FamilyClassification>,
 
@@ -245,6 +248,12 @@ pub enum FamilyClassification {
     /// is Some). Pair with [`CesauthIntrospectionExt::revoked_at`]
     /// + [`CesauthIntrospectionExt::revoke_reason`].
     Revoked,
+    /// **RFC 139** — the family is past its absolute cap or idle window.
+    /// Either the store expired it at a rotation (`revoked_at` is then
+    /// surfaced), or nothing has rotated it since a deadline passed
+    /// (`revoked_at` absent: introspection never writes). Distinct from
+    /// `Revoked`, so an expiry is not reported as an explicit revocation.
+    Expired,
     /// The family doesn't exist in the store. Could be:
     /// already-swept, never-issued, malformed-token-
     /// after-decode-but-no-record. Conflated for the
@@ -350,9 +359,10 @@ impl IntrospectionResponse {
 
     /// Active refresh-token response. Refresh tokens don't carry
     /// per-token `iat` separately from the family's
-    /// `last_rotated_at`, and they don't carry an explicit `exp`
-    /// (lifetime is the family's `created_at + refresh_ttl`). We
-    /// return what we have.
+    /// `last_rotated_at`, and they carry no expiry at all. **RFC 139:**
+    /// the caller passes the family's earlier lifetime deadline as `exp`,
+    /// computed by `FamilyState::deadline` from the store and the current
+    /// policy — never a value taken from the token.
     ///
     /// `token_type` is omitted: refresh tokens don't have an
     /// HTTP-Authorization `Bearer` semantic — they're scoped to

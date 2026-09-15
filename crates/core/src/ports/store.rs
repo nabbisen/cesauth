@@ -169,6 +169,11 @@ pub trait AuthChallengeStore {
 // investigating a possible token leak need to know which.
 // -------------------------------------------------------------------------
 
+// RFC 139: the lifetime policy and decision live beside the family.
+pub use crate::refresh_lifetime::{
+    DEFAULT_REFRESH_IDLE_TIMEOUT_SECS, Lifetime, LifetimeExpiry, RefreshLifetime, RefreshLifetimeError,
+};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FamilyState {
     pub family_id:       crate::types::FamilyId,
@@ -200,6 +205,15 @@ pub struct FamilyState {
     /// access wouldn't normally know a valid retired jti.
     #[serde(default)]
     pub reuse_was_retired: Option<bool>,
+
+    // ---------- RFC 139: lifetime expiry ----------
+    /// Which lifetime deadline ended this family. Set by `rotate` in the same
+    /// write as `revoked_at` when the family is past its absolute cap or idle
+    /// window (RFC 139 §10.1). `None` for a live family, and for one revoked
+    /// explicitly or by reuse detection. No deadline itself is stored: it is
+    /// computed from `created_at` / `last_rotated_at` and the current policy.
+    #[serde(default)]
+    pub expired: Option<LifetimeExpiry>,
 
     // ---------- RFC 001: id_token auth_time ----------
     /// Unix timestamp of the original authentication event.  Set when
@@ -258,6 +272,12 @@ pub enum RotateOutcome {
         /// (= forged / not previously seen by this family).
         was_retired: bool,
     },
+    /// **RFC 139** — the family was past its absolute cap or its idle window.
+    /// The store set `revoked_at` and `expired` in the same write and did
+    /// **not** rotate. Checked after revocation and before the jti, so an
+    /// expired family presented with a retired jti is `Expired`, and the reuse
+    /// forensics stay `None`.
+    Expired(LifetimeExpiry),
 }
 
 pub trait RefreshTokenFamilyStore {
@@ -268,12 +288,24 @@ pub trait RefreshTokenFamilyStore {
     /// Rotate. On success the DO's current_jti is now `new_jti`. On
     /// reuse, the family is atomically marked revoked *and then* the
     /// outcome is returned.
+    ///
+    /// **RFC 139 — checks, in this order, in one atomic step:**
+    /// 1. already revoked → `AlreadyRevoked`;
+    /// 2. past the absolute cap → set `revoked_at` and
+    ///    `expired = Absolute`, return `Expired(Absolute)`;
+    /// 3. past the idle window → the same with `Idle`;
+    /// 4. presented jti is current → rotate; otherwise reuse detection.
+    ///
+    /// Steps 2–3 are decided by `FamilyState::lifetime(now_unix, lifetime)`,
+    /// never by re-implemented arithmetic. Expiry is enforced here, in the
+    /// store, not in a caller's peek.
     async fn rotate(
         &self,
         family_id:     &crate::types::FamilyId,
         presented_jti: &crate::types::Jti,
         new_jti:       &crate::types::Jti,
         now_unix:      i64,
+        lifetime:      &RefreshLifetime,
     ) -> PortResult<RotateOutcome>;
 
     async fn revoke(&self, family_id: &crate::types::FamilyId, now_unix: i64) -> PortResult<()>;

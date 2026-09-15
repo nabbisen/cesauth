@@ -30,13 +30,13 @@ async fn active_refresh_response_carries_x_cesauth_current() {
     install_family(&store, "fam_ok", "user_a", "client_X",
                    "jti_curr", &["openid"]).await;
 
-    let token = encode_token("fam_ok", "jti_curr", 999_999);
+    let token = encode_token("fam_ok", "jti_curr");
     let resp = introspect_token(
         &store, &fake_keys(), ISS, 30,
         &IntrospectInput {
             token: &token,
             hint:  Some(TokenTypeHint::RefreshToken),
-            now_unix: 200,
+            now_unix: 200, refresh_lifetime: super::test_lifetime()
         },
     ).await.unwrap();
 
@@ -65,13 +65,13 @@ async fn revoked_family_returns_inactive_with_explicit_reason() {
     // Revoke at t=500.
     store.revoke(&crate::types::FamilyId::from_storage("fam_rev"), 500).await.unwrap();
 
-    let token = encode_token("fam_rev", "jti_curr", 999_999);
+    let token = encode_token("fam_rev", "jti_curr");
     let resp = introspect_token(
         &store, &fake_keys(), ISS, 30,
         &IntrospectInput {
             token: &token,
             hint:  Some(TokenTypeHint::RefreshToken),
-            now_unix: 600,
+            now_unix: 600, refresh_lifetime: super::test_lifetime()
         },
     ).await.unwrap();
 
@@ -100,13 +100,13 @@ async fn reuse_detected_family_returns_inactive_with_reuse_reason() {
         s.reuse_was_retired = Some(true);
     });
 
-    let token = encode_token("fam_reuse", "jti_curr", 999_999);
+    let token = encode_token("fam_reuse", "jti_curr");
     let resp = introspect_token(
         &store, &fake_keys(), ISS, 30,
         &IntrospectInput {
             token: &token,
             hint:  Some(TokenTypeHint::RefreshToken),
-            now_unix: 700,
+            now_unix: 700, refresh_lifetime: super::test_lifetime()
         },
     ).await.unwrap();
 
@@ -135,13 +135,13 @@ async fn retired_jti_returns_inactive_with_current_jti_hint() {
     });
 
     // Present the v1 (retired) jti.
-    let token = encode_token("fam_rot", "jti_v1", 999_999);
+    let token = encode_token("fam_rot", "jti_v1");
     let resp = introspect_token(
         &store, &fake_keys(), ISS, 30,
         &IntrospectInput {
             token: &token,
             hint:  Some(TokenTypeHint::RefreshToken),
-            now_unix: 700,
+            now_unix: 700, refresh_lifetime: super::test_lifetime()
         },
     ).await.unwrap();
 
@@ -163,13 +163,13 @@ async fn unknown_family_returns_unknown_classification() {
     let store = StubFamilyStore::default();
     // No family installed.
 
-    let token = encode_token("fam_ghost", "jti_anything", 999_999);
+    let token = encode_token("fam_ghost", "jti_anything");
     let resp = introspect_token(
         &store, &fake_keys(), ISS, 30,
         &IntrospectInput {
             token: &token,
             hint:  Some(TokenTypeHint::RefreshToken),
-            now_unix: 700,
+            now_unix: 700, refresh_lifetime: super::test_lifetime()
         },
     ).await.unwrap();
 
@@ -193,13 +193,13 @@ async fn jti_mismatch_without_retired_membership_is_unknown_not_retired() {
                    "jti_curr", &["openid"]).await;
     // No retired jtis.
 
-    let token = encode_token("fam_priv", "jti_forged", 999_999);
+    let token = encode_token("fam_priv", "jti_forged");
     let resp = introspect_token(
         &store, &fake_keys(), ISS, 30,
         &IntrospectInput {
             token: &token,
             hint:  Some(TokenTypeHint::RefreshToken),
-            now_unix: 700,
+            now_unix: 700, refresh_lifetime: super::test_lifetime()
         },
     ).await.unwrap();
 
@@ -229,7 +229,7 @@ async fn truly_malformed_token_falls_through_no_ext() {
         &IntrospectInput {
             token: "not.a.refresh.token",  // 4 parts; not refresh shape
             hint:  None,                    // no hint = try access first
-            now_unix: 700,
+            now_unix: 700, refresh_lifetime: super::test_lifetime()
         },
     ).await.unwrap();
     // The token also fails access-token verify (bad
@@ -265,7 +265,7 @@ async fn access_token_path_does_not_set_x_cesauth() {
         &IntrospectInput {
             token: "x.y.z",
             hint:  Some(TokenTypeHint::AccessToken),
-            now_unix: 700,
+            now_unix: 700, refresh_lifetime: super::test_lifetime()
         },
     ).await.unwrap();
     assert!(!resp.active);

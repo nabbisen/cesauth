@@ -130,6 +130,10 @@ Run `cat wrangler.toml | grep -A50 '\[vars\]'` and confirm:
       response says otherwise.
 - [ ] TTLs (`ACCESS_TOKEN_TTL_SECS`, `REFRESH_TOKEN_TTL_SECS`,
       etc.) reviewed against your security posture.
+- [ ] `REFRESH_TOKEN_IDLE_TIMEOUT_SECS` (refresh idle window, RFC 139)
+      reviewed, and not greater than `REFRESH_TOKEN_TTL_SECS` (the absolute
+      cap): the worker refuses to start otherwise. `"0"` disables the idle
+      window.
 
 ## F — Cron Triggers
 

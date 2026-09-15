@@ -125,7 +125,12 @@ bucket_name = "cesauth-assets"
 ISSUER                  = "https://auth.example.com"
 JWT_KID                 = "cesauth-2026-01"
 ACCESS_TOKEN_TTL_SECS   = "600"
-REFRESH_TOKEN_TTL_SECS  = "2592000"    # 30 days
+REFRESH_TOKEN_TTL_SECS  = "2592000"    # 30 days: refresh family absolute cap (RFC 139)
+# Refresh family idle window (RFC 139): a family not rotated for this long
+# stops working. "0" disables the idle check; the absolute cap above always
+# applies. Must not exceed REFRESH_TOKEN_TTL_SECS, or the worker refuses to
+# start. Default when unset: 1209600 (14 days).
+REFRESH_TOKEN_IDLE_TIMEOUT_SECS = "1209600"    # 14 days
 MAGIC_LINK_TTL_SECS     = "600"
 WEBAUTHN_RP_ID          = "auth.example.com"
 WEBAUTHN_RP_NAME        = "cesauth"

@@ -343,4 +343,15 @@ mod token_www_authenticate_tests {
     fn the_invalid_client_status_mapping_is_unchanged() {
         assert_eq!(oauth_error_code_status(&CoreError::InvalidClient), ("invalid_client", 401));
     }
+
+    /// RFC 139 test 8 (wire) — an expired refresh family reaches the wire
+    /// exactly as a revoked one does: the body carries only the code.
+    #[test]
+    fn rfc139_expired_refresh_is_the_same_wire_error_as_revoked() {
+        assert_eq!(
+            oauth_error_code_status(&CoreError::InvalidGrant("refresh token expired")),
+            oauth_error_code_status(&CoreError::InvalidGrant("refresh token revoked")),
+        );
+        assert_eq!(oauth_error_code_status(&CoreError::InvalidGrant("refresh token expired")), ("invalid_grant", 400));
+    }
 }
