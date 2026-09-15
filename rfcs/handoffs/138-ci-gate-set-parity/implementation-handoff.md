@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 138, CI gate-set parity
 
-**Governing RFC.** [`rfcs/accepted/138-ci-gate-set-parity.md`](../../accepted/138-ci-gate-set-parity.md) — read **§11** first. Two of its five items were inert as originally written.
+**Governing RFC.** [`rfcs/done/138-ci-gate-set-parity.md`](../../done/138-ci-gate-set-parity.md) — read **§11** first. Two of its five items were inert as originally written.
 **Target release.** The next release window. **Level: patch** — every item
 closes a gap between what is claimed and what runs. **Independent of RFC 137**:
 neither waits for the other; whichever is reviewed first ships first.

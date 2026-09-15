@@ -1,6 +1,6 @@
 # RFC 138 — The gate set we describe is not the gate set CI runs
 
-**Status.** Accepted — approved by the owner 2026-09-15. Pre-dispatch measurement found both D1 and D3 inert as written, a fourth unpinned wrangler, and a miscount of mine; all in §11.
+**Status.** Implemented (v0.83.1)
 **Author.** Architect · **Date.** 2026-09-12
 **Priority.** P1. No user-facing impact; it is the integrity of every claim this
 project makes about being green.

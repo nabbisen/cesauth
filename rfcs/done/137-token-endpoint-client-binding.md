@@ -1,6 +1,6 @@
 # RFC 137 — `/token` authenticates no client and binds no code
 
-**Status.** Accepted — approved by the owner 2026-09-15. Scope extended to the refresh grant and open questions ruled on dispatch (§12).
+**Status.** Implemented (v0.83.1)
 **Author.** Architect · **Date.** 2026-09-12
 **Priority.** **P0, security.** The authorization-code exchange is the highest-value
 flow in an IdP, and two of the bindings RFC 6749 §4.1.3 mandates are absent.

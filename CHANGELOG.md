@@ -14,6 +14,92 @@ changes will always be called out here.
 
 ---
 
+## [0.83.1] - 2026-09-15
+
+### `/token` authenticated no client — RFC 137
+
+Until this release, `/token` **never checked a confidential client's
+secret**, and neither an authorization code nor a refresh family was bound
+to the client it was issued to, as RFC 6749 §4.1.3 requires. PKCE was the
+only binding between an authorization request and the client redeeming it.
+0.83.0's notes named this gap as open. **It is closed.**
+
+What holds now, on both the `authorization_code` and `refresh_token` grants:
+
+- **A confidential client must authenticate.** A missing or wrong secret is
+  `401 invalid_client`.
+- **A client with no stored secret counts as public only if it is registered
+  as public.** A confidential registration with no stored hash is rejected,
+  not waved through.
+- **Authentication happens before a code is consumed.** A failed
+  authentication neither burns the code nor touches the refresh family, so
+  holding a code without the secret cannot destroy it or probe whether it is
+  valid.
+- **A wrong-client redemption consumes the code and is refused.**
+- **A wrong-client refresh revokes the family.**
+- **One authentication method per request** (RFC 6749 §2.3). HTTP Basic plus
+  a form `client_secret` is rejected, as is a Basic identity that disagrees
+  with the body's `client_id`, and a malformed Basic header does not fall
+  back to the form.
+- **A client authenticating with Basic needs no body `client_id`** (RFC 6749
+  §4.1.3). Before this, a standards-conforming Basic-only client was refused
+  with `invalid_request`.
+- **`invalid_client` challenges.** When the request carried an
+  `Authorization` header, the 401 includes `WWW-Authenticate: Basic
+  realm="cesauth"` (RFC 6749 §5.2), as `/introspect` already did.
+
+The public beginner client, `demo-cli`, still completes the documented
+first OIDC flow unchanged.
+
+### The gates CI runs now match the ones we describe — RFC 138
+
+- **CI runs `mdbook build`**, in a new `docs.yml` on every pull request.
+  `create-missing = false` means a missing chapter now fails the build
+  instead of being silently created.
+- **wrangler is pinned exactly (4.131.2)** by a committed root lockfile, and
+  every invocation — CI jobs, `make build-backend`, `make dev-backend`, the
+  runtime smoke check — runs `node_modules/.bin/wrangler`. Without a root
+  `npm ci` it **fails with a message saying so**. `npx wrangler` was not
+  enough: without the install it silently ran a cached copy or fetched the
+  latest release.
+- **The tool-installing Actions are pinned to exact versions.**
+- **drift-scan reads the workflows** (and the root `package.json`), so a pin
+  loosened there, or an `npx wrangler` reintroduced, fails the scan.
+- **Clippy covers all six crates.** `cesauth-backend` and
+  `cesauth-adapter-cloudflare` had been excluded on the belief that they need
+  the wasm32 target; they lint on the host with zero correctness errors.
+
+### Open, and stated rather than omitted
+
+- **RFC 139 is open: refresh tokens never expire.** The configured lifetime
+  is written into the token and then enforced nowhere, so a stolen refresh
+  token stays valid until reuse detection fires, which needs the legitimate
+  client to refresh afterwards. The owner chose to ship 0.83.1 first.
+
+### What this release does NOT claim
+
+- **Not that refresh tokens are safe.** They never expire (RFC 139).
+- **Not that the registered authentication method is enforced.** A public
+  client is accepted whatever secret it presents, and a confidential client
+  may use Basic or the form body regardless of its registration.
+- **Not that every rejected authentication is audited.** A malformed Basic
+  header, or a request carrying two identities, writes no audit event; a
+  wrong secret does.
+- **Not that the new or changed CI gates have run in CI.** `docs.yml` is new,
+  `worker-build.yml`'s jobs have never executed, and clippy's two added
+  crates have not run there. **The workflow YAML is unvalidated.**
+- **Not that every tool is pinned.** Node, `cargo-bloat` and `cargo-fuzz` are
+  not.
+- **Not that the operations docs call the pinned wrangler.** Operator pages
+  still write bare `wrangler …`; a documentation follow-up is scheduled.
+- **Not that it works on Cloudflare. Nobody has deployed this tree.** Every
+  runtime observation in this release is Miniflare.
+- **Still true from 0.83.0:** the frontend is verified by 20 tests on one
+  unauthenticated page and nothing more, it renders unstyled, and the browser
+  suite is non-blocking until 0.84.0.
+
+---
+
 ## [0.83.0] - 2026-09-13
 
 ### The application could not run — RFC 135

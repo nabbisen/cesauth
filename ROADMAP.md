@@ -307,6 +307,30 @@ started.
   RFC 6749 §4.1.3; PKCE is the only binding left, and it ships next
   release. RFC 131 stays in `accepted/` — R2b/R3/R4 remain.
 
+- ✅ **v0.83.1 — RFC 137 (+ condition C1-137), RFC 138 (+ condition
+  C1-138). Shipped 2026-09-15.** **`/token` authenticated no client.** A
+  confidential client's secret was never checked, and codes and refresh
+  families were bound to their client by PKCE alone. **RFC 137:** both
+  grants now authenticate a confidential client before consuming anything;
+  a client with no stored secret is public only if registered public; a
+  wrong-client redemption consumes the code and is refused, and a
+  wrong-client refresh revokes the family. C1-137 closed three standards
+  gaps: one authentication method per request, no body `client_id` needed
+  under Basic, and `WWW-Authenticate` on `invalid_client`. **RFC 138:** CI
+  runs `mdbook build` with `create-missing = false`; wrangler is pinned at
+  4.131.2 and called only as `node_modules/.bin/wrangler`, which fails
+  loudly without `npm ci` (C1-138 found `npx wrangler` silently falls back
+  to a cached or latest copy); tool-installing Actions are pinned;
+  drift-scan reads workflows; clippy covers all six crates. **Patch** —
+  both are fixes. **Not claimed:** that refresh tokens are safe (they never
+  expire — RFC 139, open by the owner's choice), that the registered
+  authentication method is enforced (a public client is accepted whatever
+  secret it presents), that every rejected authentication is audited, that
+  the new or changed CI gates have run in CI (the workflow YAML is
+  unvalidated), that every tool is pinned, that the operations docs call
+  the pinned wrangler, or that it works on Cloudflare (Miniflare only;
+  nobody has deployed this tree).
+
 - **Security-critical assurance track (RFCs 116–124).** RFC 116 shipped in
   v0.81.0 (`rfcs/done/`), with two carve-outs deferred: secret-newtype
   adoption at the remaining credential call sites, and `ports::repo`, which

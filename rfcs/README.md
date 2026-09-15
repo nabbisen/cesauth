@@ -104,8 +104,6 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 
 | ID | Title | Tier | Dispatched | Depends on |
 |----|-------|------|---|---|
-| [137](./accepted/137-token-endpoint-client-binding.md) | **`/token` client authentication and binding — P0, security.** Both grants authenticate confidential clients and bind codes and refresh families to their client; a refresh presented by the wrong client revokes the family. Scope extended to the refresh grant on acceptance | **P0** | next release | 116 |
-| [138](./accepted/138-ci-gate-set-parity.md) | CI gate-set parity. mdbook gated — with `create-missing = false`, without which it cannot fail; wrangler pinned at four sites behind a root `npm ci`; pins made self-enforcing by drift-scan reading workflows | P1 | next window; independent of 137 | — |
 | [117](./accepted/117-authorization-code-lifecycle-assurance.md) | Authorization-code lifecycle assurance — typestate pipeline making "mint before validation" unwritable, plus store-contract property tests. **Premise corrected: see §2a — one of the four checks it meant to encode does not exist (RFC 137)** | P0 | after 137 | 116, **137** |
 | [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | R2a shipped v0.82.0; **R5b–e shipped v0.83.0** (+ C1-R5); R2b awaits 132 §13 q1; R3 awaits 132 §13 q1 | 130, 132, 134 |
 
@@ -130,7 +128,7 @@ harness that closes it.
 
 ## Done
 
-125 RFCs shipped between v0.50.3 and v0.83.0 (001–106, 107, 108–111, 110b–110e, 113, 116, 125, 126, 127, 128, 129, 130, 132, 134, 135, 136). Full
+127 RFCs shipped between v0.50.3 and v0.83.1 (001–106, 107, 108–111, 110b–110e, 113, 116, 125, 126, 127, 128, 129, 130, 132, 134, 135, 136, 137, 138). Full
 list with shipped-in versions: see ROADMAP.md "Shipped" section and
 CHANGELOG.md release entries. Selected highlights only listed here; the
 canonical catalogue is the filesystem at `done/`.
@@ -167,6 +165,8 @@ canonical catalogue is the filesystem at `done/`.
 | [135](./done/135-wasm-under-csp.md) | **WebAssembly under the CSP** — the browser refused to compile the bundle, so every `client` surface was a blank page while ten `curl` assertions read healthy. `'wasm-unsafe-eval'` scoped to the Leptos shell by construction, ADR-007 amended, mount into `#root` | v0.83.0 |
 | [136](./done/136-backend-test-rot.md) | **Backend test rot** — 159 tests in the deployed crate did not compile, behind an exclusion whose stated reason covered two of 36 errors; the RFC 008 audit-secret invariant had never once executed (+ conditions C1-136, C2-136) | v0.83.0 |
 | [129](./done/129-drift-scan-coverage.md) | Drift-scan coverage — the `crates/` blind spot: 19 dead pointers, 6 true historical statements, 1 broken command; `ROADMAP.md` added to the scan (+ condition C1-129) | v0.83.0 |
+| [137](./done/137-token-endpoint-client-binding.md) | **`/token` client authentication and binding — P0, security.** A confidential client's secret was never checked, and codes and refresh families were bound to their client by PKCE alone. Both grants now authenticate before consuming, bind to the issuing client, and revoke a family refreshed by the wrong client (+ condition C1-137: one method per request, Basic without a body `client_id`, `WWW-Authenticate` on `invalid_client`) | v0.83.1 |
+| [138](./done/138-ci-gate-set-parity.md) | CI gate-set parity — mdbook gated with `create-missing = false`; wrangler pinned and called only through the local install, which fails loudly; tool-installing Actions pinned; drift-scan reads workflows (+ condition C1-138: no `npx wrangler`, clippy over all six crates) | v0.83.1 |
 | [134](./done/134-router-pattern-conflict.md) | Router pattern conflict — `:param.json` routes panicked `worker`'s router on construction, every request, since 2026-07-07 (+ condition C1-134: the shell's assets resolve) | v0.82.0 |
 | [132](./done/132-view-rendering-policy.md) | View rendering policy — Q1–Q4 derived per surface, `Rendering` column on all 188 routes, E2/E3 blocking gates (+ conditions C1-132, C2-132) | v0.82.0 |
 

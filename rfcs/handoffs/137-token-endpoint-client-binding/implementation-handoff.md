@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 137, `/token` client authentication and binding (P0)
 
-**Governing RFC.** [`rfcs/accepted/137-token-endpoint-client-binding.md`](../../accepted/137-token-endpoint-client-binding.md) — read **§12** first; it carries every ruling below with its evidence.
+**Governing RFC.** [`rfcs/done/137-token-endpoint-client-binding.md`](../../done/137-token-endpoint-client-binding.md) — read **§12** first; it carries every ruling below with its evidence.
 **Target release.** The next release, whose content RFC 137 is by the owner's
 choice when shipping 0.83.0. **Level: patch** — controls RFC 6749 mandates were
 missing on both grants; restoring them is a fix, and nothing new becomes
