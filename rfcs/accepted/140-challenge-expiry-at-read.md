@@ -1,6 +1,6 @@
 # RFC 140 — Challenge stores do not enforce expiry at read
 
-**Status.** Proposed
+**Status.** Accepted — approved by the owner 2026-09-15. Handoff dispatched.
 **Author.** Architect · **Date.** 2026-09-15
 **Priority.** **P1, security.** Authorization codes, WebAuthn ceremony nonces, the
 TOTP gate and parked authorization requests stay usable after `expires_at`

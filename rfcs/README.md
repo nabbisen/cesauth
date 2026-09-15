@@ -49,8 +49,7 @@ Full policy: `done/000-rfc-lifecycle-policy.md`.
 
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
-| [139](./proposed/139-refresh-token-lifetime.md) | **Refresh tokens never expire.** `REFRESH_TOKEN_TTL_SECS` (30 days) is written into the unsigned token, ignored on rotation, absent from `FamilyState`, and unenforced by the DO, its oracle and the cron; introspection reports the token's own client-editable expiry as `exp`. Found measuring the refresh grant for RFC 137 | P1 | after 137 |
-| [140](./proposed/140-challenge-expiry-at-read.md) | **Challenge stores do not enforce expiry at read.** Neither the AuthChallenge DO nor the in-memory store checks `expires_at` on `peek`/`take`; only a DO alarm deletes, and it discards its own delete failure. Authorization codes, WebAuthn nonces, the TOTP gate (whose re-park extends an expired gate by 60 s) and parked ARs are exposed. Found measuring the store contract for RFC 117 | P1 | ahead of 117 |
+| [139](./proposed/139-refresh-token-lifetime.md) | **Refresh tokens never expire.** `REFRESH_TOKEN_TTL_SECS` (30 days) is written into the unsigned token, ignored on rotation, absent from `FamilyState`, and unenforced by the DO, its oracle and the cron; introspection reports the token's own client-editable expiry as `exp`. Found measuring the refresh grant for RFC 137. **Design ruled (§9): idle window + absolute cap applied at check time, no stored expiry, expiry field removed from the token; minor. Awaits owner authorization** | P1 | after 140 |
 
 ### Other proposed
 
@@ -105,7 +104,8 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 
 | ID | Title | Tier | Dispatched | Depends on |
 |----|-------|------|---|---|
-| [117](./accepted/117-authorization-code-lifecycle-assurance.md) | Authorization-code lifecycle assurance — typestate pipeline making "mint before validation" unwritable, plus store-contract property tests. **Premise corrected: see §2a — one of the four checks it meant to encode does not exist (RFC 137)** | P0 | after 137 | 116, **137** |
+| [140](./accepted/140-challenge-expiry-at-read.md) | **Challenge stores enforce expiry at read** — `peek`/`take` take `now_unix`; neither the AuthChallenge DO nor the in-memory store honoured the contract's "past `expires_at` is absent" clause, and the alarm discarded its own delete failure | P1 | 2026-09-15 | — |
+| [117](./accepted/117-authorization-code-lifecycle-assurance.md) | Authorization-code lifecycle assurance — typestate pipeline making "mint before validation" unwritable, plus store-contract property tests. **Premise corrected: see §2a — one of the four checks it meant to encode does not exist (RFC 137)** | P0 | after 140 (§2b) | 116, 137, **140** |
 | [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | R2a shipped v0.82.0; **R5b–e shipped v0.83.0** (+ C1-R5); R2b awaits 132 §13 q1; R3 awaits 132 §13 q1 | 130, 132, 134 |
 
 Numbers are assignment order and are never reused or renumbered (RFC 000), so

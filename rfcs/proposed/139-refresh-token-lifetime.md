@@ -120,3 +120,94 @@ for families that lack it, or treating them as expired (§8).
    `created_at`, or treat as expired? No production use either way;
    recommendation is to compute, so a developer's local session does not die on
    upgrade.
+
+## 9. Rulings (2026-09-15)
+
+The owner answered §8 with the design standard rather than an option: *"finally
+clean, safe and secure, robust and sophisticated design."* There is no
+production use. Under that standard, and after measuring the precedent the
+codebase already has:
+
+### 9.1 Both: an idle window and an absolute cap
+
+A refresh family is live only while **both** hold:
+
+```
+now_unix <  created_at      + REFRESH_TOKEN_TTL_SECS            (absolute)
+now_unix <  last_rotated_at + REFRESH_TOKEN_IDLE_TIMEOUT_SECS   (idle)
+```
+
+- **This is the codebase's own model, not a new one.** `ActiveSessionStore`
+  already enforces exactly this pair (`ports/store.rs:311-352`: `IdleExpired`,
+  `AbsoluteExpired`, `idle_timeout_secs`, `absolute_ttl_secs`), configured by
+  `SESSION_TTL_SECS` and `SESSION_IDLE_TIMEOUT_SECS` (`backend/src/config.rs:138,
+  :142`). Refresh families following a different model from sessions would be
+  the unclean choice.
+- **Absolute alone** lets a stolen token from an idle client live out the full
+  30 days. **Sliding alone** keeps an active thief alive forever. Only the pair
+  bounds both cases.
+- **Boundary:** expired when `now_unix >= deadline`, the same rule as RFC 140
+  and `AnonymousSession::is_expired`.
+- **Defaults:** absolute stays 30 days; idle **14 days**. Configuration is
+  refused at startup if absolute ≤ 0, idle < 0, or idle > absolute. Idle `0`
+  disables the idle check, as it does for sessions; the absolute cap cannot be
+  disabled.
+
+### 9.2 Policy is applied at check time; no expiry is stored (supersedes §5 L1 and L4)
+
+§5 L1 proposed storing `expires_at` at creation. **Overruled, by the author, on
+measurement:** `FamilyState` already stores `created_at` and `last_rotated_at`
+(the DO's `Init`, `adapter-cloudflare/src/refresh_token_family.rs`), which is
+everything §9.1 needs. The policy is passed in at rotation, exactly as sessions
+receive `idle_timeout_secs`/`absolute_ttl_secs`. Consequences:
+
+- **No schema change and no legacy branch.** §8 q2 dissolves: a family created
+  before this lands has `created_at`, so it is governed from the first request
+  after deploy. No `#[serde(default)]`, no "treat as expired" path.
+- **Lowering the configured lifetime shortens every live family immediately.**
+  That is what an operator responding to an incident needs. Raising it extends
+  families, which is the operator's explicit choice. Storing the value at
+  creation would have made the first case impossible.
+- **One pure function decides.** `FamilyState::lifetime(now_unix, policy) ->
+  Live | IdleExpired | AbsoluteExpired` in core, called by the DO, the adapter-test
+  oracle and introspection. Three copies of the arithmetic would drift.
+
+### 9.3 Expiry revokes, atomically, in the store
+
+`rotate` on an expired family sets `revoked_at` in the same write and returns
+`IdleExpired` / `AbsoluteExpired`, as `ActiveSessionStore::touch` does. It is
+never rotated. On the wire this is `invalid_grant`, the same as a revoked
+family. **Enforcement is in the DO**; a check in the service's peek alone would
+race the rotation.
+
+### 9.4 The token stops carrying an expiry (strengthens §5 L3)
+
+The third field of `base64url("{family_id}.{jti}.{expiry}")` is unsigned,
+unread by rotation, and the source of introspection's attacker-controlled `exp`.
+**Remove it.** The format becomes `base64url("{family_id}.{jti}")`, and all three
+decoders accept exactly two parts: `service/token.rs` `decode_refresh`,
+`service/introspect.rs:412` `decode_refresh_token`, and `service/revoke.rs:333`
+`decode_refresh_best_effort`. A three-part token is malformed. There is no
+production use, so outstanding local tokens simply fail.
+
+Introspection's `exp` becomes
+`min(created_at + absolute, last_rotated_at + idle)` (only the absolute term when
+idle is `0`), computed from the peeked family by §9.2's function. Past it is
+`active: false`.
+
+### 9.5 Level
+
+**Minor.** Enforcing the configured absolute lifetime is a fix, but the idle
+window and `REFRESH_TOKEN_IDLE_TIMEOUT_SECS` are a new control, and a release
+mixing levels takes the higher one. §7's "Patch" is superseded. The natural
+home is 0.84.0.
+
+### 9.6 Sequencing
+
+After RFC 140, which is authorized and dispatched. Both change
+`service/token.rs` and its tests, so they run one after the other, not in
+parallel.
+
+**Status after these rulings:** still Proposed. The design questions are
+answered; the RFC itself needs the owner's authorization before its handoff is
+written.
