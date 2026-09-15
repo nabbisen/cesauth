@@ -12,9 +12,10 @@ use super::rpc_call;
 #[serde(tag = "op", rename_all = "snake_case")]
 enum ChallengeCmd<'a> {
     Put { challenge: &'a Challenge },
-    Peek,
-    Take,
-    Bump,
+    // RFC 140: must match `Command` in `auth_challenge.rs` (the DO).
+    Peek { now_unix: i64 },
+    Take { now_unix: i64 },
+    Bump { now_unix: i64 },
 }
 
 #[derive(Deserialize)]
@@ -65,27 +66,27 @@ impl AuthChallengeStore for CloudflareAuthChallengeStore<'_> {
         }
     }
 
-    async fn peek(&self, handle: &cesauth_core::types::ChallengeHandle) -> PortResult<Option<Challenge>> {
+    async fn peek(&self, handle: &cesauth_core::types::ChallengeHandle, now_unix: i64) -> PortResult<Option<Challenge>> {
         let stub  = self.stub(handle.as_str())?;
-        let reply: ChallengeReply = rpc_call(&stub, &ChallengeCmd::Peek).await?;
+        let reply: ChallengeReply = rpc_call(&stub, &ChallengeCmd::Peek { now_unix }).await?;
         match reply {
             ChallengeReply::Value { challenge } => Ok(challenge),
             _                                    => Err(PortError::Unavailable),
         }
     }
 
-    async fn take(&self, handle: &cesauth_core::types::ChallengeHandle) -> PortResult<Option<Challenge>> {
+    async fn take(&self, handle: &cesauth_core::types::ChallengeHandle, now_unix: i64) -> PortResult<Option<Challenge>> {
         let stub  = self.stub(handle.as_str())?;
-        let reply: ChallengeReply = rpc_call(&stub, &ChallengeCmd::Take).await?;
+        let reply: ChallengeReply = rpc_call(&stub, &ChallengeCmd::Take { now_unix }).await?;
         match reply {
             ChallengeReply::Value { challenge } => Ok(challenge),
             _                                    => Err(PortError::Unavailable),
         }
     }
 
-    async fn bump_magic_link_attempts(&self, handle: &cesauth_core::types::ChallengeHandle) -> PortResult<u32> {
+    async fn bump_magic_link_attempts(&self, handle: &cesauth_core::types::ChallengeHandle, now_unix: i64) -> PortResult<u32> {
         let stub  = self.stub(handle.as_str())?;
-        let reply: ChallengeReply = rpc_call(&stub, &ChallengeCmd::Bump).await?;
+        let reply: ChallengeReply = rpc_call(&stub, &ChallengeCmd::Bump { now_unix }).await?;
         match reply {
             ChallengeReply::Attempts { count }      => Ok(count),
             ChallengeReply::NotFound                => Err(PortError::NotFound),

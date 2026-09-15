@@ -316,9 +316,9 @@ async fn apply_promotion<D>(
     // Deliberately not enforcing a hard ceiling here; the OTP
     // entropy + 10-minute TTL are the limiting controls. Mirrors
     // the existing /magic-link/verify behaviour.
-    let _ = challenges.bump_magic_link_attempts(&cesauth_core::types::ChallengeHandle::from_storage(handle)).await;
+    let _ = challenges.bump_magic_link_attempts(&cesauth_core::types::ChallengeHandle::from_storage(handle), now).await;
 
-    let challenge = match challenges.peek(&cesauth_core::types::ChallengeHandle::from_storage(handle)).await {
+    let challenge = match challenges.peek(&cesauth_core::types::ChallengeHandle::from_storage(handle), now).await {
         Ok(Some(Challenge::MagicLink { email_or_user, code_hash, expires_at, .. })) => {
             (email_or_user, code_hash, expires_at)
         }
@@ -339,7 +339,7 @@ async fn apply_promotion<D>(
     }
 
     // Consume the challenge so it can't be replayed.
-    let _ = challenges.take(&cesauth_core::types::ChallengeHandle::from_storage(handle)).await;
+    let _ = challenges.take(&cesauth_core::types::ChallengeHandle::from_storage(handle), now).await;
 
     // ---- Email-uniqueness check (in-tenant) -------------------------
     //

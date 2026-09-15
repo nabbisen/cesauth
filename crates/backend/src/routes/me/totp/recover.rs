@@ -143,7 +143,7 @@ where
         return RecoverDecision::EmptyCode;
     }
 
-    let challenge = match challenges.take(&cesauth_core::types::ChallengeHandle::from_storage(totp_handle)).await {
+    let challenge = match challenges.take(&cesauth_core::types::ChallengeHandle::from_storage(totp_handle), now_unix).await {
         Ok(Some(c)) => c,
         _           => return RecoverDecision::NoChallenge,
     };

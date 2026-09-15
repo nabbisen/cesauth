@@ -92,7 +92,7 @@ async fn recover_normal_path_returns_success_and_consumes_code_and_challenge() {
     }
 
     // Challenge consumed.
-    assert!(store.peek(&totp_handle()).await.unwrap().is_none(),
+    assert!(store.peek(&totp_handle(), 0).await.unwrap().is_none(),
         "challenge must be taken on success");
 
     // The redeemed code is gone from the unredeemed set; the other
@@ -122,7 +122,7 @@ async fn recover_csrf_mismatch_returns_csrf_failure_and_does_not_consume_challen
     assert!(matches!(decision, RecoverDecision::CsrfFailure));
 
     // Challenge must NOT be consumed — user can retry with a fresh form.
-    assert!(store.peek(&totp_handle()).await.unwrap().is_some(),
+    assert!(store.peek(&totp_handle(), 0).await.unwrap().is_some(),
         "CSRF failure must not destroy the challenge");
 
     // Recovery code must NOT be redeemed.
@@ -137,7 +137,7 @@ async fn recover_empty_csrf_strings_rejected_as_csrf_failure() {
     let decision = decide_recover_post("", "", "X", TOTP_HANDLE, &store, &recovery_repo, 0).await;
     assert!(matches!(decision, RecoverDecision::CsrfFailure));
     // Preserved.
-    assert!(store.peek(&totp_handle()).await.unwrap().is_some());
+    assert!(store.peek(&totp_handle(), 0).await.unwrap().is_some());
 }
 
 // =====================================================================
@@ -151,7 +151,7 @@ async fn recover_empty_code_returns_empty_code() {
     let decision = decide_recover_post(&form, &cookie, "", TOTP_HANDLE, &store, &recovery_repo, 0).await;
     assert!(matches!(decision, RecoverDecision::EmptyCode));
     // Challenge preserved.
-    assert!(store.peek(&totp_handle()).await.unwrap().is_some());
+    assert!(store.peek(&totp_handle(), 0).await.unwrap().is_some());
 }
 
 // =====================================================================
@@ -214,7 +214,7 @@ async fn recover_unknown_code_returns_no_matching_code_and_consumes_challenge() 
     // Challenge consumed (we passed the take step before lookup).
     // The handler clears the gate and bounces; the user starts
     // over from /login.
-    assert!(store.peek(&totp_handle()).await.unwrap().is_none(),
+    assert!(store.peek(&totp_handle(), 0).await.unwrap().is_none(),
         "challenge consumption is irreversible past the take step");
     // Real code remains unredeemed.
     let still_there = recovery_repo.find_unredeemed_by_hash(USER_ID, &hash_recovery_code(plaintext))
@@ -288,7 +288,7 @@ async fn recover_mark_redeemed_failure_returns_mark_redeemed_failed() {
 
     assert!(matches!(decision, RecoverDecision::MarkRedeemedFailed));
     // Challenge already consumed by the take step.
-    assert!(store.peek(&totp_handle()).await.unwrap().is_none());
+    assert!(store.peek(&totp_handle(), 0).await.unwrap().is_none());
 }
 
 // =====================================================================
@@ -316,4 +316,33 @@ async fn recover_canonicalizes_submitted_code() {
     ).await;
     assert!(matches!(decision, RecoverDecision::Success { .. }),
         "lowercased + whitespaced input should canonicalize to the stored hash");
+}
+
+// =====================================================================
+// RFC 140 test 6 — an expired PendingTotp gate is absent to recover.
+// =====================================================================
+
+#[tokio::test]
+async fn rfc140_recover_rejects_an_expired_gate() {
+    let (_, recovery_repo) = fixture_with_pending_totp_and_codes(&["X"]).await;
+    let store = InMemoryAuthChallengeStore::default();
+    store.put(&totp_handle(), &Challenge::PendingTotp {
+        user_id:                 USER_ID.to_owned(),
+        auth_method:             AuthMethod::MagicLink,
+        ar_client_id:            None,
+        ar_redirect_uri:         None,
+        ar_scope:                None,
+        ar_state:                None,
+        ar_nonce:                None,
+        ar_code_challenge:       None,
+        ar_code_challenge_method:None,
+        attempts:                0,
+        expires_at:              100,
+    }).await.unwrap();
+    let (form, cookie) = matched_csrf();
+
+    // A valid recovery code, presented at expiry.
+    let decision = decide_recover_post(&form, &cookie, "X", TOTP_HANDLE, &store, &recovery_repo, 100).await;
+    assert!(matches!(decision, RecoverDecision::NoChallenge));
+    assert!(store.peek(&totp_handle(), 0).await.unwrap().is_none(), "the expired take deleted it");
 }

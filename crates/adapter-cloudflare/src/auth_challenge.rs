@@ -17,8 +17,14 @@
 //!   returns conflict. This preserves the invariant that each handle
 //!   maps to at most one challenge for its lifetime.
 //! * `Take` is atomic: delete happens before the value is returned.
-//! * Expiry is handled via DO alarms: a challenge schedules self-GC
-//!   at its `expires_at` time.
+//! * **Expiry is enforced at read (RFC 140).** `Peek`, `Take` and `Bump`
+//!   carry the caller's `now_unix`; an entry is expired iff
+//!   `now_unix >= expires_at`. An expired `Peek` returns `None` without
+//!   deleting, an expired `Take` deletes and returns `None`, and an
+//!   expired `Bump` is `NotFound`. The DO reads no clock.
+//! * The alarm set at `Put` is **cleanup only**. It propagates a failed
+//!   delete, so the runtime sees the failure; correctness never depends
+//!   on it having run.
 
 use cesauth_core::ports::store::Challenge;
 use serde::{Deserialize, Serialize};
@@ -32,9 +38,11 @@ use worker::*;
 #[serde(tag = "op", rename_all = "snake_case")]
 enum Command {
     Put  { challenge: Challenge },
-    Peek,
-    Take,
-    Bump,
+    // RFC 140: must match `ChallengeCmd` in `ports/store/auth_challenge.rs`.
+    // A field on one side only compiles and fails at runtime ("bad command").
+    Peek { now_unix: i64 },
+    Take { now_unix: i64 },
+    Bump { now_unix: i64 },
 }
 
 #[derive(Debug, Serialize)]
@@ -89,23 +97,28 @@ impl DurableObject for AuthChallenge {
                 Response::from_json(&Outcome::Ok)
             }
 
-            Command::Peek => {
-                let v = storage.get::<Challenge>(KEY).await.ok().flatten();
+            Command::Peek { now_unix } => {
+                let v = storage.get::<Challenge>(KEY).await.ok().flatten()
+                    .filter(|c| now_unix < c.expires_at());
                 Response::from_json(&Outcome::Value { challenge: v })
             }
 
-            Command::Take => {
+            Command::Take { now_unix } => {
                 let v = storage.get::<Challenge>(KEY).await.ok().flatten();
                 if v.is_some() {
                     // Delete first so a late concurrent `Take` cannot
-                    // see a value we already returned.
+                    // see a value we already returned. An expired entry
+                    // is deleted too, and never returned (RFC 140).
                     storage.delete(KEY).await?;
                 }
+                let v = v.filter(|c| now_unix < c.expires_at());
                 Response::from_json(&Outcome::Value { challenge: v })
             }
 
-            Command::Bump => {
-                let Some(mut c) = storage.get::<Challenge>(KEY).await? else {
+            Command::Bump { now_unix } => {
+                let Some(mut c) = storage.get::<Challenge>(KEY).await?
+                    .filter(|c| now_unix < c.expires_at())
+                else {
                     return Response::from_json(&Outcome::NotFound);
                 };
                 if let Challenge::MagicLink { ref mut attempts, .. } = c {
@@ -121,7 +134,9 @@ impl DurableObject for AuthChallenge {
     }
 
     async fn alarm(&self) -> Result<Response> {
-        let _ = self.state.storage().delete(KEY).await;
+        // RFC 140: propagate a failed delete so the runtime sees it.
+        // Discarding it reported success and left the entry forever.
+        self.state.storage().delete(KEY).await?;
         Response::ok("expired")
     }
 }

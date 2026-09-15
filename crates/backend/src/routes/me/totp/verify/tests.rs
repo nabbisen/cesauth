@@ -82,19 +82,19 @@ async fn verify_get_with_live_pending_totp_renders() {
     let store = InMemoryAuthChallengeStore::default();
     store.put(&totp_handle(), &parked_pending_totp()).await.unwrap();
 
-    let decision = decide_verify_get(TOTP_HANDLE, &store).await;
+    let decision = decide_verify_get(TOTP_HANDLE, &store, 1_700_000_000).await;
     assert_eq!(decision, VerifyGetDecision::RenderPage);
 
     // Critical: peek (not take). The challenge MUST still be
     // there after the GET so the POST that follows can take it.
-    assert!(store.peek(&totp_handle()).await.unwrap().is_some(),
+    assert!(store.peek(&totp_handle(), 1_700_000_000).await.unwrap().is_some(),
         "GET must not consume the challenge");
 }
 
 #[tokio::test]
 async fn verify_get_with_unknown_handle_is_stale_gate() {
     let store = InMemoryAuthChallengeStore::default();
-    let decision = decide_verify_get("never-parked", &store).await;
+    let decision = decide_verify_get("never-parked", &store, 1_700_000_000).await;
     assert_eq!(decision, VerifyGetDecision::StaleGate);
 }
 
@@ -114,7 +114,7 @@ async fn verify_get_with_wrong_challenge_kind_is_stale_gate() {
     };
     store.put(&totp_handle(), &other).await.unwrap();
 
-    let decision = decide_verify_get(TOTP_HANDLE, &store).await;
+    let decision = decide_verify_get(TOTP_HANDLE, &store, 1_700_000_000).await;
     assert_eq!(decision, VerifyGetDecision::StaleGate);
 }
 
@@ -126,9 +126,9 @@ async fn verify_get_after_take_is_stale_gate() {
     // challenge.
     let store = InMemoryAuthChallengeStore::default();
     store.put(&totp_handle(), &parked_pending_totp()).await.unwrap();
-    store.take(&totp_handle()).await.unwrap(); // consume
+    store.take(&totp_handle(), 1_700_000_000).await.unwrap(); // consume
 
-    let decision = decide_verify_get(TOTP_HANDLE, &store).await;
+    let decision = decide_verify_get(TOTP_HANDLE, &store, 1_700_000_000).await;
     assert_eq!(decision, VerifyGetDecision::StaleGate);
 }
 
@@ -247,7 +247,7 @@ async fn verify_post_correct_code_returns_success_and_persists_last_used_step() 
     assert!(stored.last_used_at.is_some());
 
     // Challenge consumed.
-    assert!(store.peek(&totp_handle()).await.unwrap().is_none());
+    assert!(store.peek(&totp_handle(), 1_700_000_000).await.unwrap().is_none());
 }
 
 // ----- CSRF -----
@@ -263,7 +263,7 @@ async fn verify_post_csrf_failure_does_not_take_challenge_or_touch_state() {
     assert!(matches!(decision, VerifyPostDecision::CsrfFailure));
 
     // Challenge preserved.
-    assert!(store.peek(&totp_handle()).await.unwrap().is_some());
+    assert!(store.peek(&totp_handle(), 1_700_000_000).await.unwrap().is_some());
     // last_used_step untouched.
     let stored = totp_repo.find_by_id(AUTH_ID).await.unwrap().unwrap();
     assert_eq!(stored.last_used_step, 0);
@@ -322,7 +322,7 @@ async fn verify_post_wrong_encryption_key_returns_decrypt_failed() {
     ).await;
     assert!(matches!(decision, VerifyPostDecision::DecryptFailed));
     // Challenge consumed (we passed the take step).
-    assert!(store.peek(&totp_handle()).await.unwrap().is_none());
+    assert!(store.peek(&totp_handle(), 1_700_000_000).await.unwrap().is_none());
 }
 
 // ----- wrong code under threshold: re-park with BadCode -----
@@ -341,7 +341,7 @@ async fn verify_post_wrong_code_under_threshold_returns_bad_code_and_reparks() {
     assert!(matches!(decision, VerifyPostDecision::BadCode));
 
     // Challenge re-parked with attempts incremented.
-    let parked = store.peek(&totp_handle()).await.unwrap().expect("re-parked");
+    let parked = store.peek(&totp_handle(), 1_700_000_000).await.unwrap().expect("re-parked");
     match parked {
         Challenge::PendingTotp { attempts, .. } => assert_eq!(attempts, 3),
         other => panic!("expected PendingTotp, got {other:?}"),
@@ -369,7 +369,7 @@ async fn verify_post_wrong_code_at_threshold_returns_lockout_no_repark() {
     // Challenge consumed (taken at step 2) and NOT re-parked
     // (lockout branch returns before put). The user must restart
     // from /login.
-    assert!(store.peek(&totp_handle()).await.unwrap().is_none(),
+    assert!(store.peek(&totp_handle(), 1_700_000_000).await.unwrap().is_none(),
         "lockout must not re-park the challenge");
 }
 
@@ -389,7 +389,7 @@ async fn verify_post_malformed_code_treated_as_bad_code() {
     ).await;
     assert!(matches!(decision, VerifyPostDecision::BadCode));
 
-    let parked = store.peek(&totp_handle()).await.unwrap().expect("re-parked");
+    let parked = store.peek(&totp_handle(), 1_700_000_000).await.unwrap().expect("re-parked");
     match parked {
         Challenge::PendingTotp { attempts, .. } => assert_eq!(attempts, 1),
         _ => panic!(),
@@ -432,4 +432,32 @@ async fn verify_post_find_active_storage_error_returns_storage_error() {
     ).await;
     assert!(matches!(decision, VerifyPostDecision::StorageError),
         "find_active_for_user error must be StorageError, distinct from NoUserAuthenticator");
+}
+
+// =====================================================================
+// RFC 140 test 6 — an expired PendingTotp gate is absent to verify, and
+// verify does not re-park it. Before RFC 140 the store returned the
+// expired gate and `decide_verify_post` re-parked it with 60 more seconds.
+// =====================================================================
+
+#[tokio::test]
+async fn rfc140_verify_rejects_an_expired_gate_and_does_not_repark_it() {
+    let (store, totp_repo, _, now) = fixture_totp_pending(0).await;
+    let expires_at = now + 600; // fixture_totp_pending's gate lifetime
+    let (form, cookie) = matched_csrf_v();
+
+    // GET at expiry: stale gate.
+    assert_eq!(decide_verify_get(TOTP_HANDLE, &store, expires_at).await, VerifyGetDecision::StaleGate);
+
+    // POST at expiry with a wrong code — the branch that re-parks a live gate.
+    let decision = decide_verify_post(
+        &form, &cookie, "000000", TOTP_HANDLE,
+        &store, &totp_repo, &fixed_key(), expires_at,
+    ).await;
+    assert!(matches!(decision, VerifyPostDecision::NoChallenge), "got {decision:?}");
+
+    // Nothing at that handle afterwards, even to a live clock: the expired
+    // take deleted it and nothing re-parked it.
+    assert!(store.peek(&totp_handle(), now).await.unwrap().is_none(),
+        "an expired gate must not be re-parked");
 }

@@ -127,7 +127,7 @@ where
 
     // 2. Consume the code.
     let challenge = deps.codes
-        .take(input.code)
+        .take(input.code, input.now_unix)
         .await
         .map_err(|_| CoreError::Internal)?
         .ok_or(CoreError::InvalidGrant("code is unknown or already used"))?;

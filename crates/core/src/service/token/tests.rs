@@ -137,13 +137,16 @@ mod id_token_tests {
             self.0.borrow_mut().insert(code.as_str().to_owned(), ch.clone());
             Ok(())
         }
-        async fn peek(&self, code: &crate::types::ChallengeHandle) -> PortResult<Option<Challenge>> {
-            Ok(self.0.borrow().get(code.as_str()).cloned())
+        // RFC 140 T3: a store, so it implements the port's expiry rule —
+        // expired iff `now_unix >= expires_at()`. A stub that ignored expiry
+        // would make the expired-code test unpassable.
+        async fn peek(&self, code: &crate::types::ChallengeHandle, now_unix: i64) -> PortResult<Option<Challenge>> {
+            Ok(self.0.borrow().get(code.as_str()).filter(|c| now_unix < c.expires_at()).cloned())
         }
-        async fn take(&self, code: &crate::types::ChallengeHandle) -> PortResult<Option<Challenge>> {
-            Ok(self.0.borrow_mut().remove(code.as_str()))
+        async fn take(&self, code: &crate::types::ChallengeHandle, now_unix: i64) -> PortResult<Option<Challenge>> {
+            Ok(self.0.borrow_mut().remove(code.as_str()).filter(|c| now_unix < c.expires_at()))
         }
-        async fn bump_magic_link_attempts(&self, _: &crate::types::ChallengeHandle) -> PortResult<u32> { Ok(0) }
+        async fn bump_magic_link_attempts(&self, _: &crate::types::ChallengeHandle, _: i64) -> PortResult<u32> { Ok(0) }
     }
 
     struct StubFamilies(RefCell<HashMap<crate::types::FamilyId, FamilyState>>);
@@ -299,6 +302,40 @@ mod id_token_tests {
         };
         let (deps, tok_cfg) = make_deps_cfg(&clients, &codes, &families, &grants, &users, &StubRates, "https://t.test");
         exchange_code(&deps, &signer, &tok_cfg, &input).await.unwrap()
+    }
+
+    /// `exchange_code` on `stub_exchange_setup`'s code (expires at
+    /// 1_700_000_300), presenting `code` at `now_unix`, returning the error.
+    async fn exchange_err(code: &str, now_unix: i64) -> CoreError {
+        let verifier = "test-verifier-padded-to-exactly-43chars-xxx";
+        let (clients, codes, families, grants, users) = stub_exchange_setup(&["openid"], 1_699_999_900, verifier);
+        let handle = crate::types::ChallengeHandle::from_storage(code);
+        let input = ExchangeCodeInput {
+            code:          &handle,
+            redirect_uri:  "https://app.test/cb",
+            client_id:     "c-1",
+            client_secret: Some(TEST_SECRET),
+            code_verifier: verifier,
+            now_unix,
+        };
+        let (deps, tok_cfg) = make_deps_cfg(&clients, &codes, &families, &grants, &users, &StubRates, "https://t.test");
+        match exchange_code(&deps, &test_signer(), &tok_cfg, &input).await {
+            Ok(_)  => panic!("expected an error for code {code:?} at {now_unix}"),
+            Err(e) => e,
+        }
+    }
+
+    /// RFC 140 test 5: an expired code is indistinguishable on the wire from
+    /// an unknown one — the same variant **and the same message**. Compared
+    /// with each other, not with two literals.
+    #[tokio::test]
+    async fn rfc140_expired_code_is_the_same_invalid_grant_as_an_unknown_code() {
+        let expired = exchange_err("code-1", 1_700_000_300).await; // == expires_at
+        let unknown = exchange_err("no-such-code", 1_700_000_000).await;
+        match (&expired, &unknown) {
+            (CoreError::InvalidGrant(a), CoreError::InvalidGrant(b)) => assert_eq!(a, b),
+            _ => panic!("both must be InvalidGrant: expired={expired:?} unknown={unknown:?}"),
+        }
     }
 
     // ── tests ────────────────────────────────────────────────────────

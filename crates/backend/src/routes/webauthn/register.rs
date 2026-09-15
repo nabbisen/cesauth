@@ -87,7 +87,10 @@ pub async fn register_finish<D>(mut req: Request, ctx: RouteContext<D>) -> Resul
     // Consume the challenge. After this call, a replay of the same
     // handle returns None; this is the single-consumption guarantee.
     let store = CloudflareAuthChallengeStore::new(&ctx.env);
-    let chal  = match store.take(&cesauth_core::types::ChallengeHandle::from_storage(&body.handle)).await {
+    // RFC 140: one clock for the request, read before the challenge is
+    // taken so the store can enforce its expiry.
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    let chal  = match store.take(&cesauth_core::types::ChallengeHandle::from_storage(&body.handle), now).await {
         Ok(Some(c)) => c,
         _ => return oauth_error_response(&cesauth_core::CoreError::InvalidRequest("handle")),
     };
@@ -100,7 +103,6 @@ pub async fn register_finish<D>(mut req: Request, ctx: RouteContext<D>) -> Resul
         _ => return oauth_error_response(&cesauth_core::CoreError::InvalidRequest("handle not register")),
     };
 
-    let now = OffsetDateTime::now_utc().unix_timestamp();
 
     // RFC 051: look up tenant_id for the authenticator record.
     // The user was created before this registration challenge was issued;

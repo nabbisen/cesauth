@@ -96,6 +96,7 @@ pub enum VerifyGetDecision {
 pub async fn decide_verify_get<C>(
     totp_handle: &str,
     challenges:  &C,
+    now_unix:    i64,
 ) -> VerifyGetDecision
 where
     C: AuthChallengeStore + ?Sized,
@@ -113,7 +114,7 @@ where
     };
     cesauth_frontend::set_render_nonce(csp_nonce.as_str());
 
-    match challenges.peek(&cesauth_core::types::ChallengeHandle::from_storage(totp_handle)).await {
+    match challenges.peek(&cesauth_core::types::ChallengeHandle::from_storage(totp_handle), now_unix).await {
         Ok(Some(Challenge::PendingTotp { .. })) => VerifyGetDecision::RenderPage,
         _ => VerifyGetDecision::StaleGate,
     }
@@ -139,7 +140,9 @@ pub async fn get_handler(
     };
 
     let store = CloudflareAuthChallengeStore::new(&env);
-    match decide_verify_get(&totp_handle, &store).await {
+    // RFC 140: the store enforces the gate's expiry against this clock.
+    let now_unix = OffsetDateTime::now_utc().unix_timestamp();
+    match decide_verify_get(&totp_handle, &store, now_unix).await {
         VerifyGetDecision::StaleGate => clear_gate_and_redirect("/login"),
         VerifyGetDecision::RenderPage =>
             crate::routes::leptos_shell::leptos_html_shell(
@@ -162,7 +165,9 @@ pub async fn get_json_handler(
         _ => return Response::error("Unauthorized", 401),
     };
     let store = CloudflareAuthChallengeStore::new(&env);
-    match decide_verify_get(&totp_handle, &store).await {
+    // RFC 140: the store enforces the gate's expiry against this clock.
+    let now_unix = OffsetDateTime::now_utc().unix_timestamp();
+    match decide_verify_get(&totp_handle, &store, now_unix).await {
         VerifyGetDecision::StaleGate => Response::error("TOTP gate expired", 401),
         VerifyGetDecision::RenderPage => {
             let csrf_token = csrf::mint()
@@ -286,7 +291,7 @@ where
         return VerifyPostDecision::CsrfFailure;
     }
 
-    let challenge = match challenges.take(&cesauth_core::types::ChallengeHandle::from_storage(totp_handle)).await {
+    let challenge = match challenges.take(&cesauth_core::types::ChallengeHandle::from_storage(totp_handle), now_unix).await {
         Ok(Some(c)) => c,
         _           => return VerifyPostDecision::NoChallenge,
     };

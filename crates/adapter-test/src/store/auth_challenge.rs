@@ -22,19 +22,23 @@ impl AuthChallengeStore for InMemoryAuthChallengeStore {
         Ok(())
     }
 
-    async fn peek(&self, handle: &cesauth_core::types::ChallengeHandle) -> PortResult<Option<Challenge>> {
+    // RFC 140: expired iff `now_unix >= expires_at()` (the port's contract).
+    async fn peek(&self, handle: &cesauth_core::types::ChallengeHandle, now_unix: i64) -> PortResult<Option<Challenge>> {
         let m = self.map.lock().map_err(|_| PortError::Unavailable)?;
-        Ok(m.get(handle).cloned())
+        Ok(m.get(handle).filter(|c| now_unix < c.expires_at()).cloned())
     }
 
-    async fn take(&self, handle: &cesauth_core::types::ChallengeHandle) -> PortResult<Option<Challenge>> {
+    async fn take(&self, handle: &cesauth_core::types::ChallengeHandle, now_unix: i64) -> PortResult<Option<Challenge>> {
         let mut m = self.map.lock().map_err(|_| PortError::Unavailable)?;
-        Ok(m.remove(handle))
+        // Removed whether live or expired; only a live entry is returned.
+        Ok(m.remove(handle).filter(|c| now_unix < c.expires_at()))
     }
 
-    async fn bump_magic_link_attempts(&self, handle: &cesauth_core::types::ChallengeHandle) -> PortResult<u32> {
+    async fn bump_magic_link_attempts(&self, handle: &cesauth_core::types::ChallengeHandle, now_unix: i64) -> PortResult<u32> {
         let mut m = self.map.lock().map_err(|_| PortError::Unavailable)?;
-        let entry = m.get_mut(handle).ok_or(PortError::NotFound)?;
+        let entry = m.get_mut(handle)
+            .filter(|c| now_unix < c.expires_at())
+            .ok_or(PortError::NotFound)?;
         match entry {
             Challenge::MagicLink { attempts, .. } => {
                 *attempts = attempts.saturating_add(1);

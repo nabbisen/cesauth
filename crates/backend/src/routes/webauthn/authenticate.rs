@@ -88,7 +88,10 @@ pub async fn authenticate_finish<D>(mut req: Request, ctx: RouteContext<D>) -> R
 
     // Consume the single-use challenge.
     let store = CloudflareAuthChallengeStore::new(&ctx.env);
-    let chal  = match store.take(&cesauth_core::types::ChallengeHandle::from_storage(&body.handle)).await {
+    // RFC 140: one clock for the request, read before the challenge is
+    // taken so the store can enforce its expiry.
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    let chal  = match store.take(&cesauth_core::types::ChallengeHandle::from_storage(&body.handle), now).await {
         Ok(Some(c)) => c,
         _ => return oauth_error_response(&cesauth_core::CoreError::InvalidRequest("handle")),
     };
@@ -127,7 +130,6 @@ pub async fn authenticate_finish<D>(mut req: Request, ctx: RouteContext<D>) -> R
     // Persist the new sign_count BEFORE we issue anything the client
     // can hold on to. A failure here must rewind: without the counter
     // bump, a replayed assertion would pass.
-    let now = OffsetDateTime::now_utc().unix_timestamp();
     if let Err(e) = repo.touch(&stored.credential_id, outcome.new_sign_count, now).await {
         audit::write_owned(
             &ctx.env, EventKind::AuthFailed,

@@ -43,9 +43,9 @@ async fn auth_code_single_consumption() {
     let store = InMemoryAuthChallengeStore::default();
     store.put(&cesauth_core::types::ChallengeHandle::from_storage("h"), &sample_auth_code()).await.unwrap();
     // First take wins.
-    assert!(store.take(&cesauth_core::types::ChallengeHandle::from_storage("h")).await.unwrap().is_some());
+    assert!(store.take(&cesauth_core::types::ChallengeHandle::from_storage("h"), 0).await.unwrap().is_some());
     // Second take sees empty. This is the single-consumption invariant.
-    assert!(store.take(&cesauth_core::types::ChallengeHandle::from_storage("h")).await.unwrap().is_none());
+    assert!(store.take(&cesauth_core::types::ChallengeHandle::from_storage("h"), 0).await.unwrap().is_none());
 }
 
 #[tokio::test]
@@ -56,6 +56,73 @@ async fn auth_code_put_no_overwrite() {
         store.put(&cesauth_core::types::ChallengeHandle::from_storage("h"), &sample_auth_code()).await,
         Err(PortError::Conflict)
     ));
+}
+
+// -----------------------------------------------------------------------
+// RFC 140 — the store enforces expiry at read. `sample_auth_code()`
+// expires at 60, so 59 is the last live second and 60 the first
+// expired one (expired iff `now_unix >= expires_at`).
+// -----------------------------------------------------------------------
+
+fn rfc140_handle() -> cesauth_core::types::ChallengeHandle {
+    cesauth_core::types::ChallengeHandle::from_storage("rfc140")
+}
+
+/// Test 1: `peek` is live before `expires_at`, absent at it, and does
+/// not delete the entry.
+#[tokio::test]
+async fn rfc140_peek_is_absent_at_expires_at_and_does_not_delete() {
+    let store = InMemoryAuthChallengeStore::default();
+    let exp = sample_auth_code().expires_at();
+    store.put(&rfc140_handle(), &sample_auth_code()).await.unwrap();
+
+    assert!(store.peek(&rfc140_handle(), exp - 1).await.unwrap().is_some());
+    assert!(store.peek(&rfc140_handle(), exp).await.unwrap().is_none());
+    // Still present: an earlier `now` sees it again.
+    assert!(store.peek(&rfc140_handle(), exp - 1).await.unwrap().is_some(),
+        "an expired peek must not delete the entry");
+}
+
+/// Test 2: single consumption holds with a live `now`.
+#[tokio::test]
+async fn rfc140_take_before_expires_at_is_single_use() {
+    let store = InMemoryAuthChallengeStore::default();
+    let exp = sample_auth_code().expires_at();
+    store.put(&rfc140_handle(), &sample_auth_code()).await.unwrap();
+
+    assert!(store.take(&rfc140_handle(), exp - 1).await.unwrap().is_some());
+    assert!(store.take(&rfc140_handle(), exp - 1).await.unwrap().is_none());
+}
+
+/// Test 3: `take` at `expires_at` returns `None` **and removes the
+/// entry** — a later `take` with a live `now` finds nothing.
+#[tokio::test]
+async fn rfc140_take_at_expires_at_returns_none_and_deletes() {
+    let store = InMemoryAuthChallengeStore::default();
+    let exp = sample_auth_code().expires_at();
+    store.put(&rfc140_handle(), &sample_auth_code()).await.unwrap();
+
+    assert!(store.take(&rfc140_handle(), exp).await.unwrap().is_none(),
+        "an expired take must never return the value");
+    assert!(store.take(&rfc140_handle(), exp - 1).await.unwrap().is_none(),
+        "an expired take must delete the entry");
+}
+
+/// Test 4: `bump_magic_link_attempts` at `expires_at` is `NotFound`,
+/// the variant it returns for an absent entry; before it, it counts.
+#[tokio::test]
+async fn rfc140_bump_at_expires_at_is_not_found() {
+    let store = InMemoryAuthChallengeStore::default();
+    let ml = Challenge::MagicLink {
+        email_or_user: "a@example.com".to_owned(),
+        code_hash:     "h".to_owned(),
+        attempts:      0,
+        expires_at:    60,
+    };
+    store.put(&rfc140_handle(), &ml).await.unwrap();
+
+    assert!(matches!(store.bump_magic_link_attempts(&rfc140_handle(), 59).await, Ok(1)));
+    assert!(matches!(store.bump_magic_link_attempts(&rfc140_handle(), 60).await, Err(PortError::NotFound)));
 }
 
 #[tokio::test]

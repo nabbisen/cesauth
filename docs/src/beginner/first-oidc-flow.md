@@ -193,6 +193,11 @@ jq -n --arg u "$USER_ID" --arg c "$CODE_CHALLENGE" \
 # status=200
 ```
 
+The staged code expires at `EXP`, five minutes after staging. After that,
+step 4c's `/token` request returns `{"error":"invalid_grant"}`, the same as
+for an unknown code, so if you reach 4c later than that, stage a new code
+first.
+
 > `scopes` is a bare JSON array, not an object. In Rust, `Scopes` is a
 > tuple struct (`pub struct Scopes(pub Vec<String>)`) — serde
 > (de)serializes it as `["openid","profile","email"]`. `{"0": [...]}`

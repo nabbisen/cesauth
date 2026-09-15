@@ -193,7 +193,7 @@ pub async fn complete_auth(
     let pending = match pending_handle {
         Some(h) if !h.is_empty() => {
             let store = CloudflareAuthChallengeStore::new(env);
-            match store.take(&cesauth_core::types::ChallengeHandle::from_storage(h)).await {
+            match store.take(&cesauth_core::types::ChallengeHandle::from_storage(h), now).await {
                 Ok(Some(Challenge::PendingAuthorize {
                     client_id, redirect_uri, scope, state, nonce,
                     code_challenge, code_challenge_method, ..

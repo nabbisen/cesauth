@@ -134,16 +134,26 @@ impl Challenge {
 /// * Reject `put` when a value already exists (no overwrite).
 /// * Make `take` atomic: if the caller receives `Some(value)`, no
 ///   other caller will ever see that same value from `take` or `peek`.
-/// * Treat entries past `expires_at` as absent (`None`).
+/// * **Enforce expiry at read (RFC 140).** An entry is expired iff
+///   `now_unix >= challenge.expires_at()`, where `now_unix` is the
+///   caller's argument — no store reads a clock. On an expired entry:
+///   - `peek` returns `None` and does **not** delete it;
+///   - `take` **deletes it** and returns `None`, never the value;
+///   - `bump_magic_link_attempts` returns `NotFound`, as for absent.
+///
+///   Expiry is a check, not cleanup: it holds whether or not any
+///   background deletion (the Durable Object's alarm) has run.
+///   Callers pass the `now` they already compute from the real clock
+///   and add no expiry check of their own.
 pub trait AuthChallengeStore {
     async fn put(&self, handle: &crate::types::ChallengeHandle, challenge: &Challenge) -> PortResult<()>;
-    async fn peek(&self, handle: &crate::types::ChallengeHandle) -> PortResult<Option<Challenge>>;
-    async fn take(&self, handle: &crate::types::ChallengeHandle) -> PortResult<Option<Challenge>>;
+    async fn peek(&self, handle: &crate::types::ChallengeHandle, now_unix: i64) -> PortResult<Option<Challenge>>;
+    async fn take(&self, handle: &crate::types::ChallengeHandle, now_unix: i64) -> PortResult<Option<Challenge>>;
 
     /// Increment the attempt counter on a MagicLink challenge without
     /// consuming it. Returns the new attempt count, or `NotFound` if
-    /// absent / expired / not a MagicLink variant.
-    async fn bump_magic_link_attempts(&self, handle: &crate::types::ChallengeHandle) -> PortResult<u32>;
+    /// absent, expired at `now_unix`, or not a MagicLink variant.
+    async fn bump_magic_link_attempts(&self, handle: &crate::types::ChallengeHandle, now_unix: i64) -> PortResult<u32>;
 }
 
 // -------------------------------------------------------------------------
