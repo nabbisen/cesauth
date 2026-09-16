@@ -212,6 +212,16 @@ covering mount, axe wcag2a/2aa, duplicate ids, keyboard order, 375 px layout,
 and the absence of workbench-only markup. Non-blocking in CI for one release;
 flipping it to blocking is an acceptance criterion of 0.84.0.
 
+**R5f landed 2026-09-16** (`d018730`), closing that window. The workflow says
+blocking as of 0.84.0, every live statement that called the suite non-blocking
+is corrected, and the fires pair was demonstrated the way the criterion asks:
+breaking the page's mount target — RFC 135's real outage — turns the gate red
+(19 of 20 failing at `waitForFunction` on `#root`), and restoring it returns 20
+passed. **One half is the owner's and is still outstanding:** blocking is a
+branch-protection required status check, which nothing in the repository can
+set. Until they add `browser-tests` to it, the suite is ready to be required and
+is not blocking in fact.
+
 Three facts recorded so they are not rediscovered:
 
 - **`focus-trap` could not be adapted and its successor has a date.** The
