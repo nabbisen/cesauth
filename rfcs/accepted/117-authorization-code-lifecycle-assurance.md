@@ -93,6 +93,30 @@ precedes `take`. `bind_client` must therefore take proof that the client
 authenticated, not a bare `&ClientId`. A bare `ClientId` could be the code's own
 stored id, and the transition would then compare a value with itself.
 
+## 2c. Design rulings for the handoff (2026-09-16)
+
+RFC 140 has landed, so §2b.1's blocker is cleared. Writing the handoff settled
+the remaining open shapes.
+
+- **Errors stay `CoreError`.** §7.1's `ExchangeError` would need a mapping layer
+  back to the wire, and the wire shapes are pinned by existing tests. Each
+  transition returns the error that line returns today.
+- **`bind_client` takes an `AuthenticatedClient`**, whose only constructor runs
+  `authenticate_token_client` (§2a). A transition taking a bare `ClientId` would
+  accept the code's own id and compare a value with itself.
+- **`MintInput` has private fields and accessors.** §14's criterion is that it
+  is constructed only inside the module; a pub-field struct would pass the grep
+  and still be constructible anywhere.
+- **Expiry is not re-checked in the pipeline.** RFC 140 made it the store's, and
+  `ConsumedCode::take` passes `now_unix`.
+- **The store state-machine test lives in `cesauth-adapter-test`**, which gains
+  `proptest` as a dev-dependency. Its clauses now include RFC 140's
+  expiry-is-absence.
+- **Level: patch.** No wire change, no added capability, nothing fixed — internal
+  hardening and tests.
+- **Sequenced after the 0.84.0 tag.** The handoff is written; it is not
+  dispatched while a cut is pending, which is what cancelled 0.83.2.
+
 ## 3. Background
 
 Codes live as `Challenge::AuthCode` in the AuthChallenge DO. The store
