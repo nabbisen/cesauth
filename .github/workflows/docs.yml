@@ -13,7 +13,8 @@ name: Docs build
 # exits 101 with "failed to read chapter" and creates nothing — measured both
 # ways (RFC 138 §11.6 and its review request).
 #
-# BLOCKING. Unlike browser-tests.yml's one-release window, this lands blocking:
+# BLOCKING. This landed blocking rather than taking the one-release grace
+# window browser-tests.yml had (that window closed at 0.84.0, RFC 131 R5f):
 # the real tree builds clean with `create-missing = false`, so a failure here is
 # real news rather than first-contact flake. Blocking is a branch-protection
 # setting, not a property of this file — add "Docs build" to the required

@@ -1,4 +1,4 @@
-name: Browser tests (non-blocking until 0.84.0)
+name: Browser tests
 
 # RFC 131 R5e — cesauth's first browser gate.
 #
@@ -10,31 +10,21 @@ name: Browser tests (non-blocking until 0.84.0)
 # Leptos mounts. This job is that browser.
 #
 # ---------------------------------------------------------------------------
-# NON-BLOCKING FOR ONE RELEASE — flip to blocking in 0.84.0
+# BLOCKING as of 0.84.0 (RFC 131 R5f). It was non-blocking for exactly one
+# release, 0.83.0, to tell first-contact flakes from findings; it produced
+# none.
 # ---------------------------------------------------------------------------
-# Added 2026-09-12 (0.83.0). **This job must be flipped to blocking as an
-# acceptance criterion of 0.84.0** (RFC 131 R5 handoff §8; the architect has
-# said they will check).
+# Blocking is a branch-protection setting, not a property of this file:
+# "browser-tests" is a required status check. Nothing here enforces it, and
+# nothing here can.
 #
-# It is non-blocking by *not being a required status check* in the
-# repository's branch-protection settings — a separate, visible workflow whose
-# result is recorded on every run. It is deliberately NOT
-# `continue-on-error: true`: that would make the job report success while
-# failing, and this project has a rule against silencing gates. A red run here
-# is red, visible, and does not block the merge.
+# It is deliberately NOT `continue-on-error: true`, and must never become so:
+# that would make the job report success while failing, which is worse than a
+# non-required check, because the red is invisible too.
 #
-# Why one release of grace: a browser suite's first contact with CI produces
-# flakes indistinguishable from findings — timing, fonts, viewport, cold-start
-# WASM compilation. Landing blocking means the first flake either stops the
-# project or gets silenced. One release buys the data to tell those apart.
-#
-# **To flip it:** add "browser-tests" to branch protection's required checks
-# and replace this block with a note saying when it became blocking. Nothing
-# in the file itself needs to change.
-#
-# If it has flaked by 0.84.0, the fix is to diagnose the flake, not to extend
-# the window: an indefinitely non-blocking gate is decoration.
-# ---------------------------------------------------------------------------
+# **The standing rule from here on: a flake is diagnosed and fixed, or the
+# test is deleted. The gate is not made non-blocking again.** An indefinitely
+# non-blocking gate is decoration.
 #
 # Scope: public, unauthenticated pages only (handoff §7) — `/` and `/login`,
 # which are the only routes in route-contracts.md whose actor is `Anonymous`.
