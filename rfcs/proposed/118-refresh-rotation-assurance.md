@@ -175,3 +175,93 @@ security fixes.
   `wrangler dev` (miniflare)? Desirable; blocked on the env-blocked
   wasm verification track (same blocker as RFC 110a/112). Recorded as
   a deferred acceptance item, not a blocker.
+
+## 16. Premise corrections, measured 2026-09-22
+
+RFC 118 was written before RFC 137, 139, 140 and 117 changed this exact path.
+Four of its premises no longer hold, and two of them describe properties the
+code cannot have. The corrections below are rulings; the rest of the RFC stands.
+
+### 16.1 There is no version counter — invariant 4 must be restated
+
+§5.4 asserts "the rotation counter never decreases and increases by exactly 1
+per successful rotation". **`FamilyState` has no such field**: it carries
+`current_jti`, `retired_jtis`, `created_at`, `last_rotated_at`, `revoked_at`,
+the v0.34.0 reuse fields and RFC 139's `expired`. §8 says "Data model impact:
+none", so adding a counter would contradict the RFC's own scope, and a counter
+whose only consumer is its own test earns nothing.
+
+**Ruling:** state the invariant in terms of what exists — `last_rotated_at` is
+non-decreasing and equals the `now` of the most recent successful rotation, and
+each successful rotation appends exactly one jti to the retired ring (subject to
+16.2). **No new field.**
+
+### 16.2 The retired ring is capped at 16 — invariant 5 is false as written
+
+§5.5 asserts `was_retired == true` **iff** the presented jti was previously a
+live jti of this family. `RETIRED_RING_SIZE = 16` in both implementations, and
+the oldest entry is dropped on overflow, so the 17th-oldest rotated-out jti
+reports `was_retired == false`.
+
+**Ruling:** the invariant is about the **retained** ring: `was_retired == true`
+iff the presented jti is among the last 16 rotated-out jtis; an older one is
+reported as unknown. **The security response is unchanged** — both cases revoke
+the family — so this is a forensic-label boundary, not a weakening. The model
+must implement the cap, and the generator must produce sequences long enough to
+cross it, or the property will never see the case.
+
+### 16.3 Expiry now exists, and the outcome set has grown
+
+§5.6's one-line "past family expiry, no jti is accepted" predates RFC 139. The
+rule is now two deadlines — absolute (`created_at + cap`) and idle
+(`last_rotated_at + window`, `0` disabling it) — evaluated **against the policy
+passed to `rotate`**, with the store revoking and recording which deadline ended
+the family. `RotateOutcome` has a fourth variant, `Expired(LifetimeExpiry)`.
+
+**Ruling:** the model carries both deadlines, the `expired` field and the
+check order RFC 139 §10.2 fixed (revoked → absolute → idle → jti), and
+`ModelOutcome` mirrors all four variants. The policy is an input to each
+`Rotate` op, not model state, because lowering it must shorten a live family.
+
+### 16.4 The module layout §4 names does not exist; RFC 117's does
+
+There is no `conformance` module in `cesauth-adapter-test`. RFC 117 landed the
+first store state-machine harness as
+`crates/adapter-test/src/store/auth_challenge_proptests.rs` — a model, a lockstep
+runner, an op strategy and a **coverage test that fails when a category goes
+rare**.
+
+**Ruling:** mirror that file as `store/refresh_family_proptests.rs`, including
+the coverage test. §12's "shares the op-sequence utilities" is satisfied by
+following the shape; do not refactor RFC 117's harness into a shared abstraction
+for two users.
+
+### 16.5 Regression seeds — §7.3 needs a boundary
+
+`proptest-regressions/` is **not** in `.gitignore`, so §7.3's "keep them
+in-tree" would work. But RFC 117's cycle produced seed files from *mutation*
+runs — failures against deliberately broken code — and removing them was right:
+committed, they would have invented a regression history for defects that never
+shipped.
+
+**Ruling:** commit a seed only when it reproduces a divergence in **shipped**
+code, with a comment naming the divergence. Seeds from mutation or fires runs
+are deleted, and the package says so.
+
+### 16.6 Stale figure
+
+§3's "conformance suite (133 tests)" is stale. `crates/adapter-test/src/store/tests.rs`
+holds **30** `#[test]`/`#[tokio::test]` items today
+(`grep -rc '#\[test\]\|#\[tokio::test\]'`). The handoff will state the
+baseline as a command and its output rather than carry a number forward.
+
+### 16.7 Still true
+
+§6's non-goals hold, including "no typestate wrapper around the store handle":
+the lifecycle authority is inside the Durable Object, and RFC 117's typestate
+governs the host-side *exchange*, which is a different thing. §15's open
+question — running the harness against the real Durable Object — remains
+deferred and remains not a blocker.
+
+**Status after these corrections:** still Proposed. It needs the owner's
+authorization before a handoff is written.

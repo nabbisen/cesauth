@@ -87,7 +87,7 @@ Security-critical assurance track, continued.
 | ID | Title | Tier | Category | Depends on |
 |----|-------|------|----------|------------|
 | [117](./done/117-authorization-code-lifecycle-assurance.md) | Authorization code lifecycle assurance — **shipped v0.84.1** | P0 | A | 116, 137, 140 |
-| [118](./proposed/118-refresh-rotation-assurance.md) | Refresh token rotation & reuse-detection assurance | P0 | A | 116 |
+| [118](./proposed/118-refresh-rotation-assurance.md) | Refresh token rotation & reuse-detection assurance. **Premises corrected 2026-09-22 (§16):** no version counter exists, the retired ring is capped at 16 so "was_retired iff once live" is false, expiry and a fourth outcome arrived with RFC 139, and the module layout is RFC 117's. **Awaits owner authorization** | P0 | A | 116, 117, 139 |
 | [119](./proposed/119-tenant-scoped-repository-apis.md) | Tenant boundary & scoped repository APIs | P1 | B | 116 |
 | [120](./proposed/120-authz-core-sealing-and-property-tests.md) | Authorization core: sealing & property tests | P0/P1 | A/B | 116 |
 | [121](./proposed/121-security-state-machine-testing.md) | Security state-machine testing with proptest | P1 | B | 117, 118 |
