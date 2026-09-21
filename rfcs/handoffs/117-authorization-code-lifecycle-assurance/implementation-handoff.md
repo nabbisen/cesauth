@@ -6,9 +6,8 @@ does not change, no capability is added, and nothing that was broken is fixed.
 It is internal hardening plus tests. Re-check at the cut if anything else rides
 along.
 **Prepared by.** Architect · **Implemented by.** Mid-capability model
-**Blocked on.** **The 0.84.0 tag. Do not start before it exists.** 0.84.0 is
-ready but untagged, and code landing on `main` ahead of a pending cut is what
-cancelled 0.83.2.
+**Blocked on.** **Nothing — cleared 2026-09-22.** The blocker was the 0.84.0
+tag; it exists (`0.84.0` → `e7249a8`, signed). You may start.
 
 ---
 
