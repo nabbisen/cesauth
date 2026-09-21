@@ -1,6 +1,6 @@
 # RFC 117 — Authorization code lifecycle assurance
 
-**Status.** Accepted — approved by the owner 2026-09-12.
+**Status.** Implemented (v0.84.1)
 **Tier.** P0 · Category A
 **Size.** Medium
 **Tracks.** Strategy §5.1, §8 (RFC theme 2); audit G4.

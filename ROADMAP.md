@@ -357,6 +357,25 @@ started.
   — **nobody has deployed this tree**. Refresh tokens issued before this
   release no longer decode.
 
+- ✅ **v0.84.1 — RFC 117 (+ condition C1-117). Shipped 2026-09-22.**
+  **Minting a token before its checks is now a compile error.** The
+  authorization-code exchange became a typestate pipeline: the client
+  authenticates, the code is consumed, it is bound to that client, the
+  redirect URI is matched, PKCE verifies — and only then does the value a
+  token is minted from exist. Skipping a step, minting early, consuming a
+  code before authenticating (C1-117), building the mint input by hand, or
+  using it twice all fail to compile rather than failing a test. With it
+  came the first property-based tests for PKCE and for the challenge
+  store's contract, and a contract clause saying an expired-but-never-taken
+  entry still occupies its handle. **Patch** — no wire change, nothing
+  added, nothing fixed; every response is what 0.84.0 returned and no
+  existing test was edited. **Not claimed:** that the refresh path is
+  protected (RFC 118), that one-time use is newly guaranteed (the store
+  already guaranteed it; the Durable Object is not host-testable), that the
+  types prove the client authenticated against its true stored record, that
+  any CI gate is enforced (`main` still has no branch protection), or that
+  it works on Cloudflare — **nobody has deployed this tree**.
+
 - **Security-critical assurance track (RFCs 116–124).** RFC 116 shipped in
   v0.81.0 (`rfcs/done/`), with two carve-outs deferred: secret-newtype
   adoption at the remaining credential call sites, and `ports::repo`, which

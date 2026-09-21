@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 117, authorization-code lifecycle assurance (P0)
 
-**Governing RFC.** [`rfcs/accepted/117-authorization-code-lifecycle-assurance.md`](../../accepted/117-authorization-code-lifecycle-assurance.md) — read **§2a, §2b and §2c** first. They correct five premises of the original text, and §2c carries the rulings below.
+**Governing RFC.** [`rfcs/done/117-authorization-code-lifecycle-assurance.md`](../../done/117-authorization-code-lifecycle-assurance.md) — read **§2a, §2b and §2c** first. They correct five premises of the original text, and §2c carries the rulings below.
 **Target release.** The first release after 0.84.0. **Level: patch** — the wire
 does not change, no capability is added, and nothing that was broken is fixed.
 It is internal hardening plus tests. Re-check at the cut if anything else rides

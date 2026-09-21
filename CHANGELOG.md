@@ -14,6 +14,52 @@ changes will always be called out here.
 
 ---
 
+## [0.84.1] - 2026-09-22
+
+### Minting a token before its checks is now a compile error — RFC 117
+
+The authorization-code exchange performed the right sequence — authenticate
+the client, consume the code, check it was issued to that client, match the
+redirect URI, verify PKCE, then mint — but that sequence was held by the
+order of lines in one function. Every control in it was one edit from being
+reordered or dropped, and only example-based tests would have noticed. Two
+of this project's recent security fixes were exactly that: a check that was
+never written (RFC 137) and one enforced nowhere (RFC 140).
+
+The exchange is now a typestate pipeline. Each step consumes the previous
+value and produces the next, and the data a token is minted from exists only
+at the end of the chain. The compiler rejects, rather than a test:
+
+- minting before PKCE verification, or before either binding;
+- consuming the code before the client has authenticated;
+- constructing the mint input, or the "mint license", by hand;
+- using either twice, so one code cannot mint two token sets.
+
+Alongside it: the first property-based tests for PKCE verification and for
+the challenge store's contract, generating operation sequences rather than
+examples. The store contract also now states what `put` does when a handle
+holds an entry that has expired but was never taken — it is still occupied,
+and `put` is refused.
+
+**Nothing about behaviour changed.** Every response, error code and message
+is what 0.84.0 returned, and no existing test was edited.
+
+### What this release does NOT claim
+
+- **Not that the refresh path is protected.** Refresh-token rotation still
+  mints procedurally; that is RFC 118.
+- **Not that one-time use is newly guaranteed.** The store already
+  guaranteed it. The new property test pins it against arbitrary operation
+  sequences in the in-memory store; the Durable Object cannot be tested off
+  the Workers runtime.
+- **Not that the types prove the client authenticated against its true
+  stored record.** They prove the order and that no step is skipped.
+- **Not that any CI gate is enforced.** `main` still has **no branch
+  protection**, so no status check is required — including the browser
+  suite, whose workflow says blocking.
+- **Not that any of it has run in CI**, and the workflow YAML is unvalidated.
+- **Not that it works on Cloudflare. Nobody has deployed this tree.**
+
 ## [0.84.0] - 2026-09-22
 
 ### Refresh tokens never expired — RFC 139
