@@ -1,6 +1,6 @@
 # RFC 118 — Refresh token rotation and reuse-detection assurance
 
-**Status.** Proposed
+**Status.** Accepted — approved by the owner 2026-09-22, with the §16 corrections. Handoff dispatched.
 **Tier.** P0 · Category A
 **Size.** Medium
 **Tracks.** Strategy §5.2, §8 (RFC theme 3); audit G6 (refresh half).
@@ -263,5 +263,5 @@ governs the host-side *exchange*, which is a different thing. §15's open
 question — running the harness against the real Durable Object — remains
 deferred and remains not a blocker.
 
-**Status after these corrections:** still Proposed. It needs the owner's
-authorization before a handoff is written.
+**Authorized by the owner on 2026-09-22**, with these corrections. The rest of
+this line is superseded.

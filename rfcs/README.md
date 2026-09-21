@@ -87,7 +87,6 @@ Security-critical assurance track, continued.
 | ID | Title | Tier | Category | Depends on |
 |----|-------|------|----------|------------|
 | [117](./done/117-authorization-code-lifecycle-assurance.md) | Authorization code lifecycle assurance — **shipped v0.84.1** | P0 | A | 116, 137, 140 |
-| [118](./proposed/118-refresh-rotation-assurance.md) | Refresh token rotation & reuse-detection assurance. **Premises corrected 2026-09-22 (§16):** no version counter exists, the retired ring is capped at 16 so "was_retired iff once live" is false, expiry and a fourth outcome arrived with RFC 139, and the module layout is RFC 117's. **Awaits owner authorization** | P0 | A | 116, 117, 139 |
 | [119](./proposed/119-tenant-scoped-repository-apis.md) | Tenant boundary & scoped repository APIs | P1 | B | 116 |
 | [120](./proposed/120-authz-core-sealing-and-property-tests.md) | Authorization core: sealing & property tests | P0/P1 | A/B | 116 |
 | [121](./proposed/121-security-state-machine-testing.md) | Security state-machine testing with proptest | P1 | B | 117, 118 |
@@ -103,6 +102,7 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 
 | ID | Title | Tier | Dispatched | Depends on |
 |----|-------|------|---|---|
+| [118](./accepted/118-refresh-rotation-assurance.md) | Refresh token rotation & reuse-detection assurance. **Premises corrected 2026-09-22 (§16):** no version counter exists, the retired ring is capped at 16 so "was_retired iff once live" is false, expiry and a fourth outcome arrived with RFC 139, and the module layout is RFC 117's. **Accepted 2026-09-22; handoff dispatched** | P0 | A | 116, 117, 139 |
 | [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | R2a shipped v0.82.0; **R5b–e shipped v0.83.0** (+ C1-R5); R2b awaits 132 §13 q1; R3 awaits 132 §13 q1 | 130, 132, 134 |
 
 Numbers are assignment order and are never reused or renumbered (RFC 000), so
