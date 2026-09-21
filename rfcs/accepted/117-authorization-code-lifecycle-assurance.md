@@ -261,3 +261,38 @@ operator action.
 - Should `rotate_refresh` adopt the same pipeline shape? Covered
   separately in RFC 118 (its lifecycle authority is the DO, where
   typestate adds less; tests add more).
+
+## 16. Implementation review (2026-09-22)
+
+T1–T5 landed in `99feadb` and are accepted. **Level: patch**, confirmed at
+review.
+
+**Verified:** 1,482 host tests (1,453 + 29); the five doctests, proved
+non-vacuous from outside the repo against a compiling control; `MintInput`
+constructed nowhere in `crates/core` but the pipeline module; states move-only
+with no `derive`; and, re-run by the reviewer, deleting the PKCE step from the
+driver so the mint reads a `RedirectBoundCode` **fails to compile**
+(`E0599: no method named 'into_mint_input'`).
+
+**C1-117, both raised by the implementer:**
+
+1. **`ConsumedCode::take` will take `&AuthenticatedClient`.** The types proved
+   the order of the four checks but not that authentication preceded
+   consumption: swapping the driver's first two steps still compiled, leaving
+   RFC 137 §13.1 held by line order and tests alone. The proof is carried, not
+   compared — `bind_client` still compares, after `take`, so a wrong-client
+   attempt continues to consume the code.
+2. **The `put` clause goes into the port contract.** `put` refuses an occupied
+   handle with `Conflict` whether or not the stored entry has expired; RFC 140's
+   "past `expires_at` is absent" governs `peek`, `take` and `bump`. Both stores
+   already behave this way and neither changes; the contract was silent, which
+   is the defect.
+
+**Recorded, no change:** `MintInput` shares its name with an unrelated
+admin-console type in `crates/frontend`. Criterion 1 is scoped to `crates/core`,
+where the grep is clean; a workspace-wide search shows both.
+
+**A measurement worth keeping.** Two of the four `pkce::verify` mutations
+survive a property whose inputs are arbitrary strings — random inputs never come
+near a match — and are caught only by the structured-case property. The weak
+property was kept with its blind spot stated, rather than deleted.
