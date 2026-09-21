@@ -131,7 +131,14 @@ impl Challenge {
 /// WebAuthn ceremony nonces, and Magic Link OTP hashes.
 ///
 /// Implementations MUST:
-/// * Reject `put` when a value already exists (no overwrite).
+/// * Reject `put` when a value already exists (no overwrite). **An entry
+///   that has expired but was never taken still exists**: `put` onto it is
+///   `Conflict`, and the stored value is left unchanged. "Absent once
+///   expired" governs `peek`, `take` and `bump`, which are given a
+///   `now_unix`; `put` takes none, so it cannot judge expiry, and refusing an
+///   occupied handle is what stops one being reused while something still
+///   sits there. A handle is free again only once it has been taken. Both the
+///   in-memory store and the Durable Object already behave this way.
 /// * Make `take` atomic: if the caller receives `Some(value)`, no
 ///   other caller will ever see that same value from `take` or `peek`.
 /// * **Enforce expiry at read (RFC 140).** An entry is expired iff

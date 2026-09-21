@@ -21,10 +21,8 @@
 //! below fails if the generator stops producing them.
 //!
 //! **Occupied means physically present.** A `put` onto an entry that is expired
-//! but was never taken is `Conflict`. Both this store and the Durable Object
-//! behave that way, and the port contract does not say otherwise; the model
-//! mirrors them. Whether an expired entry should count as occupied is a question
-//! this test records, not one it answers.
+//! but was never taken is `Conflict`. The port contract states this (C1-117), and
+//! the model mirrors it.
 //!
 //! **Sequences, not threads.** "Any interleaving" here is any order of operations
 //! across the four handles. The in-memory store is `Mutex`-guarded and this test

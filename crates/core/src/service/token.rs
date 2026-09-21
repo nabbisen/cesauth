@@ -135,9 +135,10 @@ where
     let client = AuthenticatedClient::authenticate(&view, input.client_secret)?;
 
     // 2–3. Consume the code and verify it, in the order RFC 117 §1 states.
-    //      Expiry is the store's rule (RFC 140), applied inside `take`. The
-    //      errors are those the procedural code returned, unchanged.
-    let mint = ConsumedCode::take(deps.codes, input.code, input.now_unix).await?
+    //      `take` demands the proof `authenticate` produced, so it cannot run
+    //      before it. Expiry is the store's rule (RFC 140), applied inside
+    //      `take`. The errors are those the procedural code returned.
+    let mint = ConsumedCode::take(deps.codes, input.code, input.now_unix, &client).await?
         .bind_client(&client)?
         .bind_redirect(input.redirect_uri)?
         .verify_pkce(input.code_verifier)?

@@ -5,8 +5,8 @@
 //!
 //! ```text
 //! AuthenticatedClient::authenticate      (the client proved itself; RFC 137)
-//! ConsumedCode::take                     (the code was atomically consumed)
-//!   .bind_client(&AuthenticatedClient)   (it was issued to that client)
+//! ConsumedCode::take(.., &client)        (only with that proof: the code is consumed)
+//!   .bind_client(&client)                (it was issued to that client)
 //!   .bind_redirect(uri)                  (the redirect URI matches; RFC 6749 §4.1.3)
 //!   .verify_pkce(verifier)               (PKCE verifies; RFC 7636)
 //!   .into_mint_input()                   (-> MintInput: the mint's only input)
@@ -19,7 +19,10 @@
 //! it is enough to read this file.
 //!
 //! **What the types prove, and what they do not.** They prove the *order* of the
-//! four checks and that none can be skipped. They do not prove `authenticate` was
+//! checks (authenticate, then take, then client, redirect and PKCE) and that none
+//! can be skipped. `take` holds the proof but does not compare it: `bind_client`
+//! does, after the take, so a wrong-client attempt still consumes the code
+//! (RFC 137 T1). They do not prove `authenticate` was
 //! handed the client's true stored view (a caller can still fabricate a
 //! `ClientAuthView`), nor that expiry holds: that is the store's (RFC 140).
 //! `take` passes `now_unix` and treats `None` as an unknown code; no expiry
@@ -37,6 +40,29 @@
 //! ```
 //! use cesauth_core::service::token::exchange_pipeline::{ConsumedCode, MintInput, VerifiedExchange};
 //! fn _names_resolve(_: Option<ConsumedCode>, _: Option<VerifiedExchange>, _: Option<MintInput>) {}
+//! ```
+//!
+//! `take` demands the proof of authentication, so consuming a code before
+//! authenticating does not compile (RFC 137 §13.1). Given it, the call compiles:
+//!
+//! ```
+//! use cesauth_core::ports::store::AuthChallengeStore;
+//! use cesauth_core::service::token::exchange_pipeline::{AuthenticatedClient, ConsumedCode};
+//! use cesauth_core::types::ChallengeHandle;
+//! fn _take_with_proof<S: AuthChallengeStore>(s: &S, h: &ChallengeHandle, c: &AuthenticatedClient) {
+//!     let _ = ConsumedCode::take(s, h, 0, c);
+//! }
+//! ```
+//!
+//! Without it, the same call does not (E0061):
+//!
+//! ```compile_fail
+//! use cesauth_core::ports::store::AuthChallengeStore;
+//! use cesauth_core::service::token::exchange_pipeline::ConsumedCode;
+//! use cesauth_core::types::ChallengeHandle;
+//! fn _take_without_proof<S: AuthChallengeStore>(s: &S, h: &ChallengeHandle) {
+//!     let _ = ConsumedCode::take(s, h, 0);
+//! }
 //! ```
 //!
 //! A `MintInput` cannot be constructed outside this module (private fields, E0451):
@@ -129,10 +155,16 @@ impl ConsumedCode {
     /// The only constructor. `None` from the store (absent, used, or expired —
     /// the store's rule, RFC 140) is `invalid_grant`, as is a handle that holds
     /// something other than an authorization code.
+    ///
+    /// `_authenticated` is proof that authentication ran first, so a failed
+    /// authentication cannot consume a code (RFC 137 §13.1). It is carried, not
+    /// compared: `bind_client` compares, after this, so a wrong-client attempt
+    /// still consumes the code.
     pub async fn take<S: AuthChallengeStore + ?Sized>(
-        store:    &S,
-        handle:   &ChallengeHandle,
-        now_unix: i64,
+        store:          &S,
+        handle:         &ChallengeHandle,
+        now_unix:       i64,
+        _authenticated: &AuthenticatedClient,
     ) -> CoreResult<Self> {
         let challenge = store
             .take(handle, now_unix)

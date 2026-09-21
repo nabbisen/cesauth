@@ -679,3 +679,39 @@ async fn rfc139_expired_family_with_retired_jti_is_expired_not_reuse() {
     assert_eq!(fam.expired, Some(cesauth_core::ports::store::LifetimeExpiry::Idle));
     assert_eq!(fam.revoked_at, Some(40));
 }
+
+// -----------------------------------------------------------------------
+// C1-117 — `put` counts an expired, never-taken entry as occupied
+// (`ports/store.rs`, the first `MUST` of `AuthChallengeStore`).
+// -----------------------------------------------------------------------
+
+/// The contract's `put` clause: an entry that is expired for reads but was never
+/// taken still occupies its handle, so `put` onto it is `Conflict` and changes
+/// nothing. Once a `take` has removed it, the handle is free again.
+#[tokio::test]
+async fn c1_117_put_over_an_expired_never_taken_entry_is_conflict_and_leaves_it_unchanged() {
+    let store = InMemoryAuthChallengeStore::default();
+    let exp = sample_auth_code().expires_at();
+    let replacement = Challenge::MagicLink {
+        email_or_user: "replacement@example.com".to_owned(),
+        code_hash:     "h".to_owned(),
+        attempts:      0,
+        expires_at:    exp + 1_000,
+    };
+    store.put(&rfc140_handle(), &sample_auth_code()).await.unwrap();
+
+    // Expired for reads, and never taken.
+    assert!(store.peek(&rfc140_handle(), exp).await.unwrap().is_none());
+
+    // ... yet it still occupies the handle.
+    assert!(matches!(store.put(&rfc140_handle(), &replacement).await, Err(PortError::Conflict)),
+        "put onto an expired, never-taken entry must be Conflict");
+    match store.peek(&rfc140_handle(), exp - 1).await.unwrap() {
+        Some(Challenge::AuthCode { .. }) => {}
+        other => panic!("the refused put must leave the original entry unchanged, found {other:?}"),
+    }
+
+    // A take (which deletes an expired entry, RFC 140) frees the handle.
+    assert!(store.take(&rfc140_handle(), exp).await.unwrap().is_none());
+    store.put(&rfc140_handle(), &replacement).await.expect("the handle is free once taken");
+}

@@ -85,7 +85,7 @@ async fn store_with(c: Challenge) -> Store {
 }
 
 async fn consumed(client: &str) -> ConsumedCode {
-    ConsumedCode::take(&store_with(auth_code(client, "S256")).await, &handle(), 1_000).await.unwrap()
+    ConsumedCode::take(&store_with(auth_code(client, "S256")).await, &handle(), 1_000, &authed("c-a")).await.unwrap()
 }
 
 macro_rules! assert_grant {
@@ -121,7 +121,7 @@ fn authenticate_refuses_a_wrong_missing_or_unhashed_secret_as_invalid_client() {
 
 #[tokio::test]
 async fn take_of_an_absent_handle_is_unknown_or_used() {
-    assert_grant!(ConsumedCode::take(&Store::default(), &handle(), 1_000).await,
+    assert_grant!(ConsumedCode::take(&Store::default(), &handle(), 1_000, &authed("c-a")).await,
                   "code is unknown or already used");
 }
 
@@ -130,15 +130,25 @@ async fn take_of_a_handle_that_is_not_an_authorization_code_is_refused() {
     let magic = Challenge::MagicLink {
         email_or_user: "a@example.com".to_owned(), code_hash: "h".to_owned(), attempts: 0, expires_at: 1_300,
     };
-    assert_grant!(ConsumedCode::take(&store_with(magic).await, &handle(), 1_000).await,
+    assert_grant!(ConsumedCode::take(&store_with(magic).await, &handle(), 1_000, &authed("c-a")).await,
                   "handle is not a code");
 }
 
 #[tokio::test]
 async fn take_consumes_the_code() {
     let s = store_with(auth_code("c-a", "S256")).await;
-    assert!(ConsumedCode::take(&s, &handle(), 1_000).await.is_ok());
-    assert_grant!(ConsumedCode::take(&s, &handle(), 1_000).await, "code is unknown or already used");
+    assert!(ConsumedCode::take(&s, &handle(), 1_000, &authed("c-a")).await.is_ok());
+    assert_grant!(ConsumedCode::take(&s, &handle(), 1_000, &authed("c-a")).await, "code is unknown or already used");
+}
+
+/// C1-117: `take` carries the proof of authentication and does not compare it.
+/// A code issued to c-a is consumed by a take that holds c-b's proof; the
+/// comparison is `bind_client`'s, after the take.
+#[tokio::test]
+async fn take_carries_the_proof_but_does_not_compare_it() {
+    let s = store_with(auth_code("c-a", "S256")).await;
+    assert!(ConsumedCode::take(&s, &handle(), 1_000, &authed("c-b")).await.is_ok());
+    assert_grant!(ConsumedCode::take(&s, &handle(), 1_000, &authed("c-a")).await, "code is unknown or already used");
 }
 
 /// Expiry is the store's rule: `take` hands the store its `now_unix` and treats
@@ -146,7 +156,7 @@ async fn take_consumes_the_code() {
 #[tokio::test]
 async fn take_delegates_expiry_to_the_store_with_the_same_error() {
     let s = store_with(auth_code("c-a", "S256")).await;
-    assert_grant!(ConsumedCode::take(&s, &handle(), 1_300).await, "code is unknown or already used");
+    assert_grant!(ConsumedCode::take(&s, &handle(), 1_300, &authed("c-a")).await, "code is unknown or already used");
 }
 
 // ── bind_client ─────────────────────────────────────────────────────────────
@@ -167,9 +177,10 @@ async fn bind_client_admits_the_client_the_code_was_issued_to() {
 #[tokio::test]
 async fn a_wrong_client_attempt_has_consumed_the_code() {
     let s = store_with(auth_code("c-a", "S256")).await;
-    let taken = ConsumedCode::take(&s, &handle(), 1_000).await.unwrap();
+    // c-b authenticates, takes c-a's code, and is refused at `bind_client`.
+    let taken = ConsumedCode::take(&s, &handle(), 1_000, &authed("c-b")).await.unwrap();
     assert_grant!(taken.bind_client(&authed("c-b")), "code was issued to a different client");
-    assert_grant!(ConsumedCode::take(&s, &handle(), 1_000).await, "code is unknown or already used");
+    assert_grant!(ConsumedCode::take(&s, &handle(), 1_000, &authed("c-a")).await, "code is unknown or already used");
 }
 
 // ── bind_redirect ───────────────────────────────────────────────────────────
@@ -189,7 +200,7 @@ async fn bind_redirect_admits_the_bound_redirect_uri() {
 // ── verify_pkce ─────────────────────────────────────────────────────────────
 
 async fn redirect_bound(method: &str) -> RedirectBoundCode {
-    let taken = ConsumedCode::take(&store_with(auth_code("c-a", method)).await, &handle(), 1_000).await.unwrap();
+    let taken = ConsumedCode::take(&store_with(auth_code("c-a", method)).await, &handle(), 1_000, &authed("c-a")).await.unwrap();
     taken.bind_client(&authed("c-a")).unwrap().bind_redirect("https://app.test/cb").unwrap()
 }
 
