@@ -14,6 +14,118 @@ changes will always be called out here.
 
 ---
 
+## [0.84.0] - 2026-09-22
+
+### Refresh tokens never expired — RFC 139
+
+`REFRESH_TOKEN_TTL_SECS` (30 days) was written into the refresh token
+itself, ignored on rotation, and enforced by nothing. A refresh family
+rotated forever, so a leaked refresh token was a permanent credential
+unless reuse detection happened to fire. Introspection compounded it: it
+read the expiry **out of the token** and reported it as `exp`, so the
+lifetime a resource server saw was whatever the presenter had written.
+
+A family now ends at the **earlier** of two deadlines, both enforced by the
+family store at rotation:
+
+- **absolute cap** — `created_at + REFRESH_TOKEN_TTL_SECS`, however often
+  the family is rotated;
+- **idle window** — `last_rotated_at + REFRESH_TOKEN_IDLE_TIMEOUT_SECS`,
+  which moves with every rotation.
+
+`REFRESH_TOKEN_IDLE_TIMEOUT_SECS` is **new**, defaults to 1209600
+(14 days), and `0` disables the idle check; the absolute cap cannot be
+disabled. An idle window longer than the cap, a negative idle window or a
+non-positive cap is refused.
+
+Also:
+
+- **Expiry revokes, atomically**, and records which deadline ended the
+  family. `/token` answers `invalid_grant`, the same as for a revoked
+  family.
+- **No deadline is stored.** Both are computed from the family's own
+  timestamps against the *current* configuration, so lowering a lifetime
+  after an incident shortens every live family at once, and families
+  created before this release are governed from their next request. No
+  migration.
+- **The refresh token no longer carries an expiry.** Its format is
+  `base64url("{family_id}.{jti}")`, and all three decoders accept exactly
+  two parts. **Refresh tokens issued before this release stop working.**
+  Nobody has deployed this tree, so this affects local development only.
+- **Introspection reads the family, never the token.** `exp` is the real
+  deadline; an expired family reports inactive with an `expired` state, and
+  introspection never writes.
+
+**Upgrade note.** If an invalid pair of lifetime variables is deployed, the
+deployment still succeeds: configuration is read per request, and every
+request that loads it then fails with `500` until the variables are
+corrected — the Worker's log names the variable. Measured under an invalid
+pair: the discovery document, `/authorize`, `/token`, `/introspect`,
+`/revoke`, `/userinfo` and `/magic-link/request` returned `500`, while
+`/`, `/login`, JWKS and unregistered routes answered normally. Check the
+pair before deploying; nothing checks it at deploy time.
+
+### Login challenges outlived their expiry — RFC 140
+
+The `AuthChallengeStore` contract required implementations to treat an
+entry past `expires_at` as absent. Neither implementation did. Expiry was
+left to a Durable Object alarm, and that alarm discarded its own failed
+delete and reported success — so a failed delete left the entry usable
+indefinitely. Four of the six challenge kinds had no other check:
+authorization codes (60 s), WebAuthn registration and authentication
+nonces (60 s), the TOTP second-factor gate (5 min) and parked
+authorization requests. The TOTP gate additionally re-parked an already
+expired challenge with 60 more seconds.
+
+Now: `peek`, `take` and the magic-link attempt counter take the caller's
+clock, and an entry at or past `expires_at` is absent. An expired `take`
+deletes the entry and returns nothing, so it cannot be used even once.
+`peek` stays read-only. The alarm propagates a failed delete instead of
+swallowing it, and is cleanup only — correctness no longer depends on it
+having run.
+
+An expired authorization code is refused as `invalid_grant`, identical to
+an unknown code.
+
+### The browser suite's grace period ends — RFC 131 R5f
+
+The 20 Playwright tests over `/` and `/login` were non-blocking for exactly
+one release, 0.83.0, to tell first-contact flakes from findings. They
+produced none. The workflow and the documented gate set now describe the
+suite as blocking, with a standing rule: a flake is diagnosed and fixed, or
+the test is deleted — the gate is never made non-blocking again. It carries
+no `continue-on-error` and must not.
+
+**This is not in force yet.** See below.
+
+### What this release does NOT claim
+
+- **Not that any CI gate is enforced.** `main` has **no branch protection
+  at all**, so no check is required — not the browser suite, not the docs
+  build, not the others. Making the browser suite blocking needs
+  `browser-tests` added to required status checks; the repository setting
+  is outstanding.
+- **Not that the new or changed CI gates have ever run in CI.** They have
+  not, and the workflow YAML is unvalidated.
+- **Not that the Durable Object's read-time expiry check is verified
+  live.** An alarm due at the same moment may delete the entry first, so a
+  live expired-code run answers the same either way. It rests on the code,
+  on the rule shared with the tested store, and on a live check that the
+  Durable Object command wire decodes.
+- **Not that WebAuthn challenge expiry is tested.** Those routes have no
+  host-side harness; they share the store rule with the tested kinds.
+- **Not that expired refresh families are removed from storage**, or that
+  expiry writes a distinct audit event.
+- **Not that an invalid lifetime pair is prevented** — only that it is
+  never applied.
+- **Not that the registered client authentication method is enforced**, and
+  not that every rejected authentication is audited.
+- **Not that it works on Cloudflare. Nobody has deployed this tree.** Every
+  runtime observation is Miniflare.
+- **Still true from 0.83.0:** the frontend is verified by 20 tests on one
+  unauthenticated page, in one engine, with no interaction beyond Tab, and
+  it renders unstyled.
+
 ## [0.83.1] - 2026-09-15
 
 ### `/token` authenticated no client — RFC 137

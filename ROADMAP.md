@@ -331,6 +331,32 @@ started.
   the pinned wrangler, or that it works on Cloudflare (Miniflare only;
   nobody has deployed this tree).
 
+- ✅ **v0.84.0 — RFC 139 (+ condition C1-139), RFC 140, RFC 131 R5f.
+  Shipped 2026-09-22.** **Refresh tokens never expired and login
+  challenges outlived their expiry.** **RFC 139:** a refresh family now
+  ends at the earlier of an absolute cap (`REFRESH_TOKEN_TTL_SECS`) and a
+  new idle window (`REFRESH_TOKEN_IDLE_TIMEOUT_SECS`, 14 days, `0`
+  disables), enforced by the store at rotation, revoking and recording
+  which deadline ended it; no deadline is stored, so lowering a lifetime
+  takes effect immediately; the unsigned expiry has left the token, and
+  introspection reports the family's real deadline instead of the
+  presenter's number. C1-139 corrected six documents that said an invalid
+  pair stops the worker starting — it does not: the deployment succeeds and
+  every request that loads configuration then fails with 500. **RFC 140:**
+  both challenge stores treat an entry at or past `expires_at` as absent
+  against a caller-supplied clock, an expired take deletes, and the
+  Durable Object alarm no longer swallows a failed delete. **RFC 131 R5f:**
+  the browser suite's one-release non-blocking window is closed in the
+  workflow and the documented gate set. **Minor** — RFC 139's idle window
+  is a new control; 140 and R5f are fixes. **Not claimed:** that any CI
+  gate is enforced (`main` has no branch protection at all, so no check is
+  required, including the browser suite), that the new or changed gates
+  have run in CI, that the Durable Object's read-time expiry check is
+  live-verified, that WebAuthn challenge expiry is tested, that expired
+  families are swept or audited distinctly, or that it works on Cloudflare
+  — **nobody has deployed this tree**. Refresh tokens issued before this
+  release no longer decode.
+
 - **Security-critical assurance track (RFCs 116–124).** RFC 116 shipped in
   v0.81.0 (`rfcs/done/`), with two carve-outs deferred: secret-newtype
   adoption at the remaining credential call sites, and `ports::repo`, which

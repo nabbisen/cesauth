@@ -1,6 +1,6 @@
 # RFC 139 — Refresh tokens never expire
 
-**Status.** Accepted — approved by the owner 2026-09-16, as ruled in §9 and §10. Handoff dispatched.
+**Status.** Implemented (v0.84.0)
 **Author.** Architect · **Date.** 2026-09-15
 **Priority.** **P1, security.** A leaked refresh token is a permanent bearer
 credential.

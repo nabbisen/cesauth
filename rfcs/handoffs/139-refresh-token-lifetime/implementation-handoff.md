@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 139, refresh-token lifetime (P1)
 
-**Governing RFC.** [`rfcs/accepted/139-refresh-token-lifetime.md`](../../accepted/139-refresh-token-lifetime.md). Read **§9 and §10**. They supersede §5, §7 and §8.
+**Governing RFC.** [`rfcs/done/139-refresh-token-lifetime.md`](../../done/139-refresh-token-lifetime.md). Read **§9 and §10**. They supersede §5, §7 and §8.
 **Target release.** 0.84.0. **Level: minor.** Enforcing the configured absolute
 lifetime is a fix, but the idle window and `REFRESH_TOKEN_IDLE_TIMEOUT_SECS`
 are a new control, and a release mixing levels takes the higher one.

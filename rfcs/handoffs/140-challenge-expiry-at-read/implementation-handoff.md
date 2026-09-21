@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 140, challenge stores enforce expiry at read (P1)
 
-**Governing RFC.** [`rfcs/accepted/140-challenge-expiry-at-read.md`](../../accepted/140-challenge-expiry-at-read.md). Read §2 for the evidence and §4 for the design.
+**Governing RFC.** [`rfcs/done/140-challenge-expiry-at-read.md`](../../done/140-challenge-expiry-at-read.md). Read §2 for the evidence and §4 for the design.
 **Target release.** 0.83.2. **Level: patch.** The store contract already
 requires this, and neither implementation does it. That is a fix, and nothing
 new becomes possible.

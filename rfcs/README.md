@@ -103,8 +103,6 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 
 | ID | Title | Tier | Dispatched | Depends on |
 |----|-------|------|---|---|
-| [140](./accepted/140-challenge-expiry-at-read.md) | **Challenge stores enforce expiry at read** — `peek`/`take` take `now_unix`; neither the AuthChallenge DO nor the in-memory store honoured the contract's "past `expires_at` is absent" clause, and the alarm discarded its own delete failure | P1 | 2026-09-15 | — |
-| [139](./accepted/139-refresh-token-lifetime.md) | **Refresh-token lifetime** — idle window plus absolute cap, applied at rotation from the family's own `created_at`/`last_rotated_at` (the session model); expiry revokes atomically and records its cause; the unsigned expiry leaves the token; introspection classifies `expired`. Minor, 0.84.0 | P1 | 2026-09-16 | 137, 140 |
 | [117](./accepted/117-authorization-code-lifecycle-assurance.md) | Authorization-code lifecycle assurance — typestate pipeline making "mint before validation" unwritable, plus store-contract property tests. **Premise corrected: see §2a — one of the four checks it meant to encode does not exist (RFC 137)** | P0 | after 140 (§2b) | 116, 137, **140** |
 | [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | R2a shipped v0.82.0; **R5b–e shipped v0.83.0** (+ C1-R5); R2b awaits 132 §13 q1; R3 awaits 132 §13 q1 | 130, 132, 134 |
 
@@ -129,7 +127,7 @@ harness that closes it.
 
 ## Done
 
-127 RFCs shipped between v0.50.3 and v0.83.1 (001–106, 107, 108–111, 110b–110e, 113, 116, 125, 126, 127, 128, 129, 130, 132, 134, 135, 136, 137, 138). Full
+129 RFCs shipped between v0.50.3 and v0.84.0 (001–106, 107, 108–111, 110b–110e, 113, 116, 125, 126, 127, 128, 129, 130, 132, 134, 135, 136, 137, 138, 139, 140). Full
 list with shipped-in versions: see ROADMAP.md "Shipped" section and
 CHANGELOG.md release entries. Selected highlights only listed here; the
 canonical catalogue is the filesystem at `done/`.
@@ -168,6 +166,8 @@ canonical catalogue is the filesystem at `done/`.
 | [129](./done/129-drift-scan-coverage.md) | Drift-scan coverage — the `crates/` blind spot: 19 dead pointers, 6 true historical statements, 1 broken command; `ROADMAP.md` added to the scan (+ condition C1-129) | v0.83.0 |
 | [137](./done/137-token-endpoint-client-binding.md) | **`/token` client authentication and binding — P0, security.** A confidential client's secret was never checked, and codes and refresh families were bound to their client by PKCE alone. Both grants now authenticate before consuming, bind to the issuing client, and revoke a family refreshed by the wrong client (+ condition C1-137: one method per request, Basic without a body `client_id`, `WWW-Authenticate` on `invalid_client`) | v0.83.1 |
 | [138](./done/138-ci-gate-set-parity.md) | CI gate-set parity — mdbook gated with `create-missing = false`; wrangler pinned and called only through the local install, which fails loudly; tool-installing Actions pinned; drift-scan reads workflows (+ condition C1-138: no `npx wrangler`, clippy over all six crates) | v0.83.1 |
+| [139](./done/139-refresh-token-lifetime.md) | Refresh-token lifetime — idle window + absolute cap, enforced at rotation | v0.84.0 |
+| [140](./done/140-challenge-expiry-at-read.md) | Challenge stores enforce expiry at read | v0.84.0 |
 | [134](./done/134-router-pattern-conflict.md) | Router pattern conflict — `:param.json` routes panicked `worker`'s router on construction, every request, since 2026-07-07 (+ condition C1-134: the shell's assets resolve) | v0.82.0 |
 | [132](./done/132-view-rendering-policy.md) | View rendering policy — Q1–Q4 derived per surface, `Rendering` column on all 188 routes, E2/E3 blocking gates (+ conditions C1-132, C2-132) | v0.82.0 |
 
