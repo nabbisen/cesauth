@@ -77,7 +77,7 @@ overwritten atomically.
 | `JWT_KID`                    | `cesauth-2026-01`   | Stamped on every issued JWT               |
 | `ACCESS_TOKEN_TTL_SECS`      | `600`               | JWT `exp` offset                          |
 | `REFRESH_TOKEN_TTL_SECS`     | `2592000`           | Refresh family absolute cap (RFC 139): ends a family this long after creation, however often it is rotated. Must be positive |
-| `REFRESH_TOKEN_IDLE_TIMEOUT_SECS` | `1209600`      | Refresh family idle window (RFC 139): ends a family not rotated for this long. `0` disables it; must not exceed `REFRESH_TOKEN_TTL_SECS` or the worker refuses to start |
+| `REFRESH_TOKEN_IDLE_TIMEOUT_SECS` | `1209600`      | Refresh family idle window (RFC 139): ends a family not rotated for this long. `0` disables it; must not exceed `REFRESH_TOKEN_TTL_SECS`. An invalid pair is not caught at deploy: it fails every request that loads configuration with `500` (see [OIDC tokens](../expert/oidc-tokens.md#ttls)) |
 | `MAGIC_LINK_TTL_SECS`        | `600`               | OTP validity                              |
 | `SESSION_TTL_SECS`           | `2592000`           | Session cookie lifetime                   |
 | `PENDING_AUTHORIZE_TTL_SECS` | `300`               | `/authorize` cold-path park               |

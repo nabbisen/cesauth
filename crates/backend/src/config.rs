@@ -16,10 +16,12 @@ pub struct Config {
     pub issuer:                 String,
     pub jwt_kid:                String,
     pub access_token_ttl_secs:  i64,
-    /// **RFC 139** — refresh-family lifetime policy, built and validated once
-    /// at load from `REFRESH_TOKEN_TTL_SECS` (absolute cap) and
+    /// **RFC 139** — refresh-family lifetime policy, built and validated from
+    /// `REFRESH_TOKEN_TTL_SECS` (absolute cap) and
     /// `REFRESH_TOKEN_IDLE_TIMEOUT_SECS` (idle window, default 14 days, `0`
-    /// disables it). An invalid pair fails startup.
+    /// disables it) each time `from_env` runs, which is per request: a Worker
+    /// has no startup phase. An invalid pair makes `from_env` return an error,
+    /// so every caller fails (a route answers `500`) until it is corrected.
     pub refresh_lifetime: cesauth_core::ports::store::RefreshLifetime,
     pub magic_link_ttl_secs:    i64,
     /// Session cookie lifetime. Separate from access/refresh TTLs -
@@ -131,9 +133,11 @@ impl Config {
             }
         };
 
-        // RFC 139: the absolute cap and idle window, validated together.
-        // Refused at startup if the cap is not positive, idle is negative, or
-        // idle exceeds the cap — never silently applied.
+        // RFC 139: the absolute cap and idle window, validated together on
+        // every load. A cap that is not positive, a negative idle window, or
+        // an idle window above the cap is an error here — never silently
+        // applied — so every load, and every request behind it, fails until
+        // the variables are fixed.
         let refresh_lifetime = cesauth_core::ports::store::RefreshLifetime::new(
             var_parsed("REFRESH_TOKEN_TTL_SECS")?,
             var_parsed_default(

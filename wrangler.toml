@@ -128,8 +128,10 @@ ACCESS_TOKEN_TTL_SECS   = "600"
 REFRESH_TOKEN_TTL_SECS  = "2592000"    # 30 days: refresh family absolute cap (RFC 139)
 # Refresh family idle window (RFC 139): a family not rotated for this long
 # stops working. "0" disables the idle check; the absolute cap above always
-# applies. Must not exceed REFRESH_TOKEN_TTL_SECS, or the worker refuses to
-# start. Default when unset: 1209600 (14 days).
+# applies. Must not exceed REFRESH_TOKEN_TTL_SECS. Nothing checks that at
+# deploy time: an invalid pair deploys fine, then every request that loads
+# configuration fails with 500 (the log names the variable) until it is
+# corrected. Default when unset: 1209600 (14 days).
 REFRESH_TOKEN_IDLE_TIMEOUT_SECS = "1209600"    # 14 days
 MAGIC_LINK_TTL_SECS     = "600"
 WEBAUTHN_RP_ID          = "auth.example.com"

@@ -153,8 +153,24 @@ earlier of two deadlines: `created_at + REFRESH_TOKEN_TTL_SECS` (the absolute
 cap, however often it is rotated) and `last_rotated_at +
 REFRESH_TOKEN_IDLE_TIMEOUT_SECS` (the idle window, which moves with every
 rotation). Expired means `now >= deadline`. `0` disables the idle window; the
-absolute cap cannot be disabled. The worker refuses to start if the cap is not
-positive, the idle window is negative, or the idle window exceeds the cap.
+absolute cap cannot be disabled.
+
+**An invalid pair is refused, but not at startup.** A Worker has no startup
+phase that can fail: configuration is read on each request that needs it, and
+the pair is checked there. A cap that is not positive, a negative idle window,
+or an idle window longer than the cap makes every such request fail with `500`
+until the variables are corrected. The response carries no detail; the Worker's
+log names the variable. The deployment itself succeeds and looks healthy, and
+nothing checks the pair at deploy time, so check it before you deploy
+([pre-flight checklist](../deployment/preflight.md)).
+
+The damage is not confined to `/token`. Measured with an invalid pair, the
+discovery document, `/authorize`, `/token`, `/introspect`, `/revoke`,
+`/userinfo` and `/magic-link/request` all returned `500`, while the login page,
+the JWKS and unregistered routes kept answering; the scheduled sweeps load the
+same configuration and fail the same way. That is deliberate — an invalid pair
+is never applied — but it means a typo in either variable takes the OIDC
+endpoints and magic-link sign-in down until it is fixed.
 
 - **Enforced by the family store at rotation.** An expired family is revoked in
   the same write, and `/token` answers `invalid_grant`, as for a revoked family.

@@ -67,8 +67,10 @@ local-dev equivalent via `.dev.vars`.
   `PENDING_AUTHORIZE_TTL_SECS`, `AUTH_CODE_TTL_SECS`.
 - `REFRESH_TOKEN_IDLE_TIMEOUT_SECS` — the refresh family idle window
   (RFC 139), default `1209600` (14 days); `"0"` disables it. It must not
-  exceed `REFRESH_TOKEN_TTL_SECS`, which is the absolute cap, or the worker
-  refuses to start.
+  exceed `REFRESH_TOKEN_TTL_SECS`, which is the absolute cap. Nothing checks
+  that at deploy time: an invalid pair deploys, then fails every request that
+  loads configuration with `500` until it is corrected
+  ([details](../expert/oidc-tokens.md#ttls)).
 - `LOG_LEVEL` — `trace` | `debug` | `info` | `warn` | `error`.
 - `LOG_EMIT_SENSITIVE` — `"0"` or `"1"`. Default `"0"`.
 - `WRANGLER_LOCAL` — `"0"` in production. MUST NOT be `"1"` on any

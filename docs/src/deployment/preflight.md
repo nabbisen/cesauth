@@ -132,8 +132,11 @@ Run `cat wrangler.toml | grep -A50 '\[vars\]'` and confirm:
       etc.) reviewed against your security posture.
 - [ ] `REFRESH_TOKEN_IDLE_TIMEOUT_SECS` (refresh idle window, RFC 139)
       reviewed, and not greater than `REFRESH_TOKEN_TTL_SECS` (the absolute
-      cap): the worker refuses to start otherwise. `"0"` disables the idle
-      window.
+      cap). `"0"` disables the idle window. **Nothing checks this at deploy
+      time:** an invalid pair deploys and looks healthy, then every request
+      that loads configuration (`/token`, `/authorize` and `/magic-link/request`
+      among them) fails with `500` until it is corrected, so this is the place
+      to catch it.
 
 ## F — Cron Triggers
 
