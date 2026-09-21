@@ -281,3 +281,23 @@ Landed in `633c602`; L1–L9 accepted.
   fail-closed behaviour is right. §9.1's word "startup", repeated in the
   handoff, docs and comments, is corrected to describe it. Deploy-time
   validation would be a new capability, and it is not part of this RFC.
+
+## 12. C1-139 accepted (`f7321b3`, 2026-09-22)
+
+Documentation and comments only; no behaviour changed.
+
+- **"Refused at startup" is gone** from all six sites. The accurate account: a
+  Worker has no startup phase, configuration is read per request, and an invalid
+  pair makes every request that loads it fail with `500` until corrected. The
+  deployment itself succeeds and looks healthy.
+- **The blast radius is measured, not asserted**, by the implementer and again by
+  the reviewer. Under an invalid pair, the discovery document, `/authorize`,
+  `/token`, `/introspect`, `/revoke`, `/userinfo` and `/magic-link/request`
+  return `500`, while `/`, `/login`, JWKS and unregistered routes answer
+  normally. The scheduled sweeps load the same configuration; that part is read
+  from the code, not run.
+- **25**, not 28, is the number of `Config::from_env` call sites. The earlier
+  figure counted other `*Config` types. No published text carries either number.
+- **Candidate for its own RFC, not scheduled:** deploy-time validation of the
+  pair. Today a typo in either variable takes the OIDC endpoints and magic-link
+  sign-in down while the deployment reports success.
