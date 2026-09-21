@@ -296,3 +296,22 @@ where the grep is clean; a workspace-wide search shows both.
 survive a property whose inputs are arbitrary strings — random inputs never come
 near a match — and are caught only by the structured-case property. The weak
 property was kept with its blind spot stated, rather than deleted.
+
+### 16.1 C1-117 accepted (`51bc314`, 2026-09-22)
+
+Both items landed; RFC 117 is complete. **Level: patch.**
+
+- **`ConsumedCode::take` carries `&AuthenticatedClient`.** Verified by moving
+  `authenticate` below the take chain: `error[E0425]: cannot find value 'client'`
+  at the take and at `bind_client`. The proof is carried, not compared, and a
+  test pins that, so a later "tidy-up" cannot make `take` compare and thereby
+  stop a wrong-client attempt from consuming the code (RFC 137 T1).
+- **The port contract states the `put` clause**: an expired but never-taken
+  entry still exists, `put` onto it is `Conflict` and leaves it unchanged, and
+  "absent once expired" governs `peek`, `take` and `bump` — which receive a
+  `now_unix`, while `put` does not and so cannot judge expiry. No behaviour
+  changed; both stores already did this.
+- **The ~250-line threshold counts code, not comments** (the module is 257
+  total, 112 of code). It exists against typestate ergonomics creep, which is a
+  property of code. The module doc is not trimmed to fit a line count: criterion
+  3 — auditing the invariant by reading one file — depends on it.
