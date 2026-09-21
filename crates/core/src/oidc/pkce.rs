@@ -68,3 +68,6 @@ pub fn verify(verifier: &str, challenge: &str, method: ChallengeMethod) -> CoreR
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod proptests;

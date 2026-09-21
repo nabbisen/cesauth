@@ -278,6 +278,7 @@ name = "cesauth-adapter-test"
 version = "0.84.0"
 dependencies = [
  "cesauth-core",
+ "proptest",
  "serde",
  "serde_json",
  "tokio",

@@ -20,3 +20,6 @@ pub use refresh_token_family::InMemoryRefreshTokenFamilyStore;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod auth_challenge_proptests;

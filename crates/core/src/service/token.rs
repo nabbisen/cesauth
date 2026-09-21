@@ -12,16 +12,18 @@
 
 use uuid::Uuid;
 
+pub mod exchange_pipeline;
+
 use crate::error::{CoreError, CoreResult};
 use crate::jwt::{AccessTokenClaims, JwtSigner};
 use crate::oidc::id_token::{build_id_token_claims, sign_id_token};
-use crate::oidc::pkce::{self, ChallengeMethod};
 use crate::types::{ClientId, FamilyId, Jti, UserId};
 use crate::oidc::token::TokenResponse;
 use crate::service::client_auth::authenticate_token_client;
+use self::exchange_pipeline::{AuthenticatedClient, ConsumedCode};
 use crate::ports::repo::{ClientRepository, Grant, GrantRepository, UserRepository};
 use crate::ports::store::{
-    AuthChallengeStore, Challenge, FamilyInit, RateLimitStore, RefreshTokenFamilyStore,
+    AuthChallengeStore, FamilyInit, RateLimitStore, RefreshTokenFamilyStore,
     RotateOutcome,
 };
 use crate::types::Scopes;
@@ -92,10 +94,13 @@ pub struct ExchangeCodeInput<'a> {
 /// 1. Load and authenticate the client (eventual-consistency okay: clients
 ///    change slowly). Authentication precedes the code, so a failed attempt
 ///    does not consume it.
-/// 2. `take` the challenge from the `AuthChallengeStore`. This is the
-///    single-consumption step and MUST be atomic - a parallel call
-///    here must see `None`.
-/// 3. Verify PKCE against the stored challenge.
+/// 2. Walk the [`exchange_pipeline`] (RFC 117): `take` the challenge from the
+///    `AuthChallengeStore` (the single-consumption step; MUST be atomic - a
+///    parallel call here must see `None`), then bind it to the authenticated
+///    client, bind the redirect URI, and verify PKCE. Each step consumes the
+///    last, and the data tokens are minted from exists only at the end, so
+///    minting before verifying does not compile.
+/// 3. (Folded into step 2.)
 /// 4. Mint tokens. The refresh-token family's initial jti is created
 ///    here; we do not let the DO mint it, because the jti also needs
 ///    to go into the signed JWT and the DO's RPC surface does not
@@ -119,55 +124,27 @@ where
     UR: UserRepository,
     RL: RateLimitStore,
 {
-    // 1. Client — one read (RFC 026), then authenticate (RFC 137 T2).
-    let client = deps.clients
+    // 1. Client — one read (RFC 026), then authenticate (RFC 137 T2). Kept
+    //    ahead of the code so a failed attempt does not consume it (RFC 137
+    //    §13.1); `authenticate` yields the proof `bind_client` requires.
+    let view = deps.clients
         .find_auth_view(input.client_id)
         .await
         .map_err(|_| CoreError::Internal)?
         .ok_or(CoreError::InvalidClient)?;
-    authenticate_token_client(&client, input.client_secret)?;
+    let client = AuthenticatedClient::authenticate(&view, input.client_secret)?;
 
-    // 2. Consume the code.
-    let challenge = deps.codes
-        .take(input.code, input.now_unix)
-        .await
-        .map_err(|_| CoreError::Internal)?
-        .ok_or(CoreError::InvalidGrant("code is unknown or already used"))?;
-
-    let (code_client_id, user_id, scopes, code_challenge, code_challenge_method, redirect_uri, challenge_nonce, challenge_auth_time) =
-        match challenge {
-            Challenge::AuthCode {
-                client_id,
-                user_id,
-                scopes,
-                code_challenge,
-                code_challenge_method,
-                redirect_uri,
-                nonce,
-                auth_time,
-                ..
-            } => (client_id, user_id, scopes, code_challenge, code_challenge_method, redirect_uri, nonce, auth_time),
-            _ => return Err(CoreError::InvalidGrant("handle is not a code")),
-        };
-
-    // RFC 137 T1 / RFC 6749 §4.1.3: the code must be redeemed by the client
-    // it was issued to. Checked after `take`, so a rejected attempt consumes
-    // the code and a wrong-client redeemer cannot leave it in place for a
-    // retry. The wire error is the same `invalid_grant` as an unknown or
-    // already-used code; the distinct message reaches logs and audit only.
-    if code_client_id != client.client_id {
-        return Err(CoreError::InvalidGrant("code was issued to a different client"));
-    }
-
-    // Sanity: the redirect_uri submitted at /token must match what was
-    // bound to the code at /authorize (RFC 6749 §4.1.3).
-    if redirect_uri != input.redirect_uri {
-        return Err(CoreError::InvalidGrant("redirect_uri mismatch"));
-    }
-
-    // 3. PKCE.
-    let method = ChallengeMethod::parse(&code_challenge_method)?;
-    pkce::verify(input.code_verifier, &code_challenge, method)?;
+    // 2–3. Consume the code and verify it, in the order RFC 117 §1 states.
+    //      Expiry is the store's rule (RFC 140), applied inside `take`. The
+    //      errors are those the procedural code returned, unchanged.
+    let mint = ConsumedCode::take(deps.codes, input.code, input.now_unix).await?
+        .bind_client(&client)?
+        .bind_redirect(input.redirect_uri)?
+        .verify_pkce(input.code_verifier)?
+        .into_mint_input();
+    let user_id  = mint.user_id();
+    let scopes   = mint.scopes();
+    let client_id = mint.client_id();
 
     // 4. Mint.
     let family_id   = FamilyId::mint();
@@ -176,13 +153,13 @@ where
 
     let claims = AccessTokenClaims {
         iss:   signer.issuer().to_owned(),
-        sub:   user_id.clone(),
-        aud:   client.client_id.clone(),
+        sub:   user_id.to_owned(),
+        aud:   client_id.to_owned(),
         exp:   input.now_unix + cfg.access_ttl_secs,
         iat:   input.now_unix,
         jti:   access_jti,
         scope: scopes.to_space_separated(),
-        cid:   client.client_id.clone(),
+        cid:   client_id.to_owned(),
     };
     let access_token = signer.sign(&claims)?;
 
@@ -190,12 +167,12 @@ where
     deps.families
         .init(&FamilyInit {
             family_id: family_id.clone(),
-            user_id:   UserId::from_storage(user_id.clone()),
-            client_id: ClientId::from_storage(client.client_id.clone()),
+            user_id:   UserId::from_storage(user_id.to_owned()),
+            client_id: ClientId::from_storage(client_id.to_owned()),
             scopes:    scopes.0.clone(),
             first_jti: refresh_jti.clone(),
             now_unix:  input.now_unix,
-            auth_time: challenge_auth_time,
+            auth_time: mint.auth_time(),
         })
         .await
         .map_err(|_| CoreError::Internal)?;
@@ -203,8 +180,8 @@ where
     deps.grants
         .create(&Grant {
             id:         family_id.to_string(),
-            user_id:    user_id.clone(),
-            client_id:  client.client_id.clone(),
+            user_id:    user_id.to_owned(),
+            client_id:  client_id.to_owned(),
             scopes:     scopes.0.clone(),
             issued_at:  input.now_unix,
             revoked_at: None,
@@ -217,20 +194,20 @@ where
     // RFC 001: issue id_token when the scopes include "openid".
     let id_token = if scopes.0.iter().any(|s| s == "openid") {
         let user = deps.users
-            .find_by_id(&user_id)
+            .find_by_id(user_id)
             .await
             .map_err(|_| CoreError::Internal)?
             .ok_or(CoreError::InvalidGrant("user deleted between authorize and token exchange"))?;
         let claims = build_id_token_claims(
             cfg.iss,
             &user,
-            &client.client_id,
+            client_id,
             &scopes.0,
             // RFC 033 / OIDC Core §3.1.3.6: nonce from the authorization
             // request MUST be reflected in the id_token when present.
             // Refresh-path id_tokens correctly omit nonce (§12).
-            challenge_nonce.as_deref(),
-            challenge_auth_time,
+            mint.nonce(),
+            mint.auth_time(),
             input.now_unix,
             crate::timing::ID_TOKEN_TTL_SECS,
         );

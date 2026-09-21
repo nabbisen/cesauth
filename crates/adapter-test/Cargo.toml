@@ -26,3 +26,6 @@ uuid                        = { workspace = true }
 
 [dev-dependencies]
 tokio                       = { version = "1", features = ["macros", "rt"] }
+# RFC 117 T4: the store state-machine property test lives beside the store it
+# exercises. Same workspace pin as `cesauth-core`, dev-only.
+proptest                    = { workspace = true }
