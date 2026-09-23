@@ -265,3 +265,42 @@ deferred and remains not a blocker.
 
 **Authorized by the owner on 2026-09-22**, with these corrections. The rest of
 this line is superseded.
+
+## 17. First divergence, ruled (2026-09-24)
+
+The harness found a divergence on its first run, and the cycle stopped before
+fixing it, as the handoff §7 requires.
+
+**`InMemoryRefreshTokenFamilyStore::init` hard-coded `auth_time: 0`** instead of
+storing `FamilyInit.auth_time`. The contract states the clause twice
+(`FamilyInit.auth_time`, `FamilyState.auth_time`), the Durable Object implements
+it (`adapter-cloudflare/src/refresh_token_family.rs:103`), and `cesauth-core`'s
+own `StubFamilies` implements it — so three of four implementations agreed with
+the contract and the fourth was the only one no test ever read.
+
+**Ruling: the store is wrong; the double is fixed** (`auth_time: init.auth_time`).
+It is the third instance of this project's recurring defect class — a test double
+that quietly simplifies the contract (RFC 137 §4.1, RFC 140 T3) — and the first
+one caught by a machine rather than by a reviewer.
+
+**Not a security fix.** `cesauth-adapter-test` is `publish = false` and reaches
+no shipped path; all six existing `FamilyInit` constructions pass `auth_time: 0`,
+so no current test could observe the drop and none changes. RFC 118's CHANGELOG
+entry says the harness found it, and says plainly that no shipped behaviour was
+affected.
+
+**Two silences in the contract, closed with it:**
+
+- `rotate` / `revoke` on a family that was never initialised is `NotFound`. Both
+  stores did this; nothing said so. Documented on the port and pinned by a model
+  test and a contract test — not by the generator, which would have to represent
+  an absent family for a case two examples cover.
+- An explicit `revoke` of a family that is expired but not yet detected as
+  expired wins, leaving `expired` as `None`. This follows from invariant 3
+  (revocation is absorbing, first writer wins) and is now explicit in
+  `FamilyState.expired`'s doc.
+
+**A measurement rule, from the same cycle.** Coverage thresholds are set from a
+measured sample at roughly half its value, and are **not** tightened to the
+measured numbers: a threshold exists to catch a generator regression, not to
+ratify today's figures.
