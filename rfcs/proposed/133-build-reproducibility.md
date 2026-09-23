@@ -320,8 +320,12 @@ between them:
 | 0.84.0 cut → 0.84.1 cut (version bump) | 753,094 → 753,312 | **+218 bytes**, different hash, though the version string is the same length |
 | 0.84.1 cut → 0.84.2 readiness (**no version change**, separate `make build-frontend` run) | 753,312 → 753,312 | **byte-identical**, `sha256 9f8f0f1c…` |
 
-No cause is claimed. The third row is the new information: a rebuild at an
-unchanged version reproduced the artifact exactly, so whatever moves the bundle
-is not simple run-to-run noise. §5 F1's suspect — `wasm-opt -Oz` applied in
-place, and not idempotent — remains unexercised by the experiment this RFC
-describes.
+| 0.84.1 → 0.84.2 cut (version bump) | 753,312 → 753,092 | **−220 bytes**, different hash |
+
+No cause is claimed. The pattern is now clean across four measurements: **every
+version bump moves the bundle; a rebuild at an unchanged version does not**, and
+no frontend source changed in any of them. So whatever moves it is not
+run-to-run noise, and it is not proportional to the version string, whose length
+never changed. §5 F1's suspect — `wasm-opt -Oz` applied in place, and not
+idempotent — remains unexercised by the experiment this RFC describes, and these
+figures are recorded rather than compared as invariants (§2.1).
