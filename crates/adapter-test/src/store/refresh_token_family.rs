@@ -34,7 +34,7 @@ impl RefreshTokenFamilyStore for InMemoryRefreshTokenFamilyStore {
                 created_at:      init.now_unix,
                 last_rotated_at: init.now_unix,
                 revoked_at:      None,
-                auth_time:       0,
+                auth_time:       init.auth_time,
                 reused_jti:        None,
                 reused_at:         None,
                 reuse_was_retired: None,

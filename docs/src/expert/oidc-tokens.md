@@ -80,6 +80,23 @@ This rule is the reason `RefreshTokenFamily` is a Durable Object and
 not a D1 row. The rotation has to be serialized per family, and D1
 does not guarantee that.
 
+**The normative description of the family lifecycle** (RFC 118) is an
+executable reference model, `crates/core/src/ports/store/family_model.rs`. It
+states seven invariants: a single live jti; rotation kills the predecessor;
+revocation is absorbing; rotation bookkeeping; forensic fidelity; expiry, in the
+order revoked → absolute → idle → jti; and `init` uniqueness. It is small enough
+to review line by line, and where prose elsewhere (including this page)
+disagrees with it, the model is the specification.
+
+The stores are held to it by generated adversarial sequences — replayed jtis,
+rotate-after-revoke, invented jtis, jtis evicted past the 16-entry retired ring,
+clock jumps across both deadlines — run in lockstep with the model, comparing
+every outcome and the full post-state
+(`crates/adapter-test/src/store/refresh_family_proptests.rs`). **That harness
+runs against the in-memory store.** The Durable Object is not host-testable, so
+the model is not verified against it, and generated *sequences* say nothing about
+concurrency.
+
 ## Access token claims
 
 ```json

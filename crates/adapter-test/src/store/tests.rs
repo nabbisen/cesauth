@@ -715,3 +715,29 @@ async fn c1_117_put_over_an_expired_never_taken_entry_is_conflict_and_leaves_it_
     assert!(store.take(&rfc140_handle(), exp).await.unwrap().is_none());
     store.put(&rfc140_handle(), &replacement).await.expect("the handle is free once taken");
 }
+
+// -----------------------------------------------------------------------
+// RFC 118 (§7 ruling 6.1) — a family that was never initialised.
+// The port states it; the model's `apply_to_absent` is the rule.
+// -----------------------------------------------------------------------
+
+/// `rotate` and `revoke` on an id that was never initialised are `NotFound`, and
+/// `peek` is `None`. Compared with `family_model::apply_to_absent` rather than a
+/// second copy of the rule, so the model and the store cannot drift apart.
+#[tokio::test]
+async fn rfc118_rotate_and_revoke_on_an_uninitialised_family_are_not_found_and_peek_is_none() {
+    use cesauth_core::ports::store::family_model::{apply_to_absent, ModelOutcome, Op as ModelOp};
+    let store = InMemoryRefreshTokenFamilyStore::default();
+    let fid   = cesauth_core::types::FamilyId::from_storage("never-initialised");
+    let (j0, j1) = (cesauth_core::types::Jti::from_storage("j0"), cesauth_core::types::Jti::from_storage("j1"));
+
+    let rotate_op = ModelOp::Rotate { presented: j0.clone(), new: j1.clone(), lifetime: default_lifetime() };
+    assert_eq!(apply_to_absent(&rotate_op),    Some(ModelOutcome::NotFound));
+    assert_eq!(apply_to_absent(&ModelOp::Revoke), Some(ModelOutcome::NotFound));
+
+    assert!(matches!(store.rotate(&fid, &j0, &j1, 10, &default_lifetime()).await, Err(PortError::NotFound)),
+        "rotate on an id that was never initialised must be NotFound");
+    assert!(matches!(store.revoke(&fid, 10).await, Err(PortError::NotFound)),
+        "revoke on an id that was never initialised must be NotFound");
+    assert!(store.peek(&fid).await.unwrap().is_none(), "peek on an id that was never initialised must be None");
+}

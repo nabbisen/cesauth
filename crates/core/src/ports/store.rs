@@ -176,6 +176,10 @@ pub trait AuthChallengeStore {
 // investigating a possible token leak need to know which.
 // -------------------------------------------------------------------------
 
+// RFC 118: the executable reference model of this lifecycle. It is the
+// normative description of what a `RefreshTokenFamilyStore` must do.
+pub mod family_model;
+
 // RFC 139: the lifetime policy and decision live beside the family.
 pub use crate::refresh_lifetime::{
     DEFAULT_REFRESH_IDLE_TIMEOUT_SECS, Lifetime, LifetimeExpiry, RefreshLifetime, RefreshLifetimeError,
@@ -198,6 +202,11 @@ pub struct FamilyState {
     /// with `reused_at` and `reuse_was_retired`. Cleared back to None
     /// only on a fresh family — never overwritten on a revoked family
     /// (the first reuse is the interesting one).
+    ///
+    /// **Normative (RFC 118, [`family_model`]):** the three reuse fields
+    /// **MUST** be set together, exactly once, by the first reuse; explicit
+    /// revocation and expiry **MUST NOT** set them, and nothing **MUST**
+    /// overwrite them afterwards.
     #[serde(default)]
     pub reused_jti:        Option<crate::types::Jti>,
     /// When the reuse was detected (Unix seconds). Note this is the
@@ -219,6 +228,11 @@ pub struct FamilyState {
     /// window (RFC 139 §10.1). `None` for a live family, and for one revoked
     /// explicitly or by reuse detection. No deadline itself is stored: it is
     /// computed from `created_at` / `last_rotated_at` and the current policy.
+    ///
+    /// An explicit `revoke` of a family that is past a deadline but has not yet
+    /// been *detected* as expired records only `revoked_at`, and `expired`
+    /// **stays `None`**: revocation is absorbing and the first writer wins
+    /// (RFC 118 ruling; `family_model` invariant 3).
     #[serde(default)]
     pub expired: Option<LifetimeExpiry>,
 
@@ -248,19 +262,30 @@ pub struct FamilyInit {
 
 /// Outcome of a rotation attempt.
 ///
-/// `Mismatch` is *not* an error from the port's perspective - it's a
-/// domain signal that the caller must react to by revoking the family
-/// (the store does this itself internally before returning). We return
-/// an enum rather than `Result<_, PortError>` so the caller cannot
+/// **Normative (RFC 118).** The exact conditions for each variant, and the
+/// state each leaves behind, are stated by the executable reference model in
+/// [`family_model`], to which every store is held by generated sequences
+/// (`cesauth-adapter-test`, `store/refresh_family_proptests.rs`). Where this
+/// prose and the model disagree, the model is the specification.
+///
+/// Reuse is *not* an error from the port's perspective - it's a domain signal
+/// the store has already acted on by revoking the family before returning. We
+/// return an enum rather than `Result<_, PortError>` so the caller cannot
 /// accidentally `?`-propagate a reuse event into a generic error path.
 #[derive(Debug, Clone)]
 pub enum RotateOutcome {
     /// Happy path. `new_current_jti` is what the caller should now sign.
+    ///
+    /// **MUST** be returned only when the family is not revoked, is inside both
+    /// lifetime deadlines, and the presented jti is the current one. It retires
+    /// exactly one jti and sets `last_rotated_at` to `now_unix`.
     Rotated { new_current_jti: crate::types::Jti },
-    /// The family was already revoked before this rotation attempt.
-    /// Carries the original revocation timestamp so the caller can
-    /// decide whether to re-emit reuse-detection audit events (it
-    /// shouldn't — the family was already burned).
+    /// The family was already revoked before this rotation attempt. Carries no
+    /// payload: the caller should not re-emit reuse-detection audit events, the
+    /// family was already burned.
+    ///
+    /// **MUST** be returned whenever `revoked_at` is set, whatever jti is
+    /// presented, and the store **MUST NOT** change the family.
     AlreadyRevoked,
     /// The presented jti is not the current one. The family has been
     /// revoked as a side effect.
@@ -270,6 +295,12 @@ pub enum RotateOutcome {
     /// time) from an entirely-unknown jti (= forged or shotgun
     /// attack). The audit event payload uses this to surface stronger
     /// vs weaker reuse-detection signals.
+    ///
+    /// **MUST** revoke the family and record the reuse forensics, once.
+    /// `was_retired` **MUST** be `true` iff the presented jti is among the last
+    /// [`family_model::RETIRED_RING_CAP`] rotated-out jtis: one the ring has
+    /// since dropped, or one never issued, is `false`. Both revoke; the label is
+    /// forensic and does not change the response.
     ReusedAndRevoked {
         /// The jti that was presented. Surfaced in audit so
         /// investigators can correlate against client logs.
@@ -284,9 +315,16 @@ pub enum RotateOutcome {
     /// **not** rotate. Checked after revocation and before the jti, so an
     /// expired family presented with a retired jti is `Expired`, and the reuse
     /// forensics stay `None`.
+    ///
+    /// **MUST** record `expired` and `revoked_at` in the same write and **MUST
+    /// NOT** rotate; absolute is judged before idle.
     Expired(LifetimeExpiry),
 }
 
+/// **A family that was never initialised (RFC 118).** `rotate` and `revoke` on
+/// such an id return `Err(PortError::NotFound)`, and `peek` returns `Ok(None)`;
+/// the Durable Object's `NotInitialized` is mapped to these by its adapter.
+/// `family_model::apply_to_absent` states the rule.
 pub trait RefreshTokenFamilyStore {
     /// Create a fresh family. Returns `Conflict` if the id is already in
     /// use - callers must mint a new id rather than retry.

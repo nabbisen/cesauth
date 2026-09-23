@@ -23,3 +23,6 @@ mod tests;
 
 #[cfg(test)]
 mod auth_challenge_proptests;
+
+#[cfg(test)]
+mod refresh_family_proptests;
