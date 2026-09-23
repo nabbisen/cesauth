@@ -8,14 +8,15 @@ guidance for investigating regressions.  It is the companion to
 
 | Metric | Value | Date |
 |---|---|---|
-| Gzip size | _run `scripts/bundle-bloat.sh` to measure_ | — |
+| Gzip size | 811,575 bytes (30% of budget): `index_bg.wasm` 800,877 + `shim.js` 10,698, per-file `gzip -c`, CI run 35930160578 on `f9d450a`. Wrangler's own line for the same upload: `Total Upload: 2190.98 KiB / gzip: 800.32 KiB` | 2026-09-23 |
 | Budget | 2.5 MiB (2 621 440 bytes) | RFC 025 |
 | Plan ceiling (Free) | 3.0 MiB | Cloudflare docs |
 | Plan ceiling (Paid) | 10.0 MiB | Cloudflare docs |
 
-> **Note**: The first measurement should be recorded here when the CI job
-> runs for the first time on this branch.  Replace the placeholder above
-> with the actual numbers from the `Check bundle gzip size` step output.
+> **Note**: this is the first real measurement. Before RFC 142 the CI gate
+> could not run (it needed the frontend's `dist/`), and once it could it
+> measured `shim.js` alone (10,698 bytes, "0%"). Replace the row above from the
+> `Check bundle gzip size` step output whenever it is re-measured.
 
 ## Budget rationale
 
