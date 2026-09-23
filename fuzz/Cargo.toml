@@ -1,3 +1,4 @@
+# RFC 142 M1 (measurement only, never merged): this comment exists to satisfy fuzz.yml's `fuzz/**` path filter.
 [package]
 name    = "cesauth-fuzz"
 version                 = "0.0.0"
