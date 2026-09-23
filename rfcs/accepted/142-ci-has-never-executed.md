@@ -1,4 +1,7 @@
-# RFC 142 — No CI workflow has ever run
+# RFC 142 — CI runs, and four of its gates are red
+
+> **Retitled 2026-09-25.** The original title, "No CI workflow has ever run",
+> was false. See §9.
 
 **Status.** Accepted — approved by the owner 2026-09-24.
 **Tier.** P1 · Category B — every gate this project has built is unproven where
@@ -10,20 +13,35 @@ every release note since 0.83.0.
 
 ## 1. Summary
 
-cesauth has eleven workflows and a documented gate set. **None has ever
-executed**, and `main` has **no branch protection**, so no check is required.
-Every gate is proven only by hand, on one machine.
+**Corrected 2026-09-25 by measurement — see §9 for what this said before and why
+it was wrong.**
+
+cesauth has **13** workflows. They have run **~1,650 times since 2026-04-23**,
+on every push to `main` and on schedule. What had *never* run was the
+`pull_request` trigger, and `fuzz`, which is path-filtered to pull requests.
+
+The real gap is narrower and worse than "CI has never run": **CI runs, four
+gates are red, and nothing is required.** `main` has **no branch protection**,
+so every failure has been advisory since April.
 
 ## 2. What is established
 
-- `gh api repos/{owner}/{repo}/branches/main/protection` → **`404 Branch not
-  protected`**, verified 2026-09-22 and unchanged.
-- Three releases (0.84.0, 0.84.1, 0.84.2) carry "not that any CI gate is
-  enforced" in their notes, and RFC 131 R5f's "blocking" browser suite is
-  blocking only in the workflow's own prose.
-- **The workflow YAML has never been parsed by anything**: no validator is
-  installed locally, and GitHub has never read the files.
-- `worker-build.yml`'s jobs and `docs.yml` have never started.
+Measured 2026-09-24 against the GitHub API, and re-verified by the architect:
+
+- **`main` is unprotected.** `gh api …/branches/main/protection` → `404 Branch
+  not protected`. **This part was always true**, and it is the whole of the
+  enforcement gap.
+- **13 workflows, all active; ~1,650 runs**, all `push` or `schedule`.
+  **Zero `pull_request` runs** until RFC 142's own measurement, and `fuzz` had
+  never run at all.
+- **Nine gates are green** on both triggers; **four are red**: `fuzz`,
+  `Worker bundle size budget`, `Worker build`'s `runtime-smoke` job, and
+  `Browser tests`.
+- **`Worker bundle size budget` has never once passed** — 149 of 149 runs
+  failed — so the 2.5 MiB gzip budget it exists to enforce **has never been
+  evaluated**.
+- Three releases (0.84.0–0.84.2) carry "not that any CI gate is enforced". That
+  sentence is still true, for the reason above rather than the one first given.
 
 ## 3. Why it matters
 
@@ -88,3 +106,27 @@ first.
 The first run may reveal that several gates cannot work in CI without secrets or
 significant setup. That is information the project does not have, and is the
 reason M1 reports before anyone fixes anything.
+
+## 9. Premise corrected (2026-09-25)
+
+This RFC was written on a false claim of mine: *"No CI workflow has ever run …
+the workflow YAML has never been parsed by anything."* The measurement it
+commissioned disproved it in its first paragraph.
+
+**What was true:** `main` has no branch protection, so no check is required, and
+the browser suite's "blocking" is prose. That is the gap, and it is real.
+
+**How the false part got in.** Earlier packages recorded that `worker-build.yml`
+"has never executed in CI" — which was a compressed form of something true:
+before RFC 131 C1-R5 installed Trunk, those jobs **failed at their first step**
+and had never *succeeded*. "Never passed" decayed into "never ran" as it was
+copied forward into three release notes, `contributing.md`'s gate table, and
+then this RFC, where I generalised it from one workflow to all of them.
+
+**My own error on top of that.** I verified branch protection with `gh api` and
+never ran `gh run list` — the adjacent query, with the same tool, in the same
+session. I checked the claim I doubted and assumed the one I had inherited.
+
+**The lesson, and it is the same one this project keeps relearning:** a claim
+repeated across documents is not evidence, and the cheapest check is the one
+nobody runs because everybody already believes the answer.
