@@ -58,12 +58,27 @@ jobs:
       - name: Check bundle gzip size against budget
         run: |
           set -euo pipefail
-          bundle="$(find bundled/ -name '*.js' -size +0 -print -quit)"
-          if [ -z "$bundle" ]; then
-            echo "Error: no .js file found in bundled/" >&2
+          # RFC 142: measure every module the Worker uploads, not the first
+          # `.js` found. `find ... -print -quit` returned bundled/shim.js (a
+          # ~10 KB loader) and the ~2 MB `*_bg.wasm` beside it was never
+          # measured, so this gate printed "Usage: 0%" on every run it could
+          # reach. Source maps and the README are not uploaded modules.
+          mapfile -t modules < <(find bundled/ -type f \( -name '*.js' -o -name '*.wasm' \) -size +0 | sort)
+          if [ "${#modules[@]}" -eq 0 ]; then
+            echo "Error: no .js or .wasm module found in bundled/" >&2
             exit 1
           fi
-          gz_size=$(gzip -c "$bundle" | wc -c)
+          if ! printf '%s\n' "${modules[@]}" | grep -q '\.wasm$'; then
+            echo "Error: bundled/ holds no .wasm module, and the Worker's code is one; refusing to measure the loader alone" >&2
+            exit 1
+          fi
+          gz_size=0
+          for m in "${modules[@]}"; do
+            n=$(gzip -c "$m" | wc -c)
+            echo "  $n bytes gzip  $m"
+            gz_size=$(( gz_size + n ))
+          done
+          bundle="${#modules[@]} modules"
 
           # Budget = 2.5 MiB (2621440 bytes).
           # Rationale: Free-plan gzip ceiling is 3 MiB; we keep 500 KiB

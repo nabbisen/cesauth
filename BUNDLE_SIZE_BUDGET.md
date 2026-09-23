@@ -53,7 +53,10 @@ Look for the largest newcomers in the crate list.  Common causes:
 ```bash
 # Produces bundled/ without uploading.
 wrangler deploy --dry-run --outdir bundled/
-gzip -c bundled/*.js | wc -c
+# The Worker's code is the *_bg.wasm module, not the shim.js loader beside it
+# (RFC 142: the CI gate used to gzip only the first .js, ~10 KB of ~800 KB).
+# Sum every module; source maps and README.md are not uploaded modules.
+for f in bundled/*.js bundled/*.wasm; do gzip -c "$f" | wc -c; done | paste -sd+ | bc
 ```
 
 ### Top-N contributing crates snapshot
