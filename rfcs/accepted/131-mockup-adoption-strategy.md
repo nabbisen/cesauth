@@ -331,3 +331,46 @@ route inside this programme.
    contradicted it, every page title included. The owner ruled on the drift
    rather than against it and ADR-013 is amended accordingly. The mockup's own
    rule (its RFC 034) is therefore inherited **deliberately**, not silently.
+
+## R3's prerequisite, answered: the passkey affordance (2026-09-24)
+
+RFC 132 §13 q1 was deferred by the owner on 2026-09-09 and **decided on
+2026-09-24**: the architect's full recommendation
+(`.git-exclude/reviewed/132-q1-passkey-affordance-recommendation.md` §3), with
+conditional mediation **in scope for R3**. R3 owns `/` and `/login`, so this is
+now part of its specification.
+
+**What R3 builds.**
+
+1. **The email form is server-rendered** on `/` and `/login`. It is already a
+   plain `<form method="POST" action="/magic-link/request">` whose response page
+   is already a server-rendered template (`templates/login.rs`), so the missing
+   piece is markup, not a mechanism. Without JavaScript the full email-code
+   sign-in works.
+2. **Passkeys are offered through conditional mediation** —
+   `navigator.credentials.get({ mediation: "conditional" })` with
+   `autocomplete="username webauthn"` on the email field — so the passkey
+   appears in the field's own autofill. Nothing appears late, nothing needs
+   reserved space, and a control that cannot work is never drawn: the browser
+   offers a passkey only if one exists for this origin.
+3. **An explicit button remains as the fallback** for browsers without
+   conditional mediation, shown whenever `PublicKeyCredential` exists — **not**
+   gated on a platform authenticator, which would hide passkey sign-in from
+   users with a security key or a passkey on another device.
+   `isUserVerifyingPlatformAuthenticatorAvailable()` decides prominence and
+   wording only, never existence, and never gates rendering on an unresolved
+   promise.
+4. **The server renders email-first.** It cannot know whether this browser has a
+   passkey, so it must not declare one primary and have script demote it. The
+   enhancement promotes the passkey once it knows.
+5. **The `<noscript>` block on these two routes is replaced.** The shell's
+   generic "This application requires JavaScript and WebAssembly" is accurate
+   today and becomes **false** the moment the form is server-rendered. It must
+   say that passkey sign-in needs JavaScript and that the form above does not
+   (RFC 132 §13.3's policy, applied where it bites first).
+6. **The user-facing documentation states which sign-in methods work without
+   JavaScript.**
+
+**What this makes verifiable.** A server-rendered form is the first thing on
+these routes that the browser suite can assert **with JavaScript disabled** — a
+strictly stronger test than today's "does it mount".

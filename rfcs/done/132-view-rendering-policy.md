@@ -254,8 +254,16 @@ superseded.
 ## 13. Open questions
 
 1. **Where does the passkey affordance live on `/login`, and what does a
-   no-JS user meet?** *Deferred by the owner 2026-09-09 for further
-   discussion — not blocking.*
+   no-JS user meet?** **ANSWERED 2026-09-24** — the owner took the architect's
+   full recommendation. The decision and what R3 builds are recorded in
+   **RFC 131**, "R3's prerequisite, answered"; the reasoning is in
+   `.git-exclude/reviewed/132-q1-passkey-affordance-recommendation.md`. In
+   short: the email form is server-rendered, passkeys are offered through
+   **conditional mediation** in the email field's autofill with an explicit
+   button as the fallback, the button is gated on `PublicKeyCredential`
+   existing rather than on a platform authenticator, the server renders
+   email-first, and the generic `<noscript>` text is replaced on these two
+   routes. **R3 is no longer blocked.** The original text follows.
 
    The rule already settles the hard part: `/login` is Q1/Q2, so it must
    render server-side and be usable without JavaScript, and WebAuthn cannot
