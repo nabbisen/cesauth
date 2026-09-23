@@ -304,3 +304,36 @@ affected.
 measured sample at roughly half its value, and are **not** tightened to the
 measured numbers: a threshold exists to catch a generator regression, not to
 ratify today's figures.
+
+## 18. Implementation review (2026-09-24)
+
+T1–T4 landed in `1f432b3` and are accepted. **RFC 118 is complete. Level: patch.**
+
+**Verified by the reviewer:** 1,509 host tests (1,486 + 23); 20 named model
+invariant tests and the two harness tests, green unmasked; the model holds no
+deadline arithmetic and calls `FamilyState::lifetime`; no existing test line was
+removed; no seeds are committed. Two fires mutations written independently of
+the implementer's: **accepting a retired jti as current** is caught at op 2
+(`expected ReusedAndRevoked, got Rotated`), and an **unbounded ring** is caught
+at op 33 **by the post-state comparison** — 27 operations before an outcome-only
+comparison would have noticed.
+
+**Rulings on the implementer's questions:**
+
+- **`apply_to_absent` as a free function** is the right home for the
+  absent-family rule: the store contract test compares the store *to that
+  function*, so the stated rule and the test cannot drift, and the generator did
+  not have to be restructured for a case two examples cover.
+- **`peek` belongs in the absent-family clause**, which the implementer added
+  beyond the ruling's `rotate`/`revoke`. Leaving one method of the trio unstated
+  would have reproduced the condition that let the `auth_time` drift survive.
+- **Two false statements in `RotateOutcome`'s docs** were corrected while making
+  the prose normative: a `Mismatch` variant that does not exist, and
+  `AlreadyRevoked` described as carrying a timestamp when it is a unit variant.
+  Making prose normative is precisely when it should be checked.
+
+**Recorded, no action:** a failing property run writes `proptest-regressions/`,
+and every fires mutation produces one. §16.5 is the right rule and must not
+become a `.gitignore` entry, but it deserves one line in each harness's module
+doc (RFC 117's and this one's), folded in the next time either is touched, or by
+RFC 121 if it generalises them.
