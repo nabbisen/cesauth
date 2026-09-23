@@ -14,9 +14,10 @@ name: Browser tests
 # release, 0.83.0, to tell first-contact flakes from findings; it produced
 # none.
 # ---------------------------------------------------------------------------
-# Blocking is a branch-protection setting, not a property of this file:
-# "browser-tests" is a required status check. Nothing here enforces it, and
-# nothing here can.
+# Blocking is a branch-protection setting, not a property of this file: it
+# means "browser-tests" is a required status check. As of 2026-09-23 (RFC 142)
+# that setting IS NOT IN PLACE: `main` is unprotected and no check is required,
+# so nothing is blocked. Nothing here enforces it, and nothing here can.
 #
 # It is deliberately NOT `continue-on-error: true`, and must never become so:
 # that would make the job report success while failing, which is worse than a

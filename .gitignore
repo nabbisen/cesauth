@@ -7,6 +7,9 @@ Cargo.lock
 .wrangler/
 .dev.vars
 dist/
+# `make build-frontend`'s wasm-opt scratch directory (RFC 133 C1-133); only a hard
+# interruption leaves it behind, and the next build removes it.
+crates/frontend/.wasm-opt-tmp/
 build/
 
 # --- Editor / OS ---
