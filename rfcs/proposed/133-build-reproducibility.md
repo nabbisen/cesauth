@@ -308,24 +308,127 @@ Recorded so the shape is understood, not as a chosen design:
    arguably adjacent to that, and the review is already overdue by its own
    note.
 
-## Recorded observations (2026-09-24)
+## 11. Recorded observations, and what they actually show (2026-09-24)
 
-Three measurements of `crates/frontend/dist/assets/cesauth-frontend_bg.wasm`,
-each `du -b` + `gzip -c | wc -c` + `sha256sum`, with no frontend source change
-between them:
+Four measurements of `crates/frontend/dist/assets/cesauth-frontend_bg.wasm`,
+each `du -b` + `gzip -c | wc -c` + `sha256sum`, with **no frontend source
+change** between any of them:
 
 | Between | Size | Result |
 |---|---|---|
 | 0.83.1 cut → 0.84.0 cut (version bump) | 753,095 → 753,094 | **−1 byte**, different hash |
-| 0.84.0 cut → 0.84.1 cut (version bump) | 753,094 → 753,312 | **+218 bytes**, different hash, though the version string is the same length |
-| 0.84.1 cut → 0.84.2 readiness (**no version change**, separate `make build-frontend` run) | 753,312 → 753,312 | **byte-identical**, `sha256 9f8f0f1c…` |
-
+| 0.84.0 cut → 0.84.1 cut (version bump) | 753,094 → 753,312 | **+218 bytes**, different hash |
+| 0.84.1 cut → 0.84.2 readiness (**no version change**, separate `make build-frontend`) | 753,312 → 753,312 | **byte-identical**, `sha256 9f8f0f1c…` |
 | 0.84.1 → 0.84.2 cut (version bump) | 753,312 → 753,092 | **−220 bytes**, different hash |
 
-No cause is claimed. The pattern is now clean across four measurements: **every
-version bump moves the bundle; a rebuild at an unchanged version does not**, and
-no frontend source changed in any of them. So whatever moves it is not
-run-to-run noise, and it is not proportional to the version string, whose length
-never changed. §5 F1's suspect — `wasm-opt -Oz` applied in place, and not
-idempotent — remains unexercised by the experiment this RFC describes, and these
-figures are recorded rather than compared as invariants (§2.1).
+**Correction to how I first recorded these.** My first note said "every version
+bump moves the bundle; a rebuild at an unchanged version does not", which invites
+the reading that the *version* is the cause. **It is not**, and §2.2 already
+disproved that by reverting the version and getting identical bytes. The
+variable is **whether the frontend crate was recompiled**:
+`crates/frontend/Cargo.toml` carries `version.workspace = true`, so a workspace
+bump changes `CARGO_PKG_VERSION` — a fingerprint input — and forces a rebuild,
+while a `make build-frontend` at an unchanged version finds every unit `Fresh`
+and re-emits the same file.
+
+So these four rows are **not a new pattern**. They are a fourth, fifth and sixth
+confirmation of §2.2's finding, at release scale:
+
+> **recompiling the same source produces different bytes; not recompiling
+> produces the same bytes.**
+
+That is worth having — it shows the phenomenon is still live at 0.84.2, on this
+host, four months of toolchain-stability later, and that the deltas are not
+monotonic (−1, +218, −220), which is awkward for any "padding grew" story. It
+adds no new *cause*, and it narrows nothing on its own.
+
+## 12. Recommendation, 2026-09-24 — split the RFC, and do the cheap half now
+
+Reviewed end to end at the owner's request, against "finally clean, safe and
+secure, robust and sophisticated design".
+
+### 12.1 There are two RFCs inside this one
+
+**A — a defect in the release path.** §2.3's F1: `wasm-opt -Oz` is not
+idempotent, and `Makefile:149-153` applies it **in place**
+(`-o "$$f" "$$f"`) over `crates/frontend/dist/*_bg.wasm`. Verified still
+present today. The emitted artifact is therefore a function of *what was
+already in `dist/`*, not of the source alone. It is latent only because Trunk
+happens to overwrite the wasm on every successful build; any path where it does
+not — a failed or interrupted `trunk build`, a `make` re-run over a populated
+`dist/`, a future change to Trunk's behaviour — silently ships a
+doubly-optimized bundle, ~600 bytes smaller, with no source change and nothing
+to notice it.
+
+**B — a property we do not have.** Environment reproducibility: the same commit
+and toolchain on a different host, or in a container, yielding an identical
+hash. §6's directions (`--remap-path-prefix`, a pinned build image,
+`SOURCE_DATE_EPOCH`) belong here.
+
+They have been carried as one RFC because they were discovered together. They
+have different costs, different value, and different right moments.
+
+### 12.2 Do A now
+
+- **It is a bug, not an investigation.** A build step whose output depends on
+  the directory's history is not robust, whatever the measurements say. The fix
+  is one line: optimize to a distinct path and move it into place, or clear
+  `dist/` before `trunk build`.
+- **It is the only mechanism found that produces a *large* delta from an
+  unchanged tree**, and §2.3 names it as the likely cause of the original
+  1,563-byte pair.
+- **The re-measurement is the acceptance test**, and it is cheap: three builds
+  from a cleared tree agree, and a build immediately after another agrees with
+  them.
+- **Alongside it, M1's first experiment** (§2.4): run `wasm-bindgen` twice on
+  identical `cargo` output and compare. Two commands, and it either finds the
+  residual's cause or eliminates the last cheap candidate. Nothing else in M1
+  should start until that is reported.
+
+**Priority: raise A from P2.** P2 was set when nothing was identified. A named
+defect with a one-line fix, in the path that produces the artifact every release
+records, is ordinary maintenance work — not an investigation to be scheduled
+when there is room.
+
+### 12.3 Defer B to 1.0 hardening, and record that as a decision
+
+**Not because it is unimportant — because it has no consumer yet.** cesauth
+ships its authentication UI as a wasm binary, so "this bundle is the reviewed
+commit" is a security property and not a nicety. But it becomes *usable* only
+when there is something to verify against: a deployment, a published artifact,
+release-note checksums, or an attestation. There is none of that today — nobody
+has deployed this tree.
+
+Committing now to a pinned build image is the expensive half of §8's risk
+table: it adds an artifact somebody must maintain, in exchange for a property
+nothing yet consumes. **Tie B to the attack-surface review the ROADMAP already
+makes a 1.0 precondition**, which is where artifact provenance belongs, and
+answer §10 q2 in those terms rather than leaving it open.
+
+### 12.4 One documentation correction, and it is the "do not mislead" case
+
+`BUNDLE_SIZE_BUDGET.md` currently tells a reader:
+
+> The build is **run-reproducible but not environment-reproducible**
+
+**§2.2 falsified the first half of that sentence** — two clean rebuilds of the
+same commit, minutes apart, in one shell session, on one host, produced
+different bytes. The true statement is narrower: *a rebuild that recompiles
+nothing re-emits the same file; a rebuild that recompiles may not.* A reader
+acting on the current wording would conclude their own machine reproduces the
+artifact, and would be wrong the first time they touch the version.
+
+This is criterion 3's intent, and it should not wait for A or B: the sentence
+is wrong now. **Correct it whenever A lands**, and state the property in terms
+of *recompilation*, with §11's figures as the evidence.
+
+### 12.5 What I am not recommending
+
+- **Not bit-level diffing of two binaries.** Still disproportionate, and §2.4's
+  cheap candidate is not exhausted.
+- **Not a CI gate on the hash.** It would fail on every version bump, which is
+  precisely the behaviour under investigation; a gate on an artifact we cannot
+  yet reproduce would be a gate that teaches people to ignore it.
+- **Not closing the RFC.** §2.2's finding is real and unexplained, and the
+  figures keep accumulating.
+
