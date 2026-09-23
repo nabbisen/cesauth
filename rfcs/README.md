@@ -80,7 +80,6 @@ Build integrity.
 
 | ID | Title | Tier | Category | Depends on |
 |----|-------|------|----------|------------|
-| [133](./proposed/133-build-reproducibility.md) | Build reproducibility. **Narrowed 2026-09-13:** `wasm-opt -Oz` is not idempotent and the Makefile applies it in place, so the bundle depends on build history — a one-line fix (§5 F1). Version string, host-drift-over-time and incremental compilation all eliminated; `wasm-bindgen` determinism is the last cheap suspect | P2 → reconsider | after 137/138 |
 
 Security-critical assurance track, continued.
 
@@ -103,6 +102,7 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 
 | ID | Title | Tier | Dispatched | Depends on |
 |----|-------|------|---|---|
+| [133](./accepted/133-build-reproducibility.md) | Build reproducibility — **narrowed and split 2026-09-24 (§12)**. Half A scheduled: the optimizer's read–write aliasing and history dependence, the wasm-bindgen determinism experiment, and a false "run-reproducible" claim in `BUNDLE_SIZE_BUDGET.md`. Half B (environment reproducibility) deferred to 1.0 hardening | P2 | 2026-09-24 | — |
 | [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | R2a shipped v0.82.0; **R5b–e shipped v0.83.0** (+ C1-R5); R2b awaits 132 §13 q1; R3 awaits 132 §13 q1 | 130, 132, 134 |
 
 Numbers are assignment order and are never reused or renumbered (RFC 000), so

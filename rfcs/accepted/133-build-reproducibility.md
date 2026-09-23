@@ -1,6 +1,6 @@
 # RFC 133 — Frontend build reproducibility
 
-**Status.** Proposed
+**Status.** Accepted (half A) — approved by the owner 2026-09-24. **Narrowed to §12.1's half A**; half B is deferred to 1.0 hardening (§12.3). Handoff dispatched.
 **Tier.** P2 · Category B — a real property we do not have; not urgent, not dismissible.
 **Size.** Small to measure, unknown to fix. §5 is a measurement gate first.
 **Tracks.** 0.81.2 release-candidate review §1–2. Discovered because task 008
@@ -8,7 +8,7 @@ asked for a changed byte figure to be reported rather than rounded past.
 **Touches.** `Makefile`, `Cargo.toml` profile, `BUNDLE_SIZE_BUDGET.md`,
 possibly `.github/workflows/`.
 **Depends on.** Nothing. **Blocks.** Nothing.
-**Target release.** Unscheduled. Candidate filler for any release with room.
+**Target release.** The next one, for half A. **Level: patch** — a build-step fix, a measurement, and a documentation correction; no behaviour changes.
 
 ## 1. Summary
 
@@ -349,16 +349,42 @@ secure, robust and sophisticated design".
 
 ### 12.1 There are two RFCs inside this one
 
-**A — a defect in the release path.** §2.3's F1: `wasm-opt -Oz` is not
-idempotent, and `Makefile:149-153` applies it **in place**
-(`-o "$$f" "$$f"`) over `crates/frontend/dist/*_bg.wasm`. Verified still
-present today. The emitted artifact is therefore a function of *what was
-already in `dist/`*, not of the source alone. It is latent only because Trunk
-happens to overwrite the wasm on every successful build; any path where it does
-not — a failed or interrupted `trunk build`, a `make` re-run over a populated
-`dist/`, a future change to Trunk's behaviour — silently ships a
-doubly-optimized bundle, ~600 bytes smaller, with no source change and nothing
-to notice it.
+**A — a fragile build step.** §2.3's F1: `wasm-opt -Oz` is not idempotent, and
+`Makefile:149-153` applies it **in place** (`-o "$$f" "$$f"`) over
+`crates/frontend/dist/*_bg.wasm`. Verified still present today.
+
+**Corrected 2026-09-24, after reading the whole recipe** — §2.3 and my own first
+draft of this section overstated the live risk, and the correction matters
+because it changes why the fix is worth doing:
+
+- Two lines after the optimizer, the wasm is **moved** to `dist/assets/`
+  (`mv crates/frontend/dist/*.js crates/frontend/dist/*_bg.wasm
+  crates/frontend/dist/assets/`). The next run's glob, `dist/*_bg.wasm`, does
+  **not** match it. The previously optimized artifact is not re-optimized.
+- `make` aborts on the first failing recipe line, so a failed `trunk build`
+  stops the target before the optimizer runs at all.
+
+So §2.3's "a failed or interrupted `trunk build` … silently ships a
+doubly-optimized bundle" requires something outside the normal path: `make -k`,
+which continues past the failure; a hand-run loop; or an interruption **inside**
+the optimizer, which leaves a partially written file at a path that is both its
+input and its output.
+
+**What remains true, and is still worth fixing:** the step reads and writes the
+same path, and its result depends on what that path already holds. That is
+fragile rather than broken — the property "the artifact is a function of the
+source" currently holds by luck of Trunk's behaviour rather than by
+construction. The two defects are separable and each is one line:
+
+1. **Read–write aliasing.** An interruption mid-optimize leaves a truncated file
+   where the input used to be, and nothing downstream would notice. Fix: write
+   to a distinct path and move it into place.
+2. **History dependence.** The target's output depends on what `dist/` already
+   contains. Fix: clear `dist/` before `trunk build`, which also makes a failed
+   Trunk produce *no* artifact rather than a stale one.
+
+**This is hardening, not an incident.** No measurement in this RFC was produced
+by a doubly-optimized bundle, and the package must not claim one was.
 
 **B — a property we do not have.** Environment reproducibility: the same commit
 and toolchain on a different host, or in a container, yielding an identical
@@ -370,10 +396,12 @@ have different costs, different value, and different right moments.
 
 ### 12.2 Do A now
 
-- **It is a bug, not an investigation.** A build step whose output depends on
-  the directory's history is not robust, whatever the measurements say. The fix
-  is one line: optimize to a distinct path and move it into place, or clear
-  `dist/` before `trunk build`.
+- **It is hardening with a known shape, not an investigation** (§12.1 as
+  corrected). A build step that reads and writes one path, and whose result
+  depends on what that path already holds, should not be the last thing standing
+  between the source and the shipped artifact. Both fixes are one line, and they
+  are **not** alternatives: one removes the aliasing, the other removes the
+  history dependence.
 - **It is the only mechanism found that produces a *large* delta from an
   unchanged tree**, and §2.3 names it as the likely cause of the original
   1,563-byte pair.
@@ -432,3 +460,35 @@ of *recompilation*, with §11's figures as the evidence.
 - **Not closing the RFC.** §2.2's finding is real and unexplained, and the
   figures keep accumulating.
 
+
+## 13. Scheduled (2026-09-24)
+
+The owner authorized §12: **half A is scheduled**, half B is deferred.
+
+**In scope now (half A):**
+
+1. **F1a — remove the read–write aliasing.** The optimizer writes to a distinct
+   path, which is then moved into place.
+2. **F1b — remove the history dependence.** `dist/` is cleared before
+   `trunk build`, so the target's output cannot depend on what the directory
+   already held, and a failed Trunk leaves no artifact rather than a stale one.
+3. **M1's first experiment** (§2.4): run `wasm-bindgen` twice over identical
+   `cargo` output and compare. Two commands. It either finds the cause of the
+   residual or eliminates the last cheap candidate. **Report and stop** — no
+   other M1 step begins on its result without a ruling.
+4. **The documentation correction** (§12.4): `BUNDLE_SIZE_BUDGET.md` says the
+   build is "run-reproducible", which §2.2 falsified. It is corrected to state
+   the property in terms of **recompilation**, with §11's figures as evidence.
+
+**Deferred (half B), as a recorded decision rather than a silence:**
+environment reproducibility — the same commit and toolchain on a different host
+or in a container yielding an identical hash — with §6's directions
+(`--remap-path-prefix`, a pinned build image, `SOURCE_DATE_EPOCH`). It has no
+consumer until there is a deployment and something to verify against, and
+committing to a maintained build image before then buys a property nothing uses.
+**It is tied to the attack-surface review the ROADMAP makes a 1.0
+precondition**, which answers §10 q2.
+
+**What half A does not do.** It does not make the build reproducible. §2.2's
+finding — recompiling the same source can produce different bytes — is
+untouched by it, and the package must not imply otherwise.
