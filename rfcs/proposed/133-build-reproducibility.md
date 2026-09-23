@@ -307,3 +307,21 @@ Recorded so the shape is understood, not as a chosen design:
    makes an attack-surface review a 1.0 precondition; artifact provenance is
    arguably adjacent to that, and the review is already overdue by its own
    note.
+
+## Recorded observations (2026-09-24)
+
+Three measurements of `crates/frontend/dist/assets/cesauth-frontend_bg.wasm`,
+each `du -b` + `gzip -c | wc -c` + `sha256sum`, with no frontend source change
+between them:
+
+| Between | Size | Result |
+|---|---|---|
+| 0.83.1 cut → 0.84.0 cut (version bump) | 753,095 → 753,094 | **−1 byte**, different hash |
+| 0.84.0 cut → 0.84.1 cut (version bump) | 753,094 → 753,312 | **+218 bytes**, different hash, though the version string is the same length |
+| 0.84.1 cut → 0.84.2 readiness (**no version change**, separate `make build-frontend` run) | 753,312 → 753,312 | **byte-identical**, `sha256 9f8f0f1c…` |
+
+No cause is claimed. The third row is the new information: a rebuild at an
+unchanged version reproduced the artifact exactly, so whatever moves the bundle
+is not simple run-to-run noise. §5 F1's suspect — `wasm-opt -Oz` applied in
+place, and not idempotent — remains unexercised by the experiment this RFC
+describes.
