@@ -23,6 +23,17 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      # RFC 142: `wrangler deploy --dry-run` validates `[assets] directory`
+      # (crates/frontend/dist), which is a build product and not in the
+      # checkout, so on a clean runner this job failed at the next step with
+      # "The directory specified by the assets.directory field ... does not
+      # exist" on every run. Same two steps, same pin, as worker-build.yml.
+      - name: Install Trunk
+        run: cargo install trunk --version 0.21.14 --locked
+
+      - name: make build-frontend
+        run: make build-frontend
+
       # worker-build is installed by wrangler.toml's own [build] command,
       # pinned there (RFC 131 C1-131) so every invocation of `wrangler
       # dev`/`build`/`deploy` -- here and everywhere else -- gets the
