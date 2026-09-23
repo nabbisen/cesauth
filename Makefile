@@ -151,31 +151,40 @@ build-frontend: wasm-opt-fetch
 	# target/, so this does not force a re-download.)
 	rm -rf crates/frontend/dist
 	cd crates/frontend && trunk build --release --filehash false
-	# RFC 133 F1a + T3. `wasm-opt -Oz` is not idempotent (753,095 -> 752,485 ->
-	# 752,414 over three passes), so it must never read and write one path: the
-	# result goes to "$$f.opt", beside the input so the final `mv` is an atomic
-	# rename, and replaces the input only if wasm-opt SUCCEEDED. An interruption
-	# or a failure therefore leaves the unoptimized-but-valid wasm in place
-	# (and dist/ is cleared at the start of the next build regardless). The
-	# existence check makes an empty glob loud: with dist/ cleared, a Trunk
-	# that emits no wasm would otherwise hand wasm-opt a file literally named
-	# `*_bg.wasm`. Each iteration fails the target itself, because a `for`
-	# loop reports only its last iteration's status.
+	# RFC 133 F1a + T3 + C1-133. `wasm-opt -Oz` is not idempotent (753,095 ->
+	# 752,485 -> 752,414 over three passes), so it must never read and write
+	# one path. Its output goes to crates/frontend/.wasm-opt-tmp/, OUTSIDE
+	# dist/, and replaces the input only if wasm-opt SUCCEEDED. dist/ is the
+	# deployed asset directory (wrangler.toml [assets]), so no partially
+	# written file may ever exist inside it, and none does: an interruption or a
+	# failure leaves the unoptimized-but-valid wasm in dist/ and a partial file
+	# only in the temp directory. The final `mv` is one rename(2) (both paths
+	# are on one filesystem, and rename is atomic across directories there), so
+	# the shipped file is never partial either. The existence check makes an
+	# empty glob loud: with dist/ cleared, a Trunk that emits no wasm would
+	# otherwise hand wasm-opt a file literally named `*_bg.wasm`. Each iteration
+	# fails the target itself, because a `for` loop reports only its last
+	# iteration's status.
 	set -e; \
+	tmpdir=crates/frontend/.wasm-opt-tmp; \
 	for f in crates/frontend/dist/*_bg.wasm; do \
 		if [ ! -f "$$f" ]; then \
 			echo "build-frontend: trunk emitted no crates/frontend/dist/*_bg.wasm, so there is nothing to optimize (trunk exited 0 without producing the wasm; check crates/frontend/index.html and the trunk output above)" >&2; \
 			exit 1; \
 		fi; \
+		mkdir -p "$$tmpdir"; \
+		out="$$tmpdir/$$(basename "$$f")"; \
 		if ! "$(CURDIR)/$(BINARYEN_DIR)/bin/wasm-opt" \
 				--enable-bulk-memory --enable-bulk-memory-opt -Oz \
-				-o "$$f.opt" "$$f"; then \
-			rm -f "$$f.opt"; \
+				-o "$$out" "$$f"; then \
 			echo "build-frontend: wasm-opt failed on $$f; the unoptimized wasm was left in place" >&2; \
+			rm -f "$$out"; \
+			rmdir "$$tmpdir" 2>/dev/null; \
 			exit 1; \
 		fi; \
-		mv "$$f.opt" "$$f"; \
-	done
+		mv "$$out" "$$f"; \
+	done; \
+	rmdir "$$tmpdir"
 	# RFC 131 C2-131: Trunk always emits dist/index.html — its own dev
 	# template, whose module doc already said it is "NOT served directly"
 	# in production. It was: Cloudflare Workers Static Assets serves a
