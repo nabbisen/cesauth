@@ -112,9 +112,9 @@ setting this repository cannot show; the table records what runs.
 | `bash scripts/route-contracts-check.sh` | `route-contracts.yml` | none |
 | `mdbook build docs` | `docs.yml` | **Ran in no workflow before RFC 138.** `create-missing = false` makes a broken chapter link fail it |
 | `make build-frontend` | `trunk-release-build.yml`; also a step in `worker-build.yml` and `browser-tests.yml` | CI adds an assertion that the built filenames match what `leptos_shell.rs` requests |
-| `node_modules/.bin/wrangler build` | `worker-build.yml` (`worker-build` job) | none. **Has not yet executed in CI** — it could not start until RFC 131 C1-R5 installed Trunk |
-| `bash scripts/runtime-smoke-check.sh` | `worker-build.yml` (`runtime-smoke` job) | none. **Has not yet executed in CI**, for the same reason |
-| `npx playwright test` in `e2e/`, against `node_modules/.bin/wrangler dev` | `browser-tests.yml` | **Blocking as of 0.84.0** (RFC 131 R5f), after one non-blocking release. Like every other gate here, blocking means it is a required status check in branch protection; the workflow itself carries no `continue-on-error` and must not. **Has not yet executed in CI** |
+| `node_modules/.bin/wrangler build` | `worker-build.yml` (`worker-build` job) | none. **Has executed in CI and passes** (as measured on `a0d49fa`, 2026-09-23; RFC 142). This describes one measurement, not an enforced gate |
+| `bash scripts/runtime-smoke-check.sh` | `worker-build.yml` (`runtime-smoke` job) | none. **Has executed in CI and currently fails**: the Worker's first compile takes longer than the script's readiness deadline (as measured on `a0d49fa`, 2026-09-23; RFC 142 is fixing it) |
+| `npx playwright test` in `e2e/`, against `node_modules/.bin/wrangler dev` | `browser-tests.yml` | **Blocking as of 0.84.0** (RFC 131 R5f), after one non-blocking release. Like every other gate here, blocking means it is a required status check in branch protection; the workflow itself carries no `continue-on-error` and must not. **Has executed in CI and currently fails**, for the same first-compile reason as `runtime-smoke` (as measured on `a0d49fa`, 2026-09-23; RFC 142 is fixing it) |
 | — | `bundle-size.yml` | **CI-only.** A gzip budget on a `wrangler deploy --dry-run` bundle; not in the described set |
 | — | `fuzz.yml` | **CI-only, deliberately outside the gate set.** Nightly toolchain; runs only on pull requests touching `crates/core/src/jwt/**` or `fuzz/**`, or by manual dispatch |
 
