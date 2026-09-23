@@ -130,3 +130,39 @@ session. I checked the claim I doubted and assumed the one I had inherited.
 **The lesson, and it is the same one this project keeps relearning:** a claim
 repeated across documents is not evidence, and the cheapest check is the one
 nobody runs because everybody already believes the answer.
+
+## 10. Cycle 1 — the four red gates are green (2026-09-25)
+
+`1142ef8` … `6e2c360`, each fix with its own CI run, verified by the reviewer.
+
+- **`fuzz`** — `fuzz/` was never in the workspace's `exclude`, so `cargo fuzz`
+  could not build it. Excluded; the target now runs: **11,727,426 executions in
+  61 s**. Its first run in the project's history.
+- **`bundle`** — two defects. The gate never built the frontend, so
+  `[assets] directory` did not exist; and once it did run, it measured
+  **`shim.js`, 10,698 bytes, 1.3% of the artifact**, and reported `Usage: 0%`.
+  A green gate that measures the loader is a gate that cannot fail. It now sums
+  every uploaded module and **fails if no `.wasm` is present**, so it cannot
+  regress to the loader. **The 2.5 MiB budget has been evaluated for the first
+  time in 149 runs: 811,575 B gzip, 30%.**
+- **`runtime-smoke` and `browser-tests`** — both died at their readiness
+  deadline during a **214 s / 219 s cold Worker compile**. Both now build the
+  Worker in their own step; **warm startup is ~10 s** against unchanged 60 s and
+  180 s deadlines. Raising a deadline would have needed ~4× the real startup
+  time and would have measured nothing.
+- **Secrets, the RFC's original prediction, answered:** `wrangler dev` serves
+  the public unauthenticated surface on a clean runner **with no `.dev.vars`**.
+  Routes that sign or verify were not exercised and are not claimed.
+
+**Thirteen job-level checks are green** at `3a88c20`. `fuzz` stays outside any
+required set: its `paths:` filter means a required check would never report on
+most pull requests (§2.3 of the M1 ruling).
+
+**Still outstanding — the owner's:** branch protection. Nothing is enforced
+until the checks are required, and the four fixed checks are proven on `push`
+but not yet on `pull_request`; one throwaway draft PR should confirm them before
+enforcement.
+
+**Follow-ups, recorded not scheduled:** `fuzz/` has no committed `Cargo.lock`,
+so its dependencies float per run; `cargo install trunk` costs ~5 minutes in
+each of four jobs and is an obvious caching candidate.
