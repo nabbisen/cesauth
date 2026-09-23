@@ -145,11 +145,36 @@ wasm-opt-fetch:
 ## bounding built output to /assets/* closes that whole class, not just
 ## the one instance already found.
 build-frontend: wasm-opt-fetch
+	# RFC 133 F1b: start from nothing, so the output cannot depend on what
+	# dist/ held before, and a failed Trunk leaves NO artifact rather than a
+	# stale one. Same idiom as `clean`. (wasm-opt-fetch's download lives in
+	# target/, so this does not force a re-download.)
+	rm -rf crates/frontend/dist
 	cd crates/frontend && trunk build --release --filehash false
+	# RFC 133 F1a + T3. `wasm-opt -Oz` is not idempotent (753,095 -> 752,485 ->
+	# 752,414 over three passes), so it must never read and write one path: the
+	# result goes to "$$f.opt", beside the input so the final `mv` is an atomic
+	# rename, and replaces the input only if wasm-opt SUCCEEDED. An interruption
+	# or a failure therefore leaves the unoptimized-but-valid wasm in place
+	# (and dist/ is cleared at the start of the next build regardless). The
+	# existence check makes an empty glob loud: with dist/ cleared, a Trunk
+	# that emits no wasm would otherwise hand wasm-opt a file literally named
+	# `*_bg.wasm`. Each iteration fails the target itself, because a `for`
+	# loop reports only its last iteration's status.
+	set -e; \
 	for f in crates/frontend/dist/*_bg.wasm; do \
-		"$(CURDIR)/$(BINARYEN_DIR)/bin/wasm-opt" \
-			--enable-bulk-memory --enable-bulk-memory-opt -Oz \
-			-o "$$f" "$$f"; \
+		if [ ! -f "$$f" ]; then \
+			echo "build-frontend: trunk emitted no crates/frontend/dist/*_bg.wasm, so there is nothing to optimize (trunk exited 0 without producing the wasm; check crates/frontend/index.html and the trunk output above)" >&2; \
+			exit 1; \
+		fi; \
+		if ! "$(CURDIR)/$(BINARYEN_DIR)/bin/wasm-opt" \
+				--enable-bulk-memory --enable-bulk-memory-opt -Oz \
+				-o "$$f.opt" "$$f"; then \
+			rm -f "$$f.opt"; \
+			echo "build-frontend: wasm-opt failed on $$f; the unoptimized wasm was left in place" >&2; \
+			exit 1; \
+		fi; \
+		mv "$$f.opt" "$$f"; \
 	done
 	# RFC 131 C2-131: Trunk always emits dist/index.html — its own dev
 	# template, whose module doc already said it is "NOT served directly"

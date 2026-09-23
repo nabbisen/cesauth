@@ -87,13 +87,49 @@ introducing a gate is a separate decision.
 **These figures are environment-sensitive, not invariants.** RFC 130 S4
 recorded 879,980 / 750,151 / 262,744 bytes on one host. Rebuilding the
 *identical* commit on a different host (condition C1-0.81.2) produced the
-table below instead — a fixed ~1.5 KB shift, not run-to-run noise: three
-consecutive builds on the C1-0.81.2 host, including a forced
-`cargo clean -p cesauth-frontend`, all produced a byte-identical artifact
-(same sha256). The build is **run-reproducible but not
-environment-reproducible**; see RFC 133, which owns closing that gap. Do not
-treat either host's numbers as the "correct" one — record what the tagged
-commit measures on the host that tags it, qualified as below.
+table below instead — a fixed ~1.5 KB shift.
+
+**The build is not reproducible, and an earlier version of this section said
+it was reproducible from one run to the next. That was false.** The property
+that does hold is narrower, and it is about *recompilation*: **a rebuild that
+recompiles nothing re-emits the same file; a rebuild that recompiles may not.**
+The evidence, from RFC 133:
+
+- **Two clean rebuilds of one commit, minutes apart, in one shell session, on one
+  host, differed** (§2.2): after `cargo clean -p cesauth-frontend` and
+  `make build-frontend`, 753,093 bytes (`f07a27b0…`), then 753,095 bytes
+  (`1b539cd2…`). The C1-0.81.2 observation above, three consecutive builds
+  including a forced `cargo clean -p cesauth-frontend` agreeing, was **one
+  occasion on which they agreed, not a guarantee**.
+- **Four release-scale confirmations at unchanged frontend source** (§11), each
+  `du -b` + `gzip -c | wc -c` + `sha256sum`:
+
+  | Between | Size | Result |
+  |---|---|---|
+  | 0.83.1 cut → 0.84.0 cut (version bump) | 753,095 → 753,094 | −1 byte, different hash |
+  | 0.84.0 cut → 0.84.1 cut (version bump) | 753,094 → 753,312 | +218 bytes, different hash |
+  | 0.84.1 cut → 0.84.2 readiness (no version change) | 753,312 → 753,312 | byte-identical, `sha256 9f8f0f1c…` |
+  | 0.84.1 → 0.84.2 cut (version bump) | 753,312 → 753,092 | −220 bytes, different hash |
+
+  The variable is not the version string (RFC 133 §2.2 reverted it and got the
+  same bytes); it is **whether the frontend crate was recompiled**. A workspace
+  version bump changes `CARGO_PKG_VERSION`, a fingerprint input, and forces the
+  recompile; a rebuild at an unchanged version finds every unit fresh. The deltas
+  are not monotonic (−1, +218, −220).
+
+What this means for a reader: **the artifact's hash is not a function of the
+source.** Record it; do not compare it as an invariant, and do not treat either
+host's numbers as the "correct" one. Record what the tagged commit measures on
+the host that tags it, qualified as below.
+
+What is and is not established (RFC 133 half A): the build *step* is now a
+function of its input (`dist/` is cleared first, and `wasm-opt` never reads and
+writes one path), and `wasm-bindgen` 0.2.128 was measured **deterministic**
+(two runs over one `cargo` output gave byte-identical output). So whatever
+varies arises **before** `wasm-bindgen`, in what `cargo`/`rustc` emit when the
+crate is recompiled. **That cause is not identified**, and making the build
+environment-reproducible (a pinned image, path remapping, a fixed epoch) is
+deferred to 1.0 hardening; RFC 133 owns both.
 
 Current measurement (0.81.2 tag, C1-0.81.2 correction). **Gzip figures are
 `gzip -9 -c <file> | wc -c`** — a gzip size without a stated level is not a
@@ -126,5 +162,5 @@ Binaryen `version_123` (fetched by `Makefile`'s `wasm-opt-fetch` target — see
 RFC 130 S1 for why Trunk's own `wasm-opt` invocation cannot be used as-is),
 Linux 7.2.3. Reproduce with `make build-frontend` then
 `ls -la crates/frontend/dist/` / `gzip -9 -c <file> | wc -c` — but expect the
-absolute bytes to be host-sensitive per the note above; a differing number is
-not by itself evidence of a broken build.
+absolute bytes to be host-sensitive **and recompile-sensitive** per the notes
+above; a differing number is not by itself evidence of a broken build.
