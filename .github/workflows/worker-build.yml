@@ -130,5 +130,19 @@ jobs:
       - name: Install pinned wrangler (root npm ci)
         run: npm ci
 
+      # RFC 142: build the Worker HERE, in its own step, so that `wrangler dev`
+      # below starts against a warm target/ and only has to re-run worker-build's
+      # post-processing. `wrangler dev` runs wrangler.toml's `[build]` command
+      # itself, cold, and on a clean runner that first compile took ~3.5 minutes
+      # against a readiness deadline of 60 seconds, so this gate failed on every run
+      # (RFC 142 M1). The deadline is deliberately NOT raised: a longer wait
+      # would hide a build that is slow, and the build has its own step to
+      # be slow, and to fail, in.
+      - name: Build the Worker (pinned wrangler)
+        run: |
+          set -euo pipefail
+          test -x node_modules/.bin/wrangler || { echo "::error::wrangler is not installed: run npm ci at the repository root (RFC 138)"; exit 1; }
+          node_modules/.bin/wrangler build
+
       - name: Runtime smoke check
-        run: bash scripts/runtime-smoke-check.sh
+        run: time bash scripts/runtime-smoke-check.sh
