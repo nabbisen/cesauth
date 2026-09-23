@@ -171,3 +171,22 @@ note for self-hosters with custom adapters that port traits changed.
 - Should `SessionIndexRepo` adopt tenant scoping now? Sessions are
   user-keyed and users are tenant-resolved upstream; deferred with a
   note, revisit if session queries ever take raw user ids from input.
+
+## Finding, added 2026-09-24 — a false premise in migration 0020
+
+`migrations/0020_authenticator_tenant_id.sql` explains why it scoped
+`authenticators` and left `consent` and `grants` alone:
+
+> consent and grants are already indirectly tenant-scoped via `oidc_clients`
+
+**`oidc_clients` has no `tenant_id`.** The table is created in `0001` and altered
+exactly once, by `0010`, which adds `audience`
+(`grep -rn 'oidc_clients' migrations/*.sql`). So `consent` and `grants` are not
+tenant-scoped through it, by any path, and the sentence is the stated
+justification for leaving both tables un-scoped.
+
+This belongs to G2's scope: the tenant boundary is enforced by convention at
+call sites, and here a schema decision was taken on a property the schema does
+not have. Whether clients *should* be tenant-owned is the question underneath
+it, and it is this RFC's to answer — RFC 141 §10.1 explicitly defers it here
+rather than inventing an ownership model inside a registration API.

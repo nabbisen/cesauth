@@ -49,9 +49,6 @@ Full policy: `done/000-rfc-lifecycle-policy.md`.
 
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
-| [141](./proposed/141-oidc-client-registration.md) | **OIDC client registration has no API.** No route creates a client; the production guide tells an operator to hand-write `INSERT INTO oidc_clients (…) VALUES (…)` with the columns elided, including a hash they must compute. Adds the API, the console screen, an integrator chapter, and enforcement of the registered auth method | P1 | after 142 |
-| [142](./proposed/142-ci-has-never-executed.md) | **No CI workflow has ever run**, and `main` has no branch protection, so no check is required. Run them, report what fails, fix without weakening any gate, then the owner adds the required checks | P1 | next |
-| [143](./proposed/143-totp-verify-without-javascript.md) | **A no-JS user is stranded at the second factor.** `/me/security/totp/verify` is render-exempt, so a user who signs in without JavaScript and has TOTP cannot finish. Independent of R3 | P1 | with 141 |
 | [144](./proposed/144-introspection-reveals-family-existence.md) | **Introspection reveals that a family exists** to an authenticated caller presenting a forged jti: `expired`/`revoked` are classified before the jti comparison, which the mismatch path conflates to `unknown` precisely to avoid this. **Recorded as an RFC because it was lost once** as "recorded for RFC 118" | P3 | filler |
 
 ### Other proposed
@@ -107,6 +104,9 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 | ID | Title | Tier | Dispatched | Depends on |
 |----|-------|------|---|---|
 | [133](./accepted/133-build-reproducibility.md) | Build reproducibility — **narrowed and split 2026-09-24 (§12)**. Half A scheduled: the optimizer's read–write aliasing and history dependence, the wasm-bindgen determinism experiment, and a false "run-reproducible" claim in `BUNDLE_SIZE_BUDGET.md`. Half B (environment reproducibility) deferred to 1.0 hardening | P2 | 2026-09-24 | — |
+| [142](./accepted/142-ci-has-never-executed.md) | **No CI workflow has ever run**, and `main` has no branch protection, so no check is required. Run them, report what fails, fix without weakening any gate, then the owner adds the required checks | P1 | 2026-09-24, with 0.84.3 | — |
+| [141](./accepted/141-oidc-client-registration.md) | **OIDC client registration has no API.** No route creates a client; the production guide tells an operator to hand-write `INSERT INTO oidc_clients (…) VALUES (…)` with the columns elided, including a hash they must compute. Adds the API, the console screen, an integrator chapter, and enforcement of the registered auth method | P1 | after the 0.84.3 tag | 116, 137 |
+| [143](./accepted/143-totp-verify-without-javascript.md) | **A no-JS user is stranded at the second factor.** `/me/security/totp/verify` is render-exempt, so a user who signs in without JavaScript and has TOTP cannot finish. Independent of R3 | P1 | after the 0.84.3 tag | — |
 | [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | R2a shipped v0.82.0; **R5b–e shipped v0.83.0** (+ C1-R5); R2b awaits 132 §13 q1; R3 awaits 132 §13 q1 | 130, 132, 134 |
 
 Numbers are assignment order and are never reused or renumbered (RFC 000), so

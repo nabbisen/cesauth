@@ -1,6 +1,6 @@
 # RFC 141 — OIDC client registration has no API
 
-**Status.** Proposed
+**Status.** Accepted — approved by the owner 2026-09-24.
 **Tier.** P1 · Category A — the product's primary integration action.
 **Size.** Medium–large.
 **Touches.** `crates/backend/src/routes/admin/`, `crates/core/src/service/`,
@@ -139,9 +139,61 @@ API for a field that is still ignored.
 
 ## 9. Open questions
 
-1. **System console, tenant console, or both?** Clients are tenant-scoped in the
-   data model; the console precedent for client editing (RFC 017) is the
-   *tenant* admin editor. §4.1 proposes the system console because that is where
-   creation of this kind lives today. **Worth deciding before the handoff.**
+1. ~~**System console, tenant console, or both?**~~ **Closed 2026-09-24 — the
+   system console.** See §10; the question was built on two false premises of
+   mine.
 2. Should deletion be soft (revoking grants) rather than a row delete? Grants
-   and refresh families reference `client_id`.
+   and refresh families reference `client_id`. **Open**; decide at the handoff.
+
+## 10. §9 q1 closed, and two defects found closing it
+
+The question assumed clients are tenant-scoped and that a tenant-admin client
+editor already exists. **Neither is true**, measured 2026-09-24.
+
+### 10.1 Clients are global; there is no tenant column
+
+`grep -rn 'oidc_clients' migrations/*.sql`: the table is created in `0001` and
+altered exactly once, by `0010`, which adds `audience`. **There is no
+`tenant_id`, and there never has been.**
+
+**Ruling: the system console**, `/admin/console/clients`, as §4.1 proposes. A
+per-tenant creation surface would imply an ownership model the schema does not
+have, and inventing one in a registration API is the wrong place to decide it.
+
+**If clients should be tenant-owned, that is a data-model change and belongs to
+RFC 119** (tenant-scoped repository APIs), not here. Explicit non-goal.
+
+### 10.2 The "tenant admin editor" does not exist
+
+`crates/backend/src/audit.rs:186-191` documents an event kind
+`OidcClientAudienceChanged` — *"An admin changed `oidc_clients.audience` via the
+tenant admin editor"* (RFC 017). Measured:
+
+- `grep -rn 'OidcClientAudienceChanged' crates/ docs/` → **two hits**: the enum
+  variant and its wire string. **Nothing writes it.**
+- `grep -rn 'UPDATE oidc_clients|update_audience|set_audience' crates/` →
+  **nothing**.
+
+**No route modifies an `oidc_clients` row at all.** Not `audience`, not any
+field. So the situation is worse than §1 states: it is not only that a client
+cannot be *created* without SQL — it cannot be *changed* without SQL either, and
+`audience`, which ADR-014 makes the introspection scoping control, is settable
+only by hand-editing the database.
+
+**Consequences for this RFC:**
+
+- §4.1's `POST /admin/console/clients/:id` is not a convenience; it is the only
+  way any client field will ever be editable.
+- It gives `OidcClientAudienceChanged` its **first writer**. Editing `audience`
+  must emit it, with before/after as its doc already specifies.
+- If any other declared event kind has no writer, say so rather than adding one
+  quietly — a declared-but-never-written audit event is a promise the audit
+  trail does not keep.
+
+### 10.3 A false comment found on the way, homed elsewhere
+
+`migrations/0020_authenticator_tenant_id.sql` justifies its scope with: *"consent
+and grants are already indirectly tenant-scoped via `oidc_clients`"*. Since
+`oidc_clients` has no `tenant_id` (§10.1), **they are not**, and that sentence is
+the stated reason those two tables were left alone. Recorded in **RFC 119**,
+which owns tenant scoping. Not this RFC's to fix.

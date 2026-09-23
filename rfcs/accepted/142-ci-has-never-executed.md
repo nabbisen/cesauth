@@ -1,6 +1,6 @@
 # RFC 142 — No CI workflow has ever run
 
-**Status.** Proposed
+**Status.** Accepted — approved by the owner 2026-09-24.
 **Tier.** P1 · Category B — every gate this project has built is unproven where
 it is supposed to run.
 **Size.** Small to start, unknown to finish — the first run is a measurement.
