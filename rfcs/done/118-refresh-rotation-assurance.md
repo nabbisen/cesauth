@@ -1,6 +1,6 @@
 # RFC 118 — Refresh token rotation and reuse-detection assurance
 
-**Status.** Accepted — approved by the owner 2026-09-22, with the §16 corrections. Handoff dispatched.
+**Status.** Implemented (v0.84.2)
 **Tier.** P0 · Category A
 **Size.** Medium
 **Tracks.** Strategy §5.2, §8 (RFC theme 3); audit G6 (refresh half).

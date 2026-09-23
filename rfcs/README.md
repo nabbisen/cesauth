@@ -87,6 +87,7 @@ Security-critical assurance track, continued.
 | ID | Title | Tier | Category | Depends on |
 |----|-------|------|----------|------------|
 | [117](./done/117-authorization-code-lifecycle-assurance.md) | Authorization code lifecycle assurance — **shipped v0.84.1** | P0 | A | 116, 137, 140 |
+| [118](./done/118-refresh-rotation-assurance.md) | Refresh token rotation & reuse-detection assurance — **shipped v0.84.2** | P0 | A | 116, 117, 139 |
 | [119](./proposed/119-tenant-scoped-repository-apis.md) | Tenant boundary & scoped repository APIs | P1 | B | 116 |
 | [120](./proposed/120-authz-core-sealing-and-property-tests.md) | Authorization core: sealing & property tests | P0/P1 | A/B | 116 |
 | [121](./proposed/121-security-state-machine-testing.md) | Security state-machine testing with proptest | P1 | B | 117, 118 |
@@ -102,7 +103,6 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 
 | ID | Title | Tier | Dispatched | Depends on |
 |----|-------|------|---|---|
-| [118](./accepted/118-refresh-rotation-assurance.md) | Refresh token rotation & reuse-detection assurance. **Premises corrected 2026-09-22 (§16):** no version counter exists, the retired ring is capped at 16 so "was_retired iff once live" is false, expiry and a fourth outcome arrived with RFC 139, and the module layout is RFC 117's. **Accepted 2026-09-22; handoff dispatched** | P0 | A | 116, 117, 139 |
 | [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | R2a shipped v0.82.0; **R5b–e shipped v0.83.0** (+ C1-R5); R2b awaits 132 §13 q1; R3 awaits 132 §13 q1 | 130, 132, 134 |
 
 Numbers are assignment order and are never reused or renumbered (RFC 000), so
@@ -126,7 +126,7 @@ harness that closes it.
 
 ## Done
 
-130 RFCs shipped between v0.50.3 and v0.84.1 (001–106, 107, 108–111, 110b–110e, 113, 116, 117, 125, 126, 127, 128, 129, 130, 132, 134, 135, 136, 137, 138, 139, 140). Full
+131 RFCs shipped between v0.50.3 and v0.84.2 (001–106, 107, 108–111, 110b–110e, 113, 116, 117, 118, 125, 126, 127, 128, 129, 130, 132, 134, 135, 136, 137, 138, 139, 140). Full
 list with shipped-in versions: see ROADMAP.md "Shipped" section and
 CHANGELOG.md release entries. Selected highlights only listed here; the
 canonical catalogue is the filesystem at `done/`.
@@ -168,6 +168,7 @@ canonical catalogue is the filesystem at `done/`.
 | [139](./done/139-refresh-token-lifetime.md) | Refresh-token lifetime — idle window + absolute cap, enforced at rotation | v0.84.0 |
 | [140](./done/140-challenge-expiry-at-read.md) | Challenge stores enforce expiry at read | v0.84.0 |
 | [117](./done/117-authorization-code-lifecycle-assurance.md) | Authorization-code exchange as a typestate pipeline | v0.84.1 |
+| [118](./done/118-refresh-rotation-assurance.md) | Refresh-family lifecycle: reference model + generated sequences | v0.84.2 |
 | [134](./done/134-router-pattern-conflict.md) | Router pattern conflict — `:param.json` routes panicked `worker`'s router on construction, every request, since 2026-07-07 (+ condition C1-134: the shell's assets resolve) | v0.82.0 |
 | [132](./done/132-view-rendering-policy.md) | View rendering policy — Q1–Q4 derived per surface, `Rendering` column on all 188 routes, E2/E3 blocking gates (+ conditions C1-132, C2-132) | v0.82.0 |
 

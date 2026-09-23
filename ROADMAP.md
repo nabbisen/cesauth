@@ -376,6 +376,29 @@ started.
   any CI gate is enforced (`main` still has no branch protection), or that
   it works on Cloudflare — **nobody has deployed this tree**.
 
+- ✅ **v0.84.2 — RFC 118. Shipped 2026-09-24.** **The refresh-family
+  lifecycle has an executable specification.** Rotation with reuse detection
+  — the response to a stolen refresh token — was pinned only by example
+  tests, and rotation bugs are sequence bugs. A reference model written from
+  the contract and RFC 9700 §4.14.2, not from any store, is now run in
+  lockstep with the real store over generated adversarial sequences
+  (replayed retired tokens, rotate-after-revoke, tokens never issued, clock
+  jumps past both deadlines, sequences that overflow the 16-entry retired
+  ring), comparing every outcome **and the whole resulting state** after
+  every operation. With it: 20 named invariant tests, a coverage test that
+  fails when the generator stops reaching a category, normative wording on
+  `RotateOutcome`, and two previously unwritten rules. **Its first run found
+  a real defect:** the in-memory test double dropped the original sign-in
+  timestamp that the Durable Object stores — a test-support fidelity defect
+  in a `publish = false` crate, **no shipped behaviour affected**, not a
+  security fix, and the third instance of that class after RFC 137 and
+  RFC 140. **Patch** — a model, tests, docs and one line of a test crate.
+  **Not claimed:** that the Durable Object is verified (not host-testable;
+  miniflare deferred), that concurrency is proven (sequences, one thread),
+  that reuse detection is newly correct (newly pinned), that any CI gate is
+  enforced (`main` still has no branch protection), or that it works on
+  Cloudflare — **nobody has deployed this tree**.
+
 - **Security-critical assurance track (RFCs 116–124).** RFC 116 shipped in
   v0.81.0 (`rfcs/done/`), with two carve-outs deferred: secret-newtype
   adoption at the remaining credential call sites, and `ports::repo`, which

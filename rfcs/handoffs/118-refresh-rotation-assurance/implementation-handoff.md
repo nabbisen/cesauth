@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 118, refresh rotation and reuse-detection assurance (P0)
 
-**Governing RFC.** [`rfcs/accepted/118-refresh-rotation-assurance.md`](../../accepted/118-refresh-rotation-assurance.md) — read **§16 first**. It corrects four premises of the original text, and those corrections are rulings.
+**Governing RFC.** [`rfcs/done/118-refresh-rotation-assurance.md`](../../done/118-refresh-rotation-assurance.md) — read **§16 first**. It corrects four premises of the original text, and those corrections are rulings.
 **Target release.** The next one. **Level: patch** — a model, tests and doc
 comments. No behaviour changes unless the harness finds a real divergence, in
 which case §7 applies.

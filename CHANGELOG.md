@@ -14,6 +14,70 @@ changes will always be called out here.
 
 ---
 
+## [0.84.2] - 2026-09-24
+
+### The refresh-token family lifecycle has an executable specification — RFC 118
+
+Rotation with reuse detection is cesauth's strongest response to a stolen
+refresh token: present a token that has already been rotated out and the
+entire family is revoked. Until now its correctness rested on hand-written
+example tests, and the bugs that matter in rotation schemes are *sequence*
+bugs — a token accepted twice, a revoked family resurrected by a late
+rotation, an expired family rotating because the checks ran in the wrong
+order. Examples do not find those.
+
+The lifecycle is now written down as a small reference model, derived from
+the port's contract and RFC 9700 §4.14.2 rather than from any
+implementation, and the real store is run against it in lockstep over
+generated adversarial sequences: replayed retired tokens, rotation after
+revocation, tokens never issued, clock jumps past both deadlines, and
+sequences long enough to overflow the 16-entry memory of retired tokens.
+**Every outcome and the whole resulting state are compared after every
+operation** — an outcome-only comparison misses a corrupted history until
+some later operation happens to read it.
+
+Alongside the model: 20 named invariant tests, a coverage test that fails if
+the generator stops reaching a category, normative wording on the rotation
+outcome type, and two rules the implementations already agreed on that
+nothing had written down (what happens to a family that was never created,
+and an explicit revocation of a family that has silently expired).
+
+**Nothing about shipped behaviour changed.**
+
+### A test-support defect, found by the new tests on their first run
+
+The generated sequences immediately found that the **in-memory test double**
+for refresh-token families discarded the original sign-in timestamp, where
+the real Cloudflare implementation and `cesauth-core`'s own stub both store
+it. The contract states the rule twice; three of the four implementations
+followed it.
+
+- It is a **test-support fidelity defect**, in a crate that is never
+  published and reaches no shipped code path.
+- **No shipped behaviour was affected**, and no existing test could observe
+  it: every one of them constructed the value as zero, which is why it
+  survived unnoticed.
+- **This is not a security fix.**
+- It is the third instance of the same class — a test double that quietly
+  simplifies the contract it stands in for — after the ones found during
+  RFC 137 and RFC 140, and the first found by a machine rather than a
+  reviewer.
+
+### What this release does NOT claim
+
+- **Not that the Durable Object is verified.** The harness runs against the
+  in-memory store; the Durable Object cannot be exercised off the Workers
+  runtime, and doing so under miniflare remains deferred.
+- **Not that concurrency is proven.** Generated *sequences*, single-threaded.
+  A Durable Object executes sequentially, so interleaving reduces to
+  ordering — but no memory-model property is established.
+- **Not that reuse detection is newly correct.** It is newly *pinned*.
+- **Not that any CI gate is enforced.** `main` has **no branch protection**,
+  so no status check is required — including the browser suite, whose
+  workflow says blocking.
+- **Not that any of it has run in CI**, and the workflow YAML is unvalidated.
+- **Not that it works on Cloudflare. Nobody has deployed this tree.**
+
 ## [0.84.1] - 2026-09-22
 
 ### Minting a token before its checks is now a compile error — RFC 117
