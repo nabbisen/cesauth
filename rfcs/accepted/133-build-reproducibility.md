@@ -1,6 +1,6 @@
 # RFC 133 — Frontend build reproducibility
 
-**Status.** Accepted (half A) — approved by the owner 2026-09-24. **Narrowed to §12.1's half A**; half B is deferred to 1.0 hardening (§12.3). Handoff dispatched.
+**Status.** Accepted. **Half A shipped in v0.84.3** (+C1-133); **half B deferred to 1.0 hardening** (§12.3), which is why this RFC stays in `accepted/` rather than `done/`.
 **Tier.** P2 · Category B — a real property we do not have; not urgent, not dismissible.
 **Size.** Small to measure, unknown to fix. §5 is a measurement gate first.
 **Tracks.** 0.81.2 release-candidate review §1–2. Discovered because task 008

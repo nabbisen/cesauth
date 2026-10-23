@@ -14,6 +14,107 @@ changes will always be called out here.
 
 ---
 
+## [0.84.3] - 2026-10-24
+
+### The build produces the same artifact for the same input — RFC 133 half A
+
+`make build-frontend` applied its WebAssembly optimizer **in place**, reading
+and writing one path, over a directory whose previous contents it never
+cleared. The optimizer is not idempotent, so the artifact was a function of
+the build's history rather than of the source alone.
+
+Now: the output directory is cleared before the build, so a failed build
+leaves nothing stale rather than a previous artifact; the optimizer writes to
+a scratch path **outside** the deployed asset directory and is moved into
+place only on success, so no partial file is ever created where assets are
+served from; and a build that produces no WebAssembly fails with a message
+saying so, instead of handing the optimizer a file named `*_bg.wasm`. A loop
+that reported only its last iteration's status was corrected in the same
+lines.
+
+**`wasm-bindgen` was measured deterministic** — two runs over identical
+compiler output produced identical bytes — which eliminates it as a cause of
+the remaining variation.
+
+**This does not make the build reproducible.** Recompiling unchanged source
+can still produce different bytes, and this release contains new evidence of
+exactly that: the *pre-optimizer* WebAssembly changed over a month with no
+source change, which places the variation in the compiler rather than in
+anything downstream. Environment reproducibility — the same commit on another
+host yielding an identical hash — remains deferred.
+
+### CI had been running all along, and four of its gates were red — RFC 142
+
+The premise this work started from was wrong, and it is worth stating plainly:
+cesauth's workflows had run roughly 1,650 times since April, not never. What
+was true is that **nothing was required**, so every failure had been advisory.
+
+Four gates were red and are now green:
+
+- **Fuzzing had never run at all.** The fuzz crate was never excluded from the
+  workspace, so it could not build. It now runs — 11.7 million executions in
+  60 seconds.
+- **The bundle-size gate had never once passed** — 149 consecutive failures —
+  because it never built the frontend whose directory it needs. Once fixed, it
+  measured the *loader*, 10,698 bytes, and reported 0% usage for an artifact
+  that is 98.7% something else. It now sums every uploaded module and fails
+  outright if the Worker module is absent. **The budget it has guarded since
+  RFC 025 has been evaluated for the first time: 811,575 bytes gzipped, 30% of
+  2.5 MiB.**
+- **The runtime smoke check and the browser suite** both died at their
+  readiness deadlines while `wrangler dev` performed a 214-second cold compile.
+  Both now build the Worker in a prior step; warm startup is about ten seconds,
+  and the deadlines are unchanged. Raising them would have required roughly four
+  times the real startup time and would have measured nothing.
+
+**`wrangler dev` serves the public sign-in surface on a clean runner with no
+secrets configured.** Routes that sign or verify tokens were not exercised.
+
+### A dependency advisory, fixed rather than accepted
+
+`cargo deny` turned red on **RUSTSEC-2026-0386**, an unsoundness in `tokio`'s
+`AsyncFd` constructors. Upgraded **1.52.3 → 1.54.1**, a two-line lockfile
+change. The unsound API appears nowhere in cesauth, and the advisory was **not**
+added to any ignore list: a patched release existed, so there was nothing to
+accept.
+
+### Documentation that asserted things the code did not do
+
+Four corrections, each dated and each stated as a measurement rather than a
+promise:
+
+- `BUNDLE_SIZE_BUDGET.md` said the build was "run-reproducible". It is not, and
+  the single observation that produced that belief is now described as one
+  occasion rather than a property.
+- Three sentences said gates had "not yet executed in CI". They had executed
+  hundreds of times.
+- `browser-tests.yml` and the contributor gate table said the browser suite
+  **is** a required status check. Nothing is required; both now say what
+  blocking would need and that the setting is absent.
+- The gate table now records that running the browser suite locally needs
+  `npx playwright install` first — CI installs browsers itself, and the local
+  gate list had no equivalent step, so the symptom (every test failing
+  instantly) had no explanation anywhere.
+
+### What this release does NOT claim
+
+- **Not that any CI gate is enforced.** `main` has no branch protection, so no
+  check is required. Thirteen checks are green and could be. This is the fourth
+  consecutive release that has had to say so.
+- **Not that the newly fixed checks are proven on pull requests.** They are
+  proven on pushes; branch protection acts on pull requests.
+- **Not that the build is reproducible**, and not that the bundle figures are
+  invariants.
+- **Not that 60 seconds of fuzzing is meaningful coverage**, and not that
+  fuzzing has found anything. It runs; that is the claim.
+- **Not that `wrangler dev` needs no secrets in general** — only for the public
+  surface those gates exercise.
+- **Not that the advisory affected cesauth's own code.**
+- **Still true:** nobody has deployed this tree; the registered client
+  authentication method is not enforced; some rejected authentications write no
+  audit event; refresh tokens issued before 0.84.0 no longer decode; the
+  frontend is verified by 20 tests on one unauthenticated, unstyled page.
+
 ## [0.84.2] - 2026-09-24
 
 ### The refresh-token family lifecycle has an executable specification — RFC 118

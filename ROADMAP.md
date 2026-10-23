@@ -376,6 +376,28 @@ started.
   any CI gate is enforced (`main` still has no branch protection), or that
   it works on Cloudflare — **nobody has deployed this tree**.
 
+- ✅ **v0.84.3 — RFC 133 half A (+ condition C1-133), RFC 142 cycle 1, and a
+  dependency advisory. Shipped 2026-10-24.** **The build step is a function of
+  its input, not its history**: the WebAssembly optimizer no longer reads and
+  writes one path, the output directory is cleared first so a failed build
+  leaves nothing stale, the scratch output lives outside the deployed asset
+  directory, and an empty build fails loudly. `wasm-bindgen` measured
+  deterministic. **CI had been running since April — roughly 1,650 times — and
+  four of its gates were red**: fuzzing had never built (the crate was never
+  excluded from the workspace; it now runs 11.7 M executions), the bundle gate
+  had never passed in 149 runs and then measured the loader instead of the
+  Worker (**the 2.5 MiB budget is now evaluated for the first time: 30%**), and
+  the runtime smoke check and browser suite died at their deadlines during a
+  214 s cold compile and now build the Worker first. **RUSTSEC-2026-0386** (an
+  unsound `tokio` API cesauth never calls) fixed by upgrading 1.52.3 → 1.54.1
+  rather than accepted. Four false documentation statements corrected.
+  **Patch** — every item is a fix or a correction. **Not claimed:** that any CI
+  gate is enforced (`main` is still unprotected, so nothing is required — the
+  fourth release to say so), that the newly fixed checks are proven on pull
+  requests, that the build is reproducible (new evidence says the compiler emits
+  different bytes for unchanged source), that 60 s of fuzzing is coverage, or
+  that it works on Cloudflare — **nobody has deployed this tree**.
+
 - ✅ **v0.84.2 — RFC 118. Shipped 2026-09-24.** **The refresh-family
   lifecycle has an executable specification.** Rotation with reuse detection
   — the response to a stolen refresh token — was pinned only by example

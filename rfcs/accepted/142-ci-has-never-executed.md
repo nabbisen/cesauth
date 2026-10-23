@@ -3,7 +3,7 @@
 > **Retitled 2026-09-25.** The original title, "No CI workflow has ever run",
 > was false. See §9.
 
-**Status.** Accepted — approved by the owner 2026-09-24.
+**Status.** Accepted. **Cycle 1 shipped in v0.84.3** — the four red gates are green. This RFC stays in `accepted/` because **acceptance criterion 3 is outstanding**: nothing is a required status check, so no gate is enforced.
 **Tier.** P1 · Category B — every gate this project has built is unproven where
 it is supposed to run.
 **Size.** Small to start, unknown to finish — the first run is a measurement.
