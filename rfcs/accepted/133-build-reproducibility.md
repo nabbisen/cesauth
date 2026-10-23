@@ -492,3 +492,44 @@ precondition**, which answers §10 q2.
 **What half A does not do.** It does not make the build reproducible. §2.2's
 finding — recompiling the same source can produce different bytes — is
 untouched by it, and the package must not imply otherwise.
+
+## 14. The pre-optimizer wasm changed (2026-10-24)
+
+The strongest form of §2.2's finding so far, measured a month after half A
+landed, on a host whose kernel moved 7.2.5 → 7.3.0, with **no change under
+`crates/`**:
+
+```
+$ sha256sum target/wasm-bindgen/release/cesauth-frontend_bg.wasm
+  533e1980…      882,608 bytes        ← Trunk's output, BEFORE wasm-opt
+      (half A's package recorded 8b51a72c… for this same file)
+
+$ wasm-opt --enable-bulk-memory --enable-bulk-memory-opt -Oz -o pass1 <that>
+  752,475        ca7cfd72…
+$ wasm-opt … -o pass2 pass1
+  751,865        dad12031…
+$ sha256sum crates/frontend/dist/assets/cesauth-frontend_bg.wasm
+  752,475        ca7cfd72…            ← the shipped file == exactly one pass
+```
+
+**Two conclusions, and the second is the useful one.**
+
+1. **The recipe is behaving correctly.** The shipped artifact is the *single*
+   pass of the optimizer over Trunk's current output. The bundle moved from
+   753,092 to 752,475 — **−617 bytes, which is uncomfortably close to the −610
+   that a second optimizer pass produces** (§2.3), and it would have been easy
+   to read as a double-optimize that half A was supposed to prevent. It is not:
+   two passes give 751,865, and the shipped hash matches one.
+2. **The variability is upstream of `wasm-bindgen`, and now it has been seen
+   there.** Every earlier figure in this RFC measured the *post*-optimizer
+   artifact. This is the first measurement of the **pre-optimizer** wasm
+   changing — `533e1980…` where half A recorded `8b51a72c…` — which is exactly
+   what T4's conclusion predicts: `wasm-bindgen` is deterministic given a fixed
+   `cargo` output, so a changed pre-optimizer wasm means **`cargo`/`rustc`
+   emitted something different for unchanged source.**
+
+So §2.2's finding is confirmed at a one-month interval, at the stage where the
+difference originates, and the remaining suspects are `rustc`/LLVM codegen and
+the host. Both belong to **half B**, which stays deferred to 1.0 hardening. No
+cause is claimed, and these figures are recorded, not treated as invariants
+(§2.1).
