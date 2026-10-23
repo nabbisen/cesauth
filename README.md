@@ -123,3 +123,4 @@ cesauth is in **active development**. The public surface (endpoints,
 `wrangler.toml` variable names, secret names, D1 schema,
 `core::ports` traits) may change between minor versions. Breaking
 changes are called out in [CHANGELOG.md](CHANGELOG.md).
+<!-- RFC 142 enforcement-confirmation throwaway PR: observe all 13 checks on pull_request. Do not merge. -->
