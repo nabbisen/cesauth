@@ -3,7 +3,7 @@
 > **Retitled 2026-09-25.** The original title, "No CI workflow has ever run",
 > was false. See §9.
 
-**Status.** Implemented (v0.84.3 for the code; **enforcement enabled 2026-10-24**). All four acceptance criteria met — §13.
+**Status.** Implemented (v0.84.3). **Criterion 3 amended and closed as a deliberate non-goal, 2026-10-24** — §14: enforcing the gates requires a pull-request workflow this project does not want, and the attempt cost commit signatures.
 **Tier.** P1 · Category B — every gate this project has built is unproven where
 it is supposed to run.
 **Size.** Small to start, unknown to finish — the first run is a measurement.
@@ -282,3 +282,60 @@ unchanged. `required_signatures` was deliberately **not** enabled: GitHub
 reports current commits as `verified=true, reason=valid`, so it would be
 satisfiable, but it should be tested against a real merge before being required,
 and that test is the first pull request under this regime.
+
+## 14. Criterion 3 reversed — enforcement is a non-goal here (2026-10-24)
+
+**The owner ruled, the same day it was enabled, that this project should share
+`main`:** they relay between architect and implementer and never run them
+concurrently, so a branch normally coordinates nothing. Branches are not
+forbidden — they are allowed where they genuinely earn their cost — but they are
+not the default, and nothing about CI enforcement justified one. The branch ruleset's
+`pull_request` and `required_status_checks` rules are therefore removed; the
+protective rules stay.
+
+**The structural reason this was a trade, not a free win.** A required status
+check can only pass on a commit that already exists, so requiring checks on
+`main` *necessarily* forces every change through a pull request. There is no
+configuration in which GitHub enforces these gates and the project keeps
+pushing to `main`. Enforcement and this workflow are mutually exclusive.
+
+**What the attempt cost, measured.** One pull request was opened and merged
+(#10). Its rebase merge produced `c0037a1`, **`verified=false, reason=unsigned`**,
+where the preceding direct push `c5761d3` was `verified=true, reason=valid`
+(§13.3). **One unsigned commit is now in `main`'s history**, and it will stay
+there: rewriting history to remove it would be worse than the blemish. Every
+commit after the reversal is signed again, because a direct push preserves the
+signature a rebase merge discards.
+
+**So criterion 3 is amended rather than met.** Its original wording — *"the
+owner has added the required status checks, and a release note can say a gate is
+enforced without qualification for the first time"* — assumed the
+GitHub-conventional answer was the right one for this repository. It is not. The
+amended criterion:
+
+> **CI runs every described gate on every push and reports the result.** No
+> check blocks, by design. Release notes continue to say so, and that sentence
+> is now a statement of the chosen design rather than an admission of a gap.
+
+**What the RFC did achieve, and it is most of its value:** the four gates that
+had never passed now pass, the Worker's size budget is evaluated for the first
+time in 149 runs, fuzzing runs at all, and the project knows — measured — what
+CI does and does not do. Only the enforcement half is withdrawn.
+
+**What still protects `main` and the release record** (no branch required):
+restrict deletions and block force pushes on `main`, require linear history,
+and a tag ruleset blocking deletion, update and force-push on every tag. The
+last one makes "versions are never reused" enforced for the first time.
+
+**My error, for the record.** I reached for the conventional answer — required
+checks, therefore pull requests — without asking whether a repository with no
+concurrency wants them, and I was two decisions deep before the cost surfaced.
+
+**And I mis-attributed the cost.** A pull request by itself does not lose a
+signature: a **merge commit** would have preserved it. The loss came from
+combining the pull-request requirement with `required_linear_history`, which
+forbids merge commits and so left only rebase and squash — the two methods that
+rewrite commits without re-signing them. The owner made this correction; my
+first telling blamed pull requests for what my own rule combination caused.
+The owner's correction is in `docs/src/expert/contributing.md`'s *How a change
+reaches `main`*, which until today had never been written down at all.

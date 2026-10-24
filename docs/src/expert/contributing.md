@@ -96,13 +96,14 @@ bash scripts/drift-scan.sh
 The gates above, and the ones handoffs require for a release, are the
 **described** gate set. What CI runs is a separate set of workflow files. Where
 the two differ, the difference is recorded here as a decision rather than
-discovered later (RFC 138). **Which checks block a merge is now visible and settled.** As of 2026-10-24 a
-repository ruleset makes **all thirteen job-level checks required**, so the
-described set and the enforced set are the same set. Confirm it with
-`gh api repos/{owner}/{repo}/rules/branches/main`, which reports the rules in
-effect from every source — **not** `…/branches/main/protection`, which sees only
-legacy branch protection and answers `404` even when a ruleset governs the
-branch (RFC 142 §12).
+discovered later (RFC 138). **No check blocks anything, by design.** CI runs all thirteen on every push and
+reports; enforcing them would require a pull-request workflow this project does
+not want, for the reasons in *How a change reaches `main`* below. Inspect what is
+actually in effect with
+`gh api repos/{owner}/{repo}/rules/branches/main`, which reports the rules from
+every source — **not** `…/branches/main/protection`, which sees only legacy
+branch protection and answers `404` even when a ruleset governs the branch
+(RFC 142 §12).
 
 | Gate (as described) | Where CI runs it | Difference |
 |---|---|---|
@@ -117,9 +118,9 @@ branch (RFC 142 §12).
 | `bash scripts/route-contracts-check.sh` | `route-contracts.yml` | none |
 | `mdbook build docs` | `docs.yml` | **Ran in no workflow before RFC 138.** `create-missing = false` makes a broken chapter link fail it |
 | `make build-frontend` | `trunk-release-build.yml`; also a step in `worker-build.yml` and `browser-tests.yml` | CI adds an assertion that the built filenames match what `leptos_shell.rs` requests |
-| `node_modules/.bin/wrangler build` | `worker-build.yml` (`worker-build` job) | none. **Required check** since 2026-10-24; passes (first measured on `a0d49fa`, 2026-09-23; RFC 142), not an enforced gate |
-| `bash scripts/runtime-smoke-check.sh` | `worker-build.yml` (`runtime-smoke` job) | none. **Required check** since 2026-10-24; passes (first measured on `3a88c20`, 2026-09-23; RFC 142). Its workflow builds the Worker in its own step before `wrangler dev` starts, because a cold compile outlasts the readiness deadline |
-| `npx playwright test` in `e2e/`, against `node_modules/.bin/wrangler dev` | `browser-tests.yml` | **Blocking, and enforced since 2026-10-24** (RFC 131 R5f, enforced per RFC 142): it is a required status check, so a failure blocks the merge. The workflow carries no `continue-on-error` and must not. **Running it locally needs `npx playwright install` first** (`e2e/`); without it every test fails instantly with "browserType.launch: Executable doesn't exist …", and `browser-tests.yml` runs the install step itself, so CI is unaffected |
+| `node_modules/.bin/wrangler build` | `worker-build.yml` (`worker-build` job) | none. **Runs and passes in CI** (first measured on `a0d49fa`, 2026-09-23; RFC 142). Reported, not enforced, not an enforced gate |
+| `bash scripts/runtime-smoke-check.sh` | `worker-build.yml` (`runtime-smoke` job) | none. **Runs and passes in CI** (first measured on `3a88c20`, 2026-09-23; RFC 142); reported, not enforced. Its workflow builds the Worker in its own step before `wrangler dev` starts, because a cold compile outlasts the readiness deadline |
+| `npx playwright test` in `e2e/`, against `node_modules/.bin/wrangler dev` | `browser-tests.yml` | **Blocking in intent since 0.84.0** (RFC 131 R5f) and **it runs on every push and passes** — but nothing is a required status check in this repository, so a failure reports rather than blocks (RFC 142 §14). The workflow carries no `continue-on-error` and must not. **Running it locally needs `npx playwright install` first** (`e2e/`); without it every test fails instantly with "browserType.launch: Executable doesn't exist …", and `browser-tests.yml` runs the install step itself, so CI is unaffected |
 | — | `bundle-size.yml` | **CI-only.** A gzip budget on a `wrangler deploy --dry-run` bundle; not in the described set. Before RFC 142 it could not run (it needed the frontend's `dist/`) and, once it could, measured only the ~10 KB `shim.js` loader; it now sums every uploaded module (811,575 bytes gzip on `3a88c20`, 30% of the budget) |
 | — | `fuzz.yml` | **CI-only, deliberately outside the gate set.** Nightly toolchain; runs only on pull requests touching `crates/core/src/jwt/**` or `fuzz/**`, or by manual dispatch |
 
@@ -156,45 +157,45 @@ A gate is only as reproducible as the tool it runs. The convention
 
 ## How a change reaches `main`
 
-**`main` cannot be pushed to directly.** A repository ruleset requires thirteen
-status checks, and checks can only run on a commit that already exists, so every
-change arrives as a pull request. This has been true since 2026-10-24; before
-that the convention was to commit straight to `main`, which is why older review
-packages say "on `main`, pushed".
+**Commit on `main` and push. The default is no branch and no pull request.**
 
-```sh
-git switch -c <topic>
-# commit as usual
-git push -u origin <topic>
-gh pr create --fill
-# when the thirteen checks are green:
-gh pr merge --rebase --delete-branch     # or --squash
-```
+**A branch is not forbidden — it has to earn its cost.** The owner relays
+between the architect and the implementer and never runs them concurrently, so
+there is normally no concurrent work for a branch to isolate: it buys no
+coordination while costing a push, a merge, and — depending on the merge method
+— the commit's signature. Reach for one when it genuinely pays: work that must
+not touch `main` until it is proven, or something the owner has said will run
+alongside other work. Otherwise share `main`, which is what both the architect
+and the implementer do.
 
-**Rules in effect** (`gh api repos/{owner}/{repo}/rules/branches/main`):
+**The gates are run before the push, not after.** Whoever makes the change runs
+the set above and records the output; the reviewer re-runs the release-critical
+ones independently. CI then runs all thirteen checks on the push and **reports**
+the result. That is the honest description: CI is an independent second opinion,
+not a gate that blocks.
 
-| Rule | What it means here |
+**GitHub cannot enforce these gates in this workflow, and the reason is
+structural.** A required status check can only pass on a commit that already
+exists, so requiring checks on `main` means every change must arrive as a pull
+request. That was tried on 2026-10-24 and reverted the same day: it bought no
+coordination, and because a rebase merge rewrites commits without re-signing
+them, it **replaced signed commits with unsigned ones** — a security property
+traded for ceremony (RFC 142 §14). One unsigned commit remains in the history
+from that experiment.
+
+**What the rulesets do protect**, none of which needs a branch:
+
+| Rule | Effect |
 |---|---|
-| Require status checks | The thirteen in the table above. **Strict**: the branch must be up to date with `main`, so the checks ran against the merge result rather than a stale base |
-| Require a pull request | **Zero required approvals.** A single-actor repository cannot self-approve, and requiring an approval nobody can give would deadlock every pull request and force a bypass — which would make the whole arrangement decoration. Review in this project is the architect/implementer cycle recorded in `.git-exclude/`, not a GitHub approval |
-| Require linear history | No merge commits: merge with `--rebase` (keeps each commit, which matters when a cycle's commits are themselves evidence) or `--squash`. The ruleset permits only those two methods, so the UI does not offer a button the rules would reject |
-| Restrict deletions, block force pushes | `main` cannot be deleted or rewritten |
+| Restrict deletions, block force pushes (on `main`) | `main` cannot be deleted or rewritten |
+| Require linear history | No merge commits reach `main` |
+| Restrict deletions, updates and force pushes (on **all tags**) | A tag cannot be moved or deleted, which makes "versions are never reused, and a bad release is superseded rather than re-tagged" enforced rather than merely documented |
 
-**Tags are immutable.** A second ruleset blocks deleting, moving or
-force-updating any tag, which makes "versions are never reused, and a bad
-release is superseded rather than re-tagged" an enforced invariant rather than a
-documented intention.
-
-**A required check must never be path-filtered.** When thirteen checks on a
-doc-only pull request start to grate, the tempting fix is a `paths:` filter so
-light changes skip heavy jobs. **Do not.** A required check that does not report
-leaves the pull request blocked forever — which is exactly why `fuzz.yml`, whose
-`paths:` filter is deliberate, is **not** in the required set. The only safe way
-to reduce the cost is to make the jobs faster.
-
-**If CI itself breaks**, the owner disables or deletes the ruleset in the
-repository settings. That is deliberate, logged, and reversible — which is why
-there is no standing bypass actor.
+**A convention that is *not* enforced:** tag names. Metadata rules
+(`tag_name_pattern`, `commit_message_pattern`) are unavailable on this
+repository — measured, not assumed — so "bare `X.Y.Z`, no `v` prefix" rests on
+discipline. A tag-triggered workflow asserting the pattern would close that gap
+(RFC 142 §13.1).
 
 ## Adding a new route
 
