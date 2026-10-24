@@ -142,8 +142,14 @@ API for a field that is still ignored.
 1. ~~**System console, tenant console, or both?**~~ **Closed 2026-09-24 — the
    system console.** See §10; the question was built on two false premises of
    mine.
-2. Should deletion be soft (revoking grants) rather than a row delete? Grants
-   and refresh families reference `client_id`. **Open**; decide at the handoff.
+2. ~~Should deletion be soft?~~ **Closed at the handoff, 2026-10-24: hard
+   delete.** `grants` and `consent` already cascade
+   (`migrations/0001_initial.sql`); a soft-delete column would need a migration
+   **and** a check in every client lookup including `find_auth_view`, which is on
+   the authentication path. Refresh stops immediately, because `rotate_refresh`
+   loads the client first; **issued access tokens remain valid until they
+   expire** (self-contained JWTs, ten minutes by default), which the
+   documentation must state.
 
 ## 10. §9 q1 closed, and two defects found closing it
 
@@ -197,3 +203,21 @@ and grants are already indirectly tenant-scoped via `oidc_clients`"*. Since
 `oidc_clients` has no `tenant_id` (§10.1), **they are not**, and that sentence is
 the stated reason those two tables were left alone. Recorded in **RFC 119**,
 which owns tenant scoping. Not this RFC's to fix.
+
+## 11. Found while writing the handoff: the storage layer already exists (2026-10-24)
+
+`ClientRepository::create(&OidcClient, secret_hash)` is **declared and
+implemented in both adapters** — the Cloudflare one writes all eleven columns,
+JSON-serialising `redirect_uris` and `allowed_scopes` and handling the nullable
+`audience` and secret hash — and **nothing calls it**
+(`grep -rn 'clients\.create('` → no hits).
+
+With `AdminClientCreated` and `OidcClientAudienceChanged` (§10.2), that makes
+**three capabilities in this one area that were declared, implemented, carried,
+and never wired.** The knowledge the production guide elides — the column list,
+the JSON encoding — has been in the codebase the whole time.
+
+So this RFC is **mostly wiring**: the service layer, the routes and the
+documentation are what is missing. It also means the cycle must not extend the
+pattern: every port method and audit kind it adds gets a caller in the same
+cycle, or is not added.
