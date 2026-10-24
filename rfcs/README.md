@@ -104,7 +104,6 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 | ID | Title | Tier | Dispatched | Depends on |
 |----|-------|------|---|---|
 | [133](./accepted/133-build-reproducibility.md) | Build reproducibility — **narrowed and split 2026-09-24 (§12)**. Half A scheduled: the optimizer's read–write aliasing and history dependence, the wasm-bindgen determinism experiment, and a false "run-reproducible" claim in `BUNDLE_SIZE_BUDGET.md`. Half B (environment reproducibility) deferred to 1.0 hardening | P2 | 2026-09-24 | — |
-| [142](./accepted/142-ci-has-never-executed.md) | **CI runs, and four of its gates are red** (retitled 2026-09-25; the original premise was false — see §9), and `main` has no branch protection, so no check is required. Run them, report what fails, fix without weakening any gate, then the owner adds the required checks | P1 | 2026-09-24, with 0.84.3 | — |
 | [141](./accepted/141-oidc-client-registration.md) | **OIDC client registration has no API.** No route creates a client; the production guide tells an operator to hand-write `INSERT INTO oidc_clients (…) VALUES (…)` with the columns elided, including a hash they must compute. Adds the API, the console screen, an integrator chapter, and enforcement of the registered auth method | P1 | after the 0.84.3 tag | 116, 137 |
 | [143](./accepted/143-totp-verify-without-javascript.md) | **A no-JS user is stranded at the second factor.** `/me/security/totp/verify` is render-exempt, so a user who signs in without JavaScript and has TOTP cannot finish. Independent of R3 | P1 | after the 0.84.3 tag | — |
 | [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | R2a shipped v0.82.0; **R5b–e shipped v0.83.0** (+ C1-R5); R2b awaits 132 §13 q1; R3 awaits 132 §13 q1 | 130, 132, 134 |
@@ -130,7 +129,7 @@ harness that closes it.
 
 ## Done
 
-131 RFCs shipped between v0.50.3 and v0.84.2 (001–106, 107, 108–111, 110b–110e, 113, 116, 117, 118, 125, 126, 127, 128, 129, 130, 132, 134, 135, 136, 137, 138, 139, 140). Full
+132 RFCs shipped between v0.50.3 and v0.84.3 (001–106, 107, 108–111, 110b–110e, 113, 116, 117, 118, 125, 126, 127, 128, 129, 130, 132, 134, 135, 136, 137, 138, 139, 140). Full
 list with shipped-in versions: see ROADMAP.md "Shipped" section and
 CHANGELOG.md release entries. Selected highlights only listed here; the
 canonical catalogue is the filesystem at `done/`.
@@ -173,6 +172,7 @@ canonical catalogue is the filesystem at `done/`.
 | [140](./done/140-challenge-expiry-at-read.md) | Challenge stores enforce expiry at read | v0.84.0 |
 | [117](./done/117-authorization-code-lifecycle-assurance.md) | Authorization-code exchange as a typestate pipeline | v0.84.1 |
 | [118](./done/118-refresh-rotation-assurance.md) | Refresh-family lifecycle: reference model + generated sequences | v0.84.2 |
+| [142](./done/142-ci-has-never-executed.md) | CI runs, four gates were red, and nothing was enforced — now all thirteen are required checks | v0.84.3 + enforcement |
 | [134](./done/134-router-pattern-conflict.md) | Router pattern conflict — `:param.json` routes panicked `worker`'s router on construction, every request, since 2026-07-07 (+ condition C1-134: the shell's assets resolve) | v0.82.0 |
 | [132](./done/132-view-rendering-policy.md) | View rendering policy — Q1–Q4 derived per surface, `Rendering` column on all 188 routes, E2/E3 blocking gates (+ conditions C1-132, C2-132) | v0.82.0 |
 

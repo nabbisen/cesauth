@@ -3,7 +3,7 @@
 > **Retitled 2026-09-25.** The original title, "No CI workflow has ever run",
 > was false. See §9.
 
-**Status.** Accepted. **Cycle 1 shipped in v0.84.3** — the four red gates are green. This RFC stays in `accepted/` because **acceptance criterion 3 is outstanding**: nothing is a required status check, so no gate is enforced.
+**Status.** Implemented (v0.84.3 for the code; **enforcement enabled 2026-10-24**). All four acceptance criteria met — §13.
 **Tier.** P1 · Category B — every gate this project has built is unproven where
 it is supposed to run.
 **Size.** Small to start, unknown to finish — the first run is a measurement.
@@ -219,3 +219,66 @@ this RFC and any future readiness report should use.
 This is the same defect class the RFC itself documents in §9: a check that
 quietly answers a narrower question than the one being asked. It was mine both
 times.
+
+## 13. Enforced (2026-10-24) — criterion 3 met, and the RFC closes
+
+Applied by the architect on the owner's instruction, with `gh api`, and verified
+by reading the configuration back.
+
+**Branch ruleset `main`** (id 25763711), target `~DEFAULT_BRANCH`, enforcement
+**active**, **zero bypass actors**:
+
+| Rule | Configuration |
+|---|---|
+| `required_status_checks` | the **thirteen** job names, `strict_required_status_checks_policy: true` |
+| `pull_request` | `required_approving_review_count: 0`, `require_last_push_approval: false`, `allowed_merge_methods: [squash, rebase]` |
+| `required_linear_history` | — |
+| `deletion`, `non_fast_forward` | — |
+
+**Tag ruleset "release tags are immutable"** (id 25763743), target all tags,
+enforcement active, zero bypass actors: `deletion`, `non_fast_forward`,
+`update`. The documented invariant — versions are never reused, a bad release is
+superseded rather than re-tagged — is now enforced.
+
+**Zero required approvals, stated as a decision rather than an oversight.** A
+single-actor repository cannot self-approve; requiring one approval would
+deadlock every pull request and force a bypass actor, which would hollow out the
+arrangement exactly as §2.3 warns. The quality bar here is the thirteen checks
+plus the architect/implementer review cycle, not a GitHub approval.
+
+### 13.1 What could not be enforced, measured not assumed
+
+**Metadata restriction rules are unavailable on this repository.**
+`tag_name_pattern` was rejected in four shapes (`regex` and `starts_with`, with
+and without a display name), and `commit_message_pattern` was rejected the same
+way on a branch target:
+
+```
+422 Validation Failed — Invalid rule 'tag_name_pattern'
+```
+
+So **"tags are bare `X.Y.Z`, no `v` prefix" cannot be enforced by a ruleset
+here**, though all 121 existing tags match it. It remains a convention.
+
+**Follow-up worth having:** a tag-triggered workflow that asserts the tag name
+matches `^[0-9]+\.[0-9]+\.[0-9]+$` and fails loudly otherwise. It is a few
+lines, it needs no plan features, and it converts the last unenforced release
+invariant into a check. Recorded, not scheduled.
+
+### 13.2 What this changes about how work lands
+
+`main` no longer accepts direct pushes — not from the architect, not from the
+implementer. Every change is a branch and a pull request, merged with `--rebase`
+(preserving a cycle's individual commits, which are often themselves the
+evidence) or `--squash`. **The release process is unchanged in substance**: the
+version bump and CHANGELOG arrive as a pull request, and the signed tag is
+created on `main` after the merge.
+
+One consequence to record honestly: a rebase or squash merge produces commits
+created by GitHub, so **commits on `main` are signed by GitHub's key rather than
+by the owner's**, where previously every commit carried the owner's signature.
+Tags are still signed by the owner, so the release record's provenance is
+unchanged. `required_signatures` was deliberately **not** enabled: GitHub
+reports current commits as `verified=true, reason=valid`, so it would be
+satisfiable, but it should be tested against a real merge before being required,
+and that test is the first pull request under this regime.
