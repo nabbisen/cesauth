@@ -282,3 +282,46 @@ unchanged. `required_signatures` was deliberately **not** enabled: GitHub
 reports current commits as `verified=true, reason=valid`, so it would be
 satisfiable, but it should be tested against a real merge before being required,
 and that test is the first pull request under this regime.
+
+### 13.3 The first merge produced an unsigned commit — measured, and it corrects §13.2
+
+§13.2 said a rebase or squash merge produces commits "signed by GitHub's key
+rather than by the owner's". **That was wrong, and PR #10 proved it on the first
+merge:**
+
+| Commit | How it landed | GitHub | locally (`%G?`) |
+|---|---|---|---|
+| `c5761d3` | the last **direct push** | `verified=true, reason=valid` | `U` — signed |
+| `c0037a1` | **rebase merge** of PR #10 | **`verified=false, reason=unsigned`** | `N` — no signature |
+
+**A rebase merge rewrites the commits and GitHub does not re-sign them.** They
+arrive carrying nothing, not a GitHub signature.
+
+**Two consequences.**
+
+1. **Deferring `required_signatures` was right, for a reason better than the one
+   given.** §13.2 deferred it as untested caution. In fact it would have
+   **blocked this merge outright** — the rule and the rebase method are
+   incompatible. Had it been enabled with rebase merges, `main` would have been
+   unwritable.
+2. **Commit-level provenance has regressed.** Until today every commit on `main`
+   carried the owner's signature. That is a real loss for a product whose own
+   RFC 133 half B exists to tie a deployed artifact to a reviewed commit: the
+   chain is weaker when the commits in it attest to nothing. Tags are still
+   signed by the owner, so the **release** record is unaffected.
+
+**The open question, and the experiment that settles it.** GitHub's three merge
+methods trade differently:
+
+| Method | History | Per-commit granularity | Signature on `main` |
+|---|---|---|---|
+| rebase | linear | preserved | **none** (measured) |
+| squash | linear | collapsed to one commit | **unmeasured** — GitHub creates the commit, and may sign it |
+| merge commit | **non-linear** (forbidden by the current ruleset) | preserved, with the owner's signatures intact underneath | GitHub signs the merge commit |
+
+The next pull request is merged with **`--squash`** to measure the middle row.
+If a squash merge is signed, the choice becomes *signed commits with collapsed
+history* versus *unsigned commits with per-commit history* — and under "safe and
+secure" the signature wins, because a cycle's individual commits survive in the
+pull request and in its CI runs, while a signature cannot be recovered after the
+fact.
