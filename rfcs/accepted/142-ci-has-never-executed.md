@@ -187,3 +187,35 @@ required check would never report on a pull request that touches neither
 **This RFC remains open.** Criterion 3 is the owner's repository setting, and
 until it exists no gate is enforced — the sentence four consecutive releases
 have had to carry.
+
+## 12. A correction to how "unprotected" was verified (2026-10-24)
+
+Every "`main` is unprotected" claim in this RFC, in the M1 report and in four
+release notes was evidenced by:
+
+```
+gh api repos/{owner}/{repo}/branches/main/protection   → 404 Branch not protected
+```
+
+**That endpoint reports only *classic* branch protection.** GitHub's current and
+recommended mechanism is **repository rulesets**, which that endpoint does not
+see: a repository fully governed by a ruleset still answers `404 Branch not
+protected`. The check could not have distinguished "nothing is enforced" from
+"enforced by the modern mechanism", and it was cited as though it could.
+
+**Re-verified with checks that see both**, 2026-10-24:
+
+```
+gh api repos/{owner}/{repo}/rulesets              → (empty)
+gh api repos/{owner}/{repo}/rules/branches/main   → []  no rules in effect
+```
+
+**The conclusion held** — nothing is enforced — but it held by luck, not by
+method. `…/rules/branches/{branch}` is the authoritative check, because it
+returns the rules **in effect** for a branch from every source (classic
+protection, repository rulesets, and organization rulesets). That is the command
+this RFC and any future readiness report should use.
+
+This is the same defect class the RFC itself documents in §9: a check that
+quietly answers a narrower question than the one being asked. It was mine both
+times.
