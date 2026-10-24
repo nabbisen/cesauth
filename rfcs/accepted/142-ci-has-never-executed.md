@@ -166,3 +166,24 @@ enforcement.
 **Follow-ups, recorded not scheduled:** `fuzz/` has no committed `Cargo.lock`,
 so its dependencies float per run; `cargo install trunk` costs ~5 minutes in
 each of four jobs and is an obvious caching candidate.
+
+## 11. Enforcement confirmation (2026-10-24)
+
+Draft PR #9 off the `0.84.3` tag, closed unmerged with its branch deleted.
+**Fourteen checks reported on the `pull_request` trigger and all fourteen were
+green** — the thirteen required candidates plus `jwt_parse (libFuzzer, 60s)`.
+Verified by the reviewer, together with each workflow's `on:` block read
+directly: **12 workflows fire on both `push` and `pull_request`**, one of them
+(`worker-build.yml`) contributing two jobs, which is where the thirteen come
+from; **`fuzz` fires only on `pull_request` and `workflow_dispatch`.**
+
+**The thirteen to require:** `test`, `clippy`, `deny`, `cargo audit`,
+`csr-check`, `route-contracts`, `stale-phrase check`, `mdbook`,
+`trunk-release-build`, `worker-build`, `runtime-smoke`, `browser-tests`,
+`bundle`. **Never `jwt_parse (libFuzzer, 60s)`**: its `paths:` filter means a
+required check would never report on a pull request that touches neither
+`crates/core/src/jwt/**` nor `fuzz/**`, leaving it blocked indefinitely.
+
+**This RFC remains open.** Criterion 3 is the owner's repository setting, and
+until it exists no gate is enforced — the sentence four consecutive releases
+have had to carry.
