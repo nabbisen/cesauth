@@ -164,6 +164,18 @@ pub enum AdminAction {
     /// audit trail recorded by every mutation handler captures
     /// who-did-what for forensic recovery.
     ManageTenancy,
+
+    /// **RFC 141** — Read `oidc_clients` (list, detail). Same tier as
+    /// `ViewConsole` / `ViewTenancy`: every valid role may inspect what is
+    /// registered, including which clients are confidential (never their
+    /// secrets — those are not readable through any route).
+    ViewClients,
+
+    /// **RFC 141** — Register, update, rotate the secret of, or delete an
+    /// OIDC client. Operations+, matching `ManageTenancy`'s tier: this is
+    /// the same class of operation (provisioning a durable, system-wide
+    /// resource) as tenant creation, not a security-review action.
+    ManageClients,
 }
 
 // -------------------------------------------------------------------------

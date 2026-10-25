@@ -85,6 +85,37 @@ pub trait ClientRepository {
     async fn find_auth_view(&self, client_id: &str) -> PortResult<Option<ClientAuthView>>;
 
     async fn create(&self, client: &OidcClient, secret_hash: Option<&str>) -> PortResult<()>;
+
+    /// Every registered client. **RFC 141** — no pagination, matching this
+    /// module's other `list_*` methods: the console lists clients the way
+    /// `TenantRepository::list_active` lists tenants, on the same O(10-100)
+    /// scale assumption. Pagination lands when a deployment's client count
+    /// exceeds what fits on one page.
+    async fn list(&self) -> PortResult<Vec<OidcClient>>;
+
+    /// Replace the mutable registration fields: `name`, `redirect_uris`,
+    /// `allowed_scopes`, `require_pkce`, `audience`. **RFC 141** —
+    /// `client_type` and `token_auth_method` are deliberately NOT
+    /// updatable here: the pair is validated once, at [`create`](Self::create)
+    /// time (`service::clients`), as the single point where the §4.3
+    /// coupling (public <=> none+no-secret; confidential <=> basic-or-post
+    /// +secret) is enforced. A second enforcement site on every update would
+    /// double the places that rule can be gotten wrong. To change either
+    /// field, delete and re-register (RFC 141 §4 — deletion is a hard
+    /// delete and cheap). `Err(NotFound)` if `client.id` does not exist.
+    async fn update(&self, client: &OidcClient) -> PortResult<()>;
+
+    /// Overwrite the stored secret hash — rotation (`Some`) or clearing it
+    /// (`None`, not used by this cycle but kept symmetric with `create`).
+    /// Does not touch any other column. `Err(NotFound)` if `client_id`
+    /// does not exist.
+    async fn set_secret_hash(&self, client_id: &str, secret_hash: Option<&str>) -> PortResult<()>;
+
+    /// Hard delete (RFC 141 §4 / §9 q2). `grants` and `consent` cascade via
+    /// `ON DELETE CASCADE` (`migrations/0001_initial.sql`) — this method
+    /// only touches `oidc_clients`. `Err(NotFound)` if `client_id` does not
+    /// exist.
+    async fn delete(&self, client_id: &str) -> PortResult<()>;
 }
 
 /// Minimal projection of `oidc_clients` consumed by client authentication:

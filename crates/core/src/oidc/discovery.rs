@@ -23,6 +23,13 @@
 
 use serde::Serialize;
 
+/// Scopes cesauth can issue. **RFC 141 §4.3** — the single source both
+/// [`DiscoveryDocument::new`]'s `scopes_supported` and
+/// `service::clients`' registration-time `allowed_scopes` validation read,
+/// so the discovery document and what registration will accept cannot
+/// drift apart from each other.
+pub const KNOWN_SCOPES: &[&str] = &["openid", "profile", "email", "offline_access"];
+
 /// The subset of OAuth 2.0 Authorization Server Metadata (RFC 8414)
 /// that cesauth supports today. Built per-issuer at request time
 /// (cheap) and cached in KV by the worker layer.
@@ -108,7 +115,7 @@ impl DiscoveryDocument {
             code_challenge_methods_supported:      &["S256"],
             grant_types_supported:                 &["authorization_code", "refresh_token"],
             // RFC 001: `openid` scope now advertised — id_token issuance ships.
-            scopes_supported: &["openid", "profile", "email", "offline_access"],
+            scopes_supported: KNOWN_SCOPES,
             // RFC 001: OIDC Core metadata.
             id_token_signing_alg_values_supported: &["EdDSA"],
             subject_types_supported:               &["public"],

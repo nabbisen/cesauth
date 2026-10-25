@@ -15,6 +15,12 @@
 
 ---
 
+# Integrating an Application
+
+- [Integrating an application](./integrating.md)
+
+---
+
 # Concepts & Reference (Expert)
 
 - [Architecture overview](./expert/architecture.md)

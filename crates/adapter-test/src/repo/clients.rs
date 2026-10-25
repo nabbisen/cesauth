@@ -43,4 +43,43 @@ impl ClientRepository for InMemoryClientRepository {
         m.insert(client.id.clone(), (client.clone(), secret_hash.map(str::to_owned)));
         Ok(())
     }
+
+    async fn list(&self) -> PortResult<Vec<OidcClient>> {
+        let m = self.inner.lock().map_err(|_| PortError::Unavailable)?;
+        let mut clients: Vec<OidcClient> = m.values().map(|(c, _)| c.clone()).collect();
+        clients.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(clients)
+    }
+
+    async fn update(&self, client: &OidcClient) -> PortResult<()> {
+        let mut m = self.inner.lock().map_err(|_| PortError::Unavailable)?;
+        let Some((existing, _)) = m.get_mut(&client.id) else {
+            return Err(PortError::NotFound);
+        };
+        // Mirror the adapter's column list: client_type and
+        // token_auth_method are not updatable here (see the trait doc).
+        existing.name           = client.name.clone();
+        existing.redirect_uris  = client.redirect_uris.clone();
+        existing.allowed_scopes = client.allowed_scopes.clone();
+        existing.require_pkce   = client.require_pkce;
+        existing.audience       = client.audience.clone();
+        Ok(())
+    }
+
+    async fn set_secret_hash(&self, client_id: &str, secret_hash: Option<&str>) -> PortResult<()> {
+        let mut m = self.inner.lock().map_err(|_| PortError::Unavailable)?;
+        let Some(entry) = m.get_mut(client_id) else {
+            return Err(PortError::NotFound);
+        };
+        entry.1 = secret_hash.map(str::to_owned);
+        Ok(())
+    }
+
+    async fn delete(&self, client_id: &str) -> PortResult<()> {
+        let mut m = self.inner.lock().map_err(|_| PortError::Unavailable)?;
+        if m.remove(client_id).is_none() {
+            return Err(PortError::NotFound);
+        }
+        Ok(())
+    }
 }

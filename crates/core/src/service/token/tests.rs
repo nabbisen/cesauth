@@ -129,6 +129,18 @@ mod id_token_tests {
             }))
         }
         async fn create(&self, _: &OidcClient, _: Option<&str>) -> PortResult<()> { Ok(()) }
+        async fn list(&self) -> PortResult<Vec<OidcClient>> {
+            unimplemented!("token tests must not call list")
+        }
+        async fn update(&self, _: &OidcClient) -> PortResult<()> {
+            unimplemented!("token tests must not call update")
+        }
+        async fn set_secret_hash(&self, _: &str, _: Option<&str>) -> PortResult<()> {
+            unimplemented!("token tests must not call set_secret_hash")
+        }
+        async fn delete(&self, _: &str) -> PortResult<()> {
+            unimplemented!("token tests must not call delete")
+        }
     }
 
     struct StubCodes(RefCell<HashMap<String, Challenge>>);
@@ -305,6 +317,7 @@ mod id_token_tests {
             redirect_uri:  "https://app.test/cb",
             client_id:     "c-1",
             client_secret: Some(TEST_SECRET),
+            client_secret_via_basic: true,
             code_verifier: "test-verifier-padded-to-exactly-43chars-xxx",
             now_unix:      1_700_000_000,
         };
@@ -323,6 +336,7 @@ mod id_token_tests {
             redirect_uri:  "https://app.test/cb",
             client_id:     "c-1",
             client_secret: Some(TEST_SECRET),
+            client_secret_via_basic: true,
             code_verifier: verifier,
             now_unix,
         };
@@ -405,6 +419,7 @@ mod id_token_tests {
             refresh_token: &rt,
             client_id:     "c-r",
             client_secret: Some(TEST_SECRET),
+            client_secret_via_basic: true,
             scope:         None,
             now_unix:      1_700_000_050,
             rate_limit_threshold:   0,
@@ -443,6 +458,7 @@ mod id_token_tests {
             refresh_token:        &rt,
             client_id:            "c-at",
             client_secret:        Some(TEST_SECRET),
+            client_secret_via_basic: true,
             scope:                None,
             now_unix:             1_700_001_000, // 1000 seconds later
             rate_limit_threshold:   0,
@@ -483,6 +499,7 @@ mod id_token_tests {
             refresh_token:        &rt,
             client_id:            "c-no",
             client_secret:        Some(TEST_SECRET),
+            client_secret_via_basic: true,
             scope:                None,
             now_unix:             1_700_000_010,
             rate_limit_threshold:   0,
@@ -533,6 +550,7 @@ mod id_token_tests {
             redirect_uri:  "https://app.test/cb",
             client_id:     "c-1",
             client_secret: Some(TEST_SECRET),
+            client_secret_via_basic: true,
             code_verifier: verifier,
             now_unix:      1_700_000_000,
         };
@@ -603,6 +621,10 @@ mod id_token_tests {
             redirect_uri:  "https://app.test/cb",
             client_id,
             client_secret: secret,
+            // RFC 141 §3.6: every confidential fixture in this file
+            // registers `client_secret_basic`, so "a secret was
+            // presented" and "it arrived via Basic" coincide here.
+            client_secret_via_basic: secret.is_some(),
             code_verifier: VERIFIER,
             now_unix:      1_700_000_000,
         };
@@ -640,6 +662,8 @@ mod id_token_tests {
             refresh_token,
             client_id,
             client_secret:          secret,
+            // RFC 141 §3.6: see the matching comment in `redeem`.
+            client_secret_via_basic: secret.is_some(),
             scope:                  None,
             now_unix:               1_700_000_050,
             rate_limit_threshold:   0,
@@ -670,6 +694,7 @@ mod id_token_tests {
             refresh_token,
             client_id,
             client_secret:          secret,
+            client_secret_via_basic: secret.is_some(),
             scope:                  None,
             now_unix,
             rate_limit_threshold:   0,

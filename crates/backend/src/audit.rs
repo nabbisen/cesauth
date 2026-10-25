@@ -90,6 +90,22 @@ pub enum EventKind {
     AdminUserCreated,
     AdminSessionRevoked,
     AdminClientCreated,
+    /// **RFC 141** — an admin updated a client's `name`, `redirect_uris`,
+    /// `allowed_scopes` or `audience` via `POST
+    /// /admin/console/clients/:id`. `client_type` and `token_auth_method`
+    /// cannot be changed by this route (see
+    /// `ClientRepository::update`'s doc); an audience change specifically
+    /// also emits `OidcClientAudienceChanged`, below.
+    AdminClientUpdated,
+    /// **RFC 141** — an admin minted a new secret for a confidential
+    /// client via `POST /admin/console/clients/:id/rotate-secret`. The
+    /// plaintext is never in this payload — only that rotation happened.
+    AdminClientSecretRotated,
+    /// **RFC 141** — an admin hard-deleted a client via `POST
+    /// /admin/console/clients/:id/delete`. `grants` and `consent` rows for
+    /// it cascade at the storage layer (RFC 141 §4); this event records
+    /// only the deletion of the `oidc_clients` row itself.
+    AdminClientDeleted,
     // Admin console (v0.3.0)
     AdminLoginFailed,
     AdminConsoleViewed,
@@ -183,11 +199,19 @@ pub enum EventKind {
     /// present but audience doesn't match) and `TokenIntrospected`
     /// (successful authenticated introspection).
     IntrospectionRowMissing,
-    /// **RFC 017** — An admin changed `oidc_clients.audience` via the
-    /// tenant admin editor.  Payload includes `client_id`, `before`
-    /// (previous audience value or "null"), `after` (new audience value
-    /// or "null"), and `tenant_slug`.  Both audiences are operator-
-    /// controlled identifiers, not secret material; audit exposure is safe.
+    /// **RFC 017, first written by RFC 141.** An admin changed
+    /// `oidc_clients.audience` via `POST /admin/console/clients/:id`.
+    /// Payload (the `reason` field) includes `before` (previous audience
+    /// value or "null") and `after` (new audience value or "null"); the
+    /// event's own `client_id` field names the client. Both audiences are
+    /// operator-controlled identifiers, not secret material; audit
+    /// exposure is safe.
+    ///
+    /// RFC 141 §10.2 found this event declared with no writer, and its own
+    /// doc describing a "tenant admin editor" that does not exist:
+    /// `oidc_clients` has no `tenant_id` (RFC 141 §10.1), so there is no
+    /// `tenant_slug` to carry, and this event is unrelated to any
+    /// tenant-scoped surface.
     OidcClientAudienceChanged,
     /// **RFC 018** — An admin submitted the preview form for a destructive
     /// operation but has not yet applied it.  Payload includes
@@ -326,6 +350,9 @@ impl EventKind {
             Self::AdminUserCreated             => "admin_user_created",
             Self::AdminSessionRevoked          => "admin_session_revoked",
             Self::AdminClientCreated           => "admin_client_created",
+            Self::AdminClientUpdated           => "admin_client_updated",
+            Self::AdminClientSecretRotated     => "admin_client_secret_rotated",
+            Self::AdminClientDeleted           => "admin_client_deleted",
             Self::AdminLoginFailed             => "admin_login_failed",
             Self::AdminConsoleViewed           => "admin_console_viewed",
             Self::AdminBucketSafetyVerified    => "admin_bucket_safety_verified",

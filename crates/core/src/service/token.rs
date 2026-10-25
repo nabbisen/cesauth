@@ -83,6 +83,10 @@ pub struct ExchangeCodeInput<'a> {
     /// form body; `None` when it presented none. Required for every client
     /// that is not public (see `authenticate_token_client`).
     pub client_secret: Option<&'a str>,
+    /// **RFC 141 §3.6** — `true` iff `client_secret` arrived via
+    /// `Authorization: Basic` rather than the form body. Meaningless (pass
+    /// `false`) when `client_secret` is `None`.
+    pub client_secret_via_basic: bool,
     pub code_verifier: &'a str,
     pub now_unix:      i64,
 }
@@ -132,7 +136,7 @@ where
         .await
         .map_err(|_| CoreError::Internal)?
         .ok_or(CoreError::InvalidClient)?;
-    let client = AuthenticatedClient::authenticate(&view, input.client_secret)?;
+    let client = AuthenticatedClient::authenticate(&view, input.client_secret, input.client_secret_via_basic)?;
 
     // 2–3. Consume the code and verify it, in the order RFC 117 §1 states.
     //      `take` demands the proof `authenticate` produced, so it cannot run
@@ -235,6 +239,8 @@ pub struct RotateRefreshInput<'a> {
     /// **RFC 137** — the secret the client presented; `None` when it presented
     /// none. Same rule as `ExchangeCodeInput::client_secret`.
     pub client_secret: Option<&'a str>,
+    /// **RFC 141 §3.6** — same rule as `ExchangeCodeInput::client_secret_via_basic`.
+    pub client_secret_via_basic: bool,
     pub scope:         Option<&'a str>,
     pub now_unix:      i64,
     /// **v0.37.0** — Per-family rate-limit configuration
@@ -309,7 +315,7 @@ where
         .await
         .map_err(|_| CoreError::Internal)?
         .ok_or(CoreError::InvalidClient)?;
-    authenticate_token_client(&client, input.client_secret)?;
+    authenticate_token_client(&client, input.client_secret, input.client_secret_via_basic)?;
 
     // RFC 137 T4: a refresh token may only be redeemed by the client it was
     // issued to. The refresh grant has no PKCE layer, so before this nothing

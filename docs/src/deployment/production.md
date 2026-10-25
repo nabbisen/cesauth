@@ -67,12 +67,10 @@ wrangler d1 execute cesauth-prod --command "
   INSERT INTO jwt_signing_keys (kid, public_key, alg, created_at, retired_at)
   VALUES ('cesauth-prod-2026-01', '$PUBKEY_B64URL', 'EdDSA', strftime('%s','now'), NULL);
 "
-
-# Your real OIDC clients (replace demo-cli with production values)
-wrangler d1 execute cesauth-prod --command "
-  INSERT INTO oidc_clients (…) VALUES (…);
-"
 ```
+
+Your real OIDC clients are registered through the API, **after**
+`ADMIN_API_KEY` exists (Step 4) — see Step 5.
 
 ## Step 4 — Set production secrets
 
@@ -93,7 +91,33 @@ openssl rand -hex 24 |
 wrangler secret put TURNSTILE_SECRET
 ```
 
-## Step 5 — Confirm `WRANGLER_LOCAL` is off
+## Step 5 — Register your OIDC clients
+
+**RFC 141.** Through the API, never by hand-writing an `oidc_clients` row —
+cesauth mints and hashes the secret itself; you never compute a hash or
+construct the `redirect_uris`/`allowed_scopes` JSON yourself. `ADMIN_API_KEY`
+(Step 4) is the bearer. See [Integrating an
+application](../integrating.md) for what every field means.
+
+```sh
+curl -s -X POST "https://your-cesauth-domain.example/admin/console/clients" \
+  -H "Authorization: Bearer $ADMIN_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "id": "my-production-app",
+    "name": "My Production Application",
+    "client_type": "confidential",
+    "redirect_uris": ["https://my-app.example.com/callback"],
+    "allowed_scopes": ["openid", "profile", "email"],
+    "token_auth_method": "client_secret_basic"
+  }'
+```
+
+**The response's `client_secret` is shown exactly once: copy it now.**
+cesauth stores only its hash and will never show it again; if you lose it,
+`POST /admin/console/clients/:id/rotate-secret` mints a new one.
+
+## Step 6 — Confirm `WRANGLER_LOCAL` is off
 
 ```toml
 # wrangler.toml
@@ -109,7 +133,7 @@ WRANGLER_LOCAL = "0"   # explicit, don't rely on inheritance
 `WRANGLER_LOCAL="1"` in production would expose `/__dev/audit` and
 `/__dev/stage-auth-code` on the public surface. This is catastrophic.
 
-## Step 6 — Configure Magic Link mail delivery (v0.51.0+)
+## Step 7 — Configure Magic Link mail delivery (v0.51.0+)
 
 As of v0.51.0, `MagicLinkMailer` is implemented and OTPs are **not** written
 to the audit log (RFC 030). Configure a real mail provider before the first
@@ -125,7 +149,7 @@ production deploy:
 > dev-delivery audit log path, rotate all active Magic Link handles
 > by restarting the `magic_link` Durable Object namespace.
 
-## Step 7 — Verify dependencies
+## Step 8 — Verify dependencies
 
 Before deploying, confirm the dependency tree has no known CVEs.
 The `audit.yml` GitHub Actions workflow does this on every push
@@ -151,7 +175,7 @@ the run reports findings, **stop and triage** before deploying:
 - Last resort: add the advisory id to `.cargo/audit.toml`
   with a one-line justification. Do not silently ignore.
 
-## Step 7.5 — Configure Cron Triggers
+## Step 8.5 — Configure Cron Triggers
 
 The v0.18.0 anonymous-trial retention sweep requires the
 `[triggers]` block in `wrangler.toml`. Without it, the
@@ -166,7 +190,7 @@ crons = ["0 4 * * *"]
 
 Full chapter: [Cron Triggers](./cron-triggers.md).
 
-## Step 8 — Deploy
+## Step 9 — Deploy
 
 ```sh
 wrangler deploy
@@ -185,7 +209,7 @@ The discovery doc `issuer` should match `ISSUER` in `wrangler.toml`
 exactly. If not, every token cesauth issues will fail validation
 at the client.
 
-## Step 9 — Monitor
+## Step 10 — Monitor
 
 - `wrangler tail --format=pretty` streams structured logs for the
   currently-deployed Worker. Use categories to filter.

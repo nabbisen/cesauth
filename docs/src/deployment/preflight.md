@@ -109,7 +109,7 @@ Run `wrangler secret list --env production` and confirm each:
 - [ ] `TURNSTILE_SECRET` — only if Turnstile is enabled (see
       [Turnstile integration](../expert/turnstile.md)).
 - [ ] `MAGIC_LINK_MAIL_API_KEY` — only if a real mail provider
-      is wired (see [`production.md` Step 6](./production.md)).
+      is wired (see [`production.md` Step 7](./production.md)).
 
 The first three are non-negotiable — every deploy fails closed
 without them.
@@ -165,7 +165,7 @@ Run `cat wrangler.toml | grep -A50 '\[vars\]'` and confirm:
       authenticate via Magic Link (the most common case).
 - [ ] The mail-delivery code path no longer logs the OTP
       plaintext into the audit channel — see
-      [`production.md` Step 6](./production.md). The dev
+      [`production.md` Step 7](./production.md). The dev
       shortcut is a release blocker.
 
 ## I — Dependency hygiene

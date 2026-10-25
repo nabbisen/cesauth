@@ -114,8 +114,15 @@ pub struct AuthenticatedClient {
 }
 
 impl AuthenticatedClient {
-    pub fn authenticate(view: &ClientAuthView, presented_secret: Option<&str>) -> CoreResult<Self> {
-        authenticate_token_client(view, presented_secret)?;
+    /// `presented_via_basic` — RFC 141 §3.6 — is whether the secret (if any)
+    /// arrived via `Authorization: Basic` rather than the form body;
+    /// meaningless (and `false`) when `presented_secret` is `None`.
+    pub fn authenticate(
+        view:                &ClientAuthView,
+        presented_secret:    Option<&str>,
+        presented_via_basic: bool,
+    ) -> CoreResult<Self> {
+        authenticate_token_client(view, presented_secret, presented_via_basic)?;
         Ok(Self { client_id: view.client_id.clone() })
     }
 }

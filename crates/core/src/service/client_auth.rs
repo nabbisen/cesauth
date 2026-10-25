@@ -31,7 +31,7 @@ use sha2::{Digest, Sha256};
 
 use crate::error::{CoreError, CoreResult};
 use crate::ports::repo::{ClientAuthView, ClientRepository};
-use crate::types::ClientType;
+use crate::types::{ClientType, TokenAuthMethod};
 
 /// Verify a presented `client_secret` against the stored hash for
 /// `client_id`. Returns `Ok(())` on success, `Err(CoreError::InvalidClient)`
@@ -203,13 +203,39 @@ pub fn check_client_credentials_from_view(
 /// Every secret comparison goes through `check_client_credentials_from_view`'s
 /// constant-time path; nothing here compares secret material itself.
 ///
-/// A public client that also presents a secret is still admitted as public.
-/// Whether the presented method must match the registered one is out of
-/// scope (RFC 137 §12.7).
+/// **RFC 141 §3.6 / §4.4 — closes RFC 137 §12.7.** Before any of the above,
+/// the client's *registered* `token_auth_method` decides which transport (if
+/// any) may carry credentials on this request:
+///
+/// ```text
+/// registered `none`                 -> presented_secret must be None
+/// registered `client_secret_basic`  -> a secret must be present, via Basic
+/// registered `client_secret_post`   -> a secret must be present, via the form body
+/// ```
+///
+/// A method mismatch is `InvalidClient` **before** any secret is compared —
+/// closing the gap RFC 137 §13.4 recorded and left open: previously a public
+/// client was admitted whatever secret it presented (the first `if` below
+/// never looked at `presented_secret`), and a confidential client could
+/// authenticate via either transport regardless of what it registered.
+///
+/// `presented_via_basic` is meaningless when `presented_secret` is `None`
+/// (no transport carried anything); callers pass `false` in that case, same
+/// as `resolve_token_client_credentials`'s form-body path.
 pub fn authenticate_token_client(
-    view:             &ClientAuthView,
-    presented_secret: Option<&str>,
+    view:                 &ClientAuthView,
+    presented_secret:     Option<&str>,
+    presented_via_basic:  bool,
 ) -> CoreResult<()> {
+    let method_ok = match view.token_auth_method {
+        TokenAuthMethod::None              => presented_secret.is_none(),
+        TokenAuthMethod::ClientSecretBasic => presented_via_basic && presented_secret.is_some(),
+        TokenAuthMethod::ClientSecretPost  => !presented_via_basic && presented_secret.is_some(),
+    };
+    if !method_ok {
+        return Err(CoreError::InvalidClient);
+    }
+
     if matches!(view.client_type, ClientType::Public) && view.client_secret_hash.is_none() {
         return Ok(());
     }

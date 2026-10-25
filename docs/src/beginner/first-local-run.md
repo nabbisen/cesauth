@@ -109,33 +109,7 @@ wrangler d1 execute cesauth --local --command "
 
 The `kid` value must match the `JWT_KID` var in `wrangler.toml`.
 
-## Step 4 — Seed an OIDC client
-
-`/authorize` and `/token` both consult `oidc_clients`. Insert a
-public PKCE-only client for the tutorial:
-
-```sh
-wrangler d1 execute cesauth --local --command "
-  INSERT INTO oidc_clients (
-    id, name, client_type, client_secret_hash,
-    redirect_uris, allowed_scopes, token_auth_method,
-    require_pkce, created_at, updated_at
-  ) VALUES (
-    'demo-cli',
-    'Demo CLI client',
-    'public',
-    NULL,
-    '[\"http://localhost:8787/callback\"]',
-    '[\"openid\",\"profile\",\"email\"]',
-    'none',
-    1,
-    strftime('%s','now'),
-    strftime('%s','now')
-  );
-"
-```
-
-## Step 5 — Enable the dev-only routes
+## Step 4 — Enable the dev-only routes
 
 The next chapter uses two helper endpoints that exist only in dev mode
 and return 404 in production:
@@ -156,7 +130,7 @@ grep -q WRANGLER_LOCAL .dev.vars 2>/dev/null \
 > local-only. Production config lives in `wrangler.toml` `[vars]`
 > (shipped with `WRANGLER_LOCAL = "0"`) and `wrangler secret put`.
 
-## Step 6 — Start the Worker
+## Step 5 — Start the Worker
 
 ```sh
 wrangler dev
@@ -169,6 +143,49 @@ open a second terminal for everything else.
 > **After editing `.dev.vars`, restart `wrangler dev`.** The file is
 > read once at boot. A stale value for `WRANGLER_LOCAL` is the usual
 > cause of surprise 404s from the dev routes.
+
+## Step 6 — Register an OIDC client
+
+**RFC 141.** `/authorize` and `/token` both consult `oidc_clients`, and —
+as of this chapter's rewrite — nothing ever reaches that table by hand.
+Register a public, PKCE-only client through the admin API (the
+`ADMIN_API_KEY` is the one Step 2 put in `.dev.vars`):
+
+```sh
+curl -s -X POST http://localhost:8787/admin/console/clients \
+  -H 'Authorization: Bearer dev-admin-secret-change-me' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "id": "demo-cli",
+    "name": "Demo CLI client",
+    "client_type": "public",
+    "redirect_uris": ["http://localhost:8787/callback"],
+    "allowed_scopes": ["openid", "profile", "email"],
+    "token_auth_method": "none"
+  }' | jq .
+```
+
+```json
+{
+  "client": {
+    "id": "demo-cli",
+    "name": "Demo CLI client",
+    "client_type": "public",
+    "redirect_uris": ["http://localhost:8787/callback"],
+    "allowed_scopes": ["openid", "profile", "email"],
+    "token_auth_method": "none",
+    "require_pkce": true,
+    "audience": null
+  }
+}
+```
+
+No `client_secret` in the response — `client_type: "public"` never gets
+one. This is the same row the old `INSERT INTO oidc_clients` in earlier
+versions of this chapter produced by hand (`client_secret_hash` was
+always `NULL` there too); registering it through the API is what changed,
+not the client itself, so the rest of this tutorial and
+[Your first OIDC flow](./first-oidc-flow.md) are unaffected.
 
 ## Step 7 — Sanity checks
 

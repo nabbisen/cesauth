@@ -25,22 +25,29 @@ fn s256(verifier: &str) -> String {
 
 fn handle() -> ChallengeHandle { ChallengeHandle::from_storage("code-1") }
 
-fn view(id: &str, ty: ClientType, hash: Option<String>) -> ClientAuthView {
+fn view(id: &str, ty: ClientType, hash: Option<String>, method: TokenAuthMethod) -> ClientAuthView {
     ClientAuthView {
         client_id:          id.to_owned(),
         client_type:        ty,
         client_secret_hash: hash,
         audience:           None,
-        token_auth_method:  TokenAuthMethod::ClientSecretBasic,
+        token_auth_method:  method,
     }
 }
 
+/// A confidential client registered `client_secret_basic` — every test
+/// below that presents `SECRET` does so via `presented_via_basic: true`,
+/// matching this registration.
 fn confidential(id: &str) -> ClientAuthView {
-    view(id, ClientType::Confidential, Some(crate::service::client_auth::sha256_hex(SECRET.as_bytes())))
+    view(
+        id, ClientType::Confidential,
+        Some(crate::service::client_auth::sha256_hex(SECRET.as_bytes())),
+        TokenAuthMethod::ClientSecretBasic,
+    )
 }
 
 fn authed(id: &str) -> AuthenticatedClient {
-    AuthenticatedClient::authenticate(&confidential(id), Some(SECRET)).expect("test client authenticates")
+    AuthenticatedClient::authenticate(&confidential(id), Some(SECRET), true).expect("test client authenticates")
 }
 
 /// A store that follows the port's contract (RFC 140: expired iff
@@ -99,22 +106,58 @@ macro_rules! assert_grant {
 
 #[test]
 fn authenticate_admits_a_public_client_with_no_secret() {
-    let v = view("demo-cli", ClientType::Public, None);
-    assert!(AuthenticatedClient::authenticate(&v, None).is_ok());
+    let v = view("demo-cli", ClientType::Public, None, TokenAuthMethod::None);
+    assert!(AuthenticatedClient::authenticate(&v, None, false).is_ok());
 }
 
 #[test]
 fn authenticate_admits_a_confidential_client_with_its_secret() {
-    assert!(AuthenticatedClient::authenticate(&confidential("c-a"), Some(SECRET)).is_ok());
+    assert!(AuthenticatedClient::authenticate(&confidential("c-a"), Some(SECRET), true).is_ok());
 }
 
 #[test]
 fn authenticate_refuses_a_wrong_missing_or_unhashed_secret_as_invalid_client() {
-    assert!(matches!(AuthenticatedClient::authenticate(&confidential("c-a"), Some("nope")), Err(CoreError::InvalidClient)));
-    assert!(matches!(AuthenticatedClient::authenticate(&confidential("c-a"), None),         Err(CoreError::InvalidClient)));
+    assert!(matches!(AuthenticatedClient::authenticate(&confidential("c-a"), Some("nope"), true), Err(CoreError::InvalidClient)));
+    assert!(matches!(AuthenticatedClient::authenticate(&confidential("c-a"), None, false),         Err(CoreError::InvalidClient)));
     // RFC 137 §12.2: a confidential client with no stored hash is refused.
-    let unhashed = view("c-a", ClientType::Confidential, None);
-    assert!(matches!(AuthenticatedClient::authenticate(&unhashed, Some(SECRET)), Err(CoreError::InvalidClient)));
+    let unhashed = view("c-a", ClientType::Confidential, None, TokenAuthMethod::ClientSecretBasic);
+    assert!(matches!(AuthenticatedClient::authenticate(&unhashed, Some(SECRET), true), Err(CoreError::InvalidClient)));
+}
+
+// ── RFC 141 §3.6: the registered method is enforced ────────────────────────
+
+#[test]
+fn a_public_client_presenting_a_secret_is_refused() {
+    // The T4 fires pair's first case: registered `none`, but a secret
+    // arrives anyway (either transport). Before RFC 141 this was admitted
+    // regardless (RFC 137 §13.4).
+    let v = view("demo-cli", ClientType::Public, None, TokenAuthMethod::None);
+    assert!(matches!(AuthenticatedClient::authenticate(&v, Some(SECRET), true),  Err(CoreError::InvalidClient)));
+    assert!(matches!(AuthenticatedClient::authenticate(&v, Some(SECRET), false), Err(CoreError::InvalidClient)));
+}
+
+#[test]
+fn a_confidential_client_using_the_method_it_did_not_register_is_refused() {
+    // The T4 fires pair's second case: registered `client_secret_basic`,
+    // presented via the form body (and vice versa) — same correct secret
+    // either way, wrong transport.
+    let basic_only = confidential("c-a");
+    assert!(matches!(
+        AuthenticatedClient::authenticate(&basic_only, Some(SECRET), false),
+        Err(CoreError::InvalidClient),
+    ));
+
+    let post_only = view(
+        "c-b", ClientType::Confidential,
+        Some(crate::service::client_auth::sha256_hex(SECRET.as_bytes())),
+        TokenAuthMethod::ClientSecretPost,
+    );
+    assert!(matches!(
+        AuthenticatedClient::authenticate(&post_only, Some(SECRET), true),
+        Err(CoreError::InvalidClient),
+    ));
+    // Restore: the same secret, via the method it DID register, succeeds.
+    assert!(AuthenticatedClient::authenticate(&post_only, Some(SECRET), false).is_ok());
 }
 
 // ── ConsumedCode::take ──────────────────────────────────────────────────────

@@ -121,6 +121,12 @@ code-review responsibility.
 | GET | `/admin/console/tokens/new` | System admin | none | new-token form | client | n/a | N/A (GET) |
 | POST | `/admin/console/tokens` | System admin | `admin_token_created` | redirect | client | n/a | required |
 | POST | `/admin/console/tokens/:id/disable` | System admin | `admin_token_disabled` | redirect | client | n/a | required |
+| GET | `/admin/console/clients` | System admin | none | client list | client | n/a | N/A (GET) |
+| GET | `/admin/console/clients.json` | System admin | none | JSON (`clients`) | n/a | n/a | N/A (GET) |
+| POST | `/admin/console/clients` | System admin | `admin_client_created` | JSON | n/a | n/a | N/A (JSON) |
+| POST | `/admin/console/clients/:id` | System admin | `admin_client_updated` (+ `oidc_client_audience_changed` if `audience` changed) | JSON | n/a | n/a | N/A (JSON) |
+| POST | `/admin/console/clients/:id/rotate-secret` | System admin | `admin_client_secret_rotated` | JSON | n/a | n/a | N/A (JSON) |
+| POST | `/admin/console/clients/:id/delete` | System admin | `admin_client_deleted` | JSON | n/a | n/a | N/A (JSON) |
 
 ## Admin — system tenancy console (`/admin/tenancy`)
 

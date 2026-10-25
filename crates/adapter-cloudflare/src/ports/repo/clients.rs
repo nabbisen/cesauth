@@ -189,4 +189,79 @@ impl ClientRepository for CloudflareClientRepository<'_> {
             .map_err(|e| run_err("oidc_clients.create run", e))?;
         Ok(())
     }
+
+    async fn list(&self) -> PortResult<Vec<OidcClient>> {
+        let db   = db(self.env)?;
+        let rows = db.prepare(
+            "SELECT id, name, client_type, redirect_uris, allowed_scopes, token_auth_method, require_pkce, audience \
+             FROM oidc_clients ORDER BY id"
+        )
+            .all().await.map_err(|_| PortError::Unavailable)?;
+        let rows: Vec<ClientRow> = rows.results().map_err(|_| PortError::Serialization)?;
+        rows.into_iter().map(ClientRow::into_domain).collect()
+    }
+
+    async fn update(&self, client: &OidcClient) -> PortResult<()> {
+        let db = db(self.env)?;
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        let redirect_uris  = serde_json::to_string(&client.redirect_uris).map_err(|_| PortError::Serialization)?;
+        let allowed_scopes = serde_json::to_string(&client.allowed_scopes).map_err(|_| PortError::Serialization)?;
+
+        let result = db.prepare(
+            "UPDATE oidc_clients SET name = ?2, redirect_uris = ?3, allowed_scopes = ?4, \
+             require_pkce = ?5, audience = ?6, updated_at = ?7 WHERE id = ?1"
+        )
+            .bind(&[
+                client.id.clone().into(),
+                client.name.clone().into(),
+                redirect_uris.into(),
+                allowed_scopes.into(),
+                d1_int(client.require_pkce as i64),
+                client.audience.clone().map(Into::into).unwrap_or(JsValue::NULL),
+                d1_int(now),
+            ])
+            .map_err(|e| run_err("oidc_clients.update bind", e))?
+            .run()
+            .await
+            .map_err(|e| run_err("oidc_clients.update run", e))?;
+        if result.meta().map(|m| m.and_then(|m| m.changes).unwrap_or(0)).unwrap_or(0) == 0 {
+            return Err(PortError::NotFound);
+        }
+        Ok(())
+    }
+
+    async fn set_secret_hash(&self, client_id: &str, secret_hash: Option<&str>) -> PortResult<()> {
+        let db  = db(self.env)?;
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        let result = db.prepare(
+            "UPDATE oidc_clients SET client_secret_hash = ?2, updated_at = ?3 WHERE id = ?1"
+        )
+            .bind(&[
+                client_id.into(),
+                secret_hash.map(Into::into).unwrap_or(JsValue::NULL),
+                d1_int(now),
+            ])
+            .map_err(|e| run_err("oidc_clients.set_secret_hash bind", e))?
+            .run()
+            .await
+            .map_err(|e| run_err("oidc_clients.set_secret_hash run", e))?;
+        if result.meta().map(|m| m.and_then(|m| m.changes).unwrap_or(0)).unwrap_or(0) == 0 {
+            return Err(PortError::NotFound);
+        }
+        Ok(())
+    }
+
+    async fn delete(&self, client_id: &str) -> PortResult<()> {
+        let db = db(self.env)?;
+        let result = db.prepare("DELETE FROM oidc_clients WHERE id = ?1")
+            .bind(&[client_id.into()])
+            .map_err(|e| run_err("oidc_clients.delete bind", e))?
+            .run()
+            .await
+            .map_err(|e| run_err("oidc_clients.delete run", e))?;
+        if result.meta().map(|m| m.and_then(|m| m.changes).unwrap_or(0)).unwrap_or(0) == 0 {
+            return Err(PortError::NotFound);
+        }
+        Ok(())
+    }
 }

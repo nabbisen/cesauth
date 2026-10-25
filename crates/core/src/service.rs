@@ -16,6 +16,7 @@
 //! resolved and there's no allocation overhead on the hot path.
 
 pub mod client_auth;
+pub mod clients;
 pub mod introspect;
 pub mod revoke;
 pub mod sessions;

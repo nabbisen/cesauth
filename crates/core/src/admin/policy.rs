@@ -27,6 +27,8 @@ use super::types::{
 /// | CreateUser           |          |          | ✓          | ✓     |
 /// | RevokeSession        |          | ✓        | ✓          | ✓     |
 /// | ManageAdminTokens    |          |          |            | ✓     |
+/// | ViewClients          | ✓        | ✓        | ✓          | ✓     |
+/// | ManageClients        |          |          | ✓          | ✓     |
 pub fn role_allows(role: Role, action: AdminAction) -> bool {
     match action {
         AdminAction::ViewConsole        => true, // every valid role
@@ -48,6 +50,12 @@ pub fn role_allows(role: Role, action: AdminAction) -> bool {
         AdminAction::ViewTenancy        => true,
 
         AdminAction::ManageTenancy      => matches!(role,
+            Role::Operations | Role::Super),
+
+        // RFC 141 — same tiers as ViewTenancy / ManageTenancy.
+        AdminAction::ViewClients        => true,
+
+        AdminAction::ManageClients      => matches!(role,
             Role::Operations | Role::Super),
     }
 }
@@ -297,6 +305,8 @@ mod tests {
         assert!(!role_allows(Role::ReadOnly, AdminAction::RevokeSession));
         assert!(!role_allows(Role::ReadOnly, AdminAction::ManageAdminTokens));
         assert!(!role_allows(Role::ReadOnly, AdminAction::ManageTenancy));
+        assert!( role_allows(Role::ReadOnly, AdminAction::ViewClients));
+        assert!(!role_allows(Role::ReadOnly, AdminAction::ManageClients));
     }
 
     #[test]
@@ -306,6 +316,7 @@ mod tests {
         assert!(!role_allows(Role::Security, AdminAction::EditBucketSafety));
         assert!(!role_allows(Role::Security, AdminAction::ManageAdminTokens));
         assert!(!role_allows(Role::Security, AdminAction::ManageTenancy));
+        assert!(!role_allows(Role::Security, AdminAction::ManageClients));
     }
 
     #[test]
@@ -315,6 +326,7 @@ mod tests {
         assert!( role_allows(Role::Operations, AdminAction::CreateUser));
         assert!( role_allows(Role::Operations, AdminAction::ManageTenancy));
         assert!(!role_allows(Role::Operations, AdminAction::ManageAdminTokens));
+        assert!( role_allows(Role::Operations, AdminAction::ManageClients));
     }
 
     #[test]
@@ -329,6 +341,8 @@ mod tests {
             AdminAction::ManageAdminTokens,
             AdminAction::ViewTenancy,
             AdminAction::ManageTenancy,
+            AdminAction::ViewClients,
+            AdminAction::ManageClients,
         ];
         for action in all_actions {
             assert!(role_allows(Role::Super, action),

@@ -15,6 +15,8 @@
 //! | `POST /admin/console/config/:b/apply`   | [`config`]   | Operations |
 //! | `GET  /admin/console/alerts`            | [`alerts`]   | ReadOnly   |
 //! | `POST /admin/console/thresholds/:name`  | [`actions`]  | Operations |
+//! | `GET  /admin/console/clients`           | [`clients`]  | ReadOnly   |
+//! | `POST /admin/console/clients*`          | [`clients`]  | Operations |
 //!
 //! Every GET handler is `Accept`-aware: responses default to HTML (the
 //! browser path) but return JSON when the client sends
@@ -31,6 +33,7 @@ pub mod alerts;
 pub mod audit;
 pub mod audit_chain;
 pub mod audit_export;
+pub mod clients;
 pub mod config;
 pub mod cost;
 pub mod operations_route;

@@ -88,6 +88,18 @@ impl ClientRepository for StubClients {
     async fn create(&self, _: &OidcClient, _: Option<&str>) -> PortResult<()> {
         unimplemented!()
     }
+    async fn list(&self) -> PortResult<Vec<OidcClient>> {
+        unimplemented!("this stub must not call list")
+    }
+    async fn update(&self, _: &OidcClient) -> PortResult<()> {
+        unimplemented!("this stub must not call update")
+    }
+    async fn set_secret_hash(&self, _: &str, _: Option<&str>) -> PortResult<()> {
+        unimplemented!("this stub must not call set_secret_hash")
+    }
+    async fn delete(&self, _: &str) -> PortResult<()> {
+        unimplemented!("this stub must not call delete")
+    }
 }
 
 fn clients_with_secret(client_id: &str, secret: &str) -> StubClients {

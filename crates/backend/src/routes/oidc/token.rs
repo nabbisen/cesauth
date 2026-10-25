@@ -128,6 +128,12 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
                 redirect_uri:  g.redirect_uri,
                 client_id:     &client_id,
                 client_secret: client_secret.as_deref(),
+                // RFC 141 §3.6: `resolve_token_client_credentials` above
+                // already resolved Basic-vs-form precedence; when an
+                // Authorization header is present, any resolved secret
+                // came from it (the function's Basic branch is the only
+                // one reached), never from the form.
+                client_secret_via_basic: authorization_header_present,
                 code_verifier: g.code_verifier,
                 now_unix:      now,
             };
@@ -161,6 +167,7 @@ pub async fn token<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
                 refresh_token: g.refresh_token,
                 client_id:     &client_id,
                 client_secret: client_secret.as_deref(),
+                client_secret_via_basic: authorization_header_present,
                 scope:         g.scope,
                 now_unix:      now,
                 rate_limit_threshold:   cfg.refresh_rate_limit_threshold,

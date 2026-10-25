@@ -278,6 +278,13 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async ("/admin/console/operations",               |req, ctx| async move { routes::admin::console::operations_route::page(req, ctx).await })
         .get_async ("/admin/console/operations.json",           |req, ctx| async move { routes::admin::console::operations_route::page_json(req, ctx).await })
         .post_async("/admin/console/tokens/:id/disable",       |req, ctx| async move { routes::admin::console::tokens::disable(req, ctx).await })
+        // --- OIDC client registration (RFC 141) -----------------------
+        .get_async ("/admin/console/clients",                      |req, ctx| async move { routes::admin::console::clients::list(req, ctx).await })
+        .get_async ("/admin/console/clients.json",                  |req, ctx| async move { routes::admin::console::clients::list_json(req, ctx).await })
+        .post_async("/admin/console/clients",                      |req, ctx| async move { routes::admin::console::clients::create(req, ctx).await })
+        .post_async("/admin/console/clients/:id",                  |req, ctx| async move { routes::admin::console::clients::update(req, ctx).await })
+        .post_async("/admin/console/clients/:id/rotate-secret",    |req, ctx| async move { routes::admin::console::clients::rotate_secret(req, ctx).await })
+        .post_async("/admin/console/clients/:id/delete",           |req, ctx| async move { routes::admin::console::clients::delete(req, ctx).await })
         // --- tenancy console (v0.8.0 read pages) ------------------------
         // Operator-facing inspection of the v0.4.x tenancy-service
         // state. Every read route is open to ViewTenancy (every
