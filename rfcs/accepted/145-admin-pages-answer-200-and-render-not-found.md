@@ -1,6 +1,6 @@
 # RFC 145 — Thirty-five admin pages answer 200 and render "Not Found"
 
-**Status.** Proposed — awaiting owner authorization.
+**Status.** Accepted — approved by the owner 2026-10-25.
 **Tier.** P1 — one of the thirty-five is linked from a working console screen,
 so an operator following the UI reaches a Not Found page.
 **Size.** Medium. The triage is small per route; the count is what makes it
@@ -200,3 +200,97 @@ thirty-four of the thirty-five predate 0.85.0, so this is a long-standing
 condition that one route was added to, not a regression the release introduced.
 The correction belongs in the next release's notes, which this RFC's work will
 produce.
+
+---
+
+## 11. Triaged before dispatch (architect, 2026-10-25)
+
+I triaged all thirty-five myself, because §4 requires a decision per route and an
+implementer must inherit none of them. The triage changed the RFC's premise in
+the project's favour, the same way RFC 143 §9 did, and for the same reason.
+
+### 11.1 This is not thirty-five screens to build
+
+**Thirty-four of the thirty-five already have a server-rendering template, in
+their own backend module, already rendered by that module's own `POST` path.**
+
+Measured by resolving each route's `get_async` handler to its module and looking
+for a `cesauth_frontend` template that the module renders via
+`render::html_response` or `Response::from_html`:
+
+| Group | Count | Evidence |
+|---|---|---|
+| Template imported as a path (`use cesauth_frontend::tenancy_console::…`) and rendered by the `POST` | **27** | e.g. `tenancy_console/forms/group_create.rs:50` — `render::html_response(ui::for_tenant(…, Some("Slug and display name are required")))` |
+| Template reached through `use cesauth_frontend as ui` | **5** | `console/tokens.rs:120` `ui::admin::token_new_form(&principal, Some(err))`; `console/config.rs:263` `ui::admin::config_edit_form(…)`; the three read pages' `organization_detail_page` / `role_assignments` / `subscription` imports |
+| Read pages whose template is imported but rendered by neither GET nor POST | **2** | `tenancy_console/role_assignments.rs`, `tenant_admin/role_assignments.rs` |
+| **No template found** | **1** | `/admin/t/:slug/deletion-requests` — `routes/deletions.rs` has **0** `cesauth_frontend` references |
+
+My first pass reported 8 without a template. That was a false negative: the
+regex matched only `use cesauth_frontend::<path>` and missed
+`use cesauth_frontend as ui`. **Corrected by reading the files.** The figure is
+34, not 27.
+
+Those templates take an `Option<&str>` error argument — `Some(msg)` on a failed
+submit, so **`None` renders the fresh form**. That is precisely the shape RFC 143
+exploited.
+
+### 11.2 The decision: implement all of them by server-rendering. Delete none.
+
+**Every route is option (a), and the fix is RFC 143's, thirty-four more times:**
+point the GET at the template its own module already renders, and change the
+contract row's render column from **`client` to `server`**.
+
+Deleting was the wrong answer and I had expected it to be the common one. The
+capability, the template, its tests and its localization all exist; the only
+missing wire is the GET handler's body. Deleting would discard working,
+tested code to resolve a one-line omission.
+
+**Two consequences worth stating plainly:**
+
+- **§9 was wrong about the level.** It said deleting a documented admin route
+  removes a surface, so a release carrying the triage is at least a minor.
+  Nothing is deleted and no surface changes, so **this is a patch** — the same
+  reasoning as RFC 143: restoring behaviour a template already implements.
+- **The new gate in §4.2 becomes the smaller half of the work.** A route
+  declared **`server`** is already covered by **E3**, which asserts that a
+  `server`-declared route's handler does not call `leptos_html_shell`.
+  Converting these rows to `server` puts all thirty-four under a gate **that
+  already exists** and has a six-month record. §4.2's check is still worth
+  adding, for the rows that legitimately stay `client` after this — but it
+  guards a residue, not the class.
+
+That is the strongest argument for converting rather than deleting: it moves
+thirty-four routes from a class nothing checks into a class something already
+checks.
+
+### 11.3 Two exclusions
+
+- **`/admin/console/clients` is excluded from RFC 145.** It has no template
+  (`console/clients.rs` is JSON throughout) and **RFC 141 §4.1 cycle 2 owns
+  it.** It is the one route of the thirty-five that genuinely needs a screen
+  built. RFC 145's list is therefore **34**.
+- **`/admin/t/:slug/deletion-requests` has no template anywhere.** It is in
+  scope, but the implementer reports what it needs rather than inventing a
+  template to match a contract row — the row may be the thing that is wrong.
+
+### 11.4 Cycle split
+
+Thirty-four routes is too much for one cycle, and the §4.2 gate cannot land
+until the last row is resolved or it fails the tree.
+
+Grouping the thirty-five by path prefix: **`/admin/console/*` 3**
+(one of which is `clients`, excluded), **`/admin/t/:slug/* ` 12**,
+**`/admin/tenancy/*` 20** — so RFC 145's scope is `2 + 12 + 20 = 34`, and the
+cycles below are `3 + 11 + 20 = 34`.
+
+- **Cycle 1 — the operator console and the only reachable defect.**
+  `/admin/console/tokens/new` (linked from a working screen),
+  `/admin/console/config/:bucket/edit`, and the
+  `/admin/t/:slug/deletion-requests` question. Three routes, and it ends the
+  only instance an operator can currently reach.
+- **Cycle 2 — the eleven `/admin/t/:slug/…` tenant-admin routes.**
+- **Cycle 3 — the twenty `/admin/tenancy/…` routes, plus the §4.2 gate** and
+  its fires/does-not-fire pair.
+
+Each cycle's routes become `server`-declared, so **E3 begins guarding them as
+each cycle lands**, rather than everything waiting on cycle 3.
