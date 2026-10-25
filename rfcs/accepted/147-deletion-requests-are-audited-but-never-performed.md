@@ -1,6 +1,6 @@
 # RFC 147 — Deletion requests are audited but never performed
 
-**Status.** Proposed — awaiting owner authorization.
+**Status.** Accepted — approved by the owner 2026-10-25.
 **Tier.** **P1 · Category A** — a user's request to delete their own account is
 silently discarded, a documented irreversible operation does nothing, and the
 audit log records a deletion that did not happen.
@@ -259,3 +259,20 @@ dilutes review attention on the dangerous part.
   record says it is gone, never the reverse (§3), and no UI leads a user here.
 - **The sweep is still untouched** and remains the single execution path.
 - **RFC 044's grace period and self-service design** are still not reopened.
+
+## 12. Found while dispatching cycle 1: the event column has no gate behind it
+
+`route-contracts.md:107,110,111` declare these routes' audit events
+(`deletion_requested`, `deletion_cancelled`, `deletion_executed`). **Nothing
+verifies that column.** `scripts/route-contracts-check.sh` does not read it, and
+the audit scanner in `crates/backend/src/audit/tests.rs` checks audit call
+*arguments* against a secret denylist, not whether a declared event ever fires
+or whether the operation beside it happened.
+
+That is how three routes came to emit the events their contract promises while
+performing none of the work: **the only part of the contract they satisfied was
+the part a gate could see, and no gate saw any of it.**
+
+**Not in scope here.** RFC 123 (audit-event completeness, proposed) is where a
+check belongs, and this is a concrete argument for it rather than a new task for
+this RFC. Recorded so RFC 123 inherits the example.
