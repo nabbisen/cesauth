@@ -284,3 +284,49 @@ recorded beside the id, and an explicit revisit trigger: if cesauth ever signs
 with P-256 — ES256 JWT support or any ECDSA signing path — the acceptance is void
 and the stack must be upgraded first.** The upgrade remains a recorded
 candidate, not a mid-feature decision.
+
+### 12.5 C1-141 accepted (2026-10-25)
+
+Re-verified independently at `b16c2b1`: **1,542** host tests passed, `deny` and
+`audit` **exit 0** with **0** advisory hits, clippy green over six crates,
+route-contracts **All 194 routes**, drift and mdbook green. The id is recorded
+twice in each of `deny.toml` and `audit.toml` (the entry plus its justification),
+`audit_export.rs` now has **4** CSRF references where it had **0**, and
+`token_auth_method` carries **6** update tests. Review:
+`.git-exclude/reviewed/c1-141-review.md`.
+
+## 13. Cycle 2 scope: six console `page_json` handlers are never registered
+
+Found while verifying C1-141's route count, and recorded here because cycle 2
+owns the console screen.
+
+```
+for f in $(grep -rln 'pub async fn page_json' crates/backend/src/routes/admin/console/); do
+  printf '%-18s %s\n' "$(basename $f .rs)" "$(grep -c "console::$(basename $f .rs)::page_json" crates/backend/src/lib.rs)"
+done
+```
+
+**Six modules define `pub async fn page_json` and `lib.rs` references them zero
+times:** `alerts`, `audit`, `audit_chain`, `config`, `cost`, `safety`.
+`operations_route` has 1 and `overview` has 2, so the pattern is real and these
+six are the exceptions. Three reasons nothing caught it: the handlers are `pub`,
+so dead-code analysis cannot fire; the paths appear in **neither** the registered
+set nor `route-contracts.md`, and the check compares those two sets against each
+other, so a route absent from both is invisible to it; and the console frontend
+fetches the HTML paths, so no screen is broken.
+
+That last point is why this is not a bug report — nothing is failing. It is the
+**declared-but-never-wired** class, the same shape as RFC 141 §10.2's
+non-existent tenant-admin editor: a reader who finds `audit::page_json` has no
+way to tell it is unreachable, and reasonably assumes the JSON surface exists.
+
+**Decision (architect, 2026-10-25): two options, no third.** Each of the six is
+either (a) **registered with an actual consumer and a `route-contracts.md` row**,
+or (b) **deleted**. "Leave it for later" is not available: it is what produced
+six of them. Cycle 2 reports which option each handler took and why.
+
+**The gate must also change.** A check that cannot see a route absent from both
+sets will let the seventh one through. Cycle 2 adds a third direction to
+`route-contracts-check.sh`: **a `page_json` handler defined under
+`routes/admin/console/` and referenced nowhere in `lib.rs` fails the check.**
+Without that, this section is a cleanup; with it, the class is closed.
