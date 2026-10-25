@@ -40,7 +40,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     };
 
     if slug.trim().is_empty() || display_name.trim().is_empty() {
-        return render::html_response(organization_create_form(
+        return render::html_response(|| organization_create_form(
             &principal, &tenant, &slug, &display_name,
             Some("Slug and display name are required"),
         ));
@@ -53,7 +53,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         Err(_) => return Response::error("storage error", 500),
     };
     if let Some(_) = quota::into_response_if_exceeded(outcome) {
-        return render::html_response(organization_create_form(
+        return render::html_response(|| organization_create_form(
             &principal, &tenant, &slug, &display_name,
             Some("Quota exceeded — this tenant's plan does not allow more organizations"),
         ));
@@ -71,7 +71,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
                     => m.to_owned(),
                 _ => "Storage error".to_owned(),
             };
-            return render::html_response(organization_create_form(
+            return render::html_response(|| organization_create_form(
                 &principal, &tenant, &slug, &display_name, Some(&msg),
             ));
         }

@@ -117,13 +117,13 @@ pub async fn create<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     let role_str = match form.get("role").map(String::as_str) {
         Some(s) => s,
         None    => {
-            return render::html_response(ui::admin::token_new_form(&principal, Some("role is required")));
+            return render::html_response(|| ui::admin::token_new_form(&principal, Some("role is required")));
         }
     };
     let role = match Role::from_str(role_str) {
         Some(r) => r,
         None    => {
-            return render::html_response(ui::admin::token_new_form(
+            return render::html_response(|| ui::admin::token_new_form(
                 &principal, Some("role must be one of: read_only, security, operations, super"),
             ));
         }
@@ -136,7 +136,7 @@ pub async fn create<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         .map(str::to_owned);
     if let Some(n) = name.as_deref() {
         if n.len() > 128 {
-            return render::html_response(ui::admin::token_new_form(
+            return render::html_response(|| ui::admin::token_new_form(
                 &principal, Some("label too long (max 128 chars)"),
             ));
         }
@@ -152,7 +152,7 @@ pub async fn create<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         Err(cesauth_core::ports::PortError::Conflict) => {
             // Astronomically unlikely with 256-bit plaintext, but
             // handle it cleanly rather than panic.
-            return render::html_response(ui::admin::token_new_form(
+            return render::html_response(|| ui::admin::token_new_form(
                 &principal, Some("token hash collision — please try again"),
             ));
         }
@@ -170,7 +170,7 @@ pub async fn create<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         Some(minted.id.clone()), None, Some(format!("role={} by={}", role.as_str(), principal.id)),
     ).await.ok();
 
-    render::html_response(ui::admin::token_created_page(&principal, &minted, &plaintext))
+    render::html_response(|| ui::admin::token_created_page(&principal, &minted, &plaintext))
 }
 
 // -------------------------------------------------------------------------

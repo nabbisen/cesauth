@@ -48,7 +48,7 @@ pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<
         let tenant = match tenants.get(&tid).await {
             Ok(Some(t)) => t, _ => return Response::error("not found", 404),
         };
-        return render::html_response(ui::for_tenant(&principal, &tenant.id, &tenant.slug, &uid, "(unknown)"));
+        return render::html_response(|| ui::for_tenant(&principal, &tenant.id, &tenant.slug, &uid, "(unknown)"));
     }
 
     let memberships = CloudflareMembershipRepository::new(&ctx.env);
@@ -94,7 +94,7 @@ pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Res
         let org = match orgs.get(&oid).await {
             Ok(Some(o)) => o, _ => return Response::error("not found", 404),
         };
-        return render::html_response(ui::for_organization(&principal, &org.id, &org.slug, &uid, "(unknown)"));
+        return render::html_response(|| ui::for_organization(&principal, &org.id, &org.slug, &uid, "(unknown)"));
     }
 
     let memberships = CloudflareMembershipRepository::new(&ctx.env);
@@ -141,7 +141,7 @@ pub async fn submit_group<D>(mut req: Request, ctx: RouteContext<D>) -> Result<R
     };
 
     if !confirmed(&form) {
-        return render::html_response(ui::for_group(&principal, &group.id, &group.slug, &group.tenant_id, &uid));
+        return render::html_response(|| ui::for_group(&principal, &group.id, &group.slug, &group.tenant_id, &uid));
     }
 
     let memberships = CloudflareMembershipRepository::new(&ctx.env);

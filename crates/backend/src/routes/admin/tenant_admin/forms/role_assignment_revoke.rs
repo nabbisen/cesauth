@@ -118,7 +118,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
 
     let form = parse_form(&mut req).await?;
     if !confirmed(&form) {
-        return render::html_response(preview_page(
+        return render::html_response(|| preview_page(
             &ctx_ta.principal, &ctx_ta.tenant,
             &RevokeInput {
                 assignment: &assignment,

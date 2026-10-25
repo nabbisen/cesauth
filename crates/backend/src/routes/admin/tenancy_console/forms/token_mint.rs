@@ -90,7 +90,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     let role = match parse_role(&role_str) {
         Some(r) => r,
         None    => {
-            return render::html_response(form_page(
+            return render::html_response(|| form_page(
                 &principal,
                 &MintInput {
                     subject_user: &user, role: &role_str, name: &name,
@@ -101,7 +101,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     };
 
     if name.trim().is_empty() {
-        return render::html_response(form_page(
+        return render::html_response(|| form_page(
             &principal,
             &MintInput {
                 subject_user: &user, role: &role_str, name: &name,
@@ -111,7 +111,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     }
 
     if !confirmed(&form) {
-        return render::html_response(preview_page(
+        return render::html_response(|| preview_page(
             &principal,
             &MintPreviewInput { subject_user: &user, role, name: &name },
         ));
@@ -145,5 +145,5 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
             user.id, role, name).to_lowercase()),
     ).await.ok();
 
-    render::html_response(applied_page(&principal, &user, &tenant_slug, role, &plaintext))
+    render::html_response(|| applied_page(&principal, &user, &tenant_slug, role, &plaintext))
 }

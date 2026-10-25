@@ -30,7 +30,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     let owner_user_id = form.get("owner_user_id").cloned().unwrap_or_default();
 
     if slug.trim().is_empty() || display_name.trim().is_empty() || owner_user_id.trim().is_empty() {
-        return render::html_response(tenant_create_form(
+        return render::html_response(|| tenant_create_form(
             &principal, &slug, &display_name, &owner_user_id,
             Some("All fields are required"),
         ));
@@ -60,7 +60,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
                     => "Owner user id not found".to_owned(),
                 _ => "Storage error".to_owned(),
             };
-            return render::html_response(tenant_create_form(
+            return render::html_response(|| tenant_create_form(
                 &principal, &slug, &display_name, &owner_user_id, Some(&msg),
             ));
         }

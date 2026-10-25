@@ -81,7 +81,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     let display_name = form.get("display_name").cloned().unwrap_or_default();
 
     if slug.trim().is_empty() || display_name.trim().is_empty() {
-        return render::html_response(group_create_form(
+        return render::html_response(|| group_create_form(
             &ctx_ta.principal, &ctx_ta.tenant, &org, &slug, &display_name,
             Some("Slug and display name are required"),
         ));
@@ -108,7 +108,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
                     => m.to_owned(),
                 _ => "Storage error".to_owned(),
             };
-            return render::html_response(group_create_form(
+            return render::html_response(|| group_create_form(
                 &ctx_ta.principal, &ctx_ta.tenant, &org, &slug, &display_name, Some(&msg),
             ));
         }

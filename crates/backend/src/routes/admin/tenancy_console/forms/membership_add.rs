@@ -61,13 +61,13 @@ pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<
         "owner"  => TenantMembershipRole::Owner,
         "admin"  => TenantMembershipRole::Admin,
         "member" => TenantMembershipRole::Member,
-        _ => return render::html_response(ui::for_tenant(
+        _ => return render::html_response(|| ui::for_tenant(
             &principal, &tenant.id, &tenant.slug, &user_id, &role_str,
             Some("Choose a role"),
         )),
     };
     if user_id.trim().is_empty() {
-        return render::html_response(ui::for_tenant(
+        return render::html_response(|| ui::for_tenant(
             &principal, &tenant.id, &tenant.slug, &user_id, &role_str,
             Some("User id is required"),
         ));
@@ -87,7 +87,7 @@ pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<
                 => "User id not found".to_owned(),
             _ => "Storage error".to_owned(),
         };
-        return render::html_response(ui::for_tenant(
+        return render::html_response(|| ui::for_tenant(
             &principal, &tenant.id, &tenant.slug, &user_id, &role_str, Some(&msg),
         ));
     }
@@ -133,13 +133,13 @@ pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Res
     let role = match role_str.as_str() {
         "admin"  => OrganizationRole::Admin,
         "member" => OrganizationRole::Member,
-        _ => return render::html_response(ui::for_organization(
+        _ => return render::html_response(|| ui::for_organization(
             &principal, &org.id, &org.slug, &user_id, &role_str,
             Some("Choose a role"),
         )),
     };
     if user_id.trim().is_empty() {
-        return render::html_response(ui::for_organization(
+        return render::html_response(|| ui::for_organization(
             &principal, &org.id, &org.slug, &user_id, &role_str,
             Some("User id is required"),
         ));
@@ -159,7 +159,7 @@ pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Res
                 => "User id not found".to_owned(),
             _ => "Storage error".to_owned(),
         };
-        return render::html_response(ui::for_organization(
+        return render::html_response(|| ui::for_organization(
             &principal, &org.id, &org.slug, &user_id, &role_str, Some(&msg),
         ));
     }
@@ -202,7 +202,7 @@ pub async fn submit_group<D>(mut req: Request, ctx: RouteContext<D>) -> Result<R
     };
 
     if user_id.trim().is_empty() {
-        return render::html_response(ui::for_group(
+        return render::html_response(|| ui::for_group(
             &principal, &group.id, &group.slug, &group.tenant_id, &user_id,
             Some("User id is required"),
         ));
@@ -222,7 +222,7 @@ pub async fn submit_group<D>(mut req: Request, ctx: RouteContext<D>) -> Result<R
                 => "User id not found".to_owned(),
             _ => "Storage error".to_owned(),
         };
-        return render::html_response(ui::for_group(
+        return render::html_response(|| ui::for_group(
             &principal, &group.id, &group.slug, &group.tenant_id, &user_id, Some(&msg),
         ));
     }

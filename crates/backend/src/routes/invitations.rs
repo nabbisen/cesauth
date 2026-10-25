@@ -24,7 +24,7 @@ use crate::routes::admin::tenant_admin::gate;
 
 /// Return a simple HTML error page for form validation failures.
 fn form_error(msg: &str) -> Result<Response> {
-    render::html_response(format!(
+    render::html_response(|| format!(
         "<html><head><title>Error</title></head><body><p>{}</p></body></html>",
         msg
     ))
@@ -82,7 +82,7 @@ pub async fn issue<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
             log::emit(&cfg.log, Level::Warn, Category::Auth,
                 &format!("duplicate invitation for {email} in tenant {}", ctx_ta.tenant.slug),
                 Some(&ctx_ta.principal.id));
-            return render::html_response("<html><body><p>A pending invitation for this email already exists. Please wait for it to expire or have an admin revoke it.</p></body></html>".to_owned());
+            return render::html_response(|| "<html><body><p>A pending invitation for this email already exists. Please wait for it to expire or have an admin revoke it.</p></body></html>".to_owned());
         }
         Err(e) => {
             log::emit(&cfg.log, Level::Error, Category::Storage,
@@ -152,6 +152,16 @@ pub async fn accept_page<D>(req: Request, ctx: RouteContext<D>) -> Result<Respon
         Err(_) => return Response::error("internal error", 500),
     };
 
+    // RFC 146 §5 gate 2: `body` is built here, outside the `html_response`
+    // closure below, because the `Valid` arm's `crate::csrf::mint()?` uses
+    // `?` against this function's own `Result` — a `FnOnce() -> String`
+    // closure cannot propagate that. Reported rather than restructured
+    // (moving the mint unconditionally earlier would mint a CSRF token,
+    // and risk failing closed, on the four outcomes that never needed one
+    // before). Dormant, not live: this template never calls
+    // `crate::render_nonce()` — no `<style nonce>` here — so today's
+    // CSP header's unused nonce token is the only thing this site's
+    // pre-fix ordering affects, and it affects nothing a reader can see.
     let body = match outcome {
         InvitationVerifyOutcome::Valid(inv) => {
             let csrf = crate::csrf::mint().map_err(|_| worker::Error::RustError("csrf".into()))?;
@@ -186,7 +196,7 @@ sent to <strong>{email}</strong>.</p>
             "<html><body><p>Invitation not found. The link may be invalid.</p></body></html>".to_owned(),
     };
 
-    render::html_response(body)
+    render::html_response(|| body)
 }
 
 // ---------------------------------------------------------------------------
@@ -215,11 +225,11 @@ pub async fn accept_submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<
     let inv = match outcome {
         InvitationVerifyOutcome::Valid(i) => i,
         InvitationVerifyOutcome::Expired =>
-            return render::html_response("<html><body>Invitation expired.</body></html>".to_owned()),
+            return render::html_response(|| "<html><body>Invitation expired.</body></html>".to_owned()),
         InvitationVerifyOutcome::Revoked =>
-            return render::html_response("<html><body>Invitation revoked.</body></html>".to_owned()),
+            return render::html_response(|| "<html><body>Invitation revoked.</body></html>".to_owned()),
         InvitationVerifyOutcome::AlreadyAccepted =>
-            return render::html_response("<html><body>Already accepted. Please sign in.</body></html>".to_owned()),
+            return render::html_response(|| "<html><body>Already accepted. Please sign in.</body></html>".to_owned()),
         InvitationVerifyOutcome::NotFound =>
             return Response::error("invitation not found", 404),
     };

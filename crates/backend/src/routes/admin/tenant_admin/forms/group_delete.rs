@@ -107,7 +107,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     let form = parse_form(&mut req).await?;
     let reason = form.get("reason").cloned().unwrap_or_default();
     if reason.trim().is_empty() {
-        return render::html_response(form_page(
+        return render::html_response(|| form_page(
             &ctx_ta.principal, &ctx_ta.tenant, &group, &org_slug, &org_id, "",
             Some("Reason is required"),
         ));
@@ -126,7 +126,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
             .list_group_members(&group.id)
             .await.map(|v| v.len()).unwrap_or(0);
 
-        return render::html_response(preview_page(
+        return render::html_response(|| preview_page(
             &ctx_ta.principal, &ctx_ta.tenant, &group, &org_id,
             &reason, n_assignments, n_memberships,
         ));

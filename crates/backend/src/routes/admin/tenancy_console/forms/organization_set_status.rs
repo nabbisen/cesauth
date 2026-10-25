@@ -39,7 +39,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
             let org = match orgs.get(&oid).await {
                 Ok(Some(o)) => o, _ => return Response::error("not found", 404),
             };
-            return render::html_response(form_page(
+            return render::html_response(|| form_page(
                 &principal, &org, None, "", Some("Choose a target status"),
             ));
         }
@@ -52,13 +52,13 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     };
 
     if reason.trim().is_empty() {
-        return render::html_response(form_page(
+        return render::html_response(|| form_page(
             &principal, &org, Some(target), "", Some("Reason is required"),
         ));
     }
 
     if !confirmed(&form) {
-        return render::html_response(confirm_page(&principal, &org, target, &reason));
+        return render::html_response(|| confirm_page(&principal, &org, target, &reason));
     }
 
     let now = OffsetDateTime::now_utc().unix_timestamp();

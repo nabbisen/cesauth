@@ -85,7 +85,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         Some("suspended") => OrganizationStatus::Suspended,
         Some("deleted")   => OrganizationStatus::Deleted,
         _ => {
-            return render::html_response(form_page(
+            return render::html_response(|| form_page(
                 &ctx_ta.principal, &ctx_ta.tenant, &org, None, "",
                 Some("Choose a target status"),
             ));
@@ -94,14 +94,14 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     let reason = form.get("reason").cloned().unwrap_or_default();
 
     if reason.trim().is_empty() {
-        return render::html_response(form_page(
+        return render::html_response(|| form_page(
             &ctx_ta.principal, &ctx_ta.tenant, &org, Some(target), "",
             Some("Reason is required"),
         ));
     }
 
     if !confirmed(&form) {
-        return render::html_response(preview_page(
+        return render::html_response(|| preview_page(
             &ctx_ta.principal, &ctx_ta.tenant, &org, target, &reason,
         ));
     }

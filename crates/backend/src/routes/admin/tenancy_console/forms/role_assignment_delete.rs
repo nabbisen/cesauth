@@ -71,7 +71,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
             return Response::error("assignment not found", 404);
         };
         let label = role_label(&ctx.env, &assignment.role_id).await;
-        return render::html_response(confirm_page(&principal, &user_id, &assignment, &label));
+        return render::html_response(|| confirm_page(&principal, &user_id, &assignment, &label));
     }
 
     let repo = CloudflareRoleAssignmentRepository::new(&ctx.env);

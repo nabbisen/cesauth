@@ -60,7 +60,7 @@ pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<
     };
     let form = parse_form(&mut req).await?;
     if !confirmed(&form) {
-        return render::html_response(ui::for_tenant(
+        return render::html_response(|| ui::for_tenant(
             &ctx_ta.principal, &ctx_ta.tenant, &uid, "(unknown)",
         ));
     }
@@ -144,7 +144,7 @@ pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Res
     };
     let form = parse_form(&mut req).await?;
     if !confirmed(&form) {
-        return render::html_response(ui::for_organization(
+        return render::html_response(|| ui::for_organization(
             &ctx_ta.principal, &ctx_ta.tenant, &org.id, &org.slug, &uid, "(unknown)",
         ));
     }
@@ -232,7 +232,7 @@ pub async fn submit_group<D>(mut req: Request, ctx: RouteContext<D>) -> Result<R
     };
     let form = parse_form(&mut req).await?;
     if !confirmed(&form) {
-        return render::html_response(ui::for_group(
+        return render::html_response(|| ui::for_group(
             &ctx_ta.principal, &ctx_ta.tenant,
             &group.id, &group.slug, &org_id, &uid,
         ));

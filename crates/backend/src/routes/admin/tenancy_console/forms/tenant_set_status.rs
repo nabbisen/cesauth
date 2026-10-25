@@ -46,7 +46,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
                 Ok(Some(t)) => t,
                 _           => return Response::error("not found", 404),
             };
-            return render::html_response(form_page(
+            return render::html_response(|| form_page(
                 &principal, &tenant, None, "", Some("Choose a target status"),
             ));
         }
@@ -58,7 +58,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
             Ok(Some(t)) => t,
             _           => return Response::error("not found", 404),
         };
-        return render::html_response(form_page(
+        return render::html_response(|| form_page(
             &principal, &tenant, Some(target), "", Some("Reason is required"),
         ));
     }
@@ -72,7 +72,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
 
     if !confirmed(&form) {
         // Step 2: render the confirm page with the diff.
-        return render::html_response(confirm_page(&principal, &tenant, target, &reason));
+        return render::html_response(|| confirm_page(&principal, &tenant, target, &reason));
     }
 
     // Step 3: commit.

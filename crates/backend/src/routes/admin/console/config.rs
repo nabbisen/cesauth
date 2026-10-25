@@ -252,15 +252,13 @@ pub async fn edit_submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Re
     if !confirmed {
         // First POST: render the confirmation page.
         match preview_bucket_safety_change(&safety, &change).await {
-            Ok(diff) => render::html_response(
-                ui::admin::config_confirm_page(&principal, &diff)
-            ),
+            Ok(diff) => render::html_response(|| ui::admin::config_confirm_page(&principal, &diff)),
             Err(cesauth_core::ports::PortError::NotFound) => {
                 let state = match cesauth_core::admin::ports::BucketSafetyRepository::get(&safety, &bucket).await {
                     Ok(Some(s)) => s,
                     _           => return Response::error("unknown bucket", 404),
                 };
-                render::html_response(ui::admin::config_edit_form(
+                render::html_response(|| ui::admin::config_edit_form(
                     &principal, &state, Some("unknown bucket"),
                 ))
             }
@@ -364,23 +362,30 @@ pub async fn log_level_preview<D>(mut req: Request, ctx: RouteContext<D>) -> Res
     let can_apply = matches!(principal.role,
         cesauth_core::admin::types::Role::Operations | cesauth_core::admin::types::Role::Super);
 
-    let body = ui::admin::preview::preview_body(
-        &diff, &impact,
-        "/admin/console/config/log_level/apply",
-        "/admin/console/config",
-        &token,
-        &csrf_val,
-        can_apply,
-    );
-    let page = ui::admin::frame::admin_frame(
-        "Log level change preview",
-        principal.role,
-        principal.name.as_deref(),
-        ui::admin::frame::Tab::Config,
-        &ScopeBadge::System,
-        &body,
-    );
-    render::html_response(page)
+    // RFC 146: `admin_frame` reads the render-context nonce global, so the
+    // render — not just the call to `html_response` — must happen inside
+    // the closure. A mechanical D3 conversion that merely wrapped the
+    // already-built page string in a closure would have left this site's
+    // real nonce-ordering bug unfixed, unlike most of the 77: this is one
+    // of the two sites found where the body was pre-built in a local.
+    render::html_response(|| {
+        let body = ui::admin::preview::preview_body(
+            &diff, &impact,
+            "/admin/console/config/log_level/apply",
+            "/admin/console/config",
+            &token,
+            &csrf_val,
+            can_apply,
+        );
+        ui::admin::frame::admin_frame(
+            "Log level change preview",
+            principal.role,
+            principal.name.as_deref(),
+            ui::admin::frame::Tab::Config,
+            &ScopeBadge::System,
+            &body,
+        )
+    })
 }
 
 // -------------------------------------------------------------------------

@@ -47,7 +47,7 @@ pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<
     };
 
     if slug.trim().is_empty() || display_name.trim().is_empty() {
-        return render::html_response(ui::for_tenant(
+        return render::html_response(|| ui::for_tenant(
             &principal, &tenant.id, &tenant.slug, &slug, &display_name,
             Some("Slug and display name are required"),
         ));
@@ -88,7 +88,7 @@ pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Res
     };
 
     if slug.trim().is_empty() || display_name.trim().is_empty() {
-        return render::html_response(ui::for_organization(
+        return render::html_response(|| ui::for_organization(
             &principal, &org.id, &org.slug, &slug, &display_name,
             Some("Slug and display name are required"),
         ));
@@ -117,7 +117,7 @@ async fn create_and_redirect<F: FnOnce(&str) -> String>(
         Ok(o) => o, Err(_) => return Response::error("storage error", 500),
     };
     if let Some(_) = quota::into_response_if_exceeded(outcome) {
-        return render::html_response(rerender(
+        return render::html_response(|| rerender(
             "Quota exceeded — this tenant's plan does not allow more groups",
         ));
     }
@@ -137,7 +137,7 @@ async fn create_and_redirect<F: FnOnce(&str) -> String>(
                     => m.to_owned(),
                 _ => "Storage error".to_owned(),
             };
-            return render::html_response(rerender(&msg));
+            return render::html_response(|| rerender(&msg));
         }
     };
 

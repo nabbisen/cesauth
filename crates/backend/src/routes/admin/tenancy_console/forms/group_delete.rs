@@ -36,7 +36,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         let group = match groups.get(&gid).await {
             Ok(Some(g)) => g, _ => return Response::error("not found", 404),
         };
-        return render::html_response(confirm_page(&principal, &group));
+        return render::html_response(|| confirm_page(&principal, &group));
     }
 
     let groups = CloudflareGroupRepository::new(&ctx.env);

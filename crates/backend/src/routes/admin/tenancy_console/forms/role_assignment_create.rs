@@ -39,7 +39,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     let roles_repo = CloudflareRoleRepository::new(&ctx.env);
     let available = roles_repo.list_system_roles().await.unwrap_or_default();
 
-    let render_err = |err: &str| render::html_response(role_assignment_create_form(&principal, &RoleAssignmentCreateInput {
+    let render_err = |err: &str| render::html_response(|| role_assignment_create_form(&principal, &RoleAssignmentCreateInput {
         user_id: &uid,
         available_roles: &available,
         role_id: &role_id, scope_type: &scope_type, scope_id: &scope_id, expires_at: &expires_at,

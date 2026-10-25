@@ -53,7 +53,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
 
     if plan_id.trim().is_empty() {
         let available = plans.list_active().await.unwrap_or_default();
-        return render::html_response(form_page(
+        return render::html_response(|| form_page(
             &principal, &tenant.id, &tenant.slug, &current,
             current_plan.as_ref(), &available, "",
             Some("Select a target plan"),
@@ -64,7 +64,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         Some(p) => p,
         None => {
             let available = plans.list_active().await.unwrap_or_default();
-            return render::html_response(form_page(
+            return render::html_response(|| form_page(
                 &principal, &tenant.id, &tenant.slug, &current,
                 current_plan.as_ref(), &available, &plan_id,
                 Some("Unknown plan id"),
@@ -73,14 +73,14 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     };
 
     if !confirmed(&form) {
-        return render::html_response(confirm_page(
+        return render::html_response(|| confirm_page(
             &principal, &tenant.id, &tenant.slug, current_plan.as_ref(), &target_plan,
         ));
     }
 
     if !target_plan.active {
         let available = plans.list_active().await.unwrap_or_default();
-        return render::html_response(form_page(
+        return render::html_response(|| form_page(
             &principal, &tenant.id, &tenant.slug, &current,
             current_plan.as_ref(), &available, &plan_id,
             Some("Target plan is inactive — refusing"),

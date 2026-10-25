@@ -107,7 +107,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     let expires_at_raw = form.get("expires_at").cloned().unwrap_or_default();
 
     let available = list_available_roles(&ctx.env, &ctx_ta.tenant.id).await;
-    let render_err = |err: &str, sid: &str| render::html_response(grant_form(
+    let render_err = |err: &str, sid: &str| render::html_response(|| grant_form(
         &ctx_ta.principal, &ctx_ta.tenant,
         &GrantInput {
             subject_user: &user,
@@ -175,7 +175,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         let role_label = format!("{} ({})", role.display_name, role.slug);
         let scope_label = render_scope_label(&scope);
         let exp_text = expires.map(|e| e.to_string());
-        return render::html_response(preview_page(
+        return render::html_response(|| preview_page(
             &ctx_ta.principal, &ctx_ta.tenant,
             &role_id, &scope_type, &scope_id_raw, &expires_at_raw,
             &PreviewInput {

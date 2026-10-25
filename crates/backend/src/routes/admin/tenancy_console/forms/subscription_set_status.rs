@@ -50,7 +50,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
                 Ok(Some(s)) => s,
                 _ => return Response::error("no subscription on file", 404),
             };
-            return render::html_response(form_page(
+            return render::html_response(|| form_page(
                 &principal, &tenant.id, &tenant.slug, &current, None,
                 Some("Choose a target status"),
             ));
@@ -68,7 +68,7 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     };
 
     if !confirmed(&form) {
-        return render::html_response(confirm_page(
+        return render::html_response(|| confirm_page(
             &principal, &tenant.id, &tenant.slug, &current, target,
         ));
     }
