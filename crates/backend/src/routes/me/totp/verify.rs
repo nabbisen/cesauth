@@ -121,6 +121,22 @@ where
 }
 
 
+/// The GET page's composition: the HTML body and the `set-cookie` header
+/// value that carries its embedded CSRF token. Pure string composition, no
+/// `worker::Env` / `Response` — host-testable, so the CSRF round-trip
+/// (`csrf_token` appears verbatim in both outputs) and the cookie's
+/// attributes are asserted once here, not only by a live walkthrough
+/// (**RFC 143 C1-143 item 1**). `get_handler`'s `RenderPage` arm is this
+/// function's only caller.
+pub(crate) fn render_verify_page(
+    csrf_token: &str,
+    locale:     cesauth_core::i18n::Locale,
+) -> (String, String) {
+    let html       = templates::totp_verify_page_for(csrf_token, None, locale);
+    let set_cookie = csrf::set_cookie_header(csrf_token);
+    (html, set_cookie)
+}
+
 /// `GET /me/security/totp/verify` — render the prompt page, server-side
 /// (RFC 143 — this route is the only one on the sign-in path that was still
 /// exempt from RFC 132's render-server-side rule; see `E3_EXEMPT` in
@@ -150,13 +166,16 @@ pub async fn get_handler(
             let csrf_token = csrf::mint()
                 .map_err(|_| worker::Error::RustError("csrf rng failed".into()))?;
             let locale = crate::i18n::resolve_locale(&req);
-            let html = templates::totp_verify_page_for(&csrf_token, None, locale);
+            let (html, set_cookie) = render_verify_page(&csrf_token, locale);
             let mut resp = Response::from_html(html)?;
-            // Not optional: the template embeds this exact token, and
-            // `csrf.rs` compares a submission against the cookie. Minting
-            // without setting it would fail every submission on this page.
-            resp.headers_mut().append("set-cookie",
-                &csrf::set_cookie_header(&csrf_token)).ok();
+            // RFC 143 C1-143 item 6 — NOT `.ok()`: the template embeds this
+            // exact token, and `csrf.rs` compares a submission against the
+            // cookie. A failed append here means every submission on this
+            // page would fail, silently, forever; propagate instead, so the
+            // page returns an error rather than a 200 nobody can use.
+            resp.headers_mut().append("set-cookie", &set_cookie)?;
+            // Best-effort: a missing `cache-control` is a caching nit, not
+            // a page the user cannot use.
             resp.headers_mut().set("cache-control", "no-store").ok();
             Ok(resp)
         }

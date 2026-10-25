@@ -461,3 +461,72 @@ async fn rfc140_verify_rejects_an_expired_gate_and_does_not_repark_it() {
     assert!(store.peek(&totp_handle(), now).await.unwrap().is_none(),
         "an expired gate must not be re-parked");
 }
+
+// =====================================================================
+// RFC 143 C1-143 — render_verify_page: the CSRF round-trip, the cookie's
+// attributes, and locale, asserted as a host test rather than only by a
+// live walkthrough.
+// =====================================================================
+
+/// A token drawn from `csrf::mint()`'s actual alphabet (base64url,
+/// `[A-Za-z0-9_-]`), so `escape()`'s HTML-escaping is a no-op on it and a
+/// plain substring search is a faithful parse — not a coincidence of this
+/// particular test string.
+const TEST_CSRF_TOKEN: &str = "QzFfYWJjMTIzWFlaOTk-_test-token";
+
+/// Pull the `csrf` hidden input's value out of the rendered HTML. Fails
+/// the test loudly (`expect`) rather than returning an `Option` silently
+/// treated as "wasn't there" — a parse failure here means the form shape
+/// changed, which is itself worth knowing.
+fn csrf_value_from_html(html: &str) -> &str {
+    let needle = r#"name="csrf" value=""#;
+    let start = html.find(needle).expect("rendered page must have a csrf hidden input") + needle.len();
+    let rest = &html[start..];
+    let end = rest.find('"').expect("csrf input's value attribute must close");
+    &rest[..end]
+}
+
+/// Pull the CSRF cookie's token out of a `set-cookie` header value shaped
+/// like `csrf::set_cookie_header` produces it (`NAME=token; attr; attr…`).
+fn csrf_value_from_cookie(set_cookie: &str) -> &str {
+    let rest = set_cookie.strip_prefix("__Host-cesauth-csrf=").expect("cookie must start with the CSRF cookie name");
+    rest.split(';').next().expect("cookie must have a value before the first ';'")
+}
+
+#[test]
+fn render_verify_page_round_trips_the_csrf_token() {
+    let (html, set_cookie) = render_verify_page(TEST_CSRF_TOKEN, cesauth_core::i18n::Locale::En);
+    // Not "both contain the token" — an equality on the two independently
+    // extracted values, so a mix-up (e.g. the cookie carrying a freshly
+    // re-minted token instead of the one embedded in the form) would fail
+    // this, where a substring check on each separately would not.
+    assert_eq!(csrf_value_from_html(&html), TEST_CSRF_TOKEN);
+    assert_eq!(csrf_value_from_cookie(&set_cookie), TEST_CSRF_TOKEN);
+    assert_eq!(csrf_value_from_html(&html), csrf_value_from_cookie(&set_cookie));
+}
+
+#[test]
+fn render_verify_page_cookie_has_the_required_attributes() {
+    let (_, set_cookie) = render_verify_page(TEST_CSRF_TOKEN, cesauth_core::i18n::Locale::En);
+    for attr in ["Path=/", "Secure", "HttpOnly", "SameSite=Strict"] {
+        assert!(set_cookie.contains(attr), "set-cookie {set_cookie:?} must contain {attr:?}");
+    }
+}
+
+#[test]
+fn render_verify_page_honours_locale() {
+    use cesauth_core::i18n::{lookup, Locale, MessageKey};
+
+    let (html_en, _) = render_verify_page(TEST_CSRF_TOKEN, Locale::En);
+    let (html_ja, _) = render_verify_page(TEST_CSRF_TOKEN, Locale::Ja);
+
+    assert!(html_en.contains(lookup(MessageKey::TotpVerifyTitle, Locale::En)));
+    assert!(html_ja.contains(lookup(MessageKey::TotpVerifyTitle, Locale::Ja)));
+    // The two locales must actually say something different — otherwise
+    // the assertions above could both pass against a catalog bug that
+    // made the lookups collide.
+    assert_ne!(
+        lookup(MessageKey::TotpVerifyTitle, Locale::En),
+        lookup(MessageKey::TotpVerifyTitle, Locale::Ja),
+    );
+}

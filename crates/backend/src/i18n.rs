@@ -33,9 +33,54 @@ use worker::Request;
 /// fall through to default). The header value passes
 /// through `parse_accept_language` which is itself lenient.
 pub fn resolve_locale(req: &Request) -> Locale {
-    match req.headers().get("accept-language") {
-        Ok(Some(value)) => parse_accept_language(&value),
-        _               => Locale::default(),
+    resolve_locale_from_header(
+        req.headers().get("accept-language").ok().flatten().as_deref(),
+    )
+}
+
+/// The pure core of [`resolve_locale`]: given the raw `Accept-Language`
+/// header value (`None` if the header was absent, or the read itself
+/// errored — the two are indistinguishable to the user and both fall
+/// through to default), resolve a [`Locale`].
+///
+/// **RFC 143 C1-143 item 5.** `resolve_locale` itself cannot be unit
+/// tested on the host target — it takes a `worker::Request`, which wraps
+/// a `web_sys::Request` with no host-side constructor (the same reason
+/// `decide_verify_get`/`decide_verify_post` in
+/// `routes::me::totp::verify` are written to take primitives, not a
+/// `Request`). Extracted here so the one thing `resolve_locale` adds on
+/// top of the already-tested `parse_accept_language`
+/// (`crates/core/src/i18n/tests/accept_language.rs`) — the
+/// header-absent branch — has coverage too.
+pub fn resolve_locale_from_header(value: Option<&str>) -> Locale {
+    match value {
+        Some(v) => parse_accept_language(v),
+        None    => Locale::default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ja_header_resolves_to_ja() {
+        assert_eq!(resolve_locale_from_header(Some("ja")), Locale::Ja);
+    }
+
+    #[test]
+    fn en_header_resolves_to_en() {
+        assert_eq!(resolve_locale_from_header(Some("en")), Locale::En);
+    }
+
+    #[test]
+    fn absent_header_falls_through_to_default() {
+        assert_eq!(resolve_locale_from_header(None), Locale::default());
+    }
+
+    #[test]
+    fn malformed_header_falls_through_to_default() {
+        assert_eq!(resolve_locale_from_header(Some("!!!not-a-language-tag")), Locale::default());
     }
 }
 
