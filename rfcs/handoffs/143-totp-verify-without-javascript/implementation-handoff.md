@@ -1,6 +1,7 @@
 # Developer Handoff — RFC 143, the second factor without JavaScript
 
-**Governing RFC.** `rfcs/accepted/143-totp-verify-without-javascript.md` —
+**Governing RFC.** `rfcs/done/143-totp-verify-without-javascript.md` (moved
+to `done/` 2026-10-25 when C1-143 was accepted) —
 **read §9 first.** §9 was measured on 2026-10-25 and supersedes §4.1, §4.2 and
 §4.4. The original §4 would have you write a template that already exists.
 

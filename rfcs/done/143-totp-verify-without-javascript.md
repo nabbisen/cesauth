@@ -1,6 +1,7 @@
 # RFC 143 — A no-JavaScript user is stranded at the second factor
 
-**Status.** Accepted — approved by the owner 2026-09-24.
+**Status.** **Done** — cycle 1 + C1-143 on `main` (`ae06f22`), accepted
+2026-10-25. Awaiting the 0.85.0 cut for a released version.
 **Tier.** P1 · Category A — it locks a user out of their own account.
 **Size.** Small.
 **Touches.** `crates/backend/src/routes/me/totp/verify.rs`, a template,
@@ -227,3 +228,30 @@ the gap is the handoff's.
   `StaleGate` — signing the user out — if the nonce RNG fails.
 - **Six of nine mockup view models are unused**, `TotpVerifyView` among them and
   already unused before this work. Recorded in RFC 131 R3's scope.
+
+## 11. C1-143 accepted; RFC closed (2026-10-25)
+
+All seven correction items landed at `ae06f22`. Re-verified with CI's own
+five-crate command (`.github/workflows/test.yml:51-55` — **no `--lib`**, by RFC
+136 C2-136, so doc-tests run): **1,549 passed / 0 failed**, which is 1,542 + 7
+(three `render_verify_page` tests, four `resolve_locale_from_header` tests);
+`migration_chain` **31**; routes **193**; clippy / backend-wasm32 / `deny` /
+`audit` / drift / mdbook all **exit 0**.
+
+`render_verify_page(csrf_token, locale) -> (html, set_cookie)` is pure and
+host-testable, `get_handler`'s `RenderPage` arm is its only production caller,
+the round-trip is asserted by **equality on independently extracted values**,
+the cookie's four attributes are asserted, and the `set-cookie` append now
+propagates its error rather than `.ok()`. `resolve_locale_from_header` gives
+`resolve_locale` its first coverage. Review:
+`.git-exclude/reviewed/c1-143-review.md`.
+
+**The residual gap is the architecture's ceiling, and is deliberate.**
+`get_handler`'s *use* of `render_verify_page` — that the returned cookie reaches
+the response — has no test, because `worker::Response` is no more
+host-constructible than `worker::Request`. Deleting the `append` line compiles
+and fails no test. What catches it instead: the error now propagates, so a
+failed append returns an error rather than a 200 nobody can use, and cycle 1
+drove the whole flow live. A grep-level gate on a handler body would cost more
+in brittleness than it protects; recorded so the next reader knows the ceiling
+was chosen, not missed.
