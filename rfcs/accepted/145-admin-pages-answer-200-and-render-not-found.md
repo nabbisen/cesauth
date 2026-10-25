@@ -294,3 +294,64 @@ cycles below are `3 + 11 + 20 = 34`.
 
 Each cycle's routes become `server`-declared, so **E3 begins guarding them as
 each cycle lands**, rather than everything waiting on cycle 3.
+
+---
+
+## 12. Cycle 1 landed, and it refuted §11.2's argument (2026-10-25)
+
+Cycle 1 is accepted at `7fa8078`: `/admin/console/tokens/new` and
+`/admin/console/config/:bucket/edit` render server-side, both rows now
+`server`, route count **193**, every gate green. The reachable defect — the link
+at `pages/operator/console.rs:106` — is fixed. Review:
+`.git-exclude/reviewed/145-cycle1-review.md`.
+
+### 12.1 E3 cannot see a shell call made through a wrapper
+
+Building the fires/does-not-fire pair, the implementer reverted the handler to
+the **exact** code it had before the cycle — `operator_json_api::shell(&req,
+&ctx, "…")` — and **E3 passed**. A direct `leptos_html_shell` call fails it.
+
+The cause is in the check itself: `fn_body_has_shell`
+(`scripts/route-contracts-check.sh:211-219`) scans the target function's body
+for the literal string `leptos_html_shell`. Both shell helpers —
+`operator_json_api::shell` (`operator_json_api.rs:38`) and
+`tenant_admin::json_api::shell` (`tenant_admin/json_api.rs:48`) — call it one
+level down, and the resolver does not follow them.
+
+**This makes §11.2 false.** I wrote that converting these rows to `server`
+"moves thirty-four routes from a class nothing checks into a class something
+already checks", and called it the strongest argument for converting rather than
+deleting. **All thirty-five routes reach the shell through one of those two
+wrappers** (§2: 24 and 11), so E3 would not have caught any of them, and will
+not catch a regression back to the wrapper shape.
+
+The conversions still fix the pages, and the decision to convert rather than
+delete still holds on its other merits — the templates exist, are tested and are
+localized. But the property I argued it on does not exist, and I argued it
+without checking the check.
+
+Worth noting what this sits beside: E3's resolver deliberately distinguishes
+"resolved and clean" from "UNRESOLVED — hard failure", because C1-132 ruled that
+a handler the check cannot find must never be silently treated as clean. A
+wrapper it *can* find but does not follow falls into the same blind spot that
+ruling exists to close.
+
+### 12.2 Decision: cycle 3 fixes it, as part of the gate work
+
+**Cycle 3 extends `fn_body_has_shell` to follow one level of wrapper
+indirection** — a resolved call into a function whose own body calls
+`leptos_html_shell` counts as a shell call — and carries a fires/does-not-fire
+pair proving the wrapper shape is now caught. It lands with §4.2's new check,
+in the same script, as one piece of work.
+
+Not in cycle 1 (a two-route patch should not change the resolver), and never by
+touching `E3_EXEMPT`.
+
+### 12.3 One route leaves RFC 145's scope
+
+`/admin/t/:slug/deletion-requests` — the one route with no template (§11.3) —
+turned out to be more than a missing template: its three sibling handlers write
+audit events and redirect with success parameters without ever touching the
+deletion-request repository, which is fully implemented and used by the sweep.
+**That is now RFC 147**, which owns the route. **RFC 145's scope drops from 34
+to 33**, and cycle 2 covers **10** tenant-admin routes rather than 11.

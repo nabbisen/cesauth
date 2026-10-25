@@ -50,6 +50,7 @@ Full policy: `done/000-rfc-lifecycle-policy.md`.
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
 | [144](./proposed/144-introspection-reveals-family-existence.md) | **Introspection reveals that a family exists** to an authenticated caller presenting a forged jti: `expired`/`revoked` are classified before the jti comparison, which the mismatch path conflates to `unknown` precisely to avoid this. **Recorded as an RFC because it was lost once** as "recorded for RFC 118" | P3 | filler |
+| [147](./proposed/147-deletion-requests-are-audited-but-never-performed.md) | **Deletion requests are audited but never performed.** `request_self`, `admin_cancel` and `admin_execute` write their audit event, log, and redirect with a success parameter without touching the deletion-request repository — which is fully implemented and used by the sweep. So a user's deletion request is silently discarded, a documented irreversible operation is a no-op, and `DeletionExecuted` is written for deletions that did not happen, for any id, unvalidated | **P1** | next minor |
 
 ### Other proposed
 
