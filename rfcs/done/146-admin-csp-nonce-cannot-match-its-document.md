@@ -1,6 +1,7 @@
 # RFC 146 — The admin surface's CSP nonce cannot match its own document
 
-**Status.** Accepted — approved by the owner 2026-10-25.
+**Status.** **Done** — landed at `3013ff3`, accepted 2026-10-25. Awaiting the
+0.85.1 cut for a released version.
 **Tier.** P1 — it is structural: on this path a matching nonce is not possible,
 not merely absent.
 **Size.** Small in design, mechanical in breadth: one signature, 78 call sites.
@@ -147,3 +148,54 @@ broken one and discovering it later.
 
 **Patch.** A control that was intended, documented and already paid for begins
 working. No surface changes.
+
+## 10. Measured, accepted, closed (2026-10-25)
+
+**§3's caveat is discharged: the defect was observed, not inferred.** Driving a
+running Worker through both named frames' error-redisplay paths, pre-fix:
+
+| Frame | Body `nonce` | CSP header `'nonce-…'` |
+|---|---|---|
+| `admin::frame::admin_frame` | `TfI21VUa71JVvFS2ADMzNg` | `3rCw7Me3vW6Ky_ts81GFzA` |
+| `tenancy_console::frame::…_for` | `3rCw7Me3vW6Ky_ts81GFzA` | `nuOjtdAxX7w46T4fYu-YOA` |
+
+**The tenancy request's body nonce is exactly the admin request's header
+nonce** — the stale-isolate-global mechanism caught in the act, which is
+stronger evidence than §2 asked for. Post-fix both frames match, and three
+consecutive requests produced three distinct matching pairs.
+
+**§2's test as written could not run.** `worker::Response`/`Headers` wrap
+`web_sys` types with no host constructor — `cannot call wasm-bindgen imported
+functions on non-wasm targets` — so no `cargo test` can read a real response's
+headers on this target, fixed or broken. The handoff required an impossible
+test; the implementer proved the impossibility with a probe instead of quietly
+substituting. The gate was satisfied by the live run and the regression guard by
+a pure core, `render_with_nonce(impl FnOnce() -> String) -> (String, String)`,
+which is host-testable precisely because it returns no `Response`.
+
+**The count was 77, not the 78 the handoff stated.** The architect's grep
+included a string literal in `audit/tests.rs:289` quoting
+`render::html_response(…)` as audit-scanner test data. The authoritative method
+is the compiler's error count against the new signature before any site is
+converted.
+
+Gates at `3013ff3`, re-run independently: **1,552 host tests** (1,549 + 3),
+`migration_chain` **31**, routes **193**, clippy / backend-wasm32 / `deny` /
+`audit` / drift / mdbook all **exit 0**. Nonce-masked diffs of both frames'
+bodies: **0 lines** — nothing changed but the nonce. Review:
+`.git-exclude/reviewed/146-review.md`.
+
+### 10.1 One residue, dormant and recorded
+
+`invitations.rs:199` remains `html_response(|| body)` with the body pre-built,
+because the `Valid` arm's `csrf::mint()?` cannot propagate through a
+`FnOnce() -> String` and hoisting it would make all five outcomes fallible — a
+behaviour change the handoff's §5 told the implementer to report rather than
+make. **Dormant:** that page is raw `<html><body>` string literals with no
+template, no `render_nonce()` call and no `<style>`, so it has no nonce to
+mismatch.
+
+The type cannot forbid `html_response(|| precomputed)`, so if that page ever
+gains a nonced frame the defect returns silently. A check for
+`html_response(|| <bare identifier>)` closes it and belongs with **RFC 145
+cycle 3**, which is already extending the same script.

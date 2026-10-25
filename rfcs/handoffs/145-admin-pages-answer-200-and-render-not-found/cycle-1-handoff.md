@@ -10,12 +10,10 @@ points a GET handler at a template that already exists in its own module and is
 already rendered by that module's POST path. No surface is added or removed.
 
 **Prepared by.** Architect · **Implemented by.** Mid-capability model
-**Blocked on.** **RFC 146** — `rfcs/proposed/146-admin-csp-nonce-cannot-match-its-document.md`,
-awaiting owner authorization. **Do not start this cycle until RFC 146 has landed.**
-See §8 and §14 R1: the helper these conversions render through pairs a document
-with a nonce it cannot match, and converting onto it would give every page here
-a blocked stylesheet.
-**Scope.** **Three routes.** Cycles 2 and 3 are dispatched separately.
+**Blocked on.** Nothing — **RFC 146 landed at `3013ff3` and is accepted**, so
+`html_response` now pairs a document with its own nonce. **Dispatched
+2026-10-25.** §8's instruction stands: your handler must **not** call
+`set_render_nonce`; the helper owns it.
 
 ---
 

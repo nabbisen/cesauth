@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 146, the admin CSP nonce
 
-**Governing RFC.** `rfcs/accepted/146-admin-csp-nonce-cannot-match-its-document.md`
+**Governing RFC.** `rfcs/done/146-admin-csp-nonce-cannot-match-its-document.md`
 **Target release.** 0.85.1 — **and why that level:** **patch.** A control that was
 intended, documented and already paid for begins working. No surface changes.
 

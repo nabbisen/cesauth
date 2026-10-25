@@ -104,7 +104,6 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 | ID | Title | Tier | Dispatched | Depends on |
 |----|-------|------|---|---|
 | [133](./accepted/133-build-reproducibility.md) | Build reproducibility — **narrowed and split 2026-09-24 (§12)**. Half A scheduled: the optimizer's read–write aliasing and history dependence, the wasm-bindgen determinism experiment, and a false "run-reproducible" claim in `BUNDLE_SIZE_BUDGET.md`. Half B (environment reproducibility) deferred to 1.0 hardening | P2 | 2026-09-24 | — |
-| [146](./accepted/146-admin-csp-nonce-cannot-match-its-document.md) | **The admin surface's CSP nonce cannot match its own document.** `html_response` generates the nonce *after* its caller rendered the body, so document and header carry different nonces and every admin page's inline stylesheet is blocked by its own policy — 78 call sites. First deliverable is the failing test, since this is reasoned from code and not yet measured. **Blocks RFC 145** | P1 | 2026-10-25 | — |
 | [145](./accepted/145-admin-pages-answer-200-and-render-not-found.md) | **Thirty-five admin pages answer 200 and render Not Found.** Documented `render=client`, serving the Leptos shell, with no route in `app.rs`, so the `<NotFound/>` fallback renders after an admin auth check. `/admin/console/tokens/new` is linked from a working console screen. Triage each one — implement, delete or re-declare — plus the gate direction that would have caught it | P1 | 2026-10-25 | — |
 | [141](./accepted/141-oidc-client-registration.md) | **OIDC client registration has no API.** No route creates a client; the production guide tells an operator to hand-write `INSERT INTO oidc_clients (…) VALUES (…)` with the columns elided, including a hash they must compute. Adds the API, the console screen, an integrator chapter, and enforcement of the registered auth method | P1 | cycle 1 + C1-141 accepted **2026-10-25**; cycle 2 (console screen + §13's six unregistered `page_json` handlers) pending | 116, 137 |
 | [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | R2a shipped v0.82.0; **R5b–e shipped v0.83.0** (+ C1-R5); R2b awaits 132 §13 q1; R3 awaits 132 §13 q1 | 130, 132, 134 |
@@ -130,7 +129,7 @@ harness that closes it.
 
 ## Done
 
-133 RFCs shipped between v0.50.3 and v0.85.0 (001–106, 107, 108–111, 110b–110e, 113, 116, 117, 118, 125, 126, 127, 128, 129, 130, 132, 134, 135, 136, 137, 138, 139, 140, 142, 143). Full
+134 RFCs shipped between v0.50.3 and v0.85.0 (001–106, 107, 108–111, 110b–110e, 113, 116, 117, 118, 125, 126, 127, 128, 129, 130, 132, 134, 135, 136, 137, 138, 139, 140, 142, 143, 146). Full
 list with shipped-in versions: see ROADMAP.md "Shipped" section and
 CHANGELOG.md release entries. Selected highlights only listed here; the
 canonical catalogue is the filesystem at `done/`.
@@ -175,6 +174,7 @@ canonical catalogue is the filesystem at `done/`.
 | [118](./done/118-refresh-rotation-assurance.md) | Refresh-family lifecycle: reference model + generated sequences | v0.84.2 |
 | [142](./done/142-ci-has-never-executed.md) | CI runs, four gates were red, and nothing was enforced — now all thirteen are required checks | v0.84.3 + enforcement |
 | [143](./done/143-totp-verify-without-javascript.md) | A no-JS user was stranded at the second factor — the server-rendered page already existed and only the POST error path reached it | v0.85.0 |
+| [146](./done/146-admin-csp-nonce-cannot-match-its-document.md) | The admin surface's CSP nonce could not match its own document — `html_response` minted it after its caller had rendered the body | on `main`; 0.85.1 pending |
 | [134](./done/134-router-pattern-conflict.md) | Router pattern conflict — `:param.json` routes panicked `worker`'s router on construction, every request, since 2026-07-07 (+ condition C1-134: the shell's assets resolve) | v0.82.0 |
 | [132](./done/132-view-rendering-policy.md) | View rendering policy — Q1–Q4 derived per surface, `Rendering` column on all 188 routes, E2/E3 blocking gates (+ conditions C1-132, C2-132) | v0.82.0 |
 
