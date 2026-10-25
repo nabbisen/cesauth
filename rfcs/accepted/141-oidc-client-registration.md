@@ -221,3 +221,66 @@ So this RFC is **mostly wiring**: the service layer, the routes and the
 documentation are what is missing. It also means the cycle must not extend the
 pattern: every port method and audit kind it adds gets a caller in the same
 cycle, or is not added.
+
+## 12. Cycle 1 reviewed; C1-141 (2026-10-25)
+
+T1–T7 landed in `464b4f5` and are accepted: 1,539 host tests, 194 documented
+routes, the secret exposed at exactly two sites, and `/token` checking the
+registered method **before** any secret comparison. §11's prediction held — the
+cycle was wiring, and nothing unwired was added.
+
+### 12.1 `token_auth_method` is updatable; `client_type` is not
+
+The implementer made both immutable, reasoning that an update would re-run the
+coupling check "at a second enforcement site". **That premise does not hold**:
+the handoff required the coupling to live in the service, so an update calls the
+same validator again rather than duplicating it.
+
+- **`client_type` stays immutable** — public ⇔ confidential implies minting or
+  destroying a secret, which is a different operation; delete and re-register.
+- **`token_auth_method` becomes updatable** between `client_secret_basic` and
+  `client_secret_post`: only the transport changes, the secret is untouched, and
+  the coupling rule is unaffected.
+
+**This is also the remedy for §12.2**, and that is what decided it.
+
+### 12.2 The backward-compatibility finding: no backfill
+
+`token_auth_method` was written by default and never read before this RFC, so a
+confidential client registered by hand may say `none` and will now be refused at
+`/token` before its secret is compared. **No backfill migration**: guessing
+`client_secret_basic` for every such row could be wrong for an integrator who
+uses POST, and a migration that guesses credentials-adjacent configuration is
+worse than one that does not run. Nobody has deployed this tree, so nothing real
+is affected — and with §12.1 the remedy is one API call rather than SQL, which is
+the whole point of this RFC. Documented in the integrator chapter and in the
+release notes.
+
+### 12.3 A documented CSRF control that does not exist
+
+Found by the reviewer while checking the implementer's §4 flag.
+`routes/admin/console/audit_export.rs` reads `req.form_data()` and contains **no
+CSRF code**, while `route-contracts.md:96` claims CSRF for
+`POST /admin/console/audit/export`. The console authenticates with a session
+cookie, so CSRF applies. Severity is low-to-moderate — a forged POST forces an
+export and an audit event, but the CSV reaches the victim's own browser, not an
+attacker — and it is still a control the contract claims and the code lacks.
+Fixed in C1-141.
+
+### 12.4 RUSTSEC-2026-0387 accepted, with a measured justification
+
+`crypto-bigint` 0.5.5, timing variability in constant-time-intended operations,
+reached via `p256`/`ecdsa`/`elliptic-curve`. No compatible update exists; the fix
+needs the whole stack bumped, which touches WebAuthn verification.
+
+**Measured:** JWT signing is **Ed25519 only** (`jwt/signer.rs`), and `p256` is
+reached **only** by `webauthn/cose.rs`, which does `VerifyingKey` +
+`verify` on an ECDSA-P256 assertion. There is no `SigningKey` and **no secret
+key material on that path** — the authenticator holds the private key.
+
+A timing side-channel leaks information about secret inputs; on cesauth's only
+path into that crate every input is public. **Accepted with that reasoning
+recorded beside the id, and an explicit revisit trigger: if cesauth ever signs
+with P-256 — ES256 JWT support or any ECDSA signing path — the acceptance is void
+and the stack must be upgraded first.** The upgrade remains a recorded
+candidate, not a mid-feature decision.
