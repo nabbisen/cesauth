@@ -88,7 +88,20 @@ pub async fn list_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
 // -------------------------------------------------------------------------
 
 pub async fn new_form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::shell(&req, &ctx, "トークン発行 — cesauth").await
+    // RFC 145 cycle 1: server-rendered, like the POST failure path already
+    // is. Same resolution as `create` below — `auth::resolve_or_respond`,
+    // not the shell helper's discarded `resolve_admin` result — but no
+    // *additional* role gate: `shell` required only a valid admin bearer,
+    // and this GET must keep exactly that privilege level (§8 R3). The
+    // narrower `ManageAdminTokens` check stays on the POST, where it
+    // already was.
+    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
+        Ok(p)  => p,
+        Err(r) => return Ok(r),
+    };
+    // RFC 146: `html_response` owns the nonce now — the helper mints and
+    // publishes it; this handler must not do that itself.
+    render::html_response(|| ui::admin::token_new_form(&principal, None))
 }
 
 pub async fn new_form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {

@@ -113,11 +113,11 @@ code-review responsibility.
 | POST | `/admin/console/config/log_level/apply` | System admin | `operation_applied` | redirect | client | n/a | required |
 | GET | `/admin/console/alerts` | System admin | none | alerts page | client | n/a | N/A (GET) |
 | POST | `/admin/console/thresholds/:name` | System admin | `threshold_set` | redirect | client | n/a | required |
-| GET | `/admin/console/config/:bucket/edit` | System admin | none | edit form | client | n/a | N/A (GET) |
+| GET | `/admin/console/config/:bucket/edit` | System admin | none | edit form | server | n/a | N/A (GET) |
 | POST | `/admin/console/config/:bucket/edit` | System admin | `config_edited` | redirect | client | n/a | required |
 | GET | `/admin/console/tokens` | System admin | none | token list | client | n/a | N/A (GET) |
 | GET | `/admin/console/tokens.json` | System admin | none | JSON (`csrf_token`) | n/a | n/a | N/A (GET) |
-| GET | `/admin/console/tokens/new` | System admin | none | new-token form | client | n/a | N/A (GET) |
+| GET | `/admin/console/tokens/new` | System admin | none | new-token form | server | n/a | N/A (GET) |
 | POST | `/admin/console/tokens` | System admin | `admin_token_created` | redirect | client | n/a | required |
 | POST | `/admin/console/tokens/:id/disable` | System admin | `admin_token_disabled` | redirect | client | n/a | required |
 | GET | `/admin/console/clients` | System admin | none | client list | client | n/a | N/A (GET) |

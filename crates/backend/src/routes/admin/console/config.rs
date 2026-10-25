@@ -188,7 +188,29 @@ pub async fn apply<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
 // -------------------------------------------------------------------------
 
 pub async fn edit_form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::shell(&req, &ctx, "設定編集 — cesauth").await
+    // RFC 145 cycle 1: server-rendered, the same template `edit_submit`'s
+    // preview-failure branch already renders. Resolution matches that
+    // handler's own (`auth::resolve_or_respond`), but — same as
+    // `tokens::new_form` — no *additional* role gate beyond what `shell`
+    // required: `shell` admitted any valid admin bearer, and this GET must
+    // keep that privilege level (§8 R3). `EditBucketSafety` stays on the
+    // POST that actually changes something.
+    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
+        Ok(p)  => p,
+        Err(r) => return Ok(r),
+    };
+    let Some(bucket) = ctx.param("bucket").map(|s| s.to_owned()) else {
+        return Response::error("missing bucket", 400);
+    };
+    let safety = CloudflareBucketSafetyRepository::new(&ctx.env);
+    let state = match cesauth_core::admin::ports::BucketSafetyRepository::get(&safety, &bucket).await {
+        Ok(Some(s)) => s,
+        Ok(None)    => return Response::error("unknown bucket", 404),
+        Err(e)      => return Response::error(format!("bucket lookup failed: {e}"), 500),
+    };
+    // RFC 146: `html_response` owns the nonce now — the helper mints and
+    // publishes it; this handler must not do that itself.
+    render::html_response(|| ui::admin::config_edit_form(&principal, &state, None))
 }
 
 pub async fn edit_form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
