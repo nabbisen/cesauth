@@ -128,7 +128,7 @@ harness that closes it.
 
 ## Done
 
-132 RFCs shipped between v0.50.3 and v0.84.3 (001–106, 107, 108–111, 110b–110e, 113, 116, 117, 118, 125, 126, 127, 128, 129, 130, 132, 134, 135, 136, 137, 138, 139, 140). Full
+133 RFCs shipped between v0.50.3 and v0.85.0 (001–106, 107, 108–111, 110b–110e, 113, 116, 117, 118, 125, 126, 127, 128, 129, 130, 132, 134, 135, 136, 137, 138, 139, 140, 142, 143). Full
 list with shipped-in versions: see ROADMAP.md "Shipped" section and
 CHANGELOG.md release entries. Selected highlights only listed here; the
 canonical catalogue is the filesystem at `done/`.
@@ -172,7 +172,7 @@ canonical catalogue is the filesystem at `done/`.
 | [117](./done/117-authorization-code-lifecycle-assurance.md) | Authorization-code exchange as a typestate pipeline | v0.84.1 |
 | [118](./done/118-refresh-rotation-assurance.md) | Refresh-family lifecycle: reference model + generated sequences | v0.84.2 |
 | [142](./done/142-ci-has-never-executed.md) | CI runs, four gates were red, and nothing was enforced — now all thirteen are required checks | v0.84.3 + enforcement |
-| [143](./done/143-totp-verify-without-javascript.md) | A no-JS user was stranded at the second factor — the server-rendered page already existed and only the POST error path reached it | on `main`; 0.85.0 pending |
+| [143](./done/143-totp-verify-without-javascript.md) | A no-JS user was stranded at the second factor — the server-rendered page already existed and only the POST error path reached it | v0.85.0 |
 | [134](./done/134-router-pattern-conflict.md) | Router pattern conflict — `:param.json` routes panicked `worker`'s router on construction, every request, since 2026-07-07 (+ condition C1-134: the shell's assets resolve) | v0.82.0 |
 | [132](./done/132-view-rendering-policy.md) | View rendering policy — Q1–Q4 derived per surface, `Rendering` column on all 188 routes, E2/E3 blocking gates (+ conditions C1-132, C2-132) | v0.82.0 |
 

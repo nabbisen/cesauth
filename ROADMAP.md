@@ -376,6 +376,35 @@ started.
   any CI gate is enforced (`main` still has no branch protection), or that
   it works on Cloudflare — **nobody has deployed this tree**.
 
+- ✅ **v0.85.0 — RFC 141 cycle 1 (+ C1-141), RFC 143 (+ C1-143). Shipped
+  2026-10-25.** **The product's primary integration action has an API**:
+  registering an OIDC client meant hand-writing `INSERT INTO oidc_clients (…)`
+  with the columns elided and a secret hash the operator computed themselves.
+  Six routes under `/admin/console/clients` replace it; the secret is shown once
+  at creation and rotation and is never retrievable; validation runs through the
+  code that enforces the record later, not a second copy of the rules.
+  `token_auth_method` is **enforced at `/token`**, checked before any secret
+  comparison, and editable where `client_type` is not. **A no-JavaScript user is
+  no longer stranded at the second factor**: the server-rendered page already
+  existed and was already in production, reachable only by submitting a form the
+  user could not see — `GET /me/security/totp/verify` now renders it, and the
+  client-rendered duplicate is deleted, taking with it a "Use a recovery code"
+  link that issued a GET to a POST-only route and returned a bare 404, and a
+  screen that used no localized strings where the template uses 29. A **CSRF
+  control the route contract claimed and the code lacked** on
+  `POST /admin/console/audit/export` now exists. **RUSTSEC-2026-0387** accepted,
+  not fixed — cesauth's only path into `p256` is WebAuthn signature
+  verification, which holds no secret key material — with a condition that voids
+  the acceptance if cesauth ever signs with P-256. **Minor** — RFC 141 adds a
+  capability; everything else is a fix. **Not claimed:** that client
+  registration has a console screen (that is the RFC's second cycle), that the
+  no-JS path has browser-suite coverage (it was driven with `curl` against a
+  running worker, which CI does not reproduce), that any CI gate is enforced
+  (RFC 142 established that required checks and pushing to `main` are mutually
+  exclusive — CI reports, nothing blocks, by design), that the tag format is
+  enforced (`tag_name_pattern` is unavailable on this repository, measured), or
+  that it works on Cloudflare — **nobody has deployed this tree**.
+
 - ✅ **v0.84.3 — RFC 133 half A (+ condition C1-133), RFC 142 cycle 1, and a
   dependency advisory. Shipped 2026-10-24.** **The build step is a function of
   its input, not its history**: the WebAssembly optimizer no longer reads and

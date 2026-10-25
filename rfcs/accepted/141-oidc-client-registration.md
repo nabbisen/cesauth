@@ -1,6 +1,10 @@
 # RFC 141 — OIDC client registration has no API
 
-**Status.** Accepted — approved by the owner 2026-09-24.
+**Status.** Accepted — approved by the owner 2026-09-24. **Cycle 1 (+ C1-141)
+shipped v0.85.0**, 2026-10-25: the API, `token_auth_method` enforcement and the
+integrator chapter. **Stays in `accepted/` — cycle 2 is outstanding**: the
+console screen (§4.1) and §13's six unregistered `page_json` handlers. Moving
+it to `done/` would assert a completion the tree does not have.
 **Tier.** P1 · Category A — the product's primary integration action.
 **Size.** Medium–large.
 **Touches.** `crates/backend/src/routes/admin/`, `crates/core/src/service/`,

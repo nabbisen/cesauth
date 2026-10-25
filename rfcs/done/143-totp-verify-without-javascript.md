@@ -1,7 +1,6 @@
 # RFC 143 — A no-JavaScript user is stranded at the second factor
 
-**Status.** **Done** — cycle 1 + C1-143 on `main` (`ae06f22`), accepted
-2026-10-25. Awaiting the 0.85.0 cut for a released version.
+**Status.** **Done** — cycle 1 + C1-143, accepted 2026-10-25. **Shipped v0.85.0.**
 **Tier.** P1 · Category A — it locks a user out of their own account.
 **Size.** Small.
 **Touches.** `crates/backend/src/routes/me/totp/verify.rs`, a template,

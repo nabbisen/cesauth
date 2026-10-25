@@ -14,6 +14,80 @@ changes will always be called out here.
 
 ---
 
+## [0.85.0] - 2026-10-25
+
+### An OIDC client can be registered over an API — RFC 141
+
+Registering a client meant hand-writing `INSERT INTO oidc_clients (…) VALUES
+(…)` against D1, with the column list elided in the guide and a secret hash the
+operator had to compute themselves. The product's primary integration action had
+no API.
+
+Now there is one, under `/admin/console/clients`: create, list, read, update,
+rotate the secret, and delete. **The secret is shown once, at creation and at
+rotation, and is never retrievable afterwards** — the record stores a hash, so
+a lost secret is rotated, not recovered. Validation runs through the same code
+that enforces the record later, rather than a second copy of the rules that
+could drift from it.
+
+`token_auth_method` is now **enforced at `/token`**: a client registered for
+`client_secret_basic` that presents its secret in the request body is rejected,
+and the method is checked before any secret comparison. The method is editable
+on an existing client; `client_type` is not, because changing it would
+invalidate what every issued token was authorized against.
+
+An integrator chapter documents the whole flow. **There is no console screen
+yet** — this release ships the API, and the screen is the RFC's second cycle.
+
+### The second factor works without JavaScript — RFC 143
+
+A user who signed in with JavaScript disabled and had TOTP enrolled reached a
+second-factor page that required JavaScript. The first factor had already
+succeeded and the gate cookie was set, so they were **stranded mid-sign-in**,
+with no way forward and no way back.
+
+The server-rendered page they needed already existed, was locale-aware, and was
+already being served in production — but only by the *wrong-code* path, so the
+only way to reach it was to submit a form they could not see. `GET
+/me/security/totp/verify` now renders it directly, and the client-rendered
+duplicate is deleted.
+
+Two defects went with that duplicate. Its "Use a recovery code" affordance was a
+link issuing a **GET** to a route that accepts only **POST**, so it returned a
+bare 404 — to the one user it existed for, who had lost their authenticator. And
+it used **no** localized strings where the server template uses twenty-nine, so
+a Japanese user read English at the second factor and Japanese again if they
+mistyped. Both are fixed by rendering the template that had them right all
+along.
+
+**This was verified by driving the whole path against a running worker** — real
+enrolment, genuine time-based codes, the gate reached by a second sign-in — not
+by a browser test. The automated suite does not reproduce it; what CI now
+guards is that the page cannot silently revert to requiring JavaScript, and that
+the form's CSRF token and its cookie carry the same value.
+
+### A CSRF control the route contract claimed, and the code lacked
+
+`POST /admin/console/audit/export` was documented as requiring a CSRF token and
+did not check one, while reading a form-encoded body — exactly the content type
+that requires it. The control now exists. A forged request could have forced an
+export and an audit event; the exported data reached the victim's own browser,
+not an attacker.
+
+### A timing advisory accepted, with its reasoning recorded
+
+RUSTSEC-2026-0387 (`crypto-bigint`, timing variability in operations intended to
+be constant-time) has no compatible update. It is reached only through
+`p256`/`ecdsa`, and cesauth's only path into that crate is WebAuthn **signature
+verification**, which holds a public key and a public challenge — the
+authenticator keeps the private key, and JWT signing is Ed25519 throughout. A
+timing side-channel discloses something about secret inputs; on this path there
+are none.
+
+**It is accepted, not fixed**, with the reasoning beside the advisory id and a
+condition that voids it: if cesauth ever signs with P-256, the dependency stack
+must be upgraded first.
+
 ## [0.84.3] - 2026-10-24
 
 ### The build produces the same artifact for the same input — RFC 133 half A
