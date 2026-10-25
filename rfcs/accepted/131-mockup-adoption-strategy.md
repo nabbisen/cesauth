@@ -374,3 +374,36 @@ now part of its specification.
 **What this makes verifiable.** A server-rendered form is the first thing on
 these routes that the browser suite can assert **with JavaScript disabled** — a
 strictly stronger test than today's "does it mount".
+
+## R3 scope addition: six of nine mockup view models are unused (2026-10-25)
+
+Found while reviewing RFC 143 cycle 1, and homed here because R3 owns mockup
+adoption.
+
+```
+for n in $(grep -rhn 'pub struct [A-Za-z]*View\b' crates/frontend/src/view_models/ \
+           | sed 's/.*pub struct \([A-Za-z]*View\).*/\1/' | sort -u); do
+  printf '%-24s %s\n' "$n" "$(grep -rn "\b$n\b" crates/ | wc -l)"
+done
+```
+
+**Six occur exactly once in `crates/` — their own definition:**
+`InvitationAcceptView`, `MagicLinkRequestView`, `MagicLinkVerifyView`,
+`SignInView`, `TerminalErrorView`, `TotpVerifyView`. Three of the nine are used,
+so the pattern is live and these are the exceptions — the same shape as RFC 141
+§13's six unregistered `page_json` handlers, and the same class: a reader cannot
+tell a declared-but-unadopted view model from an adopted one.
+
+`TotpVerifyView` is worth one note beyond the count. It carries
+`TotpMode::{Totp, Recovery}` and a `recovery_form` contract, i.e. the mockup put
+recovery on the verify screen **as a mode switch on one screen**. RFC 143 §9.2
+found the shipped CSR page had instead made it a link to a POST-only route that
+returned 404, while the server template had it inline as a second form. The
+mockup's intent and the template agree; only the deleted CSR page disagreed.
+RFC 143 removed that page, so the shipped behaviour now matches this view model's
+intent without having adopted the view model.
+
+**R3 resolves each of the six the same way RFC 141 §13 resolves its handlers:
+adopt it against a real screen, or delete it.** A view model that no screen
+builds is a design document in a `.rs` file, and it will read as a contract to
+whoever finds it next.

@@ -187,3 +187,43 @@ sign-in; a user who lost their authenticator reaches a recovery form instead of
 a 404; and a `ja` user reads Japanese at the second factor. All three are
 restorations of behaviour the server template already implements. No capability
 is added.
+
+## 10. Cycle 1 reviewed; C1-143 dispatched (2026-10-25)
+
+Cycle 1 landed at `a676cc1` and is **accepted**. Independently re-run: host
+tests **1,542 passed / 0 failed**, route contracts **All 193 routes**, clippy /
+frontend-csr / backend-wasm32 / `deny` / `audit` / drift / mdbook all **exit 0**,
+`E3_EXEMPT` down to `GET /` and `GET /login`, and `grep -c 'leptos_html_shell'`
+on the handler **0**. The dev team drove the whole path with `curl` against
+`wrangler dev` — real enrolment, genuine RFC 6238 codes, the gate reached by a
+second sign-in — and asserted the CSRF token byte-for-byte between the form and
+the `Set-Cookie` header. Review: `.git-exclude/reviewed/143-cycle1-review.md`.
+
+**The security headers did not regress.** The old path rendered through
+`leptos_html_shell` and the new one is a bare `Response::from_html`, so this was
+the likeliest failure; the headers come from the middleware at `lib.rs:573-592`,
+not the shell, and HSTS, CSP-with-nonce, Permissions-Policy, Referrer-Policy,
+`nosniff` and `X-Frame-Options` are all present on the new response.
+
+**C1-143** adds the automated guard the live proof does not leave behind: the
+mint → embed → `set-cookie` invariant extracted into a host-testable function
+and asserted by equality on extracted values, the CSRF cookie's attributes
+asserted, locale asserted through the composition, the first tests for
+`resolve_locale` (it had **0**), and a loud failure instead of `.ok()` on the
+`set-cookie` append. §10.2 of the handoff asked for the round-trip to be
+"asserted directly" without saying *automated*, so cycle 1 met it as written;
+the gap is the handoff's.
+
+### 10.1 Recorded while reviewing, scheduled elsewhere
+
+- **The POST error page's CSP nonce is inherited, not generated.**
+  `decide_verify_get` sets the render nonce (`verify.rs:104-115`);
+  `decide_verify_post` does not. Template and CSP header read the same
+  thread-local, so they always agree — on whatever the last GET left in that
+  isolate. Reasoned from the code: in an isolate whose first request is that
+  POST, the nonce is empty and the inline stylesheet is blocked, which §14 R2
+  would explain away as "plainer". **Needs measuring, not asserting.**
+- **`decide_verify_get` is a decision function with a side effect**, and returns
+  `StaleGate` — signing the user out — if the nonce RNG fails.
+- **Six of nine mockup view models are unused**, `TotpVerifyView` among them and
+  already unused before this work. Recorded in RFC 131 R3's scope.
