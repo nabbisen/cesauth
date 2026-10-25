@@ -84,7 +84,11 @@ Shows all pending deletion requests for the tenant.
 POST /admin/t/:slug/deletion-requests/:id/cancel
 ```
 
-Cancels a pending request before `scheduled_at`. Emits `DeletionCancelled`.
+**Not implemented (RFC 147).** Until v0.84.3 this route emitted an audit
+event and redirected as if a pending request had been cancelled, without
+ever looking one up. As of 0.85.1 it returns `501 Not Implemented` after
+the usual auth and tenant-admin checks, and writes no audit event.
+Implementing cancellation is RFC 147 cycle 2.
 
 ### Execute immediately (bypass grace period)
 
@@ -92,8 +96,13 @@ Cancels a pending request before `scheduled_at`. Emits `DeletionCancelled`.
 POST /admin/t/:slug/deletion-requests/:id/execute
 ```
 
-Physically deletes the user. **Irreversible.** Emits `DeletionExecuted`.
-ON DELETE CASCADE removes all child data (authenticators, sessions, etc.).
+**Not implemented (RFC 147).** This route did **not** physically delete
+the user, despite what this chapter used to say — it emitted an audit
+event and redirected as if it had, for any `:id`, unvalidated. As of
+0.85.1 it returns `501 Not Implemented` after the usual auth and
+tenant-admin checks, and writes no audit event. Implementing execution,
+with `ON DELETE CASCADE` removing all child data (authenticators,
+sessions, etc.), is RFC 147 cycle 2.
 
 ---
 

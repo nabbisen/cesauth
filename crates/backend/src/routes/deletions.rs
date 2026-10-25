@@ -14,10 +14,8 @@
 //!   POST /admin/t/:slug/deletion-requests/:id/execute
 //!       Admin-triggered immediate execution (bypasses grace period).
 
-use time::OffsetDateTime;
 use worker::{Request, Response, Result, RouteContext};
 
-use crate::audit::{self, EventKind};
 use crate::config::Config;
 use crate::log::{self, Category, Level};
 use crate::routes::admin::auth;
@@ -28,30 +26,27 @@ use crate::routes::admin::tenant_admin::gate;
 // POST /me/security/delete-account
 // ---------------------------------------------------------------------------
 
-pub async fn request_self<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
+/// **RFC 147.** This endpoint used to audit a "scheduled" outcome and
+/// redirect with a success flag, without ever creating a row the sweep
+/// could find — a user told their deletion was scheduled in 30 days,
+/// whose request silently vanished. Nothing here is implemented yet
+/// (cycle 2); this cycle's job is only to stop asserting that it is.
+/// Auth runs first and unchanged, so an unauthenticated caller learns
+/// nothing new (RFC 147 D4).
+pub async fn request_self<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
         Ok(p)  => p,
         Err(r) => return Ok(r),
     };
 
-    let now = OffsetDateTime::now_utc().unix_timestamp();
     let cfg = Config::from_env(&ctx.env)?;
-    let grace_days: i64 = 30;
 
     // Full implementation pending CloudflareDeletionRequestRepository.
-    audit::write_owned(
-        &ctx.env, EventKind::DeletionRequested,
-        Some(principal.id.clone()), None,
-        Some(format!("self-request scheduled in {grace_days}d")),
-    ).await.ok();
-
     log::emit(&cfg.log, Level::Info, Category::Auth,
-        "deletion requested (self)",
+        "delete-account called; not implemented (RFC 147)",
         Some(&principal.id));
 
-    let mut resp = Response::empty()?.with_status(303);
-    let _ = resp.headers_mut().set("location", "/me/security?deletion_requested=1");
-    Ok(resp)
+    Response::error("account deletion is not yet implemented", 501)
 }
 
 // ---------------------------------------------------------------------------
@@ -78,41 +73,34 @@ pub async fn admin_list_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Re
 // POST /admin/t/:slug/deletion-requests/:id/cancel
 // ---------------------------------------------------------------------------
 
+/// **RFC 147.** Used to audit a cancellation and redirect back to the
+/// list, for an `:id` it never looked up — cancelling nothing while saying
+/// otherwise. Auth and the tenant-admin gate run first and unchanged (D4);
+/// nothing here reads `:id` any more because nothing here acts on it.
 pub async fn admin_cancel<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
         Ok(p)  => p,
         Err(r) => return Ok(r),
     };
-    let ctx_ta = match gate::resolve_or_respond(principal, &ctx).await? {
+    let _ctx_ta = match gate::resolve_or_respond(principal, &ctx).await? {
         Ok(c)  => c,
         Err(r) => return Ok(r),
     };
 
-    let request_id = ctx.param("id")
-        .ok_or_else(|| worker::Error::RustError("missing id".into()))?
-        .to_owned();
-
-    let now = OffsetDateTime::now_utc().unix_timestamp();
-
     // Full implementation pending CloudflareDeletionRequestRepository.
-    audit::write_owned(
-        &ctx.env, EventKind::DeletionCancelled,
-        Some(ctx_ta.principal.id.clone()), None,
-        Some(format!("request:{request_id}")),
-    ).await.ok();
-
-    let mut resp = Response::empty()?.with_status(303);
-    let _ = resp.headers_mut().set(
-        "location",
-        &format!("/admin/t/{}/deletion-requests", ctx_ta.tenant.slug),
-    );
-    Ok(resp)
+    Response::error("deletion-request cancellation is not yet implemented", 501)
 }
 
 // ---------------------------------------------------------------------------
 // POST /admin/t/:slug/deletion-requests/:id/execute
 // ---------------------------------------------------------------------------
 
+/// **RFC 147.** Used to audit an execution — the same audit event kind
+/// the real sweep (`sweep.rs`) writes for a deletion that actually ran —
+/// for any `:id`, unvalidated, never loaded, never deleting the user it
+/// never checked exists. `docs/src/expert/admin-operations.md` called
+/// this "physically deletes the user. Irreversible."; it deleted
+/// nothing. Auth and the tenant-admin gate run first and unchanged (D4).
 pub async fn admin_execute<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
         Ok(p)  => p,
@@ -123,28 +111,12 @@ pub async fn admin_execute<D>(req: Request, ctx: RouteContext<D>) -> Result<Resp
         Err(r) => return Ok(r),
     };
 
-    let request_id = ctx.param("id")
-        .ok_or_else(|| worker::Error::RustError("missing id".into()))?
-        .to_owned();
-
-    let now = OffsetDateTime::now_utc().unix_timestamp();
     let cfg = Config::from_env(&ctx.env)?;
 
     // Full implementation pending CloudflareDeletionRequestRepository.
-    audit::write_owned(
-        &ctx.env, EventKind::DeletionExecuted,
-        Some(ctx_ta.principal.id.clone()), None,
-        Some(format!("request:{request_id} admin-triggered")),
-    ).await.ok();
-
     log::emit(&cfg.log, Level::Warn, Category::Auth,
-        &format!("deletion executed admin-triggered: request {request_id}"),
+        "deletion-request execute endpoint called; not implemented (RFC 147)",
         Some(&ctx_ta.principal.id));
 
-    let mut resp = Response::empty()?.with_status(303);
-    let _ = resp.headers_mut().set(
-        "location",
-        &format!("/admin/t/{}/deletion-requests?executed=1", ctx_ta.tenant.slug),
-    );
-    Ok(resp)
+    Response::error("deletion-request execution is not yet implemented", 501)
 }

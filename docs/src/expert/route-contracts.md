@@ -104,11 +104,11 @@ code-review responsibility.
 | GET  | `/admin/t/:slug/invitations.json` | Tenant admin | none | JSON (`csrf_token`) | n/a | n/a | required |
 | GET  | `/accept-invite` | public (invite link) | none | HTML | server | n/a | N/A |
 | POST | `/accept-invite` | public (invite link) | `invitation_accepted` | redirect | server | n/a | N/A |
-| POST | `/me/security/delete-account` | authenticated user | `deletion_requested` | redirect | client | CSRF | session |
+| POST | `/me/security/delete-account` | authenticated user | none | 501 | client | CSRF | session |
 | GET  | `/admin/t/:slug/deletion-requests` | Tenant admin | none | HTML | client | n/a | required |
 | GET  | `/admin/t/:slug/deletion-requests.json` | Tenant admin | none | JSON (`csrf_token`) | n/a | n/a | required |
-| POST | `/admin/t/:slug/deletion-requests/:id/cancel` | Tenant admin | `deletion_cancelled` | redirect | client | CSRF | required |
-| POST | `/admin/t/:slug/deletion-requests/:id/execute` | Tenant admin | `deletion_executed` | redirect | client | CSRF | required |
+| POST | `/admin/t/:slug/deletion-requests/:id/cancel` | Tenant admin | none | 501 | client | CSRF | required |
+| POST | `/admin/t/:slug/deletion-requests/:id/execute` | Tenant admin | none | 501 | client | CSRF | required |
 | POST | `/admin/console/config/log_level/preview` | System admin | `operation_previewed` | preview page | client | n/a | required |
 | POST | `/admin/console/config/log_level/apply` | System admin | `operation_applied` | redirect | client | n/a | required |
 | GET | `/admin/console/alerts` | System admin | none | alerts page | client | n/a | N/A (GET) |
