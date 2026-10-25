@@ -56,13 +56,15 @@ impl ClientRepository for InMemoryClientRepository {
         let Some((existing, _)) = m.get_mut(&client.id) else {
             return Err(PortError::NotFound);
         };
-        // Mirror the adapter's column list: client_type and
-        // token_auth_method are not updatable here (see the trait doc).
-        existing.name           = client.name.clone();
-        existing.redirect_uris  = client.redirect_uris.clone();
-        existing.allowed_scopes = client.allowed_scopes.clone();
-        existing.require_pkce   = client.require_pkce;
-        existing.audience       = client.audience.clone();
+        // Mirror the adapter's column list (RFC 141 C1-141 item 3):
+        // client_type is not updatable here (see the trait doc);
+        // token_auth_method is.
+        existing.name              = client.name.clone();
+        existing.redirect_uris     = client.redirect_uris.clone();
+        existing.allowed_scopes    = client.allowed_scopes.clone();
+        existing.token_auth_method = client.token_auth_method;
+        existing.require_pkce      = client.require_pkce;
+        existing.audience          = client.audience.clone();
         Ok(())
     }
 

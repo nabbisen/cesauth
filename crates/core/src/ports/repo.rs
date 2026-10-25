@@ -94,15 +94,24 @@ pub trait ClientRepository {
     async fn list(&self) -> PortResult<Vec<OidcClient>>;
 
     /// Replace the mutable registration fields: `name`, `redirect_uris`,
-    /// `allowed_scopes`, `require_pkce`, `audience`. **RFC 141** —
-    /// `client_type` and `token_auth_method` are deliberately NOT
-    /// updatable here: the pair is validated once, at [`create`](Self::create)
-    /// time (`service::clients`), as the single point where the §4.3
-    /// coupling (public <=> none+no-secret; confidential <=> basic-or-post
-    /// +secret) is enforced. A second enforcement site on every update would
-    /// double the places that rule can be gotten wrong. To change either
-    /// field, delete and re-register (RFC 141 §4 — deletion is a hard
-    /// delete and cheap). `Err(NotFound)` if `client.id` does not exist.
+    /// `allowed_scopes`, `token_auth_method`, `require_pkce`, `audience`.
+    ///
+    /// **RFC 141 C1-141 item 3 — `client_type` is immutable;
+    /// `token_auth_method` is not, and the two are not symmetric.**
+    /// `client_type` stays fixed here deliberately: public <=> confidential
+    /// implies minting or destroying a secret, which is a different
+    /// operation wearing an update's clothes — delete and re-register
+    /// instead (RFC 141 §4, a hard delete, cheap). `token_auth_method`
+    /// changes only the authentication *transport* (`client_secret_basic`
+    /// <=> `client_secret_post`); the secret itself is untouched and the
+    /// §4.3 coupling (confidential <=> a method and a secret) still holds
+    /// either way, so there is no reason to force a delete-and-re-register
+    /// for it. `service::clients::update_client` re-runs the same §4.3
+    /// validator this method's caller used at `create` — against the
+    /// client's *existing*, unchangeable `client_type` — so this is the
+    /// same enforcement site called again, not a second one.
+    ///
+    /// `Err(NotFound)` if `client.id` does not exist.
     async fn update(&self, client: &OidcClient) -> PortResult<()>;
 
     /// Overwrite the stored secret hash — rotation (`Some`) or clearing it

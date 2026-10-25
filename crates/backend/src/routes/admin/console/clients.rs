@@ -6,7 +6,7 @@
 //! | `GET  /admin/console/clients` | the Leptos shell (console screen: cycle 2) |
 //! | `GET  /admin/console/clients.json` | `{"clients": [...]}` — every registered client, never a secret |
 //! | `POST /admin/console/clients` | create. Mints a secret for a confidential client, returned exactly once |
-//! | `POST /admin/console/clients/:id` | update the mutable fields (`name`, `redirect_uris`, `allowed_scopes`, `audience`) |
+//! | `POST /admin/console/clients/:id` | update the mutable fields (`name`, `redirect_uris`, `allowed_scopes`, `audience`, and — C1-141 — `token_auth_method`, within the client's unchangeable `client_type`) |
 //! | `POST /admin/console/clients/:id/rotate-secret` | mint a new secret, returned exactly once |
 //! | `POST /admin/console/clients/:id/delete` | hard delete (RFC 141 §4) |
 //!
@@ -208,10 +208,16 @@ pub async fn create<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
 
 #[derive(Debug, Deserialize, Default)]
 struct UpdateClientBody {
-    name:           Option<String>,
-    redirect_uris:  Option<Vec<String>>,
-    allowed_scopes: Option<Vec<String>>,
-    audience:       Option<String>,
+    name:              Option<String>,
+    redirect_uris:     Option<Vec<String>>,
+    allowed_scopes:    Option<Vec<String>>,
+    /// **RFC 141 C1-141 item 3.** Omit to leave it unchanged; supply
+    /// `"client_secret_basic"` or `"client_secret_post"` to switch a
+    /// confidential client's transport. `client_type` has no field here —
+    /// it cannot be changed by this route (see `ClientRepository::update`'s
+    /// doc).
+    token_auth_method: Option<String>,
+    audience:          Option<String>,
 }
 
 pub async fn update<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -233,20 +239,31 @@ pub async fn update<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
 
     let repo = CloudflareClientRepository::new(&ctx.env);
 
-    // RFC 141 §10.2 — read the previous audience first, so the audit event
-    // this route gives `OidcClientAudienceChanged` its first writer for
-    // can record before/after, as its doc specifies.
-    let before_audience = match repo.find(&id).await {
-        Ok(Some(c)) => c.audience,
+    // RFC 141 §10.2 — read the previous row first, so the audit event this
+    // route gives `OidcClientAudienceChanged` its first writer for can
+    // record before/after, as its doc specifies. Also the source of the
+    // existing `token_auth_method` when the caller omits it (C1-141 item 3).
+    let existing = match repo.find(&id).await {
+        Ok(Some(c)) => c,
         Ok(None)    => return Response::error("unknown client", 404),
         Err(_)      => return Response::error("storage error", 500),
     };
-    let after_audience = body.audience.clone().filter(|s| !s.is_empty());
+    let before_audience = existing.audience;
+    let after_audience  = body.audience.clone().filter(|s| !s.is_empty());
+
+    let token_auth_method = match body.token_auth_method.as_deref() {
+        None    => existing.token_auth_method,
+        Some(s) => match parse_token_auth_method(Some(s)) {
+            Ok(m)  => m,
+            Err(e) => return Response::error(e, 400),
+        },
+    };
 
     let update = ClientUpdate {
         name:           body.name.unwrap_or_default(),
         redirect_uris:  body.redirect_uris.unwrap_or_default(),
         allowed_scopes: body.allowed_scopes.unwrap_or_default(),
+        token_auth_method,
         audience:       after_audience.clone(),
     };
 

@@ -308,23 +308,96 @@ async fn rotate_secret_on_an_unknown_client_is_not_found() {
 // ── update_client ───────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn update_replaces_the_mutable_fields_and_preserves_type_and_method() {
+async fn update_replaces_the_mutable_fields_and_preserves_type() {
     let repo = StubClients::new();
     register_client(&repo, new_confidential("app-1", TokenAuthMethod::ClientSecretPost)).await.unwrap();
 
     let updated = update_client(&repo, "app-1", ClientUpdate {
-        name:           "Renamed".to_owned(),
-        redirect_uris:  vec!["https://new.example.com/cb".to_owned()],
-        allowed_scopes: vec!["openid".to_owned()],
-        audience:       None,
+        name:              "Renamed".to_owned(),
+        redirect_uris:     vec!["https://new.example.com/cb".to_owned()],
+        allowed_scopes:    vec!["openid".to_owned()],
+        token_auth_method: TokenAuthMethod::ClientSecretPost, // unchanged
+        audience:          None,
     }).await.unwrap();
 
     assert_eq!(updated.name, "Renamed");
     assert_eq!(updated.redirect_uris, vec!["https://new.example.com/cb".to_owned()]);
     assert_eq!(updated.audience, None);
-    // Unchanged by this call.
-    assert_eq!(updated.client_type, ClientType::Confidential);
     assert_eq!(updated.token_auth_method, TokenAuthMethod::ClientSecretPost);
+    // client_type cannot change by this call — there is no field for it.
+    assert_eq!(updated.client_type, ClientType::Confidential);
+}
+
+// ── RFC 141 C1-141 item 3: token_auth_method is updatable, client_type isn't ──
+
+#[tokio::test]
+async fn update_switches_a_confidential_client_from_basic_to_post() {
+    let repo = StubClients::new();
+    register_client(&repo, new_confidential("app-1", TokenAuthMethod::ClientSecretBasic)).await.unwrap();
+
+    let updated = update_client(&repo, "app-1", ClientUpdate {
+        name:              "Backend integration".to_owned(),
+        redirect_uris:     vec!["https://app.example.com/callback".to_owned()],
+        allowed_scopes:    vec!["openid".to_owned(), "email".to_owned()],
+        token_auth_method: TokenAuthMethod::ClientSecretPost,
+        audience:          None,
+    }).await.unwrap();
+    assert_eq!(updated.token_auth_method, TokenAuthMethod::ClientSecretPost);
+
+    // And back again, via the same repo round-trip (`find` sees what
+    // `update` stored — exercises the adapter-shaped path, not just the
+    // struct returned by this call).
+    let back = update_client(&repo, "app-1", ClientUpdate {
+        name:              "Backend integration".to_owned(),
+        redirect_uris:     vec!["https://app.example.com/callback".to_owned()],
+        allowed_scopes:    vec!["openid".to_owned(), "email".to_owned()],
+        token_auth_method: TokenAuthMethod::ClientSecretBasic,
+        audience:          None,
+    }).await.unwrap();
+    assert_eq!(back.token_auth_method, TokenAuthMethod::ClientSecretBasic);
+    assert_eq!(repo.find("app-1").await.unwrap().unwrap().token_auth_method, TokenAuthMethod::ClientSecretBasic);
+}
+
+#[tokio::test]
+async fn update_cannot_turn_a_confidential_client_public_shaped() {
+    // There is no `client_type` field on `ClientUpdate` — the only way to
+    // attempt this is `token_auth_method: None` against an existing
+    // `client_type: Confidential`, which §4.3 still rejects, now at
+    // update time, exactly as it would have at create time.
+    let repo = StubClients::new();
+    register_client(&repo, new_confidential("app-1", TokenAuthMethod::ClientSecretBasic)).await.unwrap();
+
+    let err = update_client(&repo, "app-1", ClientUpdate {
+        name:              "Backend integration".to_owned(),
+        redirect_uris:     vec!["https://app.example.com/callback".to_owned()],
+        allowed_scopes:    vec!["openid".to_owned()],
+        token_auth_method: TokenAuthMethod::None,
+        audience:          None,
+    }).await.unwrap_err();
+    assert!(matches!(
+        err,
+        ClientOpError::Validation(ClientValidationError::TypeMethodMismatch {
+            client_type: ClientType::Confidential,
+            token_auth_method: TokenAuthMethod::None,
+        }),
+    ));
+    // Unchanged: the rejected attempt touched nothing.
+    assert_eq!(repo.find("app-1").await.unwrap().unwrap().token_auth_method, TokenAuthMethod::ClientSecretBasic);
+}
+
+#[tokio::test]
+async fn update_cannot_give_a_public_client_a_confidential_method() {
+    let repo = StubClients::new();
+    register_client(&repo, new_public("demo-cli")).await.unwrap();
+
+    let err = update_client(&repo, "demo-cli", ClientUpdate {
+        name:              "Demo CLI".to_owned(),
+        redirect_uris:     vec!["http://localhost:8787/callback".to_owned()],
+        allowed_scopes:    vec!["openid".to_owned()],
+        token_auth_method: TokenAuthMethod::ClientSecretBasic,
+        audience:          None,
+    }).await.unwrap_err();
+    assert!(matches!(err, ClientOpError::Validation(ClientValidationError::TypeMethodMismatch { .. })));
 }
 
 #[tokio::test]
@@ -332,10 +405,11 @@ async fn update_runs_the_same_validation_as_create() {
     let repo = StubClients::new();
     register_client(&repo, new_public("demo-cli")).await.unwrap();
     let err = update_client(&repo, "demo-cli", ClientUpdate {
-        name:           "Demo CLI".to_owned(),
-        redirect_uris:  vec!["not-a-uri".to_owned()],
-        allowed_scopes: vec!["openid".to_owned()],
-        audience:       None,
+        name:              "Demo CLI".to_owned(),
+        redirect_uris:     vec!["not-a-uri".to_owned()],
+        allowed_scopes:    vec!["openid".to_owned()],
+        token_auth_method: TokenAuthMethod::None,
+        audience:          None,
     }).await.unwrap_err();
     assert!(matches!(err, ClientOpError::Validation(ClientValidationError::RedirectUriNotAbsolute(_))));
 }
@@ -344,10 +418,11 @@ async fn update_runs_the_same_validation_as_create() {
 async fn update_on_an_unknown_client_is_not_found() {
     let repo = StubClients::new();
     let err = update_client(&repo, "no-such-client", ClientUpdate {
-        name:           "n".to_owned(),
-        redirect_uris:  vec!["https://a/cb".to_owned()],
-        allowed_scopes: vec!["openid".to_owned()],
-        audience:       None,
+        name:              "n".to_owned(),
+        redirect_uris:     vec!["https://a/cb".to_owned()],
+        allowed_scopes:    vec!["openid".to_owned()],
+        token_auth_method: TokenAuthMethod::None,
+        audience:          None,
     }).await.unwrap_err();
     assert!(matches!(err, ClientOpError::NotFound));
 }

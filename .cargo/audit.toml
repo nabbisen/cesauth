@@ -53,4 +53,40 @@ ignore = [
     #
     # Revisit when: Leptos 0.9.x is adopted, or on reclassification.
     "RUSTSEC-2026-0173",
+
+    # ── RUSTSEC-2026-0387 — `crypto-bigint` 0.5.5, timing variability ─
+    #
+    # RFC 141 C1-141. A vulnerability, not an unmaintained advisory — the
+    # first entry in this file that is. Several operations "intended to
+    # be constant-time" (subtraction, zero counting, division, Montgomery
+    # multiplication, `UintRef` equality, `invert`) can take a
+    # secret-dependent branch depending on compiler and target CPU. A
+    # timing side channel leaks information about SECRET inputs; the
+    # risk this advisory describes requires secret material on the path.
+    #
+    # Path into cesauth (measured 2026-10-25, `cargo tree -i
+    # crypto-bigint`): crypto-bigint <- elliptic-curve <- ecdsa <- p256.
+    # `p256` has exactly two call sites in this crate:
+    #   - `jwt/signer.rs`: does not exist. JWT signing is Ed25519 only
+    #     (`ed25519_dalek::SigningKey`) — this stack signs nothing.
+    #   - `webauthn/cose.rs`: `VerifyingKey::from_sec1_bytes` + `.verify()`
+    #     on a WebAuthn assertion. A PUBLIC key and a signature the
+    #     client just sent — the authenticator holds the private key;
+    #     cesauth only verifies. No secret key material crosses this
+    #     path.
+    #
+    # So: no secret input ever reaches the affected operations through
+    # cesauth's one path into this crate. The upgrade (`crypto-bigint`
+    # >=0.7.6) is the right end state but needs `elliptic-curve`/`ecdsa`/
+    # `p256` bumped too — a real, multi-crate upgrade (`cargo update -p
+    # crypto-bigint` locks 0 packages under current constraints), not a
+    # patch, and not a decision for the middle of an unrelated feature
+    # cycle.
+    #
+    # Revisit when: cesauth ever signs with P-256 (ES256 JWT support, or
+    # any ECDSA signing path) — that would put secret key material on
+    # this exact stack and void this acceptance; upgrade first. Also
+    # revisit when the `elliptic-curve`/`ecdsa`/`p256` upgrade happens
+    # for any other reason — take the fix then, don't re-justify this.
+    "RUSTSEC-2026-0387",
 ]

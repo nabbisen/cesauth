@@ -12,17 +12,28 @@ use cesauth_core::admin::{
     types::{AdminAction, AuditQuery},
 };
 
-use crate::{audit as waudit, audit::EventKind, require_system_admin};
+use crate::{audit as waudit, audit::EventKind, csrf, require_system_admin};
 
 pub async fn export<D>(mut req: Request, ctx: RouteContext<D>) -> worker::Result<Response> {
     require_system_admin!(req, ctx, principal, AdminAction::ViewConsole);
 
+    // RFC 141 C1-141 item 2 — this is a form POST reachable with a session
+    // cookie (`require_system_admin!` admits the cookie path), so
+    // `route-contracts.md`'s "required" CSRF column was a claim with no
+    // check behind it. Same double-submit pattern as `audit_chain.rs`'s
+    // `verify_now`, read before `form_data()` consumes the body.
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = req.form_data().await?;
     let get  = |key: &str| -> Option<String> {
         form.get(key).and_then(|e| {
             if let worker::FormEntry::Field(v) = e { Some(v) } else { None }
         })
     };
+    let csrf_form   = get("csrf").unwrap_or_default();
+    let csrf_cookie = csrf::extract_from_cookie_header(&cookie_header).unwrap_or("");
+    if !csrf::verify(&csrf_form, csrf_cookie) {
+        return Response::error("Bad Request", 400);
+    }
 
     let format = match get("format").as_deref() {
         Some("jsonl") => ExportFormat::Jsonl,

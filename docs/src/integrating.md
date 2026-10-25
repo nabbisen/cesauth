@@ -86,11 +86,27 @@ invalidates the old one immediately.
 `require_pkce` is not a field you set: PKCE (S256) is mandatory for every
 client, always.
 
-**`client_type` and `token_auth_method` cannot be changed after creation.**
+**`client_type` cannot be changed after creation; `token_auth_method` can.**
 `POST /admin/console/clients/:id` updates `name`, `redirect_uris`,
-`allowed_scopes` and `audience` — not those two. To change either, delete
-the client (`POST /admin/console/clients/:id/delete`) and register again
-with a new secret.
+`allowed_scopes`, `audience`, and — between `"client_secret_basic"` and
+`"client_secret_post"` only — `token_auth_method` (omit the field to leave
+it unchanged). It cannot be set to `"none"` for a confidential client, or
+to either secret-bearing method for a public one — the same §4.3 coupling
+`create` enforces, enforced again here. To change `client_type` itself,
+delete the client (`POST /admin/console/clients/:id/delete`) and register
+again with a new secret.
+
+> **Upgrading from before 0.85.0?** `token_auth_method` existed in the
+> schema the whole time but was never read anywhere before this release. A
+> confidential client you registered by hand and never explicitly set it
+> on is `"none"` in storage, and as of 0.85.0 `/token` enforces it: that
+> client's otherwise-correct requests will start failing with
+> `401 invalid_client`, rejected before your secret is even compared. The
+> fix is one call — `POST /admin/console/clients/:id` with the
+> `token_auth_method` your integration actually presents credentials
+> with (`"client_secret_basic"` for `Authorization: Basic`,
+> `"client_secret_post"` for `client_secret` in the form body) — not a
+> re-registration, and not a lost secret.
 
 **Deletion is immediate and irreversible, and does not revoke outstanding
 access.** Refresh stops working at once (every rotation looks the client up

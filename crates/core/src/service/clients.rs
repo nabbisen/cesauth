@@ -267,20 +267,28 @@ pub async fn list_clients<CR: ClientRepository>(clients: &CR) -> Result<Vec<Oidc
     Ok(clients.list().await?)
 }
 
-/// The mutable fields an update may change. `client_type` and
-/// `token_auth_method` are not here — see this module's doc.
+/// The mutable fields an update may change. `client_type` is not here —
+/// see this module's doc and `ClientRepository::update`'s. `token_auth_method`
+/// **is** (RFC 141 C1-141 item 3): pass the client's existing value to leave
+/// it unchanged, or a different one of the two confidential methods to
+/// switch transport.
 #[derive(Debug, Clone)]
 pub struct ClientUpdate {
-    pub name:           String,
-    pub redirect_uris:  Vec<String>,
-    pub allowed_scopes: Vec<String>,
-    pub audience:       Option<String>,
+    pub name:              String,
+    pub redirect_uris:     Vec<String>,
+    pub allowed_scopes:    Vec<String>,
+    pub token_auth_method: TokenAuthMethod,
+    pub audience:          Option<String>,
 }
 
-/// RFC 141 §4.1 update. Re-validates with the client's *existing*
-/// `client_type` / `token_auth_method` (unchanged by this call), so a
-/// row that passed §4.3 at creation cannot be edited into one that
-/// wouldn't.
+/// RFC 141 §4.1 update, extended by C1-141 item 3. Re-validates with the
+/// client's **existing, immutable** `client_type` and the update's
+/// (possibly changed) `token_auth_method` — the same §4.3 validator
+/// `register_client` calls, run again at the same site, not a second one.
+/// A row that passed §4.3 at creation cannot be edited into one that
+/// wouldn't: switching a confidential client to `token_auth_method: None`
+/// (which would only be valid for `Public`) is rejected here exactly as it
+/// would be at creation, because `client_type` cannot change to match it.
 pub async fn update_client<CR: ClientRepository>(
     clients:   &CR,
     client_id: &str,
@@ -289,12 +297,13 @@ pub async fn update_client<CR: ClientRepository>(
     let mut existing = clients.find(client_id).await?.ok_or(ClientOpError::NotFound)?;
     validate_registration(
         &update.name, existing.client_type, &update.redirect_uris,
-        &update.allowed_scopes, existing.token_auth_method, true,
+        &update.allowed_scopes, update.token_auth_method, true,
     )?;
-    existing.name           = update.name;
-    existing.redirect_uris  = update.redirect_uris;
-    existing.allowed_scopes = update.allowed_scopes;
-    existing.audience       = update.audience;
+    existing.name              = update.name;
+    existing.redirect_uris     = update.redirect_uris;
+    existing.allowed_scopes    = update.allowed_scopes;
+    existing.token_auth_method = update.token_auth_method;
+    existing.audience          = update.audience;
     clients.update(&existing).await?;
     Ok(existing)
 }

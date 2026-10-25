@@ -5,7 +5,13 @@ exclude = ["cesauth-adapter-cloudflare", "cesauth-backend"]
 [advisories]
 version = 2
 yanked = "deny"
-ignore = []
+# RUSTSEC-2026-0387 — see `.cargo/audit.toml` for the full justification
+# and revisit trigger (RFC 141 C1-141). Summary: timing variability in
+# crypto-bigint 0.5.5 (via p256/ecdsa/elliptic-curve); cesauth's only
+# path into that stack (webauthn/cose.rs, signature verification) never
+# carries secret material, so the side channel this advisory describes
+# has nothing to leak here.
+ignore = ["RUSTSEC-2026-0387"]
 
 [licenses]
 version = 2

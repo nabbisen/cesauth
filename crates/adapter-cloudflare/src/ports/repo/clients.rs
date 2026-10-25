@@ -206,16 +206,24 @@ impl ClientRepository for CloudflareClientRepository<'_> {
         let now = time::OffsetDateTime::now_utc().unix_timestamp();
         let redirect_uris  = serde_json::to_string(&client.redirect_uris).map_err(|_| PortError::Serialization)?;
         let allowed_scopes = serde_json::to_string(&client.allowed_scopes).map_err(|_| PortError::Serialization)?;
+        // RFC 141 C1-141 item 3: updatable, unlike client_type (see the
+        // trait doc).
+        let tam_s = match client.token_auth_method {
+            TokenAuthMethod::None              => "none",
+            TokenAuthMethod::ClientSecretBasic => "client_secret_basic",
+            TokenAuthMethod::ClientSecretPost  => "client_secret_post",
+        };
 
         let result = db.prepare(
             "UPDATE oidc_clients SET name = ?2, redirect_uris = ?3, allowed_scopes = ?4, \
-             require_pkce = ?5, audience = ?6, updated_at = ?7 WHERE id = ?1"
+             token_auth_method = ?5, require_pkce = ?6, audience = ?7, updated_at = ?8 WHERE id = ?1"
         )
             .bind(&[
                 client.id.clone().into(),
                 client.name.clone().into(),
                 redirect_uris.into(),
                 allowed_scopes.into(),
+                tam_s.into(),
                 d1_int(client.require_pkce as i64),
                 client.audience.clone().map(Into::into).unwrap_or(JsValue::NULL),
                 d1_int(now),
