@@ -45,7 +45,7 @@ use crate::pages::tenant_admin::{
     subscription::TenantSubscription,
     users::TenantUsers,
 };
-use crate::pages::totp::{TotpDisable, TotpEnroll, TotpVerify};
+use crate::pages::totp::{TotpDisable, TotpEnroll};
 
 // ─── Root component ──────────────────────────────────────────────────────────
 
@@ -61,7 +61,8 @@ pub fn App() -> impl IntoView {
                 <Route path=path!("/me/security")              view=SecurityCenter />
                 <Route path=path!("/me/security/sessions")     view=Sessions />
                 <Route path=path!("/me/security/totp/enroll")  view=TotpEnroll />
-                <Route path=path!("/me/security/totp/verify")  view=TotpVerify />
+                // "/me/security/totp/verify" — RFC 143: server-rendered,
+                // no CSR route. See crates/backend/src/routes/me/totp/verify.rs.
                 <Route path=path!("/me/security/totp/disable") view=TotpDisable />
 
                 // ── Tenant admin ──────────────────────────────────

@@ -144,15 +144,13 @@ fi
 #                                     current status before trusting
 #                                     this exemption describes reality.
 #   GET /login                     -- RFC 131 R3 (RFC 132 §8, original)
-#   GET /me/security/totp/verify   -- RFC 131 R3 (RFC 132 C1-132 ruling 1,
-#                                      2026-09-09 — found while building
-#                                      this check; on the *only* recovery
-#                                      path for a no-JS TOTP user, so R3
-#                                      must fix it alongside `/login`, not
-#                                      as an afterthought)
+#
+# The TOTP verify gate was exempted here (RFC 132 C1-132 ruling 1,
+# 2026-09-09) and is no longer: RFC 143 paid that debt — the handler renders
+# the server-side template directly and does not call the shell. Removing
+# the entry is RFC 143's stated acceptance test, not a reclassification.
 E3_EXEMPT="GET /
-GET /login
-GET /me/security/totp/verify"
+GET /login"
 
 # Resolve a handler's qualified name (e.g. "routes::magic_link::verify",
 # as lib.rs spells the call) to one of three states, distinguished by

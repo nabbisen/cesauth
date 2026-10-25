@@ -225,9 +225,6 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async ("/me/security/totp/verify",         |req, ctx| async move {
             routes::me::totp::verify::get_handler(req, ctx.env).await
         })
-        .get_async ("/me/security/totp/verify.json",    |req, ctx| async move {
-            routes::me::totp::verify::get_json_handler(req, ctx.env).await
-        })
         .post_async("/me/security/totp/verify",         |req, ctx| async move {
             routes::me::totp::verify::post_handler(req, ctx.env).await
         })

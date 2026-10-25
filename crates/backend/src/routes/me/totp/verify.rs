@@ -121,8 +121,10 @@ where
 }
 
 
-/// `GET /me/security/totp/verify` — render the prompt page.
-/// `GET /me/security/totp/verify` — Leptos HTML shell (v0.79.4).
+/// `GET /me/security/totp/verify` — render the prompt page, server-side
+/// (RFC 143 — this route is the only one on the sign-in path that was still
+/// exempt from RFC 132's render-server-side rule; see `E3_EXEMPT` in
+/// `scripts/route-contracts-check.sh`, now removed).
 ///
 /// Guards: must have a valid `__Host-cesauth_totp` cookie pointing at
 /// a live `PendingTotp` challenge; otherwise redirects to `/login`.
@@ -144,38 +146,15 @@ pub async fn get_handler(
     let now_unix = OffsetDateTime::now_utc().unix_timestamp();
     match decide_verify_get(&totp_handle, &store, now_unix).await {
         VerifyGetDecision::StaleGate => clear_gate_and_redirect("/login"),
-        VerifyGetDecision::RenderPage =>
-            crate::routes::leptos_shell::leptos_html_shell(
-                &req, &env, "Two-factor verification — cesauth", "en",
-            ).await,
-    }
-}
-
-/// `GET /me/security/totp/verify.json` — CSRF token for the verify form.
-pub async fn get_json_handler(
-    req: Request,
-    env: worker::Env,
-) -> Result<Response> {
-    let cookie_header = match req.headers().get("cookie")? {
-        Some(h) => h,
-        None    => return Response::error("Unauthorized", 401),
-    };
-    let totp_handle = match extract_totp_handle(&cookie_header) {
-        Some(h) if !h.is_empty() => h.to_owned(),
-        _ => return Response::error("Unauthorized", 401),
-    };
-    let store = CloudflareAuthChallengeStore::new(&env);
-    // RFC 140: the store enforces the gate's expiry against this clock.
-    let now_unix = OffsetDateTime::now_utc().unix_timestamp();
-    match decide_verify_get(&totp_handle, &store, now_unix).await {
-        VerifyGetDecision::StaleGate => Response::error("TOTP gate expired", 401),
         VerifyGetDecision::RenderPage => {
             let csrf_token = csrf::mint()
                 .map_err(|_| worker::Error::RustError("csrf rng failed".into()))?;
-            let mut resp = Response::from_json(&serde_json::json!({
-                "csrf_token":  csrf_token,
-                "totp_handle": totp_handle,
-            }))?;
+            let locale = crate::i18n::resolve_locale(&req);
+            let html = templates::totp_verify_page_for(&csrf_token, None, locale);
+            let mut resp = Response::from_html(html)?;
+            // Not optional: the template embeds this exact token, and
+            // `csrf.rs` compares a submission against the cookie. Minting
+            // without setting it would fail every submission on this page.
             resp.headers_mut().append("set-cookie",
                 &csrf::set_cookie_header(&csrf_token)).ok();
             resp.headers_mut().set("cache-control", "no-store").ok();
