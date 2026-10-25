@@ -185,16 +185,77 @@ resolve_handler_shell_status() {
   # Shape 1: direct function in <dirpath>.rs
   local f1="$REPO_ROOT/crates/backend/src/${dirpath}.rs"
   if [ -f "$f1" ] && fn_exists_in_file "$f1" "$fn"; then
-    if fn_body_has_shell "$f1" "$fn"; then return 0; else return 1; fi
+    resolve_body_shell_status "$f1" "$fn"; return $?
   fi
 
   # Shape 2: same-named submodule re-export, <dirpath>/<fn>.rs
   local f2="$REPO_ROOT/crates/backend/src/${dirpath}/${fn}.rs"
   if [ -f "$f2" ] && fn_exists_in_file "$f2" "$fn"; then
-    if fn_body_has_shell "$f2" "$fn"; then return 0; else return 1; fi
+    resolve_body_shell_status "$f2" "$fn"; return $?
   fi
 
   return 2
+}
+
+# RFC 145 — the E3 wrapper-indirection gap, found building cycle 1's
+# fires/does-not-fire pair. `fn_body_has_shell` greps for the literal
+# `leptos_html_shell`, but most GET handlers in this codebase (24 + 11 of
+# them, measured) don't call it directly — they call one of two shared
+# helpers that call it one level down:
+#   operator_json_api::shell       -> routes/admin/operator_json_api.rs
+#   tenant_admin::json_api::shell  -> routes/admin/tenant_admin/json_api.rs
+# so a handler that reaches the shell only through a wrapper used to pass
+# E3 silently. This resolves exactly those two, by file (not by chasing
+# every `super::`/bare/`crate::`-prefixed spelling a generic path
+# resolver would need to) — deliberately **one level**, per RFC 145's
+# E3-wrapper-indirection handoff D1: we check the wrapper's OWN body for
+# `leptos_html_shell` directly, never what the wrapper itself might call.
+# A third wrapper, or a chain deeper than one level, is not something this
+# function goes looking for — see its own fallback to UNRESOLVED below.
+#
+# Status codes match `resolve_handler_shell_status`'s: 0 shell, 1 clean,
+# 2 UNRESOLVED (hard failure, same C1-132 ruling — a wrapper this cannot
+# positively account for must never be silently treated as clean).
+resolve_body_shell_status() {
+  local file="$1" fn="$2"
+  if fn_body_has_shell "$file" "$fn"; then
+    return 0
+  fi
+  if fn_body_calls "$file" "$fn" 'operator_json_api::shell('; then
+    # Re-verified every run, not assumed: if this wrapper's own body ever
+    # stops calling the shell directly, the fact this whole branch relies
+    # on no longer holds, and the caller must not read that as "clean".
+    if fn_body_has_shell "$REPO_ROOT/crates/backend/src/routes/admin/operator_json_api.rs" "shell"; then
+      return 0
+    else
+      return 2
+    fi
+  fi
+  if fn_body_calls "$file" "$fn" 'json_api::shell('; then
+    if fn_body_has_shell "$REPO_ROOT/crates/backend/src/routes/admin/tenant_admin/json_api.rs" "shell"; then
+      return 0
+    else
+      return 2
+    fi
+  fi
+  return 1
+}
+
+# Does function $2's body in file $1 contain the literal substring $3?
+# Same bounding as `fn_body_has_shell` (its own `pub async fn`/`pub fn`/
+# `fn` line to the next top-level one, or EOF), generalised to an
+# arbitrary needle instead of `leptos_html_shell` specifically.
+fn_body_calls() {
+  awk -v want="$2" -v needle="$3" '
+    /^pub async fn [a-zA-Z0-9_]+/ || /^pub fn [a-zA-Z0-9_]+/ || /^fn [a-zA-Z0-9_]+/ {
+      if (match($0, /fn [a-zA-Z0-9_]+/)) {
+        cur = substr($0, RSTART+3, RLENGTH-3)
+      }
+      in_target = (cur == want)
+    }
+    in_target && index($0, needle) { found=1 }
+    END { exit !found }
+  ' "$1"
 }
 
 # Is function $2 defined (as `pub async fn`/`pub fn`/`fn`, top-level) in
