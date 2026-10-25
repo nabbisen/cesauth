@@ -50,6 +50,7 @@ Full policy: `done/000-rfc-lifecycle-policy.md`.
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
 | [144](./proposed/144-introspection-reveals-family-existence.md) | **Introspection reveals that a family exists** to an authenticated caller presenting a forged jti: `expired`/`revoked` are classified before the jti comparison, which the mismatch path conflates to `unknown` precisely to avoid this. **Recorded as an RFC because it was lost once** as "recorded for RFC 118" | P3 | filler |
+| [145](./proposed/145-admin-pages-answer-200-and-render-not-found.md) | **Thirty-five admin pages answer 200 and render Not Found.** Each is documented `render=client`, serves the Leptos shell, and has no route in `app.rs`, so the router's `<NotFound/>` fallback renders after an admin auth check. One — `/admin/console/tokens/new` — is linked from a working console screen, so an operator following the UI reaches it. 34 of the 35 predate 0.85.0. Proposes triage (implement / delete / re-declare) plus the gate direction that would have caught it | P1 | next minor |
 
 ### Other proposed
 
