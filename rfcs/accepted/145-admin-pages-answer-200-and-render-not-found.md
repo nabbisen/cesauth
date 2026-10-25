@@ -336,16 +336,30 @@ a handler the check cannot find must never be silently treated as clean. A
 wrapper it *can* find but does not follow falls into the same blind spot that
 ruling exists to close.
 
-### 12.2 Decision: cycle 3 fixes it, as part of the gate work
+### 12.2 Decision, revised: it lands in 0.85.1, ahead of cycles 2 and 3
 
-**Cycle 3 extends `fn_body_has_shell` to follow one level of wrapper
-indirection** — a resolved call into a function whose own body calls
-`leptos_html_shell` counts as a shell call — and carries a fires/does-not-fire
-pair proving the wrapper shape is now caught. It lands with §4.2's new check,
-in the same script, as one piece of work.
+My first decision was to fold this into cycle 3 with the §4.2 gate. **Reviewing
+the schedule against the owner's philosophy changed it**, on a measurement:
 
-Not in cycle 1 (a two-route patch should not change the resolver), and never by
-touching `E3_EXEMPT`.
+```
+server-declared GET rows: 7
+  of which call a shell WRAPPER (E3 would newly fail these): 0
+```
+
+Teaching `fn_body_has_shell` to follow one level of indirection **fails nothing
+today**. It is a check-only change, it costs nothing, and it begins actually
+policing the two routes cycle 1 converted. Keeping a gate that is known blind
+for two more releases *while relying on it* is the exact defect class this
+project exists to remove — and I had scheduled it that way only because it was
+discovered next to cycle-3 work, not because anything required it.
+
+**Dispatched as its own item**, not a cycle:
+`rfcs/handoffs/145-.../e3-wrapper-indirection-handoff.md`. A resolved call into
+a function whose own body calls `leptos_html_shell` counts as a shell call, with
+a fires/does-not-fire pair proving the wrapper shape is caught. §4.2's new gate
+direction stays with cycle 3, where the last `client` row is resolved.
+
+Never by touching `E3_EXEMPT`.
 
 ### 12.3 One route leaves RFC 145's scope
 

@@ -181,3 +181,81 @@ and the project's rule is that an added capability is a minor.
   path.
 - **Not RFC 044's design.** The grace period, the 30 days and the self-service
   route are its decisions and are not reopened here.
+
+---
+
+## 11. Split into two cycles, after reviewing the schedule against the owner's philosophy (2026-10-25)
+
+The owner's standard is *"finally clean, safe and secure, and robust and
+sophisticated design"*, and *"APIs and UI/UX for users not to be confused or
+misunderstand"*. Re-reading §5 and §9 against that produced a change I had
+missed, and it is the most important sentence in this RFC:
+
+**The lie is the defect. The missing feature is only a gap.**
+
+§9 scheduled all of this as one **minor**, because implementing three
+operations is an added capability. That is correct about the implementation and
+wrong about the urgency, because it bundles two different things:
+
+- **Claiming success for work not done** — a false `DeletionExecuted` in the
+  audit log, a user told their deletion is "scheduled in 30d", and documentation
+  promising an irreversible deletion. **This is a defect, it is live now, and
+  stopping it does not require implementing anything.**
+- **Performing the operations** — real work, correctly a minor, correctly
+  scheduled.
+
+Holding the first behind the second means the audit log keeps recording
+deletions that did not happen for as long as the implementation takes. Nothing
+about the owner's standard permits that when the remedy is small.
+
+### 11.1 Cycle 1 — stop claiming success (patch)
+
+1. **The three handlers emit no completion audit event.** `DeletionRequested`,
+   `DeletionCancelled` and `DeletionExecuted` are written **only** by code that
+   performed the thing. Until cycle 2, that is the sweep alone.
+2. **They return `501 Not Implemented`**, with a body that says the operation
+   is not yet available. 501 is the honest status: the route is understood and
+   not implemented.
+3. **The success redirects go** — no `?executed=1`, `?cancelled=1`, or
+   `?deletion_requested=1`. A parameter that tells the UI an operation
+   succeeded is the "users must not misunderstand" failure in its most literal
+   form.
+4. **`docs/src/expert/admin-operations.md` is corrected** — including `:93`'s
+   *"Physically deletes the user. Irreversible."* — to state that these
+   endpoints are not implemented, with a pointer to this RFC.
+5. **The "Full implementation pending" comments stay** until cycle 2 removes
+   them. They are the only honest thing in the file today.
+
+**Why 501 rather than deleting the routes.** Deleting them would be cleaner in
+the abstract, but it removes a documented surface — a minor — and cycle 2 would
+re-add it. 501 plus corrected documentation is honest, keeps cycle 2 a pure
+wiring job, and nothing that worked stops working, because nothing worked.
+**That makes cycle 1 a patch.**
+
+**Measured, and it limits the user-facing exposure:**
+`grep -rn 'deletion_requested\|delete-account' crates/frontend/src --include='*.rs'`
+returns **0**. No UI reaches `POST /me/security/delete-account`, and nothing
+renders the `?deletion_requested=1` banner, so a user who lands back on
+`/me/security` currently sees no confirmation at all. The route is live and
+documented, so an integrator can call it — but no cesauth screen leads a user
+into this. **That is why cycle 1 is a patch in 0.85.1 and not an emergency.**
+
+### 11.2 Cycle 2 — perform the operations (minor)
+
+§5.1–5.7 and §6 unchanged, minus what cycle 1 already did. The three handlers
+are wired to the existing repository and to
+`deletion::execute_deletion` — the same entry point the sweep uses, so there is
+one deletion path — ids are validated before anything is written, events follow
+outcomes, admin and sweep deletions become distinguishable without parsing free
+text, and the admin queue page gets a real data path and renders server-side.
+
+**This is the minor**, and it ships alone (schedule §4), because deletion is the
+most destructive operation in the system and bundling a console screen beside it
+dilutes review attention on the dangerous part.
+
+### 11.3 What I did not change on review
+
+- **Still not a hotfix.** The failure direction is that data survives while the
+  record says it is gone, never the reverse (§3), and no UI leads a user here.
+- **The sweep is still untouched** and remains the single execution path.
+- **RFC 044's grace period and self-service design** are still not reopened.
