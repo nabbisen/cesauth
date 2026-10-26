@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 147 cycle 2, perform the deletions
 
-**Governing RFC.** `rfcs/accepted/147-deletion-requests-are-audited-but-never-performed.md`
+**Governing RFC.** `rfcs/done/147-deletion-requests-are-audited-but-never-performed.md`
 — **read §11.2 and §13 first.** §13 is cycle 1's findings, and they grew this
 cycle by three items.
 

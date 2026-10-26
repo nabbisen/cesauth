@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 147 cycle 1, stop claiming success
 
-**Governing RFC.** `rfcs/accepted/147-deletion-requests-are-audited-but-never-performed.md`
+**Governing RFC.** `rfcs/done/147-deletion-requests-are-audited-but-never-performed.md`
 — **read §11.1 first.** It is the cycle split, and it is why this cycle
 implements nothing.
 

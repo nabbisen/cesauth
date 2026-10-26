@@ -9,10 +9,14 @@
 > `sweep::run`, which sweeps anonymous-trial retention only. **No deletion has ever
 > been executed by any path.**
 >
-> This RFC stays in `done/` because the lifecycle defines `done/` as code shipped,
-> not behaviour verified — which is precisely the weakness this case exposes, and is
-> recorded as such. **RFC 147 cycle 2 completes the work.** Do not read anything
-> below as describing live behaviour until then.
+> **Resolved 2026-10-27 by RFC 147 cycle 2 (`2099df3`).** Both deliverables now
+> work: the self-service route authenticates the **user** and creates a real
+> request, and the daily cron executes due requests — proven through
+> `/cdn-cgi/local/scheduled`, the actual scheduled handler. **This annotation is
+> kept rather than deleted:** the record that this RFC sat in `done/` for two
+> years of releases while neither deliverable functioned is worth more than a
+> clean-looking file, and it is the evidence behind the open question of whether
+> `done/` should mean *verified* rather than *shipped*.
 
 **Status**: Implemented  
 **Priority**: P1 (completes RFC 044 end-to-end)  

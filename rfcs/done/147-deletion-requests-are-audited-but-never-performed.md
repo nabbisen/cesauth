@@ -1,6 +1,7 @@
 # RFC 147 — Deletion requests are audited but never performed
 
-**Status.** Accepted — approved by the owner 2026-10-25.
+**Status.** **Done** — cycle 1 `c23dbf9` (shipped v0.85.1), cycle 2 `2099df3`,
+accepted 2026-10-27. Awaiting the 0.86.0 cut for a released version.
 **Tier.** **P1 · Category A** — a user's request to delete their own account is
 silently discarded, a documented irreversible operation does nothing, and the
 audit log records a deletion that did not happen.
@@ -391,3 +392,53 @@ comment) and is the audit trail, not a leak.
 
 **This needs its own RFC number before it is scheduled** — the standing lesson
 from RFC 144, which was lost once for want of one. Mine to assign.
+
+## 15. Cycle 2 accepted; RFC complete (2026-10-27)
+
+Deletion requests are performed. Verified independently at `2099df3`: **1,556**
+host tests (1,552 + 4), `migration_chain` **31** with `migrations/` untouched,
+routes **192** (D10's orphaned `.json` removed), clippy / `deny` / `audit` /
+drift / mdbook all **exit 0**, **0** new `EventKind`s, and `admin_execute`
+ordered auth → gate → `find_by_id` + tenant comparison → 404 → `execute_deletion`
+→ **then** the audit event. Review: `.git-exclude/reviewed/147-cycle2-review.md`.
+
+**The end-to-end property that had never held now holds**, and was proven
+through `/cdn-cgi/local/scheduled` — the real `#[event(scheduled)]` handler —
+rather than by calling `sweep_pending_deletions` from a test, which §9 forbade
+precisely because the uncalled function *was* the defect.
+
+### 15.1 §2's table was wrong about the sweep, and running it found that
+
+The handoff listed `sweep_pending_deletions` as *"written, correct-looking"*.
+Wiring it was not sufficient: the first real cron execution wrote
+`audit_events.subject = null`, because the sweep's own `write_owned` call had
+never been reconciled with D5 — which named the sweep explicitly. The
+implementer found it by driving the handler, fixed it, and reported it as a
+defect they had introduced rather than folding it into the diff.
+
+**Second time this session a live run beat a reasoned plan**, after RFC 146's
+measurement, and both times in territory a handoff of mine described as already
+correct.
+
+### 15.2 One surface decision was made without being flagged
+
+`request_self` is now **JSON-only** — `Content-Type: application/json` or 400 —
+which the report does not state; it appears only as `N/A (JSON)` in row 107's
+CSRF column. The decision is **right**: under `csrf.rs:23-29` only
+form-encoded bodies need a token, because a cross-origin JSON POST cannot avoid
+a preflight, so requiring JSON *is* the defence. No caller breaks (**0**
+frontend references).
+
+**But a change to what a caller must send is a decision, and belongs in the
+report** even when correct — a destructive user POST whose contract says CSRF is
+not applicable is the row a future reader stops at. Recorded as a standing rule
+in the review.
+
+### 15.3 What remains, and it is only §14
+
+`invitation_tokens` still retains a deleted user's email address, and
+`request_self` answers `302` to an HTML page from a JSON-only endpoint. **Both
+are this route's surface, and both go into one follow-up RFC** rather than
+staying as notes — §14's own closing instruction, and RFC 144's standing lesson.
+
+**RFC 047 is complete.** Both of its deliverables are reachable and real.
