@@ -376,6 +376,37 @@ started.
   any CI gate is enforced (`main` still has no branch protection), or that
   it works on Cloudflare — **nobody has deployed this tree**.
 
+- ✅ **v0.85.1 — RFC 146, RFC 145 cycle 1, RFC 147 cycle 1, and an E3 gate fix.
+  Shipped 2026-10-27.** **Everything in this release was asserting something it
+  could not back.** **Three deletion endpoints stop claiming success**: each
+  wrote its audit event, logged, and redirected with a success parameter without
+  touching the deletion-request repository, so an admin who "executed" a
+  deletion got `DeletionExecuted` in the audit log, `executed=1` in the URL, and
+  no deletion — for an id that was never validated. They now emit no audit event
+  and return **501**, after their existing auth and CSRF checks, and the operator
+  documentation stops promising an irreversible deletion. **This is a withdrawal,
+  not a fix, and deliberate** — ending a false claim implements nothing, so it
+  ships ahead of the implementation; no flow is lost, because no screen links to
+  the three and the self-service route has always required an admin bearer.
+  **The admin CSP nonce can match its own document**: the render helper minted it
+  after its caller had built the body, so each page named one nonce while its
+  header named another and the inline stylesheet was blocked by its own policy —
+  measured pre-fix, one request's body carried the previous request's header
+  nonce. 77 call sites now render inside a closure. **Two admin pages render
+  instead of answering 200 with Not Found**, including the only one of
+  thirty-five an operator could reach by following a link. **A gate that could
+  not see what it was written to detect** — the server-rendering check missed any
+  shell call made through either wrapper, which is all thirty-five routes — now
+  follows one level and re-verifies the wrapper every run. **Patch** — every item
+  corrects behaviour already specified; nothing gains a capability.
+  **Not claimed:** that deletion works (**nothing in cesauth has ever executed a
+  deletion** — the sweep is written and called by nothing; next release), that
+  the audit log is now correct (entries already written remain), that the admin
+  console works without JavaScript (2 of 35 converted), that the gate now guards
+  the console (7 `server`-declared rows, one level of indirection by decision),
+  that the admin pages are styled (RFC 131 R3 owns that), that any CI gate is
+  enforced, or that it works on Cloudflare — **nobody has deployed this tree**.
+
 - ✅ **v0.85.0 — RFC 141 cycle 1 (+ C1-141), RFC 143 (+ C1-143). Shipped
   2026-10-25.** **The product's primary integration action has an API**:
   registering an OIDC client meant hand-writing `INSERT INTO oidc_clients (…)`

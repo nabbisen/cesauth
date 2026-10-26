@@ -14,6 +14,74 @@ changes will always be called out here.
 
 ---
 
+## [0.85.1] - 2026-10-27
+
+Everything in this release was asserting something it could not back.
+
+### Three deletion endpoints stop claiming success — RFC 147 cycle 1
+
+`POST /me/security/delete-account`,
+`POST /admin/t/:slug/deletion-requests/:id/cancel` and
+`…/execute` each wrote an audit event, logged, and redirected with a success
+parameter — **without touching the deletion-request repository.** An admin who
+"executed" a deletion got `DeletionExecuted` in the audit log, a redirect saying
+`executed=1`, and no deletion. The id was never validated, so the event could be
+written for a request that did not exist.
+
+They now emit **no** audit event and return **`501 Not Implemented`**, after
+their existing authentication, authorization and CSRF checks. The success
+parameters are gone, and the operator documentation no longer promises an
+irreversible deletion it does not perform.
+
+**This is a withdrawal, not a fix, and it is deliberate.** Nothing here
+implements deletion — that is the next release. Ending a false claim requires
+implementing nothing, so it ships first. No flow is lost: no screen links to any
+of the three, and the self-service route has always required an admin bearer, so
+no end user could reach it.
+
+**Nothing in cesauth has ever executed a deletion.** The sweep that was supposed
+to — `sweep_pending_deletions` — is fully written and is called by nothing; the
+daily cron runs the anonymous-trial retention sweep only. Found while verifying
+this change, and fixed in the next release.
+
+### The admin surface's CSP nonce can match its own document — RFC 146
+
+The helper that renders every admin page minted its Content-Security-Policy
+nonce **after** its caller had already rendered the body. Arguments are
+evaluated before the call, so the document was built from whatever nonce the
+previous request left behind: body and header named different nonces, and the
+inline stylesheet every admin page carries was blocked by its own policy.
+
+Measured on a running Worker before the fix, the second request's body nonce was
+**exactly the first request's header nonce**. The helper now takes a closure and
+renders inside it, so the body cannot exist before the nonce does. 77 call sites.
+
+This makes the stylesheet those pages already carried take effect. It is not a
+styling change.
+
+### Two admin pages render instead of answering "Not Found" — RFC 145 cycle 1
+
+Thirty-five admin `GET` routes documented as client-rendered serve the
+single-page-app shell, while the client router has no route for any of them — so
+each answers **200** with a Not Found page, after an administrator has
+authenticated. `/admin/console/tokens/new` was the only one reachable by
+following a link: an operator clicking "new token" on the working tokens screen
+landed on it.
+
+That route and `/admin/console/config/:bucket/edit` now render the server
+template their own modules already contained — the same template their form-error
+path has always rendered. **Thirty-three remain**, deliberately, and are the next
+patch release.
+
+### A gate that could not see what it was written to detect
+
+The check that enforces server-side rendering scanned a handler's own body for
+the shell call. Both shell helpers wrap it one level down, so a handler serving
+the shell through either **passed the check** — which is every one of the
+thirty-five routes above. It now follows one level of indirection and
+re-verifies each wrapper's own body on every run, failing loudly rather than
+passing silently if that stops being true.
+
 ## [0.85.0] - 2026-10-25
 
 ### An OIDC client can be registered over an API — RFC 141

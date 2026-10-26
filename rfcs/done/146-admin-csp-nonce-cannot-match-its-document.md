@@ -1,7 +1,6 @@
 # RFC 146 — The admin surface's CSP nonce cannot match its own document
 
-**Status.** **Done** — landed at `3013ff3`, accepted 2026-10-25. Awaiting the
-0.85.1 cut for a released version.
+**Status.** **Done** — landed at `3013ff3`, accepted 2026-10-25. **Shipped v0.85.1.**
 **Tier.** P1 — it is structural: on this path a matching nonce is not possible,
 not merely absent.
 **Size.** Small in design, mechanical in breadth: one signature, 78 call sites.
