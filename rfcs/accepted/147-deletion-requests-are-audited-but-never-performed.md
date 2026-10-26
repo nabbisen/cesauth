@@ -33,7 +33,10 @@ Each carries the comment *"Full implementation pending
 
 ## 2. What is established
 
-**The machinery is complete and in use elsewhere.** `sweep.rs:252` constructs
+**Superseded by §13 — this is false, and it was mine.** The sweep function is
+complete and **is called by nothing**; see §13.2. What follows describes the
+function, correctly, and its claim to be *in use* does not hold.
+`sweep.rs:252` constructs
 `CloudflareDeletionRequestRepository`, calls `list_due(now)`, and runs
 `cesauth_core::deletion::execute_deletion(&del_repo, &user_repo, &req.id,
 "sweep", now)` — real deletion, with its own `DeletionExecuted` audit event.
@@ -276,3 +279,76 @@ the part a gate could see, and no gate saw any of it.**
 **Not in scope here.** RFC 123 (audit-event completeness, proposed) is where a
 check belongs, and this is a concrete argument for it rather than a new task for
 this RFC. Recorded so RFC 123 inherits the example.
+
+## 13. Cycle 1 accepted, and it refuted two of my claims (2026-10-27)
+
+Cycle 1 landed at `c23dbf9` and is accepted: **0** completion events remain in
+`deletions.rs`, **0** success parameters, the three "pending" comments intact,
+the three contract rows at `none` / `501` with no other column moved, routes
+**193**, host tests **1,552**, every gate green. The implementer queried
+`audit_events` for `kind LIKE 'deletion%'` after driving all three routes and
+got **zero rows** — the absence measured where it lives, not inferred from a
+status code. Review: `.git-exclude/reviewed/147-cycle1-review.md`.
+
+Two findings came with it, reported and deliberately not fixed. Both correct
+this RFC.
+
+### 13.1 `request_self` has never checked user auth — so §3.2 overstated the harm
+
+`deletions.rs:21` imports `crate::routes::admin::auth` and no `me::auth`, where
+a real `/me/*` route uses `crate::routes::me::auth as me_auth`
+(`me/security.rs:48`). It predates cycle 1. **A user's own session gets 401 on
+`POST /me/security/delete-account`; only an admin bearer passes.**
+
+Three sources agree the code is the outlier: the module doc (`deletions.rs:5-6`,
+*"Self-service: authenticated user schedules their own deletion"*),
+`route-contracts.md:107` (actor *"authenticated user"*, session *"session"*),
+and **RFC 047 line 13**. Not an escalation — stricter than intended, the safe
+direction — but the feature is unreachable by the only principal it exists for,
+and row 107's actor and session columns are false.
+
+**§3.2 said "a user's deletion request is silently discarded" while the log said
+scheduled. No user could ever submit one.** The harm was real but confined to an
+admin caller, and the audit-log falsehood (§3.1) is the part that stands.
+
+### 13.2 The sweep has never run — so §2 and §3.1 were wrong
+
+`grep -rn 'sweep_pending_deletions' crates/` returns **two** lines: the
+definition at `sweep.rs:239`, and a **doc comment** at
+`crates/core/src/deletion.rs:25` claiming *"The daily cron pass calls
+`sweep_pending_deletions`"*. Nothing calls it. `scheduled()` (`lib.rs:68`) sends
+the daily cron to `sweep::run`, which sweeps anonymous-trial retention only.
+
+**No deletion has ever been executed in cesauth, by any path.**
+
+§2 said *"the machinery is complete and in use elsewhere"* and §3.1 contrasted
+the handlers' false events with the sweep's *"real ones"*. **There are no real
+ones.** I verified that `sweep_pending_deletions` exists and uses the repository
+correctly, and never checked whether anything calls it — the
+declared-but-never-wired class, committed by me, in an RFC about that class.
+
+`admin-operations.md`'s cron description — *"3. (RFC 047) Executes pending
+deletion requests past `scheduled_at`"* — is false for the same reason.
+
+### 13.3 Cycle 2's scope, revised
+
+In addition to §11.2:
+
+1. **Wire `sweep_pending_deletions` into `scheduled()`.** It is the execution
+   path; cycle 2 cannot be verified without it, and its absence is why "the
+   sweep is the single execution path" was never true.
+2. **Fix `request_self`'s resolver** to a user session check, and
+   `route-contracts.md:107`'s actor and session columns with it. A self-service
+   route must be reachable by the self it serves.
+3. **Correct `core/deletion.rs:25` and `admin-operations.md`'s cron line 3** as
+   each becomes true.
+
+**Cycle 2 therefore completes RFC 047**, whose §4 cron sweep and self-service
+route have never worked. Annotated in `rfcs/done/047-deletion-worker-layer.md`.
+
+### 13.4 Cycle 1's own framing was wrong, in my favour
+
+D1 of the cycle-1 handoff said *"until cycle 2 that is the sweep alone"* —
+naming the sweep as the one true execution path. It is not one. The implementer
+flagged exactly that, which is the second time this cycle a handoff assertion of
+mine was corrected by someone running it.
