@@ -533,3 +533,42 @@ difference originates, and the remaining suspects are `rustc`/LLVM codegen and
 the host. Both belong to **half B**, which stays deferred to 1.0 hardening. No
 cause is claimed, and these figures are recorded, not treated as invariants
 (§2.1).
+
+## 15. Half B has a reproducible datum now, measured twice (2026-10-27)
+
+Half B is *environment* reproducibility — the same commit on another host
+yielding an identical artifact — deferred to 1.0 hardening by §12.3. Until now
+the only cross-host figure on record was **34 bytes**, from RFC 142's review at
+0.84.3, which is small enough to dismiss.
+
+Measuring my own `wrangler deploy --dry-run` against CI's `bundle-size` job on
+two consecutive commits during the 0.85.1 cut:
+
+| Commit | CI total gzip | Mine | Gap | `shim.js` gap | wasm gap |
+|---|---|---|---|---|---|
+| `dbbf5f2` (readiness) | 836,559 | 833,699 | **+2,860** | **+120** | +2,740 |
+| `c4970ec` (**0.85.1**) | 836,806 | 833,805 | **+3,001** | **+120** | +2,881 |
+
+**It is reproducible in shape and magnitude, so it is a host difference rather
+than noise** — about **0.35%** of the artifact, two orders of magnitude above the
+34 bytes previously recorded.
+
+Two observations worth keeping, neither of them a cause:
+
+- **The `shim.js` gap is exactly 120 bytes both times.** `shim.js` is a
+  generated loader and `wrangler` is pinned at 4.131.2, so a stable
+  non-zero gap there is more surprising than the wasm's. One candidate is that
+  the loader embeds the wasm's content-hash filename, which necessarily differs
+  when the wasm does — but that would make the gap *derivative* of the wasm
+  difference, and a 40-character hash is a thin explanation for 120 compressed
+  bytes. **Not established.**
+- **The wasm gap grew with the release commit** (2,740 → 2,881) across a change
+  that was a version bump plus documentation, which is consistent with §14's
+  finding that the pre-optimizer wasm moves on recompilation.
+
+**What this changes:** nothing in the schedule — half B stays deferred, and the
+budget conclusion is unaffected (31% on CI, 31.8% on mine, against a 2.5 MiB
+ceiling). What it changes is the evidence: half B can now be opened with a
+measured, repeatable figure and a named method instead of a single 34-byte
+curiosity. **Recorded in `.git-exclude/release/0.85.1-release-cut.md` §4 as a
+discrepancy-ledger entry.**
