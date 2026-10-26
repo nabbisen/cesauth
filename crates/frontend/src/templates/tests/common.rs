@@ -37,6 +37,7 @@ pub(super) fn make_state(
         totp_enabled:             enabled,
         recovery_codes_remaining: n,
         active_sessions_count:    None,
+        pending_deletion_scheduled_at: None,
     }
 }
 

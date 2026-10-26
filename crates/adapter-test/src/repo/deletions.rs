@@ -36,6 +36,13 @@ impl DeletionRequestRepository for InMemoryDeletionRequestRepository {
             .collect())
     }
 
+    async fn list_pending_by_tenant(&self, tenant_id: &str) -> PortResult<Vec<DeletionRequest>> {
+        Ok(self.rows.lock().unwrap().values()
+            .filter(|r| r.tenant_id == tenant_id && r.status == DeletionStatus::Pending)
+            .cloned()
+            .collect())
+    }
+
     async fn mark_executed(
         &self,
         id:          &str,

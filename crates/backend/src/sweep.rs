@@ -266,10 +266,16 @@ pub async fn sweep_pending_deletions(env: &Env) -> worker::Result<usize> {
         match deletion::execute_deletion(&del_repo, &user_repo, &req.id, "sweep", now).await {
             Ok(()) => {
                 executed += 1;
+                // RFC 147 cycle 2 D5: `subject` is the affected (deleted)
+                // user, not the actor. Before this cycle this passed
+                // `None` — found live, not by inspection, when the first
+                // real sweep-triggered execution wrote a `subject: null`
+                // row. `executed_by` on the row itself already carries
+                // `"sweep"` as the actor (D6).
                 audit::write_owned(
                     env, audit::EventKind::DeletionExecuted,
-                    None, None,
-                    Some(format!("request:{} user:{} sweep", req.id, req.user_id)),
+                    Some(req.user_id.clone()), None,
+                    Some(format!("request:{} sweep", req.id)),
                 ).await.ok();
             }
             Err(e) => {

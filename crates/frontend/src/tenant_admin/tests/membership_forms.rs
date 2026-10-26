@@ -182,7 +182,7 @@ fn deletion_requests_page_empty_state_ja() {
     use super::super::deletions::deletion_requests_page;
     let p = principal();
     let t = tenant();
-    let html = deletion_requests_page(&p, &t, &[], 1_700_000_000);
+    let html = deletion_requests_page(&p, &t, &[], 1_700_000_000, "tok");
     assert!(html.contains("保留中の削除リクエストはありません"),
         "empty state must be in JA");
     assert!(html.contains("削除リクエスト"),
@@ -194,9 +194,32 @@ fn deletion_requests_page_grace_period_notice_ja() {
     use super::super::deletions::deletion_requests_page;
     let p = principal();
     let t = tenant();
-    let html = deletion_requests_page(&p, &t, &[], 1_700_000_000);
+    let html = deletion_requests_page(&p, &t, &[], 1_700_000_000, "tok");
     assert!(html.contains("削除リクエストはスケジュール日以降に実行されます"),
         "grace period notice must be in JA");
+}
+
+/// RFC 147 cycle 2 D9/§7.9 — the template's CSRF used to be a hardcoded
+/// empty string (`let csrf = "";`), so a form here could never carry a
+/// token matching the cookie the handler set. The caller now threads a
+/// real token through; this asserts it actually lands in the rendered
+/// form rather than being silently dropped somewhere in the template.
+#[test]
+fn deletion_requests_page_renders_the_real_csrf_token() {
+    use super::super::deletions::deletion_requests_page;
+    use cesauth_core::deletion::{DeletionRequest, DeletionStatus};
+    let p = principal();
+    let t = tenant();
+    let req = DeletionRequest {
+        id: "del-1".into(), user_id: "u-1".into(), tenant_id: t.id.clone(),
+        requested_at: 1_700_000_000, requested_by: "u-1".into(), reason: None,
+        scheduled_at: 1_700_000_100, executed_at: None, executed_by: None,
+        cancelled_at: None, cancelled_by: None, status: DeletionStatus::Pending,
+    };
+    let html = deletion_requests_page(&p, &t, &[req], 1_700_000_000, "the-real-token");
+    let occurrences = html.matches("value=\"the-real-token\"").count();
+    assert_eq!(occurrences, 2,
+        "both the cancel and execute form must carry the real CSRF token, not an empty string");
 }
 
 #[test]
@@ -206,7 +229,7 @@ fn deletion_requests_page_no_hardcoded_english() {
     let p = principal();
     let t = tenant();
     let inv_html = invitations_page(&p, &t, &[], 1_700_000_000);
-    let del_html = deletion_requests_page(&p, &t, &[], 1_700_000_000);
+    let del_html = deletion_requests_page(&p, &t, &[], 1_700_000_000, "tok");
     // Must not have old hardcoded English strings
     assert!(!inv_html.contains("Invite a user"),
         "invitations page must not have hardcoded English");

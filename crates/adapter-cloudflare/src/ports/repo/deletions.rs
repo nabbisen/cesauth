@@ -139,6 +139,25 @@ impl DeletionRequestRepository for CloudflareDeletionRequestRepository<'_> {
             .map_err(|e| run_err("deletion.list_due deserialize", e))
     }
 
+    async fn list_pending_by_tenant(&self, tenant_id: &str) -> PortResult<Vec<DeletionRequest>> {
+        let db = db(self.env)?;
+        let results = db
+            .prepare(
+                "SELECT * FROM deletion_requests \
+                 WHERE tenant_id = ?1 AND status = 'pending' \
+                 ORDER BY scheduled_at ASC"
+            )
+            .bind(&[tenant_id.into()])
+            .map_err(|e| run_err("deletion.list_pending_by_tenant bind", e))?
+            .all()
+            .await
+            .map_err(|e| run_err("deletion.list_pending_by_tenant query", e))?;
+        results
+            .results::<DelRow>()
+            .map(|rows| rows.into_iter().map(DelRow::into_domain).collect())
+            .map_err(|e| run_err("deletion.list_pending_by_tenant deserialize", e))
+    }
+
     async fn mark_executed(&self, id: &str, executed_by: &str, now: UnixSeconds) -> PortResult<()> {
         let db = db(self.env)?;
         db.prepare(

@@ -33,9 +33,10 @@
 //! consumed — a malformed cookie shouldn't linger.
 
 use cesauth_cf::ports::repo::{
-    CloudflareTotpAuthenticatorRepository, CloudflareTotpRecoveryCodeRepository,
-    CloudflareUserRepository,
+    CloudflareDeletionRequestRepository, CloudflareTotpAuthenticatorRepository,
+    CloudflareTotpRecoveryCodeRepository, CloudflareUserRepository,
 };
+use cesauth_core::deletion::DeletionRequestRepository;
 use cesauth_core::ports::repo::UserRepository;
 use cesauth_core::ports::store::AuthMethod;
 use cesauth_core::tenancy::AccountType;
@@ -113,11 +114,21 @@ async fn build_state(
         0
     };
 
+    // RFC 147 cycle 2 D11 — surfaced from data, not a URL parameter.
+    let del_repo = CloudflareDeletionRequestRepository::new(env);
+    let pending_deletion_scheduled_at = del_repo
+        .find_pending_by_user(session.user_id.as_str())
+        .await
+        .ok()
+        .flatten()
+        .map(|r| r.scheduled_at);
+
     Ok(SecurityCenterState {
         primary_method,
         totp_enabled,
         recovery_codes_remaining: recovery_count,
         active_sessions_count: None,
+        pending_deletion_scheduled_at,
     })
 }
 

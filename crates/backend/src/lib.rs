@@ -132,6 +132,26 @@ pub async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
             if let Err(e) = &repair_result {
                 console_error!("session index repair cron failed: {e:?}");
             }
+
+            // RFC 147 cycle 2 (D12): execute deletion requests whose grace
+            // period has passed. Independent of every task above — same
+            // rule as the rest of this handler, a failure here must not
+            // block, and must not be blocked by, any other scheduled task.
+            // Before this call, nothing in cesauth ever invoked this
+            // function (RFC 147 §13): `sweep::run` only swept anonymous
+            // trials and unconfirmed TOTP enrollments.
+            let deletion_sweep_result = sweep::sweep_pending_deletions(&env).await;
+            let t6 = worker::Date::now().as_millis() / 1000;
+            let _ = cron_status::record_cron_pass(&env, &cron_status::CronPassRecord::new(
+                "deletion_sweep", t5 as i64, t6 as i64,
+                deletion_sweep_result.is_ok(),
+                deletion_sweep_result.as_ref().map(|n| *n as u64).unwrap_or(0),
+                "apply",
+                deletion_sweep_result.as_ref().err().map(|e| format!("{e:?}")),
+            )).await;
+            if let Err(e) = &deletion_sweep_result {
+                console_error!("deletion sweep failed: {e:?}");
+            }
         }
         // Unknown schedule. Either a misconfigured `wrangler.toml`
         // or a future trigger that hasn't been wired here yet.
@@ -414,7 +434,6 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .post_async("/accept-invite",                              |req, ctx| async move { routes::invitations::accept_submit(req, ctx).await })
         // RFC 044: Deletion requests
         .get_async ("/admin/t/:slug/deletion-requests",            |req, ctx| async move { routes::deletions::admin_list(req, ctx).await })
-        .get_async ("/admin/t/:slug/deletion-requests.json",            |req, ctx| async move { routes::deletions::admin_list_json(req, ctx).await })
         .post_async("/admin/t/:slug/deletion-requests/:id/cancel", |req, ctx| async move { routes::deletions::admin_cancel(req, ctx).await })
         .post_async("/admin/t/:slug/deletion-requests/:id/execute",|req, ctx| async move { routes::deletions::admin_execute(req, ctx).await })
         // --- system-admin token-mint UI (v0.14.0) -------------------

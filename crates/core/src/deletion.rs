@@ -22,9 +22,13 @@
 //!
 //! ## Sweep
 //!
-//! The daily cron pass calls `sweep_pending_deletions` which returns all
-//! requests where `scheduled_at <= now` and `status = 'pending'`.  The
-//! caller executes each and updates the row.
+//! The daily cron pass calls `cesauth_backend::sweep::sweep_pending_deletions`
+//! (RFC 147 cycle 2), which itself lists every request where
+//! `scheduled_at <= now` and `status = 'pending'` via
+//! [`DeletionRequestRepository::list_due`] and calls [`execute_deletion`] for
+//! each, updating the row. Before cycle 2 this function existed and was
+//! correct but nothing called it — RFC 147 §13 records that no deletion had
+//! ever executed in cesauth by any path.
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -86,6 +90,10 @@ pub trait DeletionRequestRepository {
     async fn find_by_id(&self, id: &str) -> PortResult<Option<DeletionRequest>>;
     async fn find_pending_by_user(&self, user_id: &str) -> PortResult<Option<DeletionRequest>>;
     async fn list_due(&self, now: UnixSeconds) -> PortResult<Vec<DeletionRequest>>;
+    /// All pending requests for a tenant, for the tenant-admin queue page
+    /// (RFC 147 cycle 2 D3). `list_due` is time-scoped, not tenant-scoped,
+    /// so it cannot serve that page.
+    async fn list_pending_by_tenant(&self, tenant_id: &str) -> PortResult<Vec<DeletionRequest>>;
     async fn mark_executed(&self, id: &str, executed_by: &str, now: UnixSeconds) -> PortResult<()>;
     async fn mark_cancelled(&self, id: &str, cancelled_by: &str, now: UnixSeconds) -> PortResult<()>;
 }
@@ -240,6 +248,12 @@ mod tests {
                 .cloned()
                 .collect())
         }
+        async fn list_pending_by_tenant(&self, tenant_id: &str) -> PortResult<Vec<DeletionRequest>> {
+            Ok(self.0.borrow().values()
+                .filter(|r| r.tenant_id == tenant_id && r.status == DeletionStatus::Pending)
+                .cloned()
+                .collect())
+        }
         async fn mark_executed(&self, id: &str, by: &str, now: i64) -> PortResult<()> {
             if let Some(r) = self.0.borrow_mut().get_mut(id) {
                 r.status = DeletionStatus::Executed;
@@ -354,6 +368,50 @@ mod tests {
         assert!(!req.is_due(NOW + 99), "not due before scheduled_at");
         assert!(req.is_due(NOW + 100), "due exactly at scheduled_at");
         assert!(req.is_due(NOW + 101), "due after scheduled_at");
+    }
+
+    /// RFC 147 cycle 2 §7.1 — the property that has never held in this
+    /// codebase: a request `request_self` (via `schedule_deletion`) creates
+    /// is found by `list_due` once its schedule passes. Before cycle 2,
+    /// nothing called `list_due` at all (§13).
+    #[tokio::test]
+    async fn scheduled_request_is_found_by_list_due_once_due() {
+        let dr = StubDelRepo::default();
+        let req = schedule_deletion(&dr, "u-due", "t-1", "u-due", None, 100, NOW).await.unwrap();
+        assert!(dr.list_due(NOW).await.unwrap().is_empty(), "not due yet");
+        let due = dr.list_due(NOW + 100).await.unwrap();
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].id, req.id);
+    }
+
+    /// RFC 147 cycle 2 §7.6 — cancelling a pending request removes it from
+    /// `list_due`, so a later sweep pass cannot execute it.
+    #[tokio::test]
+    async fn cancelled_request_is_not_listed_as_due() {
+        let dr = StubDelRepo::default();
+        let req = schedule_deletion(&dr, "u-cancel-due", "t-1", "u-cancel-due", None, 0, NOW).await.unwrap();
+        cancel_deletion(&dr, &req.id, "admin", NOW + 1).await.unwrap();
+        assert!(dr.list_due(NOW + 2).await.unwrap().is_empty(),
+            "a cancelled request must not be listed as due");
+    }
+
+    /// RFC 147 cycle 2 D3 — `list_pending_by_tenant` serves the tenant-admin
+    /// queue page; only pending requests for the named tenant are returned.
+    #[tokio::test]
+    async fn list_pending_by_tenant_filters_tenant_and_status() {
+        let dr = StubDelRepo::default();
+        schedule_deletion(&dr, "u-a", "t-1", "u-a", None, DEFAULT_GRACE_SECS, NOW).await.unwrap();
+        let other_tenant = schedule_deletion(&dr, "u-b", "t-2", "u-b", None, DEFAULT_GRACE_SECS, NOW).await.unwrap();
+        let cancelled = schedule_deletion(&dr, "u-c", "t-1", "u-c", None, DEFAULT_GRACE_SECS, NOW).await.unwrap();
+        cancel_deletion(&dr, &cancelled.id, "admin", NOW + 1).await.unwrap();
+
+        let pending_t1 = dr.list_pending_by_tenant("t-1").await.unwrap();
+        assert_eq!(pending_t1.len(), 1, "only the still-pending t-1 request");
+        assert_eq!(pending_t1[0].user_id, "u-a");
+
+        let pending_t2 = dr.list_pending_by_tenant("t-2").await.unwrap();
+        assert_eq!(pending_t2.len(), 1);
+        assert_eq!(pending_t2[0].id, other_tenant.id);
     }
 
     #[tokio::test]

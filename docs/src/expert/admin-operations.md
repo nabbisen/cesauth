@@ -70,13 +70,24 @@ invitation::revoke_invitation(&repo, &invite_id, &admin_user_id, now).await
 
 ## Deletion request management
 
+**RFC 147.** RFC 044/047 shipped this queue non-functional: all three
+routes below audited an outcome and redirected as if it had happened,
+without a repository wired behind any of them, and the daily cron never
+called the function that was supposed to execute them. Cycle 1 (0.85.1)
+stopped the false claims (`501`, no audit event). Cycle 2 (0.86.0) wires
+all three to `cesauth_core::deletion` for real, and wires the cron. This
+completes RFC 047, two years of releases after it shipped.
+
 ### Admin queue
 
 ```http
 GET /admin/t/:slug/deletion-requests
 ```
 
-Shows all pending deletion requests for the tenant.
+Shows all pending deletion requests for the tenant, server-rendered with a
+CSRF token that matches the double-submit cookie (the template's token was
+a hardcoded empty string before 0.86.0 — no form on this page could pass
+CSRF).
 
 ### Cancel a deletion request
 
@@ -84,11 +95,12 @@ Shows all pending deletion requests for the tenant.
 POST /admin/t/:slug/deletion-requests/:id/cancel
 ```
 
-**Not implemented (RFC 147).** Until v0.84.3 this route emitted an audit
-event and redirected as if a pending request had been cancelled, without
-ever looking one up. As of 0.85.1 it returns `501 Not Implemented` after
-the usual auth and tenant-admin checks, and writes no audit event.
-Implementing cancellation is RFC 147 cycle 2.
+Cancels a pending request via `cesauth_core::deletion::cancel_deletion`. A
+`deletion_cancelled` audit event is emitted with `subject` = the affected
+user (not the cancelling admin); the row's own `cancelled_by` column
+records the acting admin. The `:id` is validated against the caller's
+tenant before anything else — a request belonging to another tenant, or
+that does not exist, is a `404` with no audit event.
 
 ### Execute immediately (bypass grace period)
 
@@ -96,13 +108,27 @@ Implementing cancellation is RFC 147 cycle 2.
 POST /admin/t/:slug/deletion-requests/:id/execute
 ```
 
-**Not implemented (RFC 147).** This route did **not** physically delete
-the user, despite what this chapter used to say — it emitted an audit
-event and redirected as if it had, for any `:id`, unvalidated. As of
-0.85.1 it returns `501 Not Implemented` after the usual auth and
-tenant-admin checks, and writes no audit event. Implementing execution,
-with `ON DELETE CASCADE` removing all child data (authenticators,
-sessions, etc.), is RFC 147 cycle 2.
+Executes a pending request immediately via
+`cesauth_core::deletion::execute_deletion`, bypassing the grace period.
+Physically deletes the user row; `ON DELETE CASCADE` removes every child
+table that references `users(id)` (authenticators, sessions, TOTP state,
+tenancy memberships and role assignments — 28 tables in all). **One
+exception: `invitation_tokens` is not removed.** It carries no foreign key
+to `users(id)` — only a plain-text `email` plus `issued_by` / `accepted_by`
+/ `revoked_by` user ids — so a deleted user's invitation history for this
+tenant survives the deletion. Whether to purge or scrub it is a separate
+design question, out of this cycle's scope (RFC 147 §14).
+
+A `deletion_executed` audit event is emitted with `subject` = the deleted
+user; the row's `executed_by` column distinguishes an admin-triggered
+execution (the admin's principal id) from the daily sweep (`"sweep"`) —
+no new audit event kind was added for this. The `:id` is validated against
+the caller's tenant the same way `cancel` is.
+
+This is irreversible. Nothing in cesauth makes deletion reversible or
+recoverable, and this chapter does not claim GDPR compliance is achieved
+by this pipeline existing — only that the three routes above now do what
+they say.
 
 ---
 
@@ -118,10 +144,16 @@ POST /me/security/sessions/revoke-others
 
 ### Force-expire idle sessions
 
-The daily cron trigger calls `sweep.rs::run(env)` which:
+The daily cron trigger calls `sweep.rs::run(env)`, which:
 1. Finds anonymous sessions past their retention window.
 2. Finds unconfirmed TOTP enrollments past their confirmation window.
-3. (RFC 047) Executes pending deletion requests past `scheduled_at`.
+
+Independently, the same cron tick also calls `sweep.rs::sweep_pending_deletions(env)`
+(RFC 147 cycle 2), which executes every pending deletion request past its
+`scheduled_at`. It is a separate function on the same schedule, not a third
+step inside `run` — before 0.86.0 it existed and was correct but nothing
+called it, so no self-requested or admin-scheduled deletion had ever
+executed via the cron.
 
 ---
 

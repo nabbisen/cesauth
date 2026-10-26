@@ -75,6 +75,18 @@ fn SecurityCenterView(state: SecurityCenterState) -> impl IntoView {
         <div class="security-status">
             <h1>"Security"</h1>
 
+            // ── Pending deletion notice (RFC 147 cycle 2 D11) ───────────
+            {state.pending_deletion_scheduled_at.map(|ts| view! {
+                <section role="alert" aria-labelledby="deletion-pending-heading">
+                    <h2 id="deletion-pending-heading">"Account deletion scheduled"</h2>
+                    <p class="badge badge-warn">
+                        "Your account is scheduled for deletion on "
+                        {cesauth_core::util::format_unix_as_iso8601(ts)}
+                        "."
+                    </p>
+                </section>
+            })}
+
             // ── Primary credential ───────────────────────────────────────
             <section aria-labelledby="primary-method-heading">
                 <h2 id="primary-method-heading">"Primary sign-in method"</h2>

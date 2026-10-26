@@ -12,14 +12,20 @@ use cesauth_core::tenancy::types::Tenant;
 use super::frame::{tenant_admin_frame, TenantAdminTab};
 
 /// Render the deletion request queue for a tenant admin.
+///
+/// **RFC 147 cycle 2 D9.** `csrf` used to be a hardcoded empty string, so
+/// every form on this page submitted a token that could never match the
+/// cookie — CSRF validation was unreachable, not merely unperformed. The
+/// caller now mints a real token, sets it as the cookie, and passes the
+/// same value here.
 pub fn deletion_requests_page(
     principal: &AdminPrincipal,
     tenant:    &Tenant,
     requests:  &[DeletionRequest],
     now_unix:  i64,
+    csrf:      &str,
 ) -> String {
-    let l    = Locale::Ja; // admin is JA-only (ADR-013 / RFC 078)
-    let csrf = "";
+    let l = Locale::Ja; // admin is JA-only (ADR-013 / RFC 078)
 
     let notice = format!(
         "<div class=\"alert alert-info mb-4\">{}</div>",

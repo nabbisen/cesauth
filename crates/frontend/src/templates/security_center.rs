@@ -73,6 +73,14 @@ pub struct SecurityCenterState {
     /// Populated by the worker handler via the session-index store.
     /// `None` if the count is unavailable (e.g. DO temporarily unreachable).
     pub active_sessions_count:    Option<u32>,
+    /// **RFC 147 cycle 2 D11** — `Some(scheduled_at)` (Unix seconds) if the
+    /// user has a pending self-requested deletion, else `None`. Sourced
+    /// from `DeletionRequestRepository::find_pending_by_user` — data, not a
+    /// URL parameter (cycle 1 removed `?deletion_requested=1` because it
+    /// asserted an outcome the handler never produced; a query string is
+    /// also the wrong place to keep state the database already holds).
+    /// Deliberately minimal: no request id, no requester.
+    pub pending_deletion_scheduled_at: Option<i64>,
 }
 
 /// Same as [`security_center_page`] but allows the caller to
