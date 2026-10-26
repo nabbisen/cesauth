@@ -352,3 +352,42 @@ D1 of the cycle-1 handoff said *"until cycle 2 that is the sweep alone"* —
 naming the sweep as the one true execution path. It is not one. The implementer
 flagged exactly that, which is the second time this cycle a handoff assertion of
 mine was corrected by someone running it.
+
+## 14. Found while scoping cycle 2: deletion does not reach `invitation_tokens`
+
+Measured across all migrations, taking each table's **last** definition: **every
+table that references `users(id)` carries `ON DELETE CASCADE`** — 28 of them,
+including `authenticators` (`0020`), `totp_authenticators` and
+`totp_recovery_codes` (repaired by `0016`), `user_sessions`, and the four
+tenancy membership and role tables (`0012`, which exists for exactly this
+purpose). So `execute_deletion`'s comment and `admin-operations.md`'s claim
+about child data are **accurate**, and cycle 2 may restore them.
+
+**`invitation_tokens` (`migrations/0018`) is the exception.** It has no
+reference to `users(id)` at all. It carries:
+
+- `email` — the recipient's address, **PII**, `COLLATE NOCASE`;
+- `issued_by`, `accepted_by`, `revoked_by` — user ids as plain text, no FKs.
+
+**So a deleted user's email address survives in `invitation_tokens`**, as does
+their id wherever they issued, accepted or revoked an invitation. For a feature
+whose purpose is erasing a user, that is a real residue — and the codebase is
+elsewhere explicit that emails are PII, in `audit.rs:428-430`'s own warning not
+to put raw emails in an audit subject.
+
+**Not in cycle 2** (§11.2's scope is wiring, and recorded in that handoff as
+D14): whether an invitation record should be purged, or its email scrubbed while
+the tenant's invite history is kept, is a **policy** question with a competing
+claim on the data. Deciding it inside a wiring cycle would be the same mistake as
+bundling the implementation with the honesty fix.
+
+**What cycle 2 must do is not over-claim.** The restored documentation says
+child data *linked by foreign key* is removed, and names `invitation_tokens` as
+retained. A deletion feature that promises complete erasure and leaves an email
+behind would be this RFC's own defect, one layer out.
+
+`deletion_requests` retaining `user_id` after execution is deliberate (`0019`'s
+comment) and is the audit trail, not a leak.
+
+**This needs its own RFC number before it is scheduled** — the standing lesson
+from RFC 144, which was lost once for want of one. Mine to assign.
