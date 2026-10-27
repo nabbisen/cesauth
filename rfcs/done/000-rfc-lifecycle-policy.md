@@ -1,6 +1,9 @@
 # RFC 000 — RFC lifecycle policy
 
-**Status.** Implemented
+**Status.** Implemented. **Amended 2026-10-27 by
+[RFC 151](../accepted/151-done-cannot-distinguish-shipped-from-working.md)**,
+which adds the evidence term to the Status field and §22's rule. The amendment
+is the follow-up this RFC's own "Open questions" section anticipated.
 **Tracks.** Cross-cutting documentation policy. Not tied to any
 single feature; applies to the RFC directory itself.
 **Touches.** `rfcs/` folder structure, the index file at
@@ -86,7 +89,7 @@ An RFC is in exactly one of the following states at any time:
 |---|---|
 | **Draft** | The author is still writing. Not ready for review by anyone but the author and immediate collaborators. |
 | **Proposed** | Open for review and discussion. Implementer should *not* yet start work — the design may change. |
-| **Implemented** | The work has shipped (in a release, on `main`, or wherever the project's stability marker lives). The RFC is now a historical record. |
+| **Implemented** | The work has shipped (in a release, on `main`, or wherever the project's stability marker lives) **and the Status field records what evidence says it works** — see §22. Shipping alone is not sufficient: RFC 047 shipped, sat here across 61 releases, and did nothing. |
 | **Withdrawn** | The author or maintainer decided not to pursue this RFC. The work will not happen. |
 | **Superseded** | A later RFC replaces this one. The replacement RFC's identifier is recorded in this RFC's Status field. |
 
@@ -241,10 +244,11 @@ shape:
 The Status field's value mirrors the folder. When an RFC moves
 between folders, the Status field updates in the same commit.
 For Implemented RFCs, the Status field carries the version or
-release tag in which the work shipped:
+release tag in which the work shipped, **and one evidence term from
+§22**:
 
 ```markdown
-**Status.** Implemented (v1.4.0)
+**Status.** Implemented (v1.4.0) — exercised by tests/revoke_spec.rs
 ```
 
 For Superseded RFCs, the field names the replacement:
@@ -316,7 +320,9 @@ manual sweeps suffice.
 A common convention to make this less painful: when an RFC
 moves to `done/` or `archive/`, the maintainer also runs a
 quick `grep -l "<NNN>-<slug>.md" rfcs/` to find inbound
-references and updates them in the same commit. The cost is
+references and updates them in the same commit. **That same
+move is where §22's evidence term is checked** — one existing
+step gains a condition, rather than the policy gaining a step. The cost is
 seconds per move; the alternative — broken links accumulating
 silently — is worse.
 
@@ -624,9 +630,71 @@ release. This is the recommended adoption pattern for
 existing directories: combine the policy's introduction with
 the migration into a single, atomic change.
 
+## 22. Evidence (amendment, RFC 151, 2026-10-27)
+
+**Shipped and works are different claims, and this policy used to
+record only the first.**
+
+The original **Implemented** definition — "the work has shipped" —
+is satisfiable by code that has never run. At cesauth it was
+satisfied for 61 consecutive releases by
+[RFC 047](./047-deletion-worker-layer.md), whose self-service
+route authenticated the wrong principal and whose cron sweep was
+called by nothing. Both deliverables were dead the whole time and
+the RFC was **correctly filed** by the letter of the definition
+above. The policy was not violated; the policy is what permitted
+it. Because `rfcs/README.md` names `done/` as the canonical
+catalogue, that RFC answered *yes* to "does this product delete
+accounts?" for five months — including, once, to the architect
+citing it as prior art.
+
+### 22.1 The evidence term
+
+An Implemented RFC's Status field carries **one** term, naming the
+strongest evidence that actually exists:
+
+| Term | Means | Decays? |
+|---|---|---|
+| **exercised** | A gate in the project's CI set drives the deliverable end to end and **fails if it stops working**. | No. The only term that keeps holding after its author has forgotten the RFC. |
+| **observed** | Driven at least once against a real runtime and recorded, with the commit it was observed at. | Yes — it was true at that commit and says so. |
+| **reviewed** | A human read the code **and its callers**. | Immediately. |
+| **unknown** | Nobody has established which of the above applies. | — |
+
+`reviewed` says "and its callers" because reading a function body
+is what fails: RFC 047's sweep was *correct code with no caller*,
+and the first review of it confirmed the body and stopped there.
+
+### 22.2 The rule
+
+**A P0 or P1 RFC may not enter `done/` carrying `reviewed` or
+`unknown` alone.** It needs `observed` at minimum — which means
+somebody drove the thing — and `exercised` is expected wherever a
+gate can express it. Lower-tier RFCs may use any term, including
+`unknown`.
+
+`unknown` is deliberately available and deliberately not
+shameful. **A field truthfully marked `unknown` is worth more than
+one optimistically marked `reviewed`**, which would be this same
+defect reproduced one level down — a record asserting more than
+anyone checked.
+
+### 22.3 Back-filling
+
+Do not back-fill the whole folder. An author filling in ~150
+fields in one sitting will fill them in carelessly, and the result
+is a catalogue that looks verified and is not — strictly worse
+than today, because today's `done/` at least makes no claim.
+Back-fill the **P0 and P1 security-relevant** RFCs, and leave the
+rest `unknown` until someone has a reason to find out.
+
 ## Open questions
 
-None at time of acceptance. Future refinements (review SLAs,
-automated state-machine checks, integration with project
+Resolved for the amendment above: the evidence vocabulary is
+closed at four terms on purpose. An open vocabulary invites
+project-specific terms that no reader can rank, and ranking is the
+entire function of the field.
+
+Otherwise none at time of acceptance. Future refinements (review
+SLAs, automated state-machine checks, integration with project
 management tools) will, if needed, land as follow-up RFCs
 referencing this one.

@@ -1,6 +1,7 @@
 # RFC 148 — Account deletion leaves the user's email address behind
 
-**Status.** **Proposed** — awaiting owner authorization.
+**Status.** **Accepted** 2026-10-27. **Scheduled 0.87.0** (minor — the scrub
+write is a fix, but it rides with RFC 149's new surface; see §6).
 **Tier.** P1 — in an identity product, a personal datum that outlives the
 account it identifies is a substantive gap, not a tidiness one.
 **Size.** Small in code; the design question is the work.
@@ -94,10 +95,50 @@ Whichever is chosen, the deliverable includes:
 - the `admin-operations.md` paragraph rewritten from "a separate design
   question" to what was in fact decided.
 
-## 5. Open question for the owner
+## 5. The open question, answered (architect, 2026-10-27)
 
-Does cesauth intend to make a **completeness claim** about deletion — "no
-personal data remains" — or only a **functional** one — "the account and its
-credentials are gone"? The three options above are not equally compatible with
-the first. The answer is a product decision and belongs to the owner; the
-engineering follows from it either way.
+The question was whether cesauth intends a **completeness claim** about
+deletion — "no personal data remains" — or only a **functional** one — "the
+account and its credentials are gone". I raised it as the owner's to make.
+Tested against the owner's standard — *finally clean, safe and secure, and
+robust and sophisticated design; APIs and UI/UX for users not to be confused or
+misunderstand* — it does not need to go back to them, because the standard
+answers it.
+
+A user who deletes their account and is told the action is **irreversible**
+understands that to mean cesauth no longer holds them. It does not mean "your
+credentials are gone but we kept your email address in a table you were never
+told about". **Whatever the law requires, that is a user misunderstanding the
+product's own promise**, which is the second half of the standard, and it is
+caused by us.
+
+**Decision: option 1 — scrub, not purge.** The `email` column is replaced with
+a tombstone on the deletion path; `issued_by`, `issued_at`, `role`,
+`accepted_at` and `revoked_*` are kept. This is the only option that satisfies
+both interests rather than trading one away: the personal datum goes, and the
+record of *what an administrator did* — which is not the deleted user's data to
+erase — stays.
+
+Two consequences, to be handled in the cycle rather than discovered in it:
+
+- **`email` is `NOT NULL COLLATE NOCASE`** (`0018:23`), so the tombstone is a
+  value, not a `NULL` — `deleted-<opaque>@invalid` keyed off the request id, not
+  a hash of the address, since a hash of an email address is still a pointer to
+  the person and `.invalid` is reserved by RFC 2606 for exactly this.
+- **The partial unique index** (`0018:42-44`) covers only rows with
+  `accepted_at IS NULL AND revoked_at IS NULL`. Distinct tombstones per row keep
+  pending rows from colliding; identical tombstones would not.
+
+Scrubbing is a **fix**, so on its own it is patch-level. It is scheduled with
+0.87.0 only because it touches the same deletion path RFC 149 rewrites, and
+RFC 133's standing lesson is that two changes to one path in one cycle cost less
+than two cycles.
+
+## 6. The claim cesauth should make
+
+`admin-operations.md:128-131` currently declines to claim GDPR compliance and
+says only "the three routes above now do what they say". **That sentence should
+survive this RFC unchanged.** Deleting the email address makes the product
+cleaner; it does not make the project a compliance authority, and replacing a
+careful disclaimer with a confident one would be the same defect class in a new
+place. The paragraph gains the scrub and keeps the modesty.

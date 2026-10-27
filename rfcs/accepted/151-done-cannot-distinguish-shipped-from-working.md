@@ -1,6 +1,9 @@
 # RFC 151 — `done/` cannot distinguish "shipped" from "works"
 
-**Status.** **Proposed** — awaiting owner authorization. **Amends RFC 000.**
+**Status.** **Accepted** 2026-10-27. **Amends RFC 000.** **Not release-bound** —
+it is a policy change, implemented by the architect, and it is scheduled
+**before the 0.86.1 dispatch** so that RFC 145 is the first RFC filed under the
+new rule rather than the last under the old one.
 **Tier.** P2 — process, not product. It is here because the cost has been paid
 once, measurably, and the catalogue is what the next reader trusts.
 **Size.** Small: a definition, a field, and one sweep.
@@ -87,6 +90,26 @@ not proposed and would be answered carelessly. Instead: back-fill the **P0 and
 P1 security-relevant** RFCs only, and accept `unknown` as the honest value
 everywhere else rather than inventing a retrospective claim. A field that is
 truthfully `unknown` is worth more than one that is optimistically `reviewed`.
+
+**The sweep is 28 RFCs**, measured rather than guessed:
+
+```
+$ cd rfcs/done && grep -liE '^\*\*(Priority|Tier)\*\*[.:]? *\*?\*?P[01]' *.md | wc -l
+28
+```
+
+**It is not done in this commit, and that is a scheduling decision, not a
+deferral.** Each of the 28 needs its gate located and confirmed to fail when the
+deliverable breaks — which is the only thing that distinguishes `exercised`
+from a hopeful `reviewed`. Twenty-eight of those determinations made quickly,
+between an authorization and a dispatch, would be answered the way §22.3 warns
+about, and the result would be a catalogue that *looks* verified. **That is the
+defect this RFC exists to remove, so producing it here would be self-refuting.**
+
+Scheduled: the architect's own work, in the window after 0.86.1 returns and
+before RFC 145 closes into `done/`. RFC 145 itself is filed under the new rule
+from its dispatch, so the rule is in force immediately; the back-fill is
+retrospective and does not gate it.
 
 **The second place to fix.** RFC 000 §317 already has the maintainer run a
 consistency pass when an RFC moves folders. That pass is where the new field

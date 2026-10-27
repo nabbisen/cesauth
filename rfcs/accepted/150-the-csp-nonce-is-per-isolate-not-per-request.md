@@ -1,6 +1,7 @@
 # RFC 150 — Outside the admin console, the CSP nonce is per-isolate, not per-request
 
-**Status.** **Proposed** — awaiting owner authorization.
+**Status.** **Accepted** 2026-10-27. **Scheduled 0.86.2** (patch — every
+deliverable is a fix). **Blocks RFC 149**, which adds a form to this surface.
 **Tier.** P1 — RFC 006's stated invariant is a *per-request* nonce. On seven
 HTML responders it is per-isolate, which is a different and weaker thing.
 **Size.** Small per site; the gate is the lasting part.

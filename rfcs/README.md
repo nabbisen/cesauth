@@ -26,7 +26,8 @@ Folder = source of truth for state. `Status` field inside each file mirrors fold
 rfcs/
   proposed/    ← under review; implementer should NOT start
   accepted/    ← owner approved; implementer may start
-  done/        ← shipped (released, or on main); never delete
+  done/        ← shipped AND the Status field says what evidence
+               says it works (RFC 000 §22); never delete
   archive/     ← withdrawn or superseded; never delete
   handoffs/    ← companion execution docs; state inherited from the RFC
   README.md    ← this index (update in same commit as any move)
@@ -41,6 +42,13 @@ accepted RFCs carried an apologetic parenthetical instead.
 
 Full policy: `done/000-rfc-lifecycle-policy.md`.
 
+**`done/` means shipped *and* evidenced.** RFC 000 §22 — added by
+[RFC 151](./accepted/151-done-cannot-distinguish-shipped-from-working.md) — requires an
+Implemented RFC's Status field to carry one of **exercised** / **observed** /
+**reviewed** / **unknown**, and bars a P0 or P1 RFC from entering `done/` on
+`reviewed` or `unknown` alone. The rule exists because [RFC 047](./done/047-deletion-worker-layer.md)
+sat here across 61 releases, correctly filed, with both deliverables dead.
+
 ---
 
 ## Proposed
@@ -50,10 +58,6 @@ Full policy: `done/000-rfc-lifecycle-policy.md`.
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
 | [144](./proposed/144-introspection-reveals-family-existence.md) | **Introspection reveals that a family exists** to an authenticated caller presenting a forged jti: `expired`/`revoked` are classified before the jti comparison, which the mismatch path conflates to `unknown` precisely to avoid this. **Recorded as an RFC because it was lost once** as "recorded for RFC 118" | P3 | filler |
-| [148](./proposed/148-deletion-leaves-the-email-address-behind.md) | **Account deletion leaves the user's email address behind.** `invitation_tokens` holds no foreign key to `users(id)`, so a deleted user's rows survive the cascade carrying `email` in plain text plus their id in three columns. The only one of fifteen user-bearing tables that retains a personal datum undeclared — the other two retentions (`audit_events`, `deletion_requests`) are opaque ids and are declared. Documentation is already accurate; the policy is the work | P1 | 0.87.0 |
-| [149](./proposed/149-no-user-can-request-their-own-deletion.md) | **No user can request their own deletion.** `POST /me/security/delete-account` is routed and documented and **has no caller** — no form, no link, no test. Meanwhile `/me/security` renders "Account deletion scheduled" for a state a user cannot enter and cannot cancel. And the handler answers **`302` for both success and not-authenticated**, so a redirect-following client cannot tell whether it just scheduled the destruction of an account | P1 | 0.87.0 |
-| [150](./proposed/150-the-csp-nonce-is-per-isolate-not-per-request.md) | **Outside the admin console the CSP nonce is per-isolate, not per-request.** Seven HTML responders never set one, so the middleware reuses whatever the isolate's previous request left — header and document agree, nothing looks broken, and RFC 006's invariant is unmet. RFC 143 §10.1 recorded one instance; it is seven. `admin_login.rs`'s inline `<style>` carries no nonce attribute at all. RFC 146's `render_with_nonce` is the proven fix; the gate is the lasting part | P1 | 0.87.0 |
-| [151](./proposed/151-done-cannot-distinguish-shipped-from-working.md) | **`done/` cannot distinguish "shipped" from "works"**, and amends RFC 000. RFC 047 sat in `done/` across **61 releases** (0.53.0 → 0.86.0) with both deliverables non-functional, correctly filed by the letter of both definitions. Proposes one Status field — `exercised` / `observed` / `reviewed` — with P0/P1 barred from entering `done/` on `reviewed` alone. No new folder | P2 | — |
 
 ### Other proposed
 
@@ -108,7 +112,11 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 | ID | Title | Tier | Dispatched | Depends on |
 |----|-------|------|---|---|
 | [133](./accepted/133-build-reproducibility.md) | Build reproducibility — **narrowed and split 2026-09-24 (§12)**. Half A scheduled: the optimizer's read–write aliasing and history dependence, the wasm-bindgen determinism experiment, and a false "run-reproducible" claim in `BUNDLE_SIZE_BUDGET.md`. Half B (environment reproducibility) deferred to 1.0 hardening | P2 | 2026-09-24 | — |
+| [151](./accepted/151-done-cannot-distinguish-shipped-from-working.md) | **`done/` cannot distinguish "shipped" from "works"**, and amends RFC 000. RFC 047 sat in `done/` across **61 releases** (0.53.0 → 0.86.0) with both deliverables non-functional, correctly filed by the letter of both definitions. One Status field — `exercised` / `observed` / `reviewed` — with P0/P1 barred from entering `done/` on `reviewed` alone. No new folder | P2 | **architect's own work, before the 0.86.1 dispatch** — so RFC 145 is the first RFC filed under the new rule | — |
 | [145](./accepted/145-admin-pages-answer-200-and-render-not-found.md) | **Thirty-five admin pages answer 200 and render Not Found.** Documented `render=client`, serving the Leptos shell, with no route in `app.rs`, so the `<NotFound/>` fallback renders after an admin auth check. `/admin/console/tokens/new` is linked from a working console screen. Triage each one — implement, delete or re-declare — plus the gate direction that would have caught it | P1 | 2026-10-25 | — |
+| [150](./accepted/150-the-csp-nonce-is-per-isolate-not-per-request.md) | **Outside the admin console the CSP nonce is per-isolate, not per-request.** Seven HTML responders never set one, so the middleware reuses whatever the isolate's previous request left — header and document agree, nothing looks broken, and RFC 006's invariant is unmet. `admin_login.rs`'s inline `<style>` carries no nonce attribute at all. Measure first, then RFC 146's `render_with_nonce`, then the gate | P1 | **0.86.2** | 146 (the fix), 006 (the invariant) |
+| [149](./accepted/149-no-user-can-request-their-own-deletion.md) | **No user can request their own deletion.** The route is registered and documented and **has no caller**. `/me/security` renders "Account deletion scheduled" for a state a user cannot enter and cannot cancel. `302` answers both success and not-authenticated, so a redirect-following client cannot tell whether it scheduled the destruction of an account. §5: self-service cancellation decided **yes** | P1 | **0.87.0** | **150**, 147, 143 (the no-JS form pattern) |
+| [148](./accepted/148-deletion-leaves-the-email-address-behind.md) | **Account deletion leaves the user's email address behind.** `invitation_tokens` holds no key to `users(id)`, so a deleted user's rows survive carrying `email` in plain text. The only one of three surviving tables that retains a personal datum and does not declare it. §5: **scrub, not purge** — tombstone the address, keep the administrative record | P1 | **0.87.0** (rides with 149 — same path) | 147 |
 | [141](./accepted/141-oidc-client-registration.md) | **OIDC client registration has no API.** No route creates a client; the production guide tells an operator to hand-write `INSERT INTO oidc_clients (…) VALUES (…)` with the columns elided, including a hash they must compute. Adds the API, the console screen, an integrator chapter, and enforcement of the registered auth method | P1 | cycle 1 + C1-141 accepted **2026-10-25**; cycle 2 (console screen + §13's six unregistered `page_json` handlers) pending | 116, 137 |
 | [131](./accepted/131-mockup-adoption-strategy.md) | Mockup adoption strategy (merge, not port) | P1 | R2a shipped v0.82.0; **R5b–e shipped v0.83.0** (+ C1-R5); R2b awaits 132 §13 q1; R3 awaits 132 §13 q1 | 130, 132, 134 |
 

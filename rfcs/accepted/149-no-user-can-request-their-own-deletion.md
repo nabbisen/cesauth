@@ -1,6 +1,7 @@
 # RFC 149 — No user can request their own deletion, and the endpoint that would do it answers unreadably
 
-**Status.** **Proposed** — awaiting owner authorization.
+**Status.** **Accepted** 2026-10-27. **Scheduled 0.87.0** (minor — it adds a
+capability users do not have today). **Sequenced after RFC 150**; see §6.
 **Tier.** P1 — a capability the product documents and routes, that no user can
 reach, and whose one response code means two opposite things.
 **Size.** Small-to-medium: one template section, one form, one handler's
@@ -134,10 +135,53 @@ Whether `scripts/route-contracts-check.sh` can assert that — and what the
 legitimate exemptions are (a programmatic API is *meant* to have no in-repo
 caller) — belongs in this RFC's cycle, because this route is the example.
 
-## 5. Open question for the owner
+## 5. The open question, answered (architect, 2026-10-27)
 
-**Should a user be able to cancel their own pending deletion?** The grace period
-(`DEFAULT_GRACE_SECS`) exists so that a mistaken request can be undone, and
-today only a tenant admin can undo it. If the answer is yes, this RFC gains a
-second route and the alert gains its button. If no, the grace period protects
-the user only via a support request, and the alert must say so.
+The question was whether a user should be able to cancel their own pending
+deletion. Tested against the owner's standard rather than returned to them:
+
+**The grace period already answers it.** `DEFAULT_GRACE_SECS` exists for one
+reason — so that a request made in error, or in anger, can be withdrawn before
+anything is destroyed. Today the only cancel route is tenant-admin only
+(`route-contracts.md:109`), so the mechanism that exists to protect the user
+can be operated only by someone else. For a **headless-first** product, where a
+tenant may have no attentive admin and no support desk at all, that is a grace
+period in name.
+
+And the alert is the other half. A `role="alert"` reading *"Your account is
+scheduled for deletion on <date>"* with nothing beside it is the exact shape
+the owner's second clause forbids: the user cannot tell whether the state is
+reversible, who can reverse it, or what to do next.
+
+**Decision: yes — self-service cancellation, and the alert carries the
+control.** This RFC gains:
+
+- `POST /me/security/delete-account/cancel`, form-encoded, CSRF-tokened in the
+  RFC 143 style, calling `deletion::cancel_deletion` — which **already exists**
+  (`crates/core/src/deletion.rs:185`) and is already used by the admin route,
+  so this is wiring, not new core logic. **Verify the callers, not just the
+  body** — that is RFC 147 §2's lesson and it applies to every claim of the form
+  "the machinery is already there", including this one.
+- the alert rewritten to state the deadline, that it can be stopped, and the
+  button that stops it;
+- a `deletion_cancelled` audit event with `cancelled_by` = the user themself,
+  which distinguishes a self-cancellation from an admin's in the same way
+  RFC 147 cycle 2 made `executed_by` distinguish the sweep from an admin.
+
+**What this does not become.** Self-service cancellation is not an undo for an
+*executed* deletion. Nothing in cesauth makes execution reversible and this RFC
+must not imply otherwise — the alert says what can still be stopped and by when,
+and says nothing that reads as a promise after that moment.
+
+## 6. Sequencing: after RFC 150
+
+This RFC adds a rendered HTML surface with a CSRF-tokened form. **RFC 150
+establishes that seven HTML responders outside the admin console serve documents
+whose CSP nonce came from a previous request**, and the `/me` surface renders
+through `templates/chrome.rs`, one of the five nonce-bearing templates. Building
+a new security-critical form on that path before it is fixed means the new
+surface inherits a defect that is invisible by construction — header and
+document agree, so nothing looks wrong.
+
+RFC 150 is therefore scheduled first, as a patch, and this RFC follows. The
+dependency is one-directional: RFC 150 does not need anything here.
