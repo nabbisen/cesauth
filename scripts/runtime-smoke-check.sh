@@ -244,8 +244,12 @@ check_status "/admin/t/acme/detail.json"                        401  "GET /admin
 # RFC 145 cycle 2 D10-style removal: /admin/t/:slug/organizations/:oid/detail.json
 # had no consumer once its GET sibling stopped serving the Leptos shell (the
 # page it existed to feed a CSRF token to was never live — the main route
-# answered 200-with-NotFound). Removed along with the route; nothing left to
-# probe here that /definitely-not-a-route below doesn't already cover.
+# answered 200-with-NotFound), so the route was deleted with it.
+#
+# The probe asserts 404 rather than being removed. /definitely-not-a-route
+# proves the router 404s *unknown* paths; only this line proves *this* route
+# is gone and stays gone. Review of cycle 2, §5.
+check_status "/admin/t/acme/organizations/org1/detail.json"     404  "GET /admin/t/:slug/organizations/:oid/detail.json (deleted, RFC 145 cycle 2)"
 check_status "/definitely-not-a-route"                          404  "GET /definitely-not-a-route (unregistered)"
 check_referenced_assets "$ROOT_BODY"                                 "GET / referenced assets"
 check_csp_grants_wasm "/login"                                       "GET /login CSP (client surface)"

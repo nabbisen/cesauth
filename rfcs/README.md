@@ -57,6 +57,7 @@ sat here across 61 releases, correctly filed, with both deliverables dead.
 
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
+| [152](./proposed/152-the-admin-surfaces-documented-csrf-control-is-not-the-real-one.md) | **The admin surfaces' documented CSRF control is not the real one.** All **35** `POST` rows under `/admin/t/:slug/*` and `/admin/tenancy/*` document CSRF as `required`; **no handler calls `csrf::verify`**. Not exploitable today — the admin cookie is `SameSite=Strict`, so no cross-site request carries it — but fourteen destructive operations rest on one cookie attribute that no row names and no test asserts, while the document promises a token check. Found by the dev team during RFC 145 cycle 2 | P1 | — |
 | [144](./proposed/144-introspection-reveals-family-existence.md) | **Introspection reveals that a family exists** to an authenticated caller presenting a forged jti: `expired`/`revoked` are classified before the jti comparison, which the mismatch path conflates to `unknown` precisely to avoid this. **Recorded as an RFC because it was lost once** as "recorded for RFC 118" | P3 | filler |
 
 ### Other proposed

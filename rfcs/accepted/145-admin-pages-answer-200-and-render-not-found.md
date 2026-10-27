@@ -485,3 +485,81 @@ reconciliation I have not performed would be the fourth.**
 The cycle split therefore stands as **12 + 20**, not 10 + 20, and the
 dispatched handoff carries the twelve with the template each should reach:
 `handoffs/145-admin-pages-answer-200-and-render-not-found/cycle-2-handoff.md`.
+
+## 15. Cycle 2 accepted, and §14's count was wrong (2026-10-27)
+
+Cycle 2 landed at `dc09439` and is **accepted**. Twelve routes wired, all twelve
+rows `server`-declared, no handler among them reaching a shell, two orphaned
+`.json` companions deleted with zero consumers. Independently re-verified:
+routes **190**, `migration_chain` **31**, backend warnings **191 → 162**,
+clippy/drift clean, `+12 / −0` tests confirmed from the diff. Review:
+`.git-exclude/reviewed/145-cycle2-review.md`.
+
+**E3 guards the twelve, confirmed on a route the cycle did not demonstrate.** I
+reverted `forms::group_delete::form` to `json_api::shell(...)` — a different
+handler shape, resolved through the wrapper indirection §11.2 once got wrong —
+and `route-contracts-check.sh` failed correctly, then passed again after a
+byte-identical restore.
+
+### 15.1 Dead routes are 34, not 33, and the extra one fails differently
+
+§14's measurement was wrong because **my matcher let a `:param` segment match a
+literal**. `path!("/admin/tenancy/tenants/:tid")` swallowed the literal `new`,
+so I scored **`/admin/tenancy/tenants/new`** as live. It is not:
+`tenancy_console::forms::tenant_create::form` serves `operator_json_api::shell`
+and `app.rs` has no route of its own for that path.
+
+**It is the only one of the 34 that does not render `<NotFound/>`.** It is
+captured by `:tid` and renders the **tenant-detail page for a tenant whose id is
+the string `"new"`**. A system admin trying to create a tenant is not told the
+page is missing — they are shown a different, plausible page. On the owner's
+standard that is the worse symptom, and this is its only instance.
+
+**Cycle 3's scope is therefore 21, not 20**, and this route needs its own triage
+line: it may want a real create screen, or `app.rs` may simply need a static
+route ahead of the param.
+
+### 15.2 This is a requirement on §4.2's gate, not a footnote
+
+§4.2's check — a `client`-declared `GET` with no matching `app.rs` route fails —
+**would have passed this route if written the way I wrote my script.** Matching
+`:param` against a literal is the natural implementation and it is wrong here.
+
+So the gate must:
+
+- treat a **literal segment as taking precedence over a param**, as the router
+  itself does, and flag a `client` row whose only match is a param that
+  shadows a literal;
+- include a **param-shadowed route in its fires/does-not-fire pair**, not only
+  an absent one. A pair that proves the gate catches a missing route proves
+  nothing about the shadowed class.
+
+**Without both, §4.2 ships believing it covers a class it cannot see** — which
+is exactly what §11.2 was wrong about for E3, one RFC earlier. That is twice now
+in this RFC's history, so the pair is the acceptance criterion, not the check.
+
+### 15.3 Two corrections to my own cycle-2 handoff
+
+- **§9.1 asked for an impossible test.** It required a test asserting *the
+  response*; `worker::Response` has no host constructor, as **RFC 146 §2
+  established with a probe**. The cycle substituted template-level tests, which
+  was correct, but silently — §6's report-and-stop gate covered the case. The
+  twelve tests therefore guard the templates' output, **not the wiring**, and a
+  handler reverted to the shell still passes all twelve. **E3 is the wiring
+  guard.** RFC 145's eventual Status line must credit E3, because a reader who
+  believes the twelve tests cover the wiring would be wrong.
+- **The host-test count is 1,568**, not the 1,561 reported: the cycle's
+  measurement omitted the 7 doc-tests, which is the exclusion
+  **RFC 136 C2-136 removed from the canonical command** for precisely this
+  reason. `+12 / −0` is correct and verified; only the total was off.
+
+### 15.4 One finding outside scope, now RFC 152
+
+The cycle reported that all 35 `POST` rows on both admin surfaces document CSRF
+as `required` and **no handler calls `csrf::verify`** — true, and correctly
+reported rather than absorbed into a patch cycle. **The severity was
+overstated**: the admin cookie is `SameSite=Strict`
+(`admin_login.rs:77`), so no cross-site request carries it and there is no
+exploitable path today. The real defect is a document naming the wrong control
+while fourteen destructive operations rest on one unasserted cookie attribute.
+**That is RFC 152.**
