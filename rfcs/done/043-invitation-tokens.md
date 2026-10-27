@@ -1,5 +1,13 @@
 # RFC 043 — Invitation tokens
 
+> **2026-10-27 — the definition in this RFC has never been implemented.** This
+> RFC defines an invitation as linking an email address to **a tenant and an
+> initial role**. The worker layer ([RFC 046](./046-invitation-worker-layer.md))
+> applies neither: an accepted invitation produces no tenant membership and no
+> role assignment, and the `role` column this RFC introduces is read exactly
+> once in the codebase, into an audit message string. See
+> **[RFC 153](../proposed/153-an-invitation-grants-nothing.md)**.
+
 **Status**: Implemented  
 **Priority**: P1 (SaaS guide §4.4: required for tenant self-service onboarding)  
 **Size**: Large (~200 LOC core + 100 LOC migration + 150 LOC worker)  

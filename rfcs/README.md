@@ -57,6 +57,7 @@ sat here across 61 releases, correctly filed, with both deliverables dead.
 
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
+| [153](./proposed/153-an-invitation-grants-nothing.md) | **An invitation grants nothing.** RFC 043 defines an invitation as linking an email to **a tenant and an initial role**; an accepted invitation produces **neither**. `invite_id` is carried into the magic-link redirect and read nowhere; `inv.role` is read once in the codebase, into an audit message; registration hardcodes `DEFAULT_TENANT_ID`. The invite is consumed **before** registration with the literal `"pending-registration"`, so abandoning the flow locks the user out of their own invitation. `revoke_invitation` has no caller. **Third instance of RFC 047's class, and the first found on purpose** — by RFC 000 §22's back-fill, at RFC 047's sibling | P1 | — |
 | [144](./proposed/144-introspection-reveals-family-existence.md) | **Introspection reveals that a family exists** to an authenticated caller presenting a forged jti: `expired`/`revoked` are classified before the jti comparison, which the mismatch path conflates to `unknown` precisely to avoid this. **Recorded as an RFC because it was lost once** as "recorded for RFC 118" | P3 | filler |
 
 ### Other proposed

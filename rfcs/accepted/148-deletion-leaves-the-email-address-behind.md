@@ -39,7 +39,7 @@ earlier methods gave wrong answers):
 |---|---|---|---|
 | `audit_events` | yes | `subject` = user id | yes — the chain must not be broken |
 | `deletion_requests` | yes | `user_id`, `requested_by`, `executed_by`, `cancelled_by` | yes — `0019:24` says so in a comment, and `execute_deletion`'s doc comment says the row is retained for audit |
-| `invitation_tokens` | yes | **`email`**, `issued_by`, `accepted_by`, `revoked_by` | **no** |
+| `invitation_tokens` | yes | **`email`**, `issued_by` — and see §2.1 for `accepted_by` / `revoked_by` | **no** |
 | 11 others (`user_sessions`, `authenticators`, `totp_authenticators`, `totp_recovery_codes`, `grants`, `consent`, `anonymous_sessions`, `role_assignments`, and the three membership tables) | no | — | cascade |
 
 Fifteen tables carry a user-identifying column; `users` is the deleted row itself,
@@ -51,6 +51,32 @@ The first two surviving tables retain an **opaque identifier whose subject no
 longer exists**,
 which is defensible for an audit trail and is declared as such. The third
 retains **the personal datum itself**.
+
+### 2.1 Correction — two of those four columns never hold a user id
+
+Established 2026-10-27 while RFC 000 §22's back-fill examined the invitation
+flow (**RFC 153**). Of the four columns I listed:
+
+- **`email`** — the invitee's address. Real, and the reason for this RFC.
+- **`issued_by`** — a real admin principal id (`routes/invitations.rs:76`,
+  `ctx_ta.principal.id`).
+- **`accepted_by`** — **never a user id.** `accept_submit` writes the literal
+  string `"pending-registration"` (`routes/invitations.rs:239`), in every row,
+  always.
+- **`revoked_by`** — **always `NULL`.** `core::invitation::revoke_invitation`
+  has no caller outside its own tests, so no invitation has ever been revoked.
+
+**This narrows the RFC, and the narrowing is worth stating rather than quietly
+absorbing.** The retained personal data is the **email address and the issuing
+admin's id** — not four identifiers. §5's decision is unchanged: scrub the
+address, keep the administrative record. But the tombstone work is smaller than
+§5 implied, and `accepted_by` needs no scrubbing because it has never contained
+anything to scrub.
+
+**It also removes an argument I made.** §3 said purging would "erase a record
+of what an administrator did" partly on the strength of acceptance data. The
+acceptance record does not exist. The `issued_by` / `issued_at` / `role`
+argument stands on its own and is enough.
 
 **The documentation is already correct.**
 `docs/src/expert/admin-operations.md:110-120` states the exception, names the

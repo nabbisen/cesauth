@@ -33,15 +33,29 @@ October 2026 by RFC 147, and fixed in 0.85.1 and 0.86.0.
 By the letter of both definitions, RFC 047 was correctly filed the entire time.
 **The policy was not violated; the policy is what permitted it.**
 
-**It is not one case any more.** Reviewing RFC 145 cycle 3 on 2026-10-27 turned
+**It is not one case any more — it is three.** Reviewing RFC 145 cycle 3 on 2026-10-27 turned
 up **[RFC 017](../done/017-oidc-audience-admin-editor.md)** — *"OIDC client
 audience-scoping admin editor"*, **Status: Implemented**, shipped **v0.53.0** —
 whose template exists, has two tests, and renders a form posting to a route
 `lib.rs` has never registered. The page has no caller outside its own tests.
 **Nobody has ever been able to open it.**
 
-Two independent instances, found five weeks apart and both by accident while
-doing something else, are the argument for §22's rule. The second one also
+**And a third, found on purpose.** The back-fill this RFC prescribes began on
+2026-10-27 and started at **[RFC 046](../done/046-invitation-worker-layer.md)**
+— RFC 047's sibling, same cycle, same shape — on the theory that a defect
+found in one half of a pair is worth looking for in the other. It was there.
+An accepted invitation produces **no tenant membership and no role
+assignment**, which is RFC 043's entire definition of an invitation; the
+`role` column is read once in the codebase, into an audit message; and
+`revoke_invitation` has no caller, so the `revoked` state is unreachable.
+RFC 046 and **[RFC 049](../done/049-accept-invite-full-flow.md)** — titled
+*"full implementation"* — are both `done/`, both **Implemented**, both P1.
+Now **[RFC 153](../proposed/153-an-invitation-grants-nothing.md)**.
+
+Three instances, and the third one arrived **before the back-fill had covered
+a tenth of its 28 RFCs**. Two found by accident were the argument for §22's
+rule; the third, found deliberately by the method §22 implies, is the argument
+that the rule is not merely tidy. The second one also
 shows what `reviewed` would have been worth here: the template was reviewed, it
 was correct, it had tests, **and none of that touched the question of whether
 anything routed to it.**
@@ -118,6 +132,44 @@ from a hopeful `reviewed`. Twenty-eight of those determinations made quickly,
 between an authorization and a dispatch, would be answered the way §22.3 warns
 about, and the result would be a catalogue that *looks* verified. **That is the
 defect this RFC exists to remove, so producing it here would be self-refuting.**
+
+### The method, calibrated against the known-false case (2026-10-27)
+
+The back-fill began after 0.86.2. Two things were settled first, because
+without them every determination would have been a guess.
+
+**1. Route existence *is* gated.** Deleting a registered route makes
+`route-contracts-check.sh` fail — verified by removing
+`GET /userinfo`'s registration from `lib.rs`:
+
+```
+⚠   Routes documented but NOT registered in lib.rs (stale):
+    GET /userinfo
+$ echo $?    → 1
+```
+
+(The `⚠` glyph is misleading for a hard failure; the branch sets
+`exit_code=1`.) So "the route is still there" is machine-checked.
+
+**2. And route existence is *not* sufficient for `exercised`.** RFC 047 is the
+proof: its routes were registered and documented for 61 releases while both
+deliverables were dead, so the gate was green the whole time. **A term may only
+be `exercised` when something fails on a change in *behaviour*, not merely on
+removal or on a documentation mismatch.**
+
+That gives a usable rule per RFC: *name the gate or test that would fail if this
+deliverable stopped doing what the RFC says it does.* If naming it is hard, the
+term is not `exercised`.
+
+**Where the back-fill stands: 4 of 28 examined, 1 of the 4 non-functional.**
+It began at RFC 046 deliberately — RFC 047's sibling — and found **RFC 153**
+there. RFCs 043, 046, 047 and 049 are annotated; the remaining 24 have had no
+determination and are **`unknown` until they do**, which is §22.3's prescribed
+value and not a placeholder for an optimistic guess.
+
+**This is reported at 4 of 28 rather than held until 28**, because the first
+finding is larger than the back-fill's bookkeeping and the owner should not
+learn of it a week late. The remaining 24 continue as their own scheduled work.
 
 Scheduled: the architect's own work, in the window after 0.86.1 returns and
 before RFC 145 closes into `done/`. RFC 145 itself is filed under the new rule
