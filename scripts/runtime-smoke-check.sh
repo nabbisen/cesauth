@@ -241,7 +241,11 @@ ROOT_BODY="$LAST_BODY"
 check_html "/login"                                                  "GET /login"
 check_status "/admin/tenancy/tenants/foo/detail.json"          401  "GET /admin/tenancy/tenants/:tid/detail.json"
 check_status "/admin/t/acme/detail.json"                        401  "GET /admin/t/:slug/detail.json"
-check_status "/admin/t/acme/organizations/org1/detail.json"    401  "GET /admin/t/:slug/organizations/:oid/detail.json"
+# RFC 145 cycle 2 D10-style removal: /admin/t/:slug/organizations/:oid/detail.json
+# had no consumer once its GET sibling stopped serving the Leptos shell (the
+# page it existed to feed a CSRF token to was never live — the main route
+# answered 200-with-NotFound). Removed along with the route; nothing left to
+# probe here that /definitely-not-a-route below doesn't already cover.
 check_status "/definitely-not-a-route"                          404  "GET /definitely-not-a-route (unregistered)"
 check_referenced_assets "$ROOT_BODY"                                 "GET / referenced assets"
 check_csp_grants_wasm "/login"                                       "GET /login CSP (client surface)"

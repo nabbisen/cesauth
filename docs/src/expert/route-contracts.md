@@ -186,40 +186,38 @@ code-review responsibility.
 | GET | `/admin/t/:slug/detail.json` | Tenant admin | none | JSON (`tenant`, `counts`) | n/a | n/a | N/A (GET) |
 | GET | `/admin/t/:slug/organizations` | Tenant admin | none | org list | client | n/a | N/A (GET) |
 | GET | `/admin/t/:slug/organizations.json` | Tenant admin | none | JSON (`tenant`, `organizations`) | n/a | n/a | N/A (GET) |
-| GET | `/admin/t/:slug/organizations/:oid` | Tenant admin | none | org detail | client | n/a | N/A (GET) |
-| GET | `/admin/t/:slug/organizations/:oid/detail.json` | Tenant admin | none | JSON (`csrf_token`) | n/a | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/organizations/:oid` | Tenant admin | none | org detail | server | `tenant_admin::tests::rfc145_cycle2::organization_detail_page_renders_the_real_page` | N/A (GET) |
 | GET | `/admin/t/:slug/users` | Tenant admin | none | user list | client | n/a | N/A (GET) |
 | GET | `/admin/t/:slug/users.json` | Tenant admin | none | JSON (`tenant`, `users`) | n/a | n/a | N/A (GET) |
-| GET | `/admin/t/:slug/users/:uid/role_assignments` | Tenant admin | none | role assignments | client | n/a | N/A (GET) |
-| GET | `/admin/t/:slug/users/:uid/role_assignments.json` | Tenant admin | none | JSON (`csrf_token`) | n/a | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/users/:uid/role_assignments` | Tenant admin | none | role assignments | server | `tenant_admin::tests::rfc145_cycle2::role_assignments_page_renders_the_real_page` | N/A (GET) |
 | GET | `/admin/t/:slug/subscription` | Tenant admin | none | subscription | client | n/a | N/A (GET) |
 | GET | `/admin/t/:slug/subscription.json` | Tenant admin | none | JSON (`tenant`) | n/a | n/a | N/A (GET) |
 | GET | `/admin/t/:slug/organizations/new` | Tenant admin | none | new-org form | client | n/a | N/A (GET) |
 | GET | `/admin/t/:slug/organizations/new.json` | Tenant admin | none | JSON (`csrf_token`) | n/a | n/a | N/A (GET) |
 | POST | `/admin/t/:slug/organizations/new` | Tenant admin | `organization_created` | redirect | client | n/a | required |
-| GET | `/admin/t/:slug/organizations/:oid/status` | Tenant admin | none | status form | client | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/organizations/:oid/status` | Tenant admin | none | status form | server | `tenant_admin::tests::rfc145_cycle2::organization_set_status_form_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/t/:slug/organizations/:oid/status` | Tenant admin | `organization_status_changed` | redirect | client | n/a | required |
-| GET | `/admin/t/:slug/organizations/:oid/groups/new` | Tenant admin | none | new-group form | client | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/organizations/:oid/groups/new` | Tenant admin | none | new-group form | server | `tenant_admin::tests::rfc145_cycle2::group_create_form_renders_the_real_page` | N/A (GET) |
 | GET | `/admin/t/:slug/organizations/:oid/groups/new.json` | Tenant admin | none | JSON (`csrf_token`) | n/a | n/a | N/A (GET) |
 | POST | `/admin/t/:slug/organizations/:oid/groups/new` | Tenant admin | `group_created` | redirect | client | n/a | required |
-| GET | `/admin/t/:slug/groups/:gid/delete` | Tenant admin | none | delete confirm | client | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/groups/:gid/delete` | Tenant admin | none | delete confirm | server | `tenant_admin::tests::rfc145_cycle2::group_delete_form_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/t/:slug/groups/:gid/delete` | Tenant admin | `group_deleted` | redirect | client | n/a | required |
-| GET | `/admin/t/:slug/users/:uid/role_assignments/new` | Tenant admin | none | grant-role form | client | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/users/:uid/role_assignments/new` | Tenant admin | none | grant-role form | server | `tenant_admin::tests::rfc145_cycle2::role_assignment_grant_form_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/t/:slug/users/:uid/role_assignments/new` | Tenant admin | `role_assignment_created` | redirect | client | n/a | required |
-| GET | `/admin/t/:slug/role_assignments/:id/delete` | Tenant admin | none | revoke confirm | client | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/role_assignments/:id/delete` | Tenant admin | none | revoke confirm | server | `tenant_admin::tests::rfc145_cycle2::role_assignment_revoke_form_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/t/:slug/role_assignments/:id/delete` | Tenant admin | `role_assignment_deleted` | redirect | client | n/a | required |
 | GET | `/admin/t/:slug/memberships/new` | Tenant admin | none | add-member form | client | n/a | N/A (GET) |
 | GET | `/admin/t/:slug/memberships/new.json` | Tenant admin | none | JSON (`csrf_token`) | n/a | n/a | N/A (GET) |
 | POST | `/admin/t/:slug/memberships` | Tenant admin | `membership_added` | redirect | client | n/a | required |
-| GET | `/admin/t/:slug/memberships/:uid/delete` | Tenant admin | none | remove confirm | client | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/memberships/:uid/delete` | Tenant admin | none | remove confirm | server | `tenant_admin::tests::rfc145_cycle2::membership_remove_for_tenant_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/t/:slug/memberships/:uid/delete` | Tenant admin | `membership_removed` | redirect | client | n/a | required |
-| GET | `/admin/t/:slug/organizations/:oid/memberships/new` | Tenant admin | none | add-member form | client | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/organizations/:oid/memberships/new` | Tenant admin | none | add-member form | server | `tenant_admin::tests::rfc145_cycle2::membership_add_for_organization_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/t/:slug/organizations/:oid/memberships` | Tenant admin | `membership_added` | redirect | client | n/a | required |
-| GET | `/admin/t/:slug/organizations/:oid/memberships/:uid/delete` | Tenant admin | none | remove confirm | client | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/organizations/:oid/memberships/:uid/delete` | Tenant admin | none | remove confirm | server | `tenant_admin::tests::rfc145_cycle2::membership_remove_for_organization_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/t/:slug/organizations/:oid/memberships/:uid/delete` | Tenant admin | `membership_removed` | redirect | client | n/a | required |
-| GET | `/admin/t/:slug/groups/:gid/memberships/new` | Tenant admin | none | add-member form | client | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/groups/:gid/memberships/new` | Tenant admin | none | add-member form | server | `tenant_admin::tests::rfc145_cycle2::membership_add_for_group_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/t/:slug/groups/:gid/memberships` | Tenant admin | `membership_added` | redirect | client | n/a | required |
-| GET | `/admin/t/:slug/groups/:gid/memberships/:uid/delete` | Tenant admin | none | remove confirm | client | n/a | N/A (GET) |
+| GET | `/admin/t/:slug/groups/:gid/memberships/:uid/delete` | Tenant admin | none | remove confirm | server | `tenant_admin::tests::rfc145_cycle2::membership_remove_for_group_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/t/:slug/groups/:gid/memberships/:uid/delete` | Tenant admin | `membership_removed` | redirect | client | n/a | required |
 
 ## REST API v1 (`/api/v1`)

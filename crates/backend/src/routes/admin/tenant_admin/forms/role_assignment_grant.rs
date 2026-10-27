@@ -77,12 +77,27 @@ async fn list_available_roles(env: &worker::Env, tenant_id: &str) -> Vec<Role> {
     roles.list_visible_to_tenant(tenant_id).await.unwrap_or_default()
 }
 
+/// **RFC 145 cycle 2.** Used to return the Leptos shell with no
+/// matching `app.rs` route — HTTP 200 rendering `<NotFound/>`. Reuses
+/// `gate_and_load_user` (the same opening `submit` below uses).
 pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
-        Ok(c)  => c,
-        Err(r) => return Ok(r),
+    let (ctx_ta, user) = match gate_and_load_user(&req, &ctx).await? {
+        Ok(p)     => p,
+        Err(resp) => return Ok(resp),
     };
-    super::super::json_api::shell(&req, &ctx, "Add role assignment — cesauth").await
+    let available = list_available_roles(&ctx.env, &ctx_ta.tenant.id).await;
+    render::html_response(|| grant_form(
+        &ctx_ta.principal, &ctx_ta.tenant,
+        &GrantInput {
+            subject_user: &user,
+            available_roles: &available,
+            role_id: "",
+            scope_type: "",
+            scope_id: "",
+            expires_at: "",
+            error: None,
+        },
+    ))
 }
 
 /// `GET .json` — CSRF token for the form form.

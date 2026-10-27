@@ -159,12 +159,16 @@ async fn gate_for_org<D>(
     Ok(Ok((ctx_ta, org)))
 }
 
+/// **RFC 145 cycle 2.** Used to return the Leptos shell with no
+/// matching `app.rs` route — HTTP 200 rendering `<NotFound/>`. Reuses
+/// `gate_for_org` (the same opening `submit_org` below uses).
 pub async fn form_org<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
-        Ok(c)  => c,
-        Err(r) => return Ok(r),
+    let (ctx_ta, org) = match gate_for_org(&req, &ctx).await? {
+        Ok(p) => p, Err(r) => return Ok(r),
     };
-    super::super::json_api::shell(&req, &ctx, "Add org member — cesauth").await
+    render::html_response(|| ui::for_organization(
+        &ctx_ta.principal, &ctx_ta.tenant, &org.id, &org.slug, "", "", None,
+    ))
 }
 
 /// `GET .json` — CSRF token for the form_org form.
@@ -274,12 +278,16 @@ async fn gate_for_group<D>(
     Ok(Ok((ctx_ta, group, org_id)))
 }
 
+/// **RFC 145 cycle 2.** Used to return the Leptos shell with no
+/// matching `app.rs` route — HTTP 200 rendering `<NotFound/>`. Reuses
+/// `gate_for_group` (the same opening `submit_group` below uses).
 pub async fn form_group<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
-        Ok(c)  => c,
-        Err(r) => return Ok(r),
+    let (ctx_ta, group, org_id) = match gate_for_group(&req, &ctx).await? {
+        Ok(t) => t, Err(r) => return Ok(r),
     };
-    super::super::json_api::shell(&req, &ctx, "Add group member — cesauth").await
+    render::html_response(|| ui::for_group(
+        &ctx_ta.principal, &ctx_ta.tenant, &group.id, &group.slug, &org_id, "", None,
+    ))
 }
 
 /// `GET .json` — CSRF token for the form_group form.

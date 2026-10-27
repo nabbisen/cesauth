@@ -378,11 +378,9 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async("/admin/t/:slug/organizations",                                       |req, ctx| async move { routes::admin::tenant_admin::organizations::page(req, ctx).await })
         .get_async("/admin/t/:slug/organizations.json",                                       |req, ctx| async move { routes::admin::tenant_admin::organizations::page_json(req, ctx).await })
         .get_async("/admin/t/:slug/organizations/:oid",                                  |req, ctx| async move { routes::admin::tenant_admin::organization_detail::page(req, ctx).await })
-        .get_async("/admin/t/:slug/organizations/:oid/detail.json",                           |req, ctx| async move { routes::admin::tenant_admin::organization_detail::page_json(req, ctx).await })
         .get_async("/admin/t/:slug/users",                                               |req, ctx| async move { routes::admin::tenant_admin::users::page(req, ctx).await })
         .get_async("/admin/t/:slug/users.json",                                                |req, ctx| async move { routes::admin::tenant_admin::users::page_json(req, ctx).await })
         .get_async("/admin/t/:slug/users/:uid/role_assignments",                         |req, ctx| async move { routes::admin::tenant_admin::role_assignments::page(req, ctx).await })
-        .get_async("/admin/t/:slug/users/:uid/role_assignments.json",                         |req, ctx| async move { routes::admin::tenant_admin::role_assignments::page_json(req, ctx).await })
         .get_async("/admin/t/:slug/subscription",                                        |req, ctx| async move { routes::admin::tenant_admin::subscription::page(req, ctx).await })
         .get_async("/admin/t/:slug/subscription.json",                                        |req, ctx| async move { routes::admin::tenant_admin::subscription::page_json(req, ctx).await })
         // --- tenant-scoped mutation forms (v0.14.0) -----------------

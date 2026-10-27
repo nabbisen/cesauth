@@ -25,12 +25,28 @@ use crate::routes::admin::tenant_admin::gate;
 // Tenant membership
 // ---------------------------------------------------------------------
 
+/// **RFC 145 cycle 2.** Used to return the Leptos shell with no
+/// matching `app.rs` route — HTTP 200 rendering `<NotFound/>`. Gated
+/// identically to `submit_tenant` below; the role label is
+/// `"(unknown)"`, matching `submit_tenant`'s own non-confirmed
+/// re-render — neither handler looks up the membership's actual role.
 pub async fn confirm_tenant<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
-        Ok(c)  => c,
-        Err(r) => return Ok(r),
+    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
+        Ok(p) => p, Err(r) => return Ok(r),
     };
-    super::super::json_api::shell(&req, &ctx, "Remove member — cesauth").await
+    let ctx_ta = match gate::resolve_or_respond(principal, &ctx).await? {
+        Ok(c) => c, Err(r) => return Ok(r),
+    };
+    if let Err(r) = gate::check_action(
+        &ctx_ta, PermissionCatalog::TENANT_MEMBER_REMOVE,
+        ScopeRef::Tenant { tenant_id: &ctx_ta.tenant.id }, &ctx,
+    ).await? { return Ok(r); }
+
+    let uid = match ctx.param("uid") {
+        Some(s) => s.clone(),
+        None    => return Response::error("missing user id", 400),
+    };
+    render::html_response(|| ui::for_tenant(&ctx_ta.principal, &ctx_ta.tenant, &uid, "(unknown)"))
 }
 
 /// `GET .json` — CSRF token for the confirm_tenant form.
@@ -121,12 +137,16 @@ async fn gate_for_org<D>(
     Ok(Ok((ctx_ta, org, uid)))
 }
 
+/// **RFC 145 cycle 2.** Used to return the Leptos shell with no
+/// matching `app.rs` route — HTTP 200 rendering `<NotFound/>`. Reuses
+/// `gate_for_org` (the same opening `submit_org` below uses).
 pub async fn confirm_org<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
-        Ok(c)  => c,
-        Err(r) => return Ok(r),
+    let (ctx_ta, org, uid) = match gate_for_org(&req, &ctx).await? {
+        Ok(t) => t, Err(r) => return Ok(r),
     };
-    super::super::json_api::shell(&req, &ctx, "Remove org member — cesauth").await
+    render::html_response(|| ui::for_organization(
+        &ctx_ta.principal, &ctx_ta.tenant, &org.id, &org.slug, &uid, "(unknown)",
+    ))
 }
 
 /// `GET .json` — CSRF token for the confirm_org form.
@@ -209,12 +229,16 @@ async fn gate_for_group<D>(
     Ok(Ok((ctx_ta, group, org_id, uid)))
 }
 
+/// **RFC 145 cycle 2.** Used to return the Leptos shell with no
+/// matching `app.rs` route — HTTP 200 rendering `<NotFound/>`. Reuses
+/// `gate_for_group` (the same opening `submit_group` below uses).
 pub async fn confirm_group<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
-        Ok(c)  => c,
-        Err(r) => return Ok(r),
+    let (ctx_ta, group, org_id, uid) = match gate_for_group(&req, &ctx).await? {
+        Ok(t) => t, Err(r) => return Ok(r),
     };
-    super::super::json_api::shell(&req, &ctx, "Remove group member — cesauth").await
+    render::html_response(|| ui::for_group(
+        &ctx_ta.principal, &ctx_ta.tenant, &group.id, &group.slug, &org_id, &uid,
+    ))
 }
 
 /// `GET .json` — CSRF token for the confirm_group form.

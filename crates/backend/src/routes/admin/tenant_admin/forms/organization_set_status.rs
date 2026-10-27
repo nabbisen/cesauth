@@ -56,12 +56,16 @@ async fn gate_and_load<D>(
     Ok(Ok((ctx_ta, org)))
 }
 
+/// **RFC 145 cycle 2.** Used to return the Leptos shell with no
+/// matching `app.rs` route — HTTP 200 rendering `<NotFound/>`. Reuses
+/// `gate_and_load` (the same opening `submit` below uses) so the GET
+/// is gated identically to the POST it precedes.
 pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
-        Ok(c)  => c,
-        Err(r) => return Ok(r),
+    let (ctx_ta, org) = match gate_and_load(&req, &ctx).await? {
+        Ok(pair)  => pair,
+        Err(resp) => return Ok(resp),
     };
-    super::super::json_api::shell(&req, &ctx, "Organisation status — cesauth").await
+    render::html_response(|| form_page(&ctx_ta.principal, &ctx_ta.tenant, &org, None, "", None))
 }
 
 /// `GET .json` — CSRF token for the form form.

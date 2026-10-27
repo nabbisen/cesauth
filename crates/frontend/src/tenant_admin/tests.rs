@@ -17,6 +17,7 @@
 //! - [`affordance_gating`] — v0.15.0 role-based affordance gating
 //! - [`membership_forms`]  — v0.15.0 membership add/remove forms
 //! - [`design_tokens`]     — RFC 105 design-token unification
+//! - [`rfc145_cycle2`]     — the twelve dead GET routes now wired
 
 mod common;
 mod frame_invariants;
@@ -25,3 +26,4 @@ mod mutation_forms;
 mod affordance_gating;
 mod membership_forms;
 mod design_tokens;
+mod rfc145_cycle2;
