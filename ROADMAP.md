@@ -376,6 +376,7 @@ started.
   any CI gate is enforced (`main` still has no branch protection), or that
   it works on Cloudflare — **nobody has deployed this tree**.
 
+- ✅ **v0.86.3 — RFC 150, RFC 152 half A, RFC 155: three documented security controls get a failing witness. Shipped 2026-10-28.**
 - ✅ **v0.86.2 — RFC 145 cycle 3 + the §4.2 gate; RFC 145 complete (35 routes). Shipped 2026-10-27.**
 - ✅ **v0.86.1 — RFC 145 cycle 2: twelve tenant-admin dead pages. Shipped 2026-10-27.**
 - ✅ **v0.86.0 — RFC 147 cycle 2, completing RFC 047. Shipped 2026-10-27.**

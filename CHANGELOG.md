@@ -14,6 +14,58 @@ changes will always be called out here.
 
 ---
 
+## [0.86.3] - 2026-10-28
+
+### Three documented security controls now have something that fails — RFC 150, RFC 152 half A, RFC 155
+
+Each of these controls was described in the project's own records, held in
+practice, and was enforced by nothing. None was being violated. All three now
+have a test or gate that has been demonstrated to fail when the control is
+removed.
+
+### Fixed
+
+- **The CSP nonce was per-isolate, not per-request** (RFC 150). Seven HTML
+  responders outside the admin console never generated one, so the
+  security-headers middleware reused whatever the isolate's previous request
+  had left — header and document agreed, nothing looked wrong, and the nonce
+  was no longer unpredictable per response. Measured directly: a nonce minted
+  for one request appeared unchanged in the next, unrelated one. All seven now
+  mint through a single shared helper, and the operator login page's inline
+  `<style>`, which carried no `nonce` attribute at all, now carries one.
+- **The admin surfaces' CSRF column named the wrong control** (RFC 152 half A).
+  Thirty-three of thirty-five `POST` routes under `/admin/t/:slug/*` and
+  `/admin/tenancy/*` documented CSRF as `required`, meaning a double-submit
+  token check, and performed none. The actual defence is the admin cookie's
+  `SameSite=Strict`, which no row mentioned and no test asserted. The rows now
+  name it, and the cookie's attributes are pinned by a host test and a live
+  smoke-check probe. **No behaviour changed**; the token checks themselves are
+  separate work and are not in this release.
+- **A secret could reach `Debug` output** (RFC 155). `MagicLinkPayload` carried
+  a derived `Debug` while documenting its `code` field as *"Secret. OTP
+  plaintext"*; for invitations that field holds a full accept URL rather than
+  an expiring code. Nothing formatted the payload, so nothing leaked. `code`
+  now renders as a redaction marker, asserted against both shapes.
+- **The generic auth-failure messages were unasserted** (RFC 155).
+  `/magic-link/verify` correctly refuses to distinguish an expired code from a
+  wrong one, and no test said so — splitting the two for a friendlier error
+  would have restored the information oracle silently. Both messages are now
+  asserted at the decision boundary.
+- **The admin login page's documentation claimed a check it does not perform.**
+  Its module header said the handler validates the token before setting the
+  session cookie; it screens the token's length, as the handler's own comments
+  explain. Corrected, along with a security note that overstated what
+  `SameSite=Strict` protects.
+
+### Added
+
+- A route-contract gate: `Response::from_html` must not be reached without a
+  nonce being minted in the same function, with one named indirection that is
+  **re-verified on every run** rather than trusted, and a hard failure when the
+  enclosing function cannot be resolved.
+
+---
+
 ## [0.86.2] - 2026-10-27
 
 ### The tenancy console's twenty-one dead pages, and the gate that closes the class — RFC 145 cycle 3
