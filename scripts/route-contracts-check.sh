@@ -534,6 +534,117 @@ if [ -n "$gate42_absent" ]; then
   exit_code=1
 fi
 
+# ── RFC 150: Response::from_html must not be reached except through a
+#    nonce-setting call, in the same function ──────────────────────────
+#
+# RFC 006's invariant is a *per-request* CSP nonce. The security-headers
+# middleware (`lib.rs`) builds the header by reading back whatever
+# `cesauth_frontend::render_nonce()` holds; a handler that renders HTML
+# without first calling `render_body_with_nonce` / `render_with_nonce` /
+# `set_render_nonce` doesn't error — it silently reuses whatever an
+# earlier, unrelated request left in that global. RFC 150 found this on
+# seven of the crate's eleven `Response::from_html` call sites, confirmed
+# live (two unrelated requests on one warm isolate sharing a nonce;
+# `/admin/login` rendering unstyled on a cold one).
+#
+# Same shape as E3: resolve the function enclosing each `from_html` call,
+# check whether that function's OWN body also calls one of the three
+# nonce-setting names, and hard-fail — never silently pass — when the
+# enclosing function cannot be resolved at all. A check that degrades to
+# "found no fn, so nothing to flag" is the exact blind spot RFC 145 §11.2
+# found in E3 and C1-132 ruled against repeating.
+#
+# Named, dated, reviewed exemptions only, same discipline as E3_EXEMPT
+# and GATE_42_EXEMPT above — empty by design: all eleven call sites are
+# fixed as of RFC 150, so there is nothing to exempt yet.
+NONCE_EXEMPT=""
+
+# One known one-level indirection, named explicitly rather than resolved
+# generically — same E3 D1 precedent (RFC 145): `me/totp/verify.rs`'s
+# `get_handler` never calls a nonce-setter itself; it calls
+# `decide_verify_get`, which does (RFC 150 §2's own table: "yes — via
+# decide_verify_get"). Re-verified every run, not assumed: if that
+# function's own body ever stops calling `set_render_nonce` directly,
+# this returns false and the caller falls through to a real violation —
+# never silently treated as clean.
+nonce_set_via_known_wrapper() {
+  local file="$1" fn="$2"
+  local totp_verify_rs="$REPO_ROOT/crates/backend/src/routes/me/totp/verify.rs"
+  if [ "$file" = "$totp_verify_rs" ] && [ "$fn" = "get_handler" ]; then
+    if fn_body_calls "$file" "$fn" 'decide_verify_get(' &&
+       fn_body_calls "$totp_verify_rs" 'decide_verify_get' 'set_render_nonce('; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+from_html_sites=$(
+  grep -rn 'from_html(' "$REPO_ROOT/crates/backend/src/routes" --include='*.rs' |
+  grep -v 'tests\?\.rs\|tests/'
+)
+
+nonce_violations=""
+nonce_unresolved=""
+
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  file="${line%%:*}"
+  rest="${line#*:}"
+  lineno="${rest%%:*}"
+  rel="${file#"$REPO_ROOT"/}"
+
+  fn=$(awk -v target="$lineno" '
+    /^pub async fn [a-zA-Z0-9_]+/ || /^pub fn [a-zA-Z0-9_]+/ || /^fn [a-zA-Z0-9_]+/ {
+      if (match($0, /fn [a-zA-Z0-9_]+/)) {
+        cur = substr($0, RSTART+3, RLENGTH-3)
+      }
+    }
+    NR == target { print cur; exit }
+  ' "$file")
+
+  if [ -z "$fn" ]; then
+    nonce_unresolved="${nonce_unresolved}${rel}:${lineno} -- could not resolve an enclosing top-level fn
+"
+    continue
+  fi
+
+  key="${rel}::${fn}"
+  if fn_body_calls "$file" "$fn" 'render_body_with_nonce(' ||
+     fn_body_calls "$file" "$fn" 'render_with_nonce(' ||
+     fn_body_calls "$file" "$fn" 'set_render_nonce(' ||
+     nonce_set_via_known_wrapper "$file" "$fn"; then
+    : # clean — a nonce-setting call lives in the same function's body
+  else
+    exempted=$(printf '%s\n' "$NONCE_EXEMPT" | grep -Fx "$key" || true)
+    if [ -z "$exempted" ]; then
+      nonce_violations="${nonce_violations}${rel}:${lineno} (fn ${fn}) -- Response::from_html reached with no nonce-setting call in this function's body
+"
+    fi
+  fi
+done <<< "$from_html_sites"
+
+if [ -n "$nonce_unresolved" ]; then
+  echo "❌  Response::from_html call(s) whose enclosing function E150 could not resolve:" >&2
+  printf '%s' "$nonce_unresolved" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line" >&2; done
+  echo "" >&2
+  echo "    This is a hard failure, not a pass — an unresolved call must never be" >&2
+  echo "    treated as clean. Extend the fn-boundary resolver in this script." >&2
+  exit_code=1
+fi
+
+if [ -n "$nonce_violations" ]; then
+  echo "❌  Response::from_html call(s) with no nonce-setting call in the same function" \
+       "(RFC 150 — the CSP nonce will be whatever an earlier, unrelated request left behind):" >&2
+  printf '%s' "$nonce_violations" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line" >&2; done
+  echo "" >&2
+  echo "    Mint and publish a nonce before rendering — render_body_with_nonce()" >&2
+  echo "    (crates/backend/src/routes/admin/console/render.rs) is the shared helper" >&2
+  echo "    every other HTML responder in this crate uses. Do not give this site its" >&2
+  echo "    own set_render_nonce call; that per-site pattern is what produced RFC 150." >&2
+  exit_code=1
+fi
+
 if [ "$exit_code" -eq 0 ]; then
   echo "✅  All ${registered_count} routes are documented in route-contracts.md"
 fi

@@ -78,7 +78,6 @@ pub trait MagicLinkMailer: Send + Sync {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Data passed to `MagicLinkMailer::send` for each issuance.
-#[derive(Debug)]
 pub struct MagicLinkPayload<'a> {
     /// Recipient email address. Matches `users.email` for returning users;
     /// raw input for first-time / anonymous-promote flows.
@@ -99,6 +98,35 @@ pub struct MagicLinkPayload<'a> {
     /// subject lines or body copy per reason.
     pub reason: MagicLinkReason,
 }
+
+/// **RFC 030 §Decision(2) / RFC 155.** *"Never allow `MagicLinkPayload.code`
+/// to reach `Debug` / `Display` / log output."* A plain `derive(Debug)`
+/// printed `code` verbatim — the guarantee was carried entirely by the
+/// doc comment above asking politely, enforced by nothing. This hand-written
+/// impl prints every field except `code`, which always renders as
+/// [`crate::types::secret::REDACTION_MARKER`] regardless of its value.
+///
+/// `code` is not always an OTP. For invitations it is a **full accept
+/// URL** (`routes/invitations.rs`'s own comment: *"the `code` IS the full
+/// accept URL for invitations"*) — a working bearer link, not a six-digit
+/// number that has probably expired. `tests::debug_redacts_code` fixtures
+/// both shapes, not just the OTP one, because a test that only checked
+/// for six digits would pass on a leaked link.
+///
+/// `Display` is deliberately not implemented and should not start being.
+impl std::fmt::Debug for MagicLinkPayload<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MagicLinkPayload")
+            .field("recipient", &self.recipient)
+            .field("handle", &self.handle)
+            .field("code", &crate::types::secret::REDACTION_MARKER)
+            .field("locale", &self.locale)
+            .field("tenant_id", &self.tenant_id)
+            .field("reason", &self.reason)
+            .finish()
+    }
+}
+
 
 /// Reason why a Magic Link was issued.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -193,6 +221,48 @@ mod tests {
         assert_eq!(MagicLinkReason::InitialAuth.as_str(),       "initial_auth");
         assert_eq!(MagicLinkReason::ReturningUserAuth.as_str(), "returning_user_auth");
         assert_eq!(MagicLinkReason::AnonymousPromote.as_str(),  "anonymous_promote");
+    }
+
+    /// RFC 030 §Decision(2) / RFC 155: the guarantee this enforces is
+    /// "never let `code` reach `Debug`", for *either* shape `code` takes
+    /// in this codebase — an OTP (six digits) for ordinary magic-link
+    /// sign-in, and a full accept URL for invitations
+    /// (`routes/invitations.rs`: *"the code IS the full accept URL"*).
+    /// Fixturing only the OTP shape would pass on a leaked invitation
+    /// link, which is the one RFC 155 called out by name.
+    #[test]
+    fn debug_redacts_code_for_both_otp_and_url_shaped_values() {
+        let otp = MagicLinkPayload {
+            recipient: "user@example.com",
+            handle:    "h-123",
+            code:      "482917",
+            locale:    "en",
+            tenant_id: None,
+            reason:    MagicLinkReason::InitialAuth,
+        };
+        let debug_otp = format!("{otp:?}");
+        assert!(!debug_otp.contains("482917"),
+            "OTP-shaped code must not reach Debug: {debug_otp}");
+        assert!(debug_otp.contains(crate::types::secret::REDACTION_MARKER));
+        // Every other field still appears — redaction is scoped to `code`.
+        assert!(debug_otp.contains("user@example.com"));
+        assert!(debug_otp.contains("h-123"));
+
+        let url = "https://auth.example.com/accept-invite?id=inv-1&email=user%40example.com";
+        let invite = MagicLinkPayload {
+            recipient: "user@example.com",
+            handle:    "h-456",
+            code:      url,
+            locale:    "ja",
+            tenant_id: Some("t-acme"),
+            reason:    MagicLinkReason::InitialAuth,
+        };
+        let debug_invite = format!("{invite:?}");
+        assert!(!debug_invite.contains(url),
+            "a URL-shaped code (invitations) must not reach Debug either: {debug_invite}");
+        assert!(!debug_invite.contains("inv-1"),
+            "no fragment of the accept URL may leak through Debug: {debug_invite}");
+        assert!(debug_invite.contains(crate::types::secret::REDACTION_MARKER));
     }
 
     #[test]

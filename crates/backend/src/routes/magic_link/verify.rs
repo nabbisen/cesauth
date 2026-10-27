@@ -22,19 +22,71 @@ use super::{
     MAIL_VERIFY_WINDOW_SECS, TURNSTILE_FIELD,
 };
 
+// ── RFC 074 conflated messages, as decision functions (RFC 155) ──────────────
+//
+// RFC 074 requires that `/magic-link/verify` not reveal which stage failed.
+// It was already implemented correctly — these two message-selection
+// functions are the whole implementation of that requirement — but nothing
+// asserted it: a future split (the "most natural refactor in the world",
+// RFC 155) would reintroduce the oracle with no test failing. Asserted
+// against these functions directly, not the rendered response, so the test
+// fails on a *behaviour* change and survives a *rendering* one (RFC 143's
+// `decide_verify_*` split is the precedent for where this boundary goes).
+
+/// `cesauth_core::magic_link::verify` distinguishes an expired code from a
+/// wrong one (`CoreError::MagicLinkExpired` vs `::MagicLinkMismatch`) —
+/// this function is where that distinction is deliberately thrown away.
+/// Both variants must render the identical message, so an attacker
+/// submitting a wrong code cannot learn whether it merely expired.
+fn incorrect_or_expired_code_message(_err: &cesauth_core::CoreError) -> &'static str {
+    "Incorrect or expired code. Please check your email and try again."
+}
+
+/// The two ways a challenge lookup can fail before a code is even checked:
+/// the handle doesn't resolve to a row at all (`peek` returns `None`), or
+/// it resolves to a row of the wrong `Challenge` variant. Both must render
+/// the identical message — the handle's mere non-existence must not be
+/// distinguishable from "it existed and got used already".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ChallengeLookupFailure {
+    NotFoundOrAlreadyTaken,
+    WrongChallengeVariant,
+}
+
+fn challenge_lookup_failure_message(_failure: ChallengeLookupFailure) -> &'static str {
+    "This magic link has expired or was already used. Please request a new one."
+}
+
 // ── Error response helpers ────────────────────────────────────────────────────
 
 /// Re-render the verify form with an inline error so the user can retry.
 /// Used for *retriable* failures (wrong code, rate limit). The CSRF cookie
 /// already set by `/magic-link/request` is still valid; we just generate a
 /// fresh token for the re-rendered form.
+///
+/// **RFC 150.** Before this, nothing here set a render nonce, so the
+/// template's embedded `nonce` attribute (and the security-headers
+/// middleware's CSP, which reads the same global back) carried whatever
+/// an *earlier, unrelated* request on this isolate happened to leave
+/// behind — measured live, two unrelated requests on the same warm
+/// isolate sharing one nonce. `render_body_with_nonce` (RFC 150, shared
+/// with every other HTML responder in this crate) mints a fresh one
+/// first.
 fn form_retry(handle: &str, error_msg: &str, req: &Request) -> Result<Response> {
     let locale = crate::i18n::resolve_locale(req);
     let csrf_token = csrf::mint().unwrap_or_default();
     let set_cookie = csrf::set_cookie_header(&csrf_token);
-    let html = cesauth_frontend::templates::magic_link_sent_page_for(
-        handle, &csrf_token, Some(error_msg), locale,
-    );
+    let html = match crate::routes::admin::console::render::render_body_with_nonce(|| {
+        cesauth_frontend::templates::magic_link_sent_page_for(
+            handle, &csrf_token, Some(error_msg), locale,
+        )
+    }) {
+        Ok(h)  => h,
+        Err(_) => {
+            worker::console_error!("csp_nonce_failure in magic_link::verify::form_retry");
+            return Response::error("service temporarily unavailable", 500);
+        }
+    };
     let mut resp = Response::from_html(html)?;
     resp.headers_mut().append("set-cookie", &set_cookie).ok();
     Ok(resp)
@@ -42,9 +94,21 @@ fn form_retry(handle: &str, error_msg: &str, req: &Request) -> Result<Response> 
 
 /// Render a terminal HTML error page for *non-retriable* failures (expired
 /// link, CSRF mismatch, internal errors). The user must request a new link.
+///
+/// **RFC 150.** Same fix as `form_retry` above — mints a fresh nonce via
+/// `render_body_with_nonce` before rendering, instead of inheriting
+/// whatever an earlier request left in the render-context global.
 fn html_terminal_error(title: &str, detail: &str, req: &Request) -> Result<Response> {
     let locale = crate::i18n::resolve_locale(req);
-    let html = cesauth_frontend::templates::error_page_for(title, detail, locale);
+    let html = match crate::routes::admin::console::render::render_body_with_nonce(|| {
+        cesauth_frontend::templates::error_page_for(title, detail, locale)
+    }) {
+        Ok(h)  => h,
+        Err(_) => {
+            worker::console_error!("csp_nonce_failure in magic_link::verify::html_terminal_error");
+            return Response::error("service temporarily unavailable", 500);
+        }
+    };
     let mut resp = Response::from_html(html)?.with_status(400);
     let _ = resp.headers_mut().set("cache-control", "no-store");
     Ok(resp)
@@ -170,7 +234,7 @@ pub async fn verify<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         } else {
             html_terminal_error(
                 "Link expired",
-                "This magic link has expired or was already used. Please request a new one.",
+                challenge_lookup_failure_message(ChallengeLookupFailure::NotFoundOrAlreadyTaken),
                 &req,
             )
         },
@@ -184,7 +248,7 @@ pub async fn verify<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         } else {
             html_terminal_error(
                 "Link expired",
-                "This magic link has expired or was already used. Please request a new one.",
+                challenge_lookup_failure_message(ChallengeLookupFailure::WrongChallengeVariant),
                 &req,
             )
         },
@@ -201,7 +265,7 @@ pub async fn verify<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
             // Retriable: user may have mistyped the code; re-render the form.
             form_retry(
                 &body.handle,
-                "Incorrect or expired code. Please check your email and try again.",
+                incorrect_or_expired_code_message(&e),
                 &req,
             )
         };
@@ -298,6 +362,33 @@ async fn resolve_or_create_user(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -----------------------------------------------------------------
+    // RFC 074 / RFC 155 — the conflated failure messages, asserted
+    // against the decision functions the handler actually calls, not a
+    // rendered response. A future edit that distinguishes either pair
+    // (e.g. matching on `CoreError`'s variant to give a more specific
+    // message) fails these tests directly, rather than only being
+    // caught by eyeballing a diff.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn rfc074_expired_and_mismatch_render_the_identical_code_message() {
+        let expired  = incorrect_or_expired_code_message(&cesauth_core::CoreError::MagicLinkExpired);
+        let mismatch = incorrect_or_expired_code_message(&cesauth_core::CoreError::MagicLinkMismatch);
+        assert_eq!(expired, mismatch,
+            "a wrong code and an expired code must be indistinguishable to the caller");
+        assert_eq!(expired, "Incorrect or expired code. Please check your email and try again.");
+    }
+
+    #[test]
+    fn rfc074_missing_and_wrong_variant_render_the_identical_challenge_message() {
+        let not_found = challenge_lookup_failure_message(ChallengeLookupFailure::NotFoundOrAlreadyTaken);
+        let wrong_variant = challenge_lookup_failure_message(ChallengeLookupFailure::WrongChallengeVariant);
+        assert_eq!(not_found, wrong_variant,
+            "a handle that never existed must be indistinguishable from one that was already used");
+        assert_eq!(not_found, "This magic link has expired or was already used. Please request a new one.");
+    }
 
     // -----------------------------------------------------------------
     // VerifyBody deserialization — added in v0.24.0 alongside the

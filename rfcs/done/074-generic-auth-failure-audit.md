@@ -1,17 +1,23 @@
 # RFC 074 — Generic auth failure copy audit
 
-> **2026-10-27 — implemented, and asserted by nothing.** Determined under
-> RFC 000 §22. The generic messages this RFC requires are in place:
-> `magic_link/verify.rs:202` *"Incorrect or expired code…"*, and `:171`/`:185`
-> conflate expiry with reuse. **No test asserts any of them**, so splitting the
-> cases for a friendlier error — the most natural refactor available — would
-> reintroduce the oracle silently.
+> **2026-10-27 — implemented, and was asserted by nothing; fixed in 0.86.3.**
+> Determined under RFC 000 §22. The generic messages this RFC requires were
+> in place: `magic_link/verify.rs`'s *"Incorrect or expired code…"*, and its
+> two challenge-lookup failures conflating expiry with reuse. **No test
+> asserted any of them**, so splitting the cases for a friendlier error —
+> the most natural refactor available — would have reintroduced the oracle
+> silently.
 >
-> **Evidence term: `reviewed`**, which RFC 000 §22 does not permit for a P0.
-> Assertions scheduled 0.86.3 as
-> **[RFC 155](../accepted/155-two-p0-guarantees-rest-on-nothing-that-fails.md)**.
+> **[RFC 155](../accepted/155-two-p0-guarantees-rest-on-nothing-that-fails.md)**
+> extracted the message selection into two pure decision functions
+> (`incorrect_or_expired_code_message`, `challenge_lookup_failure_message`)
+> that the handler now calls, and asserted both conflations directly
+> against them.
 
-**Status**: Implemented  
+**Status**: Done. **`exercised`** (RFC 000 §22) —
+`cesauth_backend::routes::magic_link::verify::tests::rfc074_expired_and_mismatch_render_the_identical_code_message`
+and `::rfc074_missing_and_wrong_variant_render_the_identical_challenge_message`,
+each demonstrated to fail on the natural refactor that would split its pair.  
 **Tier**: P0  
 **Size**: Small (audit) / Medium (if fixes needed)  
 **Target**: v0.62.0  

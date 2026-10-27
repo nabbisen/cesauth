@@ -464,13 +464,22 @@ pub async fn post_confirm_handler(
                 cesauth_core::i18n::MessageKey::TotpEnrollWrongCode,
                 locale,
             );
-            let html = templates::totp_enroll_page_for(
-                &qr_svg,
-                &secret_b32,
-                &token,
-                Some(wrong_code_msg),
-                locale,
-            );
+            // RFC 150: this re-render used to run with no fresh nonce,
+            // inheriting whatever the render-context global held from
+            // an earlier, possibly unrelated request on this isolate.
+            // `render_body_with_nonce` mints a fresh one first, same
+            // shared core as every other fix in this RFC.
+            let html = match crate::routes::admin::console::render::render_body_with_nonce(|| {
+                templates::totp_enroll_page_for(
+                    &qr_svg, &secret_b32, &token, Some(wrong_code_msg), locale,
+                )
+            }) {
+                Ok(h)  => h,
+                Err(_) => {
+                    worker::console_error!("csp_nonce_failure in totp::enroll::post_confirm_handler (wrong code)");
+                    return Response::error("service temporarily unavailable", 500);
+                }
+            };
             Response::from_html(html)
         }
 
@@ -504,7 +513,19 @@ pub async fn post_confirm_handler(
             let csrf = crate::csrf::extract_from_cookie_header(
                 &req.headers().get("cookie").unwrap_or_default().unwrap_or_default(),
             ).unwrap_or_default().to_owned();
-            let html = templates::totp_recovery_codes_page_for(&plaintext_codes, &csrf, locale);
+            // RFC 150: same fix — mint a fresh nonce via
+            // `render_body_with_nonce` before rendering, rather than
+            // inheriting whatever this isolate's render-context global
+            // last held.
+            let html = match crate::routes::admin::console::render::render_body_with_nonce(|| {
+                templates::totp_recovery_codes_page_for(&plaintext_codes, &csrf, locale)
+            }) {
+                Ok(h)  => h,
+                Err(_) => {
+                    worker::console_error!("csp_nonce_failure in totp::enroll::post_confirm_handler (recovery codes)");
+                    return Response::error("service temporarily unavailable", 500);
+                }
+            };
             let mut resp = Response::from_html(html)?;
             let h = resp.headers_mut();
             h.append("set-cookie", &post_auth::clear_totp_enroll_cookie_header()).ok();

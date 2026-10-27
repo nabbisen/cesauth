@@ -144,9 +144,20 @@ pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
         // vs. legit-but-bad-OTP.
         let placeholder_handle = Uuid::new_v4().to_string();
         let placeholder_csrf   = cookie_csrf.as_deref().unwrap_or("");
-        return Response::from_html(
+        // RFC 150: this early return used to render without minting a
+        // nonce first — the only one of this function's two render sites
+        // (the other is at the end, 91 lines below) that didn't. Same
+        // shared core as every other fix in this RFC.
+        let html = match crate::routes::admin::console::render::render_body_with_nonce(|| {
             cesauth_frontend::templates::magic_link_sent_page_for(&placeholder_handle, placeholder_csrf, None, locale)
-        );
+        }) {
+            Ok(h)  => h,
+            Err(_) => {
+                worker::console_error!("csp_nonce_failure in magic_link::request (rate-limited path)");
+                return Response::error("service temporarily unavailable", 500);
+            }
+        };
+        return Response::from_html(html);
     }
 
     // Mint the OTP. Handle = UUID; user-visible only if we store it

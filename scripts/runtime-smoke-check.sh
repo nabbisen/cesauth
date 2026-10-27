@@ -236,6 +236,41 @@ check_csp_lacks_wasm() {
   fi
 }
 
+# RFC 152 half A — the admin cookie's `SameSite=Strict` is the entire
+# CSRF defense for 33 of 35 admin-surface POST routes (route-contracts.md
+# now names it so, rather than the double-submit token that only two of
+# them actually check). `admin_login.rs:71` screens `?token=` only for
+# "obvious garbage" (length 16-256) before setting the cookie — the real
+# DB lookup happens on the next `/admin/*` request, not here — so a
+# plausible-length placeholder is enough to observe the real Set-Cookie
+# header on a live response, without a real admin token. This is the
+# live counterpart to `admin_login::tests::admin_cookie_carries_the_real_csrf_control`
+# (asserts the same attributes against the pure builder function, on the
+# host); this one asserts them against an actual HTTP response.
+check_admin_cookie_samesite_strict() {
+  local name="$1"
+  local placeholder_token="0000000000000000000000000000000000"
+  local headers
+  headers="$(curl -si "${BASE}/admin/login?token=${placeholder_token}" 2>/dev/null | sed '/^\r*$/q')"
+  local set_cookie
+  set_cookie="$(printf '%s' "$headers" | grep -i '^set-cookie:' | grep '__Host-cesauth_admin' | head -1)"
+
+  if [ -z "$set_cookie" ]; then
+    echo "❌  $name: no __Host-cesauth_admin Set-Cookie header in the response" >&2
+    fail=1
+    return
+  fi
+  if printf '%s' "$set_cookie" | grep -q 'SameSite=Strict' \
+     && printf '%s' "$set_cookie" | grep -q 'Secure' \
+     && printf '%s' "$set_cookie" | grep -q 'HttpOnly' \
+     && printf '%s' "$set_cookie" | grep -q 'Path=/'; then
+    echo "✅  $name: carries SameSite=Strict, Secure, HttpOnly, Path=/"
+  else
+    echo "❌  $name: missing one or more required attributes: $set_cookie" >&2
+    fail=1
+  fi
+}
+
 check_html "/"                                                       "GET /"
 ROOT_BODY="$LAST_BODY"
 check_html "/login"                                                  "GET /login"
@@ -254,6 +289,7 @@ check_status "/definitely-not-a-route"                          404  "GET /defin
 check_referenced_assets "$ROOT_BODY"                                 "GET / referenced assets"
 check_csp_grants_wasm "/login"                                       "GET /login CSP (client surface)"
 check_csp_lacks_wasm  POST "/magic-link/request"                     "POST /magic-link/request CSP (server surface)"
+check_admin_cookie_samesite_strict                                   "GET /admin/login sets the real CSRF control (RFC 152)"
 
 if grep -qi "Rust panic" "$LOG"; then
   echo "❌  Rust panic observed in the runtime console output:" >&2

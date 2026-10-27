@@ -466,11 +466,21 @@ pub async fn post_handler(
                 cesauth_core::i18n::MessageKey::TotpVerifyWrongCode,
                 locale,
             );
-            let html = templates::totp_verify_page_for(
-                &token,
-                Some(wrong_code),
-                locale,
-            );
+            // RFC 150: this re-render used to run with no fresh nonce —
+            // the GET path's `decide_verify_get` (above) mints one, but
+            // this POST arm never did, so it inherited whatever the GET
+            // (or any earlier, unrelated request on this isolate) left
+            // behind. `render_body_with_nonce` mints a fresh one first,
+            // same shared core as every other fix in this RFC.
+            let html = match crate::routes::admin::console::render::render_body_with_nonce(|| {
+                templates::totp_verify_page_for(&token, Some(wrong_code), locale)
+            }) {
+                Ok(h)  => h,
+                Err(_) => {
+                    worker::console_error!("csp_nonce_failure in totp::verify::post_handler (BadCode)");
+                    return Response::error("service temporarily unavailable", 500);
+                }
+            };
             // Status 200 (not 401) — the user IS authenticated
             // for primary; the form is a continuation, not a
             // standalone unauthenticated request.

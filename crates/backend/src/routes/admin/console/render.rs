@@ -53,12 +53,31 @@ fn csp_header_for(nonce: &str) -> String {
     )
 }
 
-/// **RFC 146.** The pure core of [`html_response`]: mint the nonce, publish
-/// it to the render-context global, run the caller's `render` closure
-/// (which is what makes the order enforceable — the body cannot exist
-/// before the nonce, because nothing can call `render` before this
-/// function does), then build the matching CSP header string. No
-/// `worker::Response` / `Headers` — both are `web_sys` types that panic
+/// **RFC 150.** The reusable core, shared by every HTML responder in this
+/// crate, console or not: mint a nonce, publish it to the render-context
+/// global, then run the caller's `render` closure — in that order, inside
+/// one function, so nothing can call `render` before the nonce exists
+/// (RFC 146 D1's reasoning). Callers outside the admin console don't build
+/// their own CSP string; they rely on the generic security-headers
+/// middleware (`lib.rs`) to read [`cesauth_frontend::render_nonce`] back
+/// after this returns and put it in the header itself. Before RFC 150, each
+/// of seven responders either called `set_render_nonce` on some paths and
+/// not others, or never called it at all — the fix is one shared entry
+/// point, not seven more copies of the same two lines.
+pub(crate) fn render_body_with_nonce(
+    render: impl FnOnce() -> String,
+) -> std::result::Result<String, getrandom::Error> {
+    let csp_nonce = cesauth_core::security_headers::CspNonce::generate()?;
+    cesauth_frontend::set_render_nonce(csp_nonce.as_str());
+    Ok(render())
+}
+
+/// **RFC 146.** The admin-console-specific wrapper: run
+/// [`render_body_with_nonce`], then build the console's own strict CSP
+/// string from the same nonce it just minted (re-read via
+/// [`cesauth_frontend::render_nonce`] — nothing touches the global in
+/// between, so this is the identical value `render` saw). No
+/// `worker::Response` / `Headers` here — both are `web_sys` types that panic
 /// unconditionally on a non-wasm32 target (measured: constructing either
 /// in a host `cargo test` panics at `web-sys's gen_Headers.rs`,
 /// "cannot call wasm-bindgen imported functions on non-wasm targets" —
@@ -69,10 +88,8 @@ fn csp_header_for(nonce: &str) -> String {
 fn render_with_nonce(
     render: impl FnOnce() -> String,
 ) -> std::result::Result<(String, String), getrandom::Error> {
-    let csp_nonce = cesauth_core::security_headers::CspNonce::generate()?;
-    cesauth_frontend::set_render_nonce(csp_nonce.as_str());
-    let body = render();
-    let csp_header = csp_header_for(csp_nonce.as_str());
+    let body = render_body_with_nonce(render)?;
+    let csp_header = csp_header_for(&cesauth_frontend::render_nonce());
     Ok((body, csp_header))
 }
 
