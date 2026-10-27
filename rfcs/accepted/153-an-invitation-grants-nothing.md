@@ -1,6 +1,10 @@
 # RFC 153 — An invitation grants nothing
 
-**Status.** **Proposed** — awaiting owner authorization.
+**Status.** **Accepted** 2026-10-27. **A 1.0 requirement**, bounded to §7's
+left-hand column; the owner confirmed tenant-scoped self-service onboarding is
+wanted, and the requirement-vs-option judgement is §7. **Scheduling deferred**
+— it is a feature cycle, not a patch, and it is sequenced after the 0.86.x
+fixes already in flight.
 **Tier.** P1. The feature's stated purpose is to link an email address to **a
 tenant and an initial role**. Neither is ever applied. What ships is an email
 with an audit trail.
@@ -132,3 +136,109 @@ route, the accept routes, the admin page, the table — rather than leave three
 `done/` RFCs describing a capability that has never existed. I have a
 recommendation either way, but the scope judgement is a product decision and
 this one is large enough to be genuinely yours.
+
+## 6. What else the same missing step blocks (2026-10-27)
+
+Added while answering the owner's question about 1.0 scope. **I tried to
+falsify a larger claim and it did not survive, which is worth recording
+alongside what did.**
+
+### 6.1 The claim that did not survive
+
+I formed the view that **cesauth is effectively single-tenant**, on this
+evidence: every `User` construction in the workspace hardcodes
+`tenant_id: DEFAULT_TENANT_ID` (`"tenant-default"`, `tenancy/types.rs:21`) —
+`magic_link/verify.rs:275`, `api_v1/anonymous.rs:118`, `admin/legacy.rs:69` —
+and `UPDATE users` (`adapter-cloudflare/.../users.rs:152`) **does not include
+`tenant_id`**, so the column can never change after insert.
+
+**That claim is wrong**, and the reason is a distinction I had missed: there
+are **two** notions of tenant association, not one.
+
+- `users.tenant_id` — a single column, in practice always `"tenant-default"`.
+- `user_tenant_memberships` — the many-to-many table, which **is** written:
+  by tenant creation (an owner membership, `tenancy/service.rs:54`) and by
+  `api_v1::memberships::add_tenant`.
+
+So multi-tenancy works, through the API and through tenant creation. **Had I
+reported the single-tenant claim, it would have been the largest wrong thing I
+said this cycle.**
+
+### 6.2 What is true, and is narrower and sharper
+
+**Two tenant-admin capabilities are gated on a premise that is always false.**
+
+`forms/membership_add.rs`'s `verify_user_in_tenant`:
+
+```rust
+Ok(Some(u)) if u.tenant_id == tenant_id => Ok(None),
+Ok(Some(_)) => Ok(Some(Response::error(
+    "target user belongs to a different tenant", 403)?)),
+```
+
+and the identical rule on the role-grant path
+(`forms/role_assignment_grant.rs:280`, `Scope::User`).
+
+Since every user's `users.tenant_id` is `"tenant-default"`, **a tenant admin of
+any created tenant always receives 403** — when adding a member, and when
+granting a user-scoped role assignment. Their only working path is to ask an
+operator holding `ManageTenancy` to call the API.
+
+**These are two of the routes RFC 145 just finished making reachable.** The
+form now renders, and its submit cannot succeed for any tenant but the default.
+
+### 6.3 This is one defect, not two
+
+`verify_user_in_tenant` is not wrong. It encodes the intended invariant — *a
+member of tenant X is a user who belongs to tenant X* — and **the invitation
+flow is what was supposed to establish it**, by creating the invitee in
+`inv.tenant_id`. Because §2's completion step was never written, no user ever
+belongs to a non-default tenant, so the check never passes.
+
+So §4's direction is also the fix for §6.2, and the cycle must decide
+explicitly whether `users.tenant_id` means *home tenant* (and the check
+stands) or whether membership alone should authorise (and the check is
+replaced by a membership lookup). **Deciding that is in scope; discovering it
+mid-implementation is not.**
+
+## 7. Requirement or option for 1.0 — the architect's recommendation
+
+The owner asked. **Requirement — but a bounded one.**
+
+**Why requirement.** Not because invitations are a valuable feature, which is
+not an argument about 1.0. Because **the fix changes the shape of the user
+record.** A user must become creatable in a tenant other than the default,
+which changes what `users.tenant_id` means, when it is set, and whether
+`verify_user_in_tenant` is the right rule. 1.0 is this project's compatibility
+commitment point (`rfcs/README.md`: the public surface *"may change between
+minor versions"* — the implication being that after 1.0 it may not). Deferring
+means either breaking that promise later or carrying the current model
+permanently.
+
+The second reason is the owner's own standard. The surface already exists and
+already claims to work: a tenants table, a tenant-admin console, an invitations
+page, 35 admin routes just wired across three releases, per-tenant
+subscriptions, and RFC 119's tenant-scoping track built on top. **Shipping 1.0
+with that present and its onboarding path non-functional is the clearest case
+of "users confused or misunderstanding" this codebase has**, because it is the
+product's central abstraction rather than a corner of it.
+
+**And "option" cannot mean "leave it".** The honest version of option is to
+*remove* the invitation surface and the two 403-ing forms for 1.0 — which
+removes most of the tenant-admin console's reason to exist. That is a larger
+and more destructive change than fixing it.
+
+**What makes it bounded.** The requirement is the **model**, not the polish:
+
+| In scope for 1.0 | Deferrable past 1.0 |
+|---|---|
+| a user can be created in a specific tenant | invitation email templates and branding |
+| an accepted invitation grants the tenant membership **and** the role | resend / expiry-extension |
+| `accepted_by` holds the real user id | a revoke **UI** (the route should exist) |
+| the `users.tenant_id` vs membership question decided and documented | bulk invite, CSV import |
+| one working end-to-end path, asserted on database rows | self-service tenant signup |
+
+**One working path, model-correct, asserted on rows.** That is a cycle, not a
+programme, and it is what 1.0 needs. Everything in the right-hand column is a
+convenience on a foundation that is either right or wrong — and it is the
+foundation that cannot be changed cheaply after 1.0.
