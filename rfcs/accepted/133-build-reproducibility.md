@@ -715,13 +715,15 @@ produced those numbers; most plausibly a smaller or older artifact was measured.
 | `c4970ec`, rebuilt today | 0.85.1 | **94** | 0.011% |
 | `1c180ca` | **0.86.1** | **157** | 0.018% |
 | `770e4c7` | **0.86.2** | **381** | 0.044% |
+| `9d0783a` | **0.86.3** | **10** | 0.001% |
 
 (The 0.86.2 row was added after the cut. CI **868,077** = 857,378 + 10,699;
 mine **868,458** = 857,760 + 10,698. Both reconcile against their parts.)
 
 **Every internally consistent reading is in the tens-to-low-hundreds of
-bytes** — and they are **not** converging: 34, 94, 157, 381, each roughly double
-the last. **That trend is not a finding either.** Four points whose method
+bytes**: 34, 94, 157, 381, **10**. The first four each roughly doubled, which
+looked like a trend until the fifth broke it — 0.86.3's gap is **smaller than
+every other reading on record**. **Good thing no curve was drawn.** Four points whose method
 changed partway through (the first three predate the clean-build control, and
 only the last two were taken with it) cannot support a curve, and reading one
 into them would be §15's mistake a fourth time. What the readings support is a
