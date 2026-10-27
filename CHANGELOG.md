@@ -14,6 +14,43 @@ changes will always be called out here.
 
 ---
 
+## [0.86.2] - 2026-10-27
+
+### The tenancy console's twenty-one dead pages, and the gate that closes the class — RFC 145 cycle 3
+
+Twenty-one `GET` routes under `/admin/tenancy/…` were documented as
+client-rendered, served the Leptos shell, and had no route in the client
+router. Each now renders the template its own `POST` sibling already used on a
+failed submit: organization detail and set-status; create-group, add-member and
+remove-member under an organization, a group and a tenant; delete-group; tenant
+set-status and create; subscription history, plan and status; a user's role
+assignments, the grant form and the revoke form; and token minting.
+
+No screen was designed — every template already existed.
+
+**This completes RFC 145**: thirty-five routes across three releases
+(v0.85.1, v0.86.1, v0.86.2).
+
+### Added
+
+- **The route-contract check now fails on a client-declared `GET` with no
+  working client route.** It distinguishes three outcomes rather than two:
+  *exact* (pass), *absent* — no route of any shape — and ***shadowed***, where
+  a sibling route's `:param` captures a literal segment. The shadowed case is
+  the worse symptom and the one that had gone undetected: a path like
+  `/admin/tenancy/tenants/new` binds `new` to `:tid` and renders the
+  **tenant-detail page for a tenant named "new"**, rather than a Not Found.
+  One named exemption, `/admin/console/clients`, which RFC 141 owns.
+
+### Fixed
+
+- **The tenancy console's three add-member forms posted to a path the worker
+  does not serve** (`…/memberships`, missing the `/new` suffix), so a submit
+  would have returned 404. Latent until now, because the page that renders the
+  form had never been reachable. Recorded as open since RFC 108.
+
+---
+
 ## [0.86.1] - 2026-10-27
 
 ### Twelve tenant-admin pages stop answering 200 with Not Found — RFC 145 cycle 2
