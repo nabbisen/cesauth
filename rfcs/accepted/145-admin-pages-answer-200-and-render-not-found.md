@@ -459,3 +459,29 @@ The order is therefore:
 A blanket `-D warnings` is rejected even at the end: it makes every future
 lint-set change in a toolchain bump a release-blocking failure, and the
 toolchain is pinned precisely so that bumps are deliberate events.
+
+## 14. The route count, measured at dispatch (2026-10-27)
+
+§12's arithmetic predicted **10** tenant-admin routes for cycle 2. Measured at
+`f60aa2b` by matching every `client`-declared `GET` row in `route-contracts.md`
+against `path!()` in `crates/frontend/src/app.rs`, treating a `:param` segment
+as matching any one segment:
+
+```
+client-declared GET rows: 57   live: 24   DEAD: 33
+dead by surface: {'admin/tenancy': 20, 'admin/t': 12, 'admin/console': 1}
+```
+
+The `admin/console` row is `/admin/console/clients`, excluded by §11.3, so this
+RFC's remaining list is **32 — twelve here, twenty in cycle 3.**
+
+**§12 is wrong and the measurement governs.** §12's figure was hand-counted on
+2026-10-25; this one is mechanical and reproducible. Which two routes §12
+missed is cycle 2's deliverable (0) rather than a guess recorded here — three
+counts of mine in the last two cycles were wrong, and each was corrected by
+somebody running the assertion instead of trusting the prose. **Writing a
+reconciliation I have not performed would be the fourth.**
+
+The cycle split therefore stands as **12 + 20**, not 10 + 20, and the
+dispatched handoff carries the twelve with the template each should reach:
+`handoffs/145-admin-pages-answer-200-and-render-not-found/cycle-2-handoff.md`.
