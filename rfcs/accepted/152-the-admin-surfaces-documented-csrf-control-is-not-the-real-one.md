@@ -178,3 +178,74 @@ bolted onto another.
 
 The owner may overturn this; it is a cost judgement, and I have made it rather
 than handed it back.
+
+## 6. `GET /admin/login` sets a cookie for an unvalidated token (2026-10-28)
+
+Found while reviewing 0.86.3, which implemented half A. **Recorded here rather
+than as a new RFC**: it is the same surface, the same shape, and half A's own
+work extracted `admin_cookie_header` from this very handler. **Scheduled into
+half B's cycle.**
+
+### 6.1 The documentation claimed a validation that does not happen
+
+`routes/admin/admin_login.rs`'s module doc said:
+
+> *This handler: 1. Validates the token (same `auth::resolve_from_request`
+> gate). 2. Sets the `__Host-cesauth_admin` httpOnly cookie.*
+
+The handler screens `token.len()` between 16 and 256 and **sets the cookie**.
+Its own body says so — `:24` explains why `resolve_from_request` cannot be
+called there, `:31` says *"Here we just screen for"* length. **So one file
+contained both the claim and its refutation**, eleven lines apart, and the
+module doc is the half a reader meets first.
+
+**Corrected in this release** — a doc fix on a security claim, in a file the
+cycle was already editing. Not deferred to half B, because the next reader
+should not meet the wrong version.
+
+### 6.2 What remains for half B: the endpoint accepts a cookie value from anyone
+
+Because the token is unvalidated at this point, **a crafted link sets an
+arbitrary `__Host-cesauth_admin` cookie in whoever follows it.**
+
+This is **not an authentication bypass** — the token is validated on the next
+`/admin/*` fetch, so a garbage value fails immediately. Two consequences that
+are real:
+
+- **Login CSRF / cookie fixation.** An attacker holding a *valid* operator
+  token can induce an operator to follow
+  `…/admin/login?token=<attacker's token>` and thereafter the victim operates
+  the console as **the attacker's principal**. Every admin action they take is
+  attributed to the attacker's token in the audit chain. For a product whose
+  audit log is hash-linked and tamper-evident (RFC 128), **writing correct
+  entries against the wrong principal is the worse failure** — the record is
+  intact and wrong.
+- **Denial of console access.** The same link with a garbage token overwrites a
+  working operator's cookie, locking them out of the console until they
+  re-login.
+
+**`SameSite=Strict` does not help here**, and the security-notes bullet
+claiming it is *"CSRF-safe for a navigation-only endpoint"* overstated it.
+`Strict` governs whether the cookie is **sent** cross-site; it says nothing
+about this endpoint **setting** one after a top-level navigation the operator
+was induced to make. That bullet is corrected in this release too.
+
+### 6.3 Direction, for half B to decide
+
+The constraint that produced this is real: the handler cannot call
+`resolve_from_request`, because that resolver reads the credential from the
+header-or-cookie path this handler is about to populate. Three candidates:
+
+1. **Validate the token directly** against the admin-token store before
+   setting the cookie, bypassing the request-shaped resolver. Removes both
+   consequences. Likeliest right answer.
+2. **Bind the cookie to a one-time, server-issued handle** instead of the
+   bearer token, in the style of `post_auth`'s pending cookies — which also
+   gets the bearer token out of URLs, browser history and logs, something the
+   existing security note acknowledges and accepts.
+3. **Accept it and document it accurately.** Honest, and leaves an
+   audit-attribution hazard on the operator surface.
+
+**(1) is cheap and (2) is better.** Half B's cycle should cost both before
+choosing; the token-in-URL exposure is already accepted in writing, so (2) is
+a larger change than the defect strictly requires.

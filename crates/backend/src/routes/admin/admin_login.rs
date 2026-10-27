@@ -8,7 +8,13 @@
 //!   `https://auth.example.com/admin/login?token=<bearer>`
 //!
 //! This handler:
-//!  1. Validates the token (same `auth::resolve_from_request` gate).
+//!  1. **Screens the token's length only — it does not validate it.** See the
+//!     comment in the handler body for why `auth::resolve_from_request` cannot
+//!     be called here. The token is validated on the next `/admin/*` fetch, so
+//!     an invalid one yields a cookie that fails immediately afterwards.
+//!     (Corrected 2026-10-28: this line previously claimed the handler
+//!     "validates the token (same `auth::resolve_from_request` gate)", which
+//!     the body's own comments contradict. See RFC 152 §6.)
 //!  2. Sets the `__Host-cesauth_admin` httpOnly cookie.
 //!  3. 302-redirects to `/admin/console`.
 //!
@@ -23,7 +29,9 @@
 //!   a single redirect.  The cookie carries the token thereafter.
 //! - `__Host-` prefix: `Secure`, `Path=/`, no `Domain`.
 //! - `HttpOnly`: JS cannot read the cookie.
-//! - `SameSite=Strict`: CSRF-safe for a navigation-only endpoint.
+//! - `SameSite=Strict`: stops the cookie being *sent* on cross-site
+//!   requests. It does **not** stop this endpoint *setting* a cookie after a
+//!   top-level navigation the operator was induced to make — see RFC 152 §6.
 //! - The cookie TTL matches the token's validity; tokens that are
 //!   disabled mid-session will fail the next `/admin/*` fetch,
 //!   rendering a 401 page in the Leptos component.

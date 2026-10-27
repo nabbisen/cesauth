@@ -579,8 +579,13 @@ nonce_set_via_known_wrapper() {
   return 1
 }
 
+# Scanned across the whole crate, not just `routes/`. Reviewed 2026-10-28:
+# scoping this to `crates/backend/src/routes` let a nonce-less
+# `Response::from_html` in `lib.rs` pass the gate — verified by adding one.
+# All eleven sites happen to live under `routes/` today; the gate exists for
+# the twelfth, which has no obligation to.
 from_html_sites=$(
-  grep -rn 'from_html(' "$REPO_ROOT/crates/backend/src/routes" --include='*.rs' |
+  grep -rn 'from_html(' "$REPO_ROOT/crates/backend/src" --include='*.rs' |
   grep -v 'tests\?\.rs\|tests/'
 )
 
