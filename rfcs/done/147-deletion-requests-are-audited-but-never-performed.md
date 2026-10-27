@@ -1,7 +1,7 @@
 # RFC 147 — Deletion requests are audited but never performed
 
 **Status.** **Done** — cycle 1 `c23dbf9` (shipped v0.85.1), cycle 2 `2099df3`,
-accepted 2026-10-27. Awaiting the 0.86.0 cut for a released version.
+accepted 2026-10-27. **Cycle 1 shipped v0.85.1; cycle 2 shipped v0.86.0.**
 **Tier.** **P1 · Category A** — a user's request to delete their own account is
 silently discarded, a documented irreversible operation does nothing, and the
 audit log records a deletion that did not happen.

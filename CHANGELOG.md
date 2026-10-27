@@ -14,6 +14,54 @@ changes will always be called out here.
 
 ---
 
+## [0.86.0] - 2026-10-27
+
+### Account deletion works — RFC 147 cycle 2, completing RFC 047
+
+**Nothing in cesauth had ever executed a deletion.** 0.85.1 stopped three
+endpoints claiming otherwise; this release makes them work.
+
+A user can now request deletion of their own account and see it pending in the
+security centre, read from their own state rather than from a URL parameter. A
+tenant admin sees the tenant's queue of pending requests on a server-rendered
+page, and can cancel a request or execute one immediately. The daily cron
+executes requests whose 30-day grace period has passed.
+
+Three things that were wrong underneath are fixed with it:
+
+- **The self-service route required an administrator.** `POST
+  /me/security/delete-account` has always checked the admin bearer resolver, so
+  a user's own session was rejected and the route was unreachable by the only
+  principal it existed for. It now authenticates the user.
+- **The sweep was never called.** `sweep_pending_deletions` was written,
+  correct, and reachable from nothing — the daily cron ran only the
+  anonymous-trial retention sweep. It is now wired, and verified by driving the
+  real scheduled handler rather than the function.
+- **The audit subject was the wrong principal.** Deletion events recorded the
+  *admin* as the subject, or nobody at all; they now record the affected user,
+  with the acting principal kept on the request row where it is queryable.
+
+A request id that does not exist, or belongs to another tenant, returns 404 and
+writes **no** audit event — and no event is written for any operation that did
+not occur.
+
+**What deletion does and does not remove.** The user row and every child table
+with a foreign key to it: authenticators, sessions, TOTP state, tenancy
+memberships, role assignments — 28 tables. **`invitation_tokens` is not
+removed**: it has no foreign key to the user, and carries a plain-text email
+address, so a deleted user's invitation history for the tenant survives.
+Whether to purge or scrub it is a separate decision and is recorded as one.
+
+**Deletion is irreversible, and the documentation now matches the code at every
+step** — including the cron description, which claimed for several releases that
+pending deletions were being executed.
+
+### Removed
+
+- `GET /admin/t/:slug/deletion-requests.json` — it returned only a CSRF token,
+  and the queue page it served is now rendered server-side. **Route count 193 →
+  192.**
+
 ## [0.85.1] - 2026-10-27
 
 Everything in this release was asserting something it could not back.

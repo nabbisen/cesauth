@@ -129,7 +129,7 @@ harness that closes it.
 
 ## Done
 
-135 RFCs shipped between v0.50.3 and v0.85.1 (001–106, 107, 108–111, 110b–110e, 113, 116, 117, 118, 125, 126, 127, 128, 129, 130, 132, 134, 135, 136, 137, 138, 139, 140, 142, 143, 146, 147). Full
+135 RFCs shipped between v0.50.3 and v0.86.0 (001–106, 107, 108–111, 110b–110e, 113, 116, 117, 118, 125, 126, 127, 128, 129, 130, 132, 134, 135, 136, 137, 138, 139, 140, 142, 143, 146, 147). Full
 list with shipped-in versions: see ROADMAP.md "Shipped" section and
 CHANGELOG.md release entries. Selected highlights only listed here; the
 canonical catalogue is the filesystem at `done/`.
@@ -175,7 +175,7 @@ canonical catalogue is the filesystem at `done/`.
 | [142](./done/142-ci-has-never-executed.md) | CI runs, four gates were red, and nothing was enforced — now all thirteen are required checks | v0.84.3 + enforcement |
 | [143](./done/143-totp-verify-without-javascript.md) | A no-JS user was stranded at the second factor — the server-rendered page already existed and only the POST error path reached it | v0.85.0 |
 | [146](./done/146-admin-csp-nonce-cannot-match-its-document.md) | The admin surface's CSP nonce could not match its own document — `html_response` minted it after its caller had rendered the body | v0.85.1 |
-| [147](./done/147-deletion-requests-are-audited-but-never-performed.md) | Deletion requests were audited but never performed — and nothing in cesauth had ever executed a deletion by any path. Cycle 1 stopped the claims (v0.85.1); cycle 2 performs the operations and wires the cron. Completes **RFC 047** | cycle 1 v0.85.1; cycle 2 on `main`, 0.86.0 pending |
+| [147](./done/147-deletion-requests-are-audited-but-never-performed.md) | Deletion requests were audited but never performed — and nothing in cesauth had ever executed a deletion by any path. Cycle 1 stopped the claims (v0.85.1); cycle 2 performs the operations and wires the cron. Completes **RFC 047** | cycle 1 v0.85.1; cycle 2 **v0.86.0** |
 | [134](./done/134-router-pattern-conflict.md) | Router pattern conflict — `:param.json` routes panicked `worker`'s router on construction, every request, since 2026-07-07 (+ condition C1-134: the shell's assets resolve) | v0.82.0 |
 | [132](./done/132-view-rendering-policy.md) | View rendering policy — Q1–Q4 derived per surface, `Rendering` column on all 188 routes, E2/E3 blocking gates (+ conditions C1-132, C2-132) | v0.82.0 |
 

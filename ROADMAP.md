@@ -376,6 +376,29 @@ started.
   any CI gate is enforced (`main` still has no branch protection), or that
   it works on Cloudflare — **nobody has deployed this tree**.
 
+- ✅ **v0.86.0 — RFC 147 cycle 2, completing RFC 047. Shipped 2026-10-27.**
+  **Account deletion works.** Nothing in cesauth had ever executed a deletion by
+  any path: 0.85.1 stopped three endpoints claiming otherwise, and this release
+  makes them real. A user requests their own deletion and sees it pending in the
+  security centre from their own state, not a URL parameter; a tenant admin sees
+  the queue server-rendered and can cancel or execute; the daily cron executes
+  requests past their 30-day grace. Three defects underneath went with it: the
+  self-service route **required an administrator** and so was unreachable by the
+  only principal it existed for; `sweep_pending_deletions` was written, correct
+  and **called by nothing**; and deletion audit events recorded the admin, or
+  nobody, as the subject rather than the affected user. A nonexistent or
+  cross-tenant id now 404s and writes **no** event, and no event is written for
+  an operation that did not occur. **Removed:** the orphaned
+  `deletion-requests.json`, so the route count falls 193 → 192. **Minor** —
+  three documented operations begin working and a user gains a capability that
+  was never reachable. **Not claimed:** that GDPR compliance is achieved (only
+  that the routes do what the contract says), that previously written false
+  audit rows are corrected (they remain), that deletion removes everything —
+  **`invitation_tokens` is retained and carries a plain-text email**, recorded
+  as a separate decision — that the admin console is complete (33 pages still
+  answer 200 with Not Found), or that it works on Cloudflare — **nobody has
+  deployed this tree**.
+
 - ✅ **v0.85.1 — RFC 146, RFC 145 cycle 1, RFC 147 cycle 1, and an E3 gate fix.
   Shipped 2026-10-27.** **Everything in this release was asserting something it
   could not back.** **Three deletion endpoints stop claiming success**: each
