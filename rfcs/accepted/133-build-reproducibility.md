@@ -536,6 +536,14 @@ cause is claimed, and these figures are recorded, not treated as invariants
 
 ## 15. Half B has a reproducible datum now, measured twice (2026-10-27)
 
+> **RETRACTED 2026-10-27 — see §15.3.** The gap reported below is a measurement
+> error of mine, not a host difference. Rebuilding `c4970ec` today puts my
+> figure within **94 bytes** of CI's, against the **3,001** claimed here. Two of
+> the four rows in §15 and §15.1 do not even reconcile against their own
+> components. **Do not cite §15, §15.1 or §15.2's figures.** The reliable
+> cross-host readings are 34 / 94 / 157 bytes — 0.004–0.018% of the artifact.
+
+
 Half B is *environment* reproducibility — the same commit on another host
 yielding an identical artifact — deferred to 1.0 hardening by §12.3. Until now
 the only cross-host figure on record was **34 bytes**, from RFC 142's review at
@@ -657,3 +665,91 @@ cited again:
 uncontrolled experiment**, and the honest summary of RFC 133 half B's evidence
 is that it does not yet have any. The budget gate is unaffected either way —
 32% of 2,621,440 B at every reading.
+
+## 15.3 The controlled test ran, and §15 is retracted (2026-10-27)
+
+§15.2 specified three steps. All three ran. **§15's central claim is false, the
+error was mine, and half B does not have the datum §15 said it had.**
+
+### Step 1 and 2 — local determinism holds, and staleness was not the cause
+
+`dist/` moved aside (36 files, 33 of them stale `*_bg.wasm`), then a clean
+build, then a second build without cleaning:
+
+| | wasm gzip | `shim.js` | total | wasm sha256 |
+|---|---|---|---|---|
+| A — clean | 845,153 | 10,699 | **855,852** | `64b384082ca9bb59` |
+| B — dirty rebuild | 845,153 | 10,699 | **855,852** | `64b384082ca9bb59` |
+
+**A and B are byte-identical, and both equal the figure measured before `dist/`
+was cleaned.** So §15.2's hypothesis — that the earlier gap was a stale local
+artifact — is **wrong**: `wrangler deploy --dry-run --outdir` does not read
+`dist/`, and local builds of one commit are reproducible to the hash. That is a
+positive result worth keeping: **local determinism is established**, which §14
+left open.
+
+### Step 3 — rebuilding an old commit destroys §15's numbers
+
+The decisive measurement. Checked out `c4970ec` — the 0.85.1 release commit
+§15's second row reports — rebuilt, and measured with the same method:
+
+| | wasm gzip | `shim.js` | total |
+|---|---|---|---|
+| CI at `c4970ec`, as recorded in §15 | — | — | 836,806 |
+| **Mine at `c4970ec`, measured today** | 826,013 | 10,699 | **836,712** |
+| Mine at `c4970ec`, as recorded in §15 | — | — | 833,805 |
+
+**Today's build of that commit agrees with CI to within 94 bytes. The figure I
+recorded at the time was 2,907 bytes lower than a rebuild of the same commit.**
+
+So the "+3,001 cross-host gap" was not a host difference. **It was my local
+total being ~2,900 too low**, and the same is almost certainly true of the
+"+2,860" row beside it. The method named in §15 was not the method that
+produced those numbers; most plausibly a smaller or older artifact was measured.
+
+### What the reliable readings actually say
+
+| Commit | Release | gap | as % of artifact |
+|---|---|---|---|
+| RFC 142's review | 0.84.3 | 34 | 0.004% |
+| `c4970ec`, rebuilt today | 0.85.1 | **94** | 0.011% |
+| `1c180ca` | **0.86.1** | **157** | 0.018% |
+
+**Every internally consistent reading is in the tens-to-low-hundreds of bytes.**
+§15's claim that the gap is *"about 0.35% of the artifact, two orders of
+magnitude above the 34 bytes previously recorded"* is **wrong by two orders of
+magnitude in the other direction**, and the 34 bytes it dismissed as "small
+enough to dismiss" was the representative figure all along.
+
+### Three things I got wrong, in order
+
+1. **§15 reported a ~2,900-byte gap that was a measurement error**, and called
+   it "reproducible in shape and magnitude, so it is a host difference rather
+   than noise". Two wrong readings agreeing with each other is not
+   reproducibility; it is the same mistake twice.
+2. **§15.1's "correction" rested on a broken row.** The 0.86.0 reading it used
+   to overturn "exactly 120 bytes" does not reconcile with itself: my component
+   figures sum to 845,755 against a stated total of 845,387, and the component
+   gaps sum to 2,234 against a stated gap of 2,602 — **the same 368 bytes
+   missing in both places.** So the `shim.js` figure of 119 that the correction
+   turned on is not trustworthy either. Of the four rows on record, **two are
+   arithmetically self-inconsistent and both are mine.**
+3. **§15.2 blamed the wrong cause.** It proposed stale artifacts and then said
+   the matter needed a controlled test — which was right — but it also framed
+   staleness as "the likeliest explanation", which steps 1 and 2 refute.
+
+### What this changes
+
+- **§15, §15.1 and §15.2's figures are retracted.** They stay in place rather
+  than being deleted, because the record of how a number survived four
+  recordings is worth more than a clean file — the same reason RFC 047's
+  annotation was kept.
+- **Half B stays deferred and now has *less* reason to be opened early**, not
+  more. A 0.004–0.018% cross-host difference in a non-reproducible-by-design
+  optimizer pipeline is the ordinary case, not a finding.
+- **The budget conclusion never moved**: 32% of 2,621,440 B at every reading,
+  on either host.
+- **The standing lesson is narrower than "two samples are not a pattern".** It
+  is: **a derived figure must reconcile against its own parts before it is
+  recorded.** Both broken rows would have been caught at entry by adding two
+  numbers together, and §15.2's table is where that check finally happened.
