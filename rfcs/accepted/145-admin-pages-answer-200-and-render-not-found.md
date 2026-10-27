@@ -556,8 +556,13 @@ in this RFC's history, so the pair is the acceptance criterion, not the check.
 ### 15.4 One finding outside scope, now RFC 152
 
 The cycle reported that all 35 `POST` rows on both admin surfaces document CSRF
-as `required` and **no handler calls `csrf::verify`** — true, and correctly
-reported rather than absorbed into a patch cycle. **The severity was
+as `required` and no handler calls `csrf::verify` — correctly reported rather
+than absorbed into a patch cycle. **Two figures in it needed correcting, one of
+them mine.** It is **33 of 35**, not 35: `/admin/t/:slug/deletion-requests/:id/{cancel,execute}`
+do verify, and they are the newest routes on either surface. I missed them
+because I checked the two surface *directories*, while those routes are served
+from `routes/deletions.rs` — a directory-scoped grep answering a route-scoped
+question, which is an error this project has seen before. **The severity was
 overstated**: the admin cookie is `SameSite=Strict`
 (`admin_login.rs:77`), so no cross-site request carries it and there is no
 exploitable path today. The real defect is a document naming the wrong control
