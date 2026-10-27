@@ -376,6 +376,7 @@ started.
   any CI gate is enforced (`main` still has no branch protection), or that
   it works on Cloudflare — **nobody has deployed this tree**.
 
+- ✅ **v0.86.1 — RFC 145 cycle 2: twelve tenant-admin dead pages. Shipped 2026-10-27.**
 - ✅ **v0.86.0 — RFC 147 cycle 2, completing RFC 047. Shipped 2026-10-27.**
   **Account deletion works.** Nothing in cesauth had ever executed a deletion by
   any path: 0.85.1 stopped three endpoints claiming otherwise, and this release

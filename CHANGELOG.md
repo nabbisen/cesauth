@@ -14,6 +14,40 @@ changes will always be called out here.
 
 ---
 
+## [0.86.1] - 2026-10-27
+
+### Twelve tenant-admin pages stop answering 200 with Not Found — RFC 145 cycle 2
+
+Twelve `GET` routes under `/admin/t/:slug/…` were documented as
+client-rendered, served the Leptos shell, and had no route in the client
+router — so the fallback rendered **HTTP 200 with a Not Found page**, after the
+server had authenticated the administrator and authorised the read. Each one
+now renders the template its own `POST` sibling already used on a failed
+submit:
+
+- organization detail, and the set-status form
+- create-group and add-member forms under an organization
+- delete-group, add-member and remove-member under a group
+- remove-member at the tenant level
+- a user's role assignments, the grant form, and the revoke form
+
+No screen was designed and no surface was added: every template already
+existed. Two `.json` companions — `organization_detail` and
+`role_assignments` — were deleted with the pages they existed to feed, having
+no other consumer. Route count 192 → 190.
+
+Each converted row is now declared `server`, which brings it under the
+route-contract check that fails if a handler goes back to serving the shell.
+
+### Fixed
+
+- **A runtime smoke probe became an assertion instead of disappearing.** The
+  probe for the deleted `…/organizations/:oid/detail.json` now asserts `404`
+  rather than being removed. The generic unknown-route probe proves the router
+  404s paths it does not know; only this line proves this route is gone.
+
+---
+
 ## [0.86.0] - 2026-10-27
 
 ### Account deletion works — RFC 147 cycle 2, completing RFC 047
