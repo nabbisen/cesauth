@@ -568,3 +568,49 @@ overstated**: the admin cookie is `SameSite=Strict`
 exploitable path today. The real defect is a document naming the wrong control
 while fourteen destructive operations rest on one unasserted cookie attribute.
 **That is RFC 152.**
+
+## 16. Cycle 3 scoped and dispatched (2026-10-27)
+
+**21 routes, confirmed with a corrected matcher**, and the arithmetic now
+reconciles end to end:
+
+```
+/admin/tenancy: client-declared GET rows 24   live 3   DEAD 21
+                (20 with no route at all, 1 param-shadowed)
+repo-wide:      rows 45   live 23   DEAD 22   = these 21 + /admin/console/clients
+```
+
+45 is 57 − 12 and 22 is 34 − 12, so cycle 2's conversions account for the whole
+difference. **Every one of the 21 has a template already present** in
+`crates/frontend/src/tenancy_console/` — checked per route, including
+`tenant_create_form` for the shadowed route — so cycle 3 is **patch**, cycle
+2's shape on a third surface. Handoff:
+`handoffs/145-admin-pages-answer-200-and-render-not-found/cycle-3-handoff.md`.
+
+### 16.1 The matcher was wrong three times, which is the gate's specification
+
+§15.2 asked the gate to treat a literal as taking precedence over a param.
+Writing the scope measurement produced a second, opposite error and then the
+correct rule:
+
+| Attempt | Rule | Failure |
+|---|---|---|
+| 1 | a `:param` matches any segment | **false live** — swallowed the literal `new`; count came out 33 |
+| 2 | "exact" = the `app.rs` route has no params | **false dead** — `/admin/tenancy/tenants/:tid` is matched param-to-param by an identical route |
+| 3 | **exact = segment lists equal; a param-over-literal match is a *shadow*, counted dead** | correct on all 45 rows |
+
+So **the check has three outcomes, not two** — exact, shadowed, absent — and
+its fires/does-not-fire evidence must cover all three. **Attempts 1 and 2 would
+each have passed a pair built only from the absent case**, which is how a check
+comes to be believed to cover a class it cannot see. That has now happened
+twice in this RFC: once to E3 (§11.2) and once to my own matcher, in both
+directions.
+
+### 16.2 The cycle-2 handoff's mistake, not repeated
+
+Cycle 2's §9.1 required a test asserting *the response*, which cannot be built
+on the host (RFC 146 §2). Cycle 3's handoff states that the template tests are
+expected to guard **template output only**, names E3 and the new gate as the
+wiring guard, and repeats the report-and-stop instruction for any requirement
+that still cannot be constructed. **The requirement was narrowed to something
+true rather than left for the implementer to quietly work around.**
