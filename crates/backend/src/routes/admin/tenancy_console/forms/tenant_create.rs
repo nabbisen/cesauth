@@ -12,8 +12,20 @@ use crate::audit::{self, EventKind};
 use crate::routes::admin::console::render;
 use crate::routes::admin::tenancy_console::forms::common::{parse_form, redirect_303, require_manage};
 
+/// **RFC 145 cycle 3 / §2.** Used to return the Leptos shell with no
+/// `app.rs` route of its own — but this one didn't render `<NotFound/>`.
+/// `path!("/admin/tenancy/tenants/:tid")` captured the literal `new`,
+/// so a system admin landed on the tenant-detail page for a tenant
+/// whose id is the string `"new"`: a different, plausible-looking page,
+/// not an absence. Wiring this GET to the real form removes the
+/// symptom (the client router never sees this path once the server
+/// renders it first), but the shadow in `app.rs` stays latent — see
+/// the cycle report for why that is §3's gate to catch, not this fix.
 pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::shell(&req, &ctx, "テナント作成 — cesauth").await
+    let principal = match require_manage(&req, &ctx.env).await? {
+        Ok(p) => p, Err(r) => return Ok(r),
+    };
+    render::html_response(|| tenant_create_form(&principal, "", "", "", None))
 }
 
 pub async fn form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {

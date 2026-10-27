@@ -13,8 +13,20 @@ use crate::routes::admin::tenancy_console::forms::common::{
 };
 use cesauth_core::tenancy::types::GroupParent;
 
+/// **RFC 145 cycle 3.** Used to return the Leptos shell with no
+/// matching `app.rs` route — HTTP 200 rendering `<NotFound/>`.
 pub async fn confirm<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::shell(&req, &ctx, "グループ削除確認 — cesauth").await
+    let principal = match require_manage(&req, &ctx.env).await? {
+        Ok(p) => p, Err(r) => return Ok(r),
+    };
+    let Some(gid) = ctx.param("gid").map(|s| s.to_owned()) else {
+        return Response::error("not found", 404);
+    };
+    let groups = CloudflareGroupRepository::new(&ctx.env);
+    let group = match groups.get(&gid).await {
+        Ok(Some(g)) => g, _ => return Response::error("not found", 404),
+    };
+    render::html_response(|| confirm_page(&principal, &group))
 }
 
 pub async fn confirm_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {

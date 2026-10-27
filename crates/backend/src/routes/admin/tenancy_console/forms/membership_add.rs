@@ -33,8 +33,20 @@ use crate::routes::admin::tenancy_console::forms::common::{parse_form, redirect_
 // Tenant membership
 // =====================================================================
 
+/// **RFC 145 cycle 3.** Used to return the Leptos shell with no
+/// matching `app.rs` route — HTTP 200 rendering `<NotFound/>`.
 pub async fn form_tenant<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::shell(&req, &ctx, "メンバー追加 — cesauth").await
+    let principal = match require_manage(&req, &ctx.env).await? {
+        Ok(p) => p, Err(r) => return Ok(r),
+    };
+    let Some(tid) = ctx.param("tid").map(|s| s.to_owned()) else {
+        return Response::error("not found", 404);
+    };
+    let tenants = CloudflareTenantRepository::new(&ctx.env);
+    let tenant = match tenants.get(&tid).await {
+        Ok(Some(t)) => t, _ => return Response::error("not found", 404),
+    };
+    render::html_response(|| ui::for_tenant(&principal, &tenant.id, &tenant.slug, "", "", None))
 }
 
 pub async fn form_tenant_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -106,8 +118,20 @@ pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<
 // Organization membership
 // =====================================================================
 
+/// **RFC 145 cycle 3.** Used to return the Leptos shell with no
+/// matching `app.rs` route — HTTP 200 rendering `<NotFound/>`.
 pub async fn form_org<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::shell(&req, &ctx, "メンバー追加 — cesauth").await
+    let principal = match require_manage(&req, &ctx.env).await? {
+        Ok(p) => p, Err(r) => return Ok(r),
+    };
+    let Some(oid) = ctx.param("oid").map(|s| s.to_owned()) else {
+        return Response::error("not found", 404);
+    };
+    let orgs = CloudflareOrganizationRepository::new(&ctx.env);
+    let org = match orgs.get(&oid).await {
+        Ok(Some(o)) => o, _ => return Response::error("not found", 404),
+    };
+    render::html_response(|| ui::for_organization(&principal, &org.id, &org.slug, "", "", None))
 }
 
 pub async fn form_org_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -178,8 +202,20 @@ pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Res
 // Group membership
 // =====================================================================
 
+/// **RFC 145 cycle 3.** Used to return the Leptos shell with no
+/// matching `app.rs` route — HTTP 200 rendering `<NotFound/>`.
 pub async fn form_group<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::shell(&req, &ctx, "メンバー追加 — cesauth").await
+    let principal = match require_manage(&req, &ctx.env).await? {
+        Ok(p) => p, Err(r) => return Ok(r),
+    };
+    let Some(gid) = ctx.param("gid").map(|s| s.to_owned()) else {
+        return Response::error("not found", 404);
+    };
+    let groups = CloudflareGroupRepository::new(&ctx.env);
+    let group = match groups.get(&gid).await {
+        Ok(Some(g)) => g, _ => return Response::error("not found", 404),
+    };
+    render::html_response(|| ui::for_group(&principal, &group.id, &group.slug, &group.tenant_id, "", None))
 }
 
 pub async fn form_group_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {

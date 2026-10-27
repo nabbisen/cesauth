@@ -42,8 +42,31 @@ async fn role_label(env: &worker::Env, role_id: &str) -> String {
     }
 }
 
+/// **RFC 145 cycle 3.** Used to return the Leptos shell with no
+/// matching `app.rs` route — HTTP 200 rendering `<NotFound/>`.
+/// `user_id` rides on the query string (`?user_id=...`) — same
+/// pattern `tenant_admin::forms::role_assignment_revoke::form` uses,
+/// because the repository has no `get_by_id` for assignments.
 pub async fn confirm<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::shell(&req, &ctx, "ロール削除確認 — cesauth").await
+    let principal = match require_manage(&req, &ctx.env).await? {
+        Ok(p) => p, Err(r) => return Ok(r),
+    };
+    let Some(id) = ctx.param("id").map(|s| s.to_owned()) else {
+        return Response::error("not found", 404);
+    };
+    let url = req.url()?;
+    let user_id = url.query_pairs()
+        .find(|(k, _)| k == "user_id")
+        .map(|(_, v)| v.into_owned())
+        .unwrap_or_default();
+    if user_id.is_empty() {
+        return Response::error("missing user_id query parameter", 400);
+    }
+    let Some(assignment) = fetch_assignment(&ctx.env, &user_id, &id).await else {
+        return Response::error("assignment not found", 404);
+    };
+    let label = role_label(&ctx.env, &assignment.role_id).await;
+    render::html_response(|| confirm_page(&principal, &user_id, &assignment, &label))
 }
 
 pub async fn confirm_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {

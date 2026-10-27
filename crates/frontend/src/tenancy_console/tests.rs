@@ -5,6 +5,8 @@
 //! same frame, that every drill-through link matches the route shape
 //! the worker registers.
 
+mod rfc145_cycle3;
+
 use super::frame::{tenancy_console_frame, TenancyConsoleTab};
 use cesauth_core::admin::types::{AdminPrincipal, Role};
 

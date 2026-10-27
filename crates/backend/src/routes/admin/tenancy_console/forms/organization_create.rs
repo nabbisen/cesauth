@@ -12,8 +12,22 @@ use crate::routes::admin::console::render;
 use crate::routes::admin::tenancy_console::forms::common::{parse_form, redirect_303, require_manage};
 use crate::routes::api_v1::quota;
 
+/// **RFC 145 cycle 3.** Used to return the Leptos shell with no
+/// matching `app.rs` route — HTTP 200 rendering `<NotFound/>`.
 pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::shell(&req, &ctx, "組織作成 — cesauth").await
+    let principal = match require_manage(&req, &ctx.env).await? {
+        Ok(p) => p, Err(r) => return Ok(r),
+    };
+    let Some(tid) = ctx.param("tid").map(|s| s.to_owned()) else {
+        return Response::error("not found", 404);
+    };
+    let tenants = CloudflareTenantRepository::new(&ctx.env);
+    let tenant = match tenants.get(&tid).await {
+        Ok(Some(t)) => t,
+        Ok(None)    => return Response::error("not found", 404),
+        Err(_)      => return Response::error("storage error", 500),
+    };
+    render::html_response(|| organization_create_form(&principal, &tenant, "", "", None))
 }
 
 pub async fn form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {

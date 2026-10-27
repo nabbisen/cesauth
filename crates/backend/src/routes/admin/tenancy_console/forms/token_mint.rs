@@ -62,8 +62,25 @@ fn parse_role(s: &str) -> Option<AdminRole> {
     }
 }
 
+/// **RFC 145 cycle 3.** Used to return the Leptos shell with no
+/// matching `app.rs` route — HTTP 200 rendering `<NotFound/>`. Gated
+/// on `ManageAdminTokens` via `require_token_mint`, not `require_manage`
+/// — the same distinct permission `submit` below requires.
 pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::shell(&req, &ctx, "トークン発行 — cesauth").await
+    let principal = match require_token_mint(&req, &ctx.env).await? {
+        Ok(p)     => p,
+        Err(resp) => return Ok(resp),
+    };
+    let Some(uid) = ctx.param("uid").map(|s| s.to_owned()) else {
+        return Response::error("not found", 404);
+    };
+    let user = match load_user(&ctx.env, &uid).await {
+        Ok(u)     => u,
+        Err(resp) => return Ok(resp),
+    };
+    render::html_response(|| form_page(&principal, &MintInput {
+        subject_user: &user, role: "", name: "", error: None,
+    }))
 }
 
 pub async fn form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {

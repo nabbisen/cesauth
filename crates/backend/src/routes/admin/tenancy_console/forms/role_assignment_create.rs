@@ -14,8 +14,25 @@ use crate::audit::{self, EventKind};
 use crate::routes::admin::console::render;
 use crate::routes::admin::tenancy_console::forms::common::{parse_form, redirect_303, require_manage};
 
+/// **RFC 145 cycle 3.** Used to return the Leptos shell with no
+/// matching `app.rs` route — HTTP 200 rendering `<NotFound/>`. Reuses
+/// `list_system_roles` — the exact call `submit` below makes to
+/// populate the role select.
 pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::shell(&req, &ctx, "ロール付与 — cesauth").await
+    let principal = match require_manage(&req, &ctx.env).await? {
+        Ok(p) => p, Err(r) => return Ok(r),
+    };
+    let Some(uid) = ctx.param("uid").map(|s| s.to_owned()) else {
+        return Response::error("not found", 404);
+    };
+    let roles_repo = CloudflareRoleRepository::new(&ctx.env);
+    let available = roles_repo.list_system_roles().await.unwrap_or_default();
+    render::html_response(|| role_assignment_create_form(&principal, &RoleAssignmentCreateInput {
+        user_id: &uid,
+        available_roles: &available,
+        role_id: "", scope_type: "", scope_id: "", expires_at: "",
+        error: None,
+    }))
 }
 
 pub async fn form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {

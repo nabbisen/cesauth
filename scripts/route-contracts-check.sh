@@ -23,6 +23,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LIB_RS="$REPO_ROOT/crates/backend/src/lib.rs"
+APP_RS="$REPO_ROOT/crates/frontend/src/app.rs"
 CONTRACTS_MD="$REPO_ROOT/docs/src/expert/route-contracts.md"
 
 if [ ! -f "$LIB_RS" ]; then
@@ -366,6 +367,170 @@ if [ -n "$e3_violations" ]; then
   echo "" >&2
   echo "    Either the handler needs to stop calling the shell, or this needs a reviewed," >&2
   echo "    dated addition to E3_EXEMPT above — not a silent reclassification to client." >&2
+  exit_code=1
+fi
+
+# ── §4.2 (RFC 145 cycle 3): a `client`-declared GET row must have a
+#    real, unambiguous `app.rs` route — RFC 145 §15.2 / cycle-3 handoff §3 ──
+#
+# A `client`-declared route serves the Leptos shell; the shell is useless
+# if `leptos_router` has no `<Route>` for the path, or — the worse case,
+# found at dispatch (RFC 145 §15.1) — a *different* route's `:param`
+# segment swallows it. `/admin/tenancy/tenants/new` matched neither
+# "has no route" check this project tried before landing on the right
+# one (see the table below); it is captured by `path!("/admin/tenancy/
+# tenants/:tid")`, so a system admin trying to create a tenant was shown
+# the tenant-detail page for a tenant literally named "new" — not a
+# Not Found, a different and plausible-looking page.
+#
+# Getting "matching" right took three attempts, recorded here so a
+# future edit does not re-walk them:
+#
+#   | # | Rule | What it got wrong |
+#   |---|---|---|
+#   | 1 | a `:param` segment matches any segment | **False live**: swallows a literal, scoring a shadowed route as fine |
+#   | 2 | "exact" = the app.rs route has no params at all | **False dead**: an app.rs route that is itself all-params (e.g. `/admin/tenancy/tenants/:tid`) can still be an exact structural match for an identically-shaped contract row |
+#   | 3 | **exact = segment lists equal, literal-for-literal and param-for-param; otherwise a live route whose only differing segments are its own param standing over the contract row's literal is a SHADOW** | correct |
+#
+# So every `client`-declared GET row classifies into exactly one of
+# three outcomes, not two:
+#   - EXACT    — a live route with the identical segment shape. Pass.
+#   - SHADOWED — no exact match, but a live route of the same segment
+#                count would consume this path at runtime because one of
+#                ITS segments is a `:param` sitting where this row has a
+#                literal. Fail, and name the shadowing route — this is
+#                the worse symptom (a different page renders, not
+#                Not Found) and silence here is exactly how it went
+#                undetected before RFC 145 §15.1 found it by hand.
+#   - ABSENT   — no live route matches at all, by either rule. Fail.
+#
+# Three named, dated, reviewed exemptions only — same discipline as
+# E3_EXEMPT above; this is not a general escape hatch (that decision
+# stays with whoever can grant it, not this file).
+#
+#   GET /admin/console/clients  -- RFC 145 §11.3: no template exists for
+#                                   it at all (`console/clients.rs` is
+#                                   JSON throughout); RFC 141 cycle 2 owns
+#                                   building the screen. Absent, and
+#                                   expected to be, until that cycle lands.
+GATE_42_EXEMPT="GET /admin/console/clients"
+
+# Split a route path into its '/'-separated segments as a single
+# space-joined string (bash word-splitting does the rest at call sites).
+# A leading '/' produces a leading empty field, same on both sides of
+# every comparison, so it cancels out consistently.
+path_segments() {
+  local IFS='/'
+  # shellcheck disable=SC2086
+  set -- $1
+  echo "$@"
+}
+
+# Classify one `client`-declared GET path against the full list of
+# app.rs path!() routes (one per line, in $app_routes). Echoes the
+# shadowing route on a SHADOWED result. Returns 0 EXACT, 1 SHADOWED,
+# 2 ABSENT.
+classify_client_route() {
+  local candidate="$1"
+  local -a cseg
+  read -ra cseg <<< "$(path_segments "$candidate")"
+  local clen=${#cseg[@]}
+
+  local live
+  while IFS= read -r live; do
+    [ -z "$live" ] && continue
+    local -a lseg
+    read -ra lseg <<< "$(path_segments "$live")"
+    if [ "${#lseg[@]}" -ne "$clen" ]; then continue; fi
+    local exact=1
+    local i
+    for ((i = 0; i < clen; i++)); do
+      if [ "${lseg[$i]}" != "${cseg[$i]}" ]; then exact=0; break; fi
+    done
+    if [ "$exact" -eq 1 ]; then return 0; fi
+  done <<< "$app_routes"
+
+  while IFS= read -r live; do
+    [ -z "$live" ] && continue
+    local -a lseg
+    read -ra lseg <<< "$(path_segments "$live")"
+    if [ "${#lseg[@]}" -ne "$clen" ]; then continue; fi
+    local shadow=1
+    local i
+    for ((i = 0; i < clen; i++)); do
+      if [ "${lseg[$i]}" == "${cseg[$i]}" ]; then continue; fi
+      if [[ "${lseg[$i]}" == :* ]] && [[ "${cseg[$i]}" != :* ]]; then continue; fi
+      shadow=0; break
+    done
+    if [ "$shadow" -eq 1 ]; then echo "$live"; return 1; fi
+  done <<< "$app_routes"
+
+  return 2
+}
+
+if [ ! -f "$APP_RS" ]; then
+  echo "❌  Expected frontend router file not found: $APP_RS" >&2
+  echo "    (route-contracts-check.sh's APP_RS path is stale)" >&2
+  exit 2
+fi
+
+app_routes=$(
+  grep -oE 'path!\("[^"]+"\)' "$APP_RS" |
+  sed -E 's/path!\("(.*)"\)/\1/' |
+  sort -u
+)
+
+client_get_routes=$(
+  awk -F'|' '
+    /^\|[[:space:]]*GET[[:space:]]*\|/ {
+      path      = $3; gsub(/^[ \t]+`|`[ \t]*$/, "", path)
+      rendering = $7; gsub(/^[ \t]+|[ \t]+$/, "", rendering)
+      if (rendering == "client") print path
+    }
+  ' "$CONTRACTS_MD" | sort -u
+)
+
+gate42_shadowed=""
+gate42_absent=""
+while IFS= read -r path; do
+  [ -z "$path" ] && continue
+  exempted=$(printf '%s\n' "$GATE_42_EXEMPT" | grep -Fx "GET $path" || true)
+  shadow_route=$(classify_client_route "$path") && status=0 || status=$?
+  case "$status" in
+    0) ;;  # EXACT — pass
+    1)
+      if [ -z "$exempted" ]; then
+        gate42_shadowed="${gate42_shadowed}GET ${path} -- shadowed by app.rs route \"${shadow_route}\"
+"
+      fi
+      ;;
+    2)
+      if [ -z "$exempted" ]; then
+        gate42_absent="${gate42_absent}GET ${path} -- no app.rs route of any shape
+"
+      fi
+      ;;
+  esac
+done <<< "$client_get_routes"
+
+if [ -n "$gate42_shadowed" ]; then
+  echo "❌  client-declared GET route(s) SHADOWED by a different app.rs route's :param" \
+       "(the worse symptom — a different page renders, not Not Found):" >&2
+  printf '%s' "$gate42_shadowed" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line" >&2; done
+  echo "" >&2
+  echo "    Either wire this GET server-side (RFC 145) or make the app.rs route" >&2
+  echo "    unambiguous — a literal segment must never be shadowed by a sibling" >&2
+  echo "    route's :param at the same position." >&2
+  exit_code=1
+fi
+
+if [ -n "$gate42_absent" ]; then
+  echo "❌  client-declared GET route(s) with NO app.rs route at all" \
+       "(serves the shell, renders <NotFound/>):" >&2
+  printf '%s' "$gate42_absent" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line" >&2; done
+  echo "" >&2
+  echo "    Either add the matching <Route> to crates/frontend/src/app.rs, or wire" >&2
+  echo "    this GET server-side (RFC 145) and declare it \`server\`." >&2
   exit_code=1
 fi
 

@@ -13,8 +13,20 @@ use crate::routes::admin::tenancy_console::forms::common::{
     confirmed, parse_form, redirect_303, require_manage,
 };
 
+/// **RFC 145 cycle 3.** Used to return the Leptos shell with no
+/// matching `app.rs` route — HTTP 200 rendering `<NotFound/>`.
 pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::shell(&req, &ctx, "組織ステータス変更 — cesauth").await
+    let principal = match require_manage(&req, &ctx.env).await? {
+        Ok(p) => p, Err(r) => return Ok(r),
+    };
+    let Some(oid) = ctx.param("oid").map(|s| s.to_owned()) else {
+        return Response::error("not found", 404);
+    };
+    let orgs = CloudflareOrganizationRepository::new(&ctx.env);
+    let org = match orgs.get(&oid).await {
+        Ok(Some(o)) => o, _ => return Response::error("not found", 404),
+    };
+    render::html_response(|| form_page(&principal, &org, None, "", None))
 }
 
 pub async fn form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {

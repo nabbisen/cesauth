@@ -1,36 +1,33 @@
 //! Membership add form (one-click).
 //!
 //! Three URL entry points, one shared rendering shape:
-//! - `POST /admin/tenancy/tenants/:tid/memberships`
-//! - `POST /admin/tenancy/organizations/:oid/memberships`
-//! - `POST /admin/tenancy/groups/:gid/memberships`
+//! - `POST /admin/tenancy/tenants/:tid/memberships/new`
+//! - `POST /admin/tenancy/organizations/:oid/memberships/new`
+//! - `POST /admin/tenancy/groups/:gid/memberships/new`
 //!
 //! Memberships are additive and cheap — joining a group does not
 //! grant any permission by itself; permissions are conferred by
 //! `role_assignments`, which is its own form. So we don't put a
 //! preview/confirm step in the membership flow.
 //!
-//! # RFC 108 orphan UI exemption
+//! # RFC 145 cycle 3 — the orphan-UI exemption above was stale
 //!
-//! The three `form action=` URLs above (the bare `.../memberships`
-//! collection POSTs) are **not** registered by
-//! `crates/backend/src/lib.rs`. The worker only handles the
-//! `.../memberships/new` and `.../memberships/:uid/delete` variants.
-//! The form submission goes to a route that returns 404 in production.
-//!
-//! Pre-existing bug (not introduced by RFC 108). The
-//! `tenant_admin/forms/membership_add.rs` equivalent maps cleanly to
-//! worker routes — this `tenancy_console` variant was apparently
-//! authored before the routes were finalised.
-//!
-//! Policy (RFC 108): catalog mirrors worker reality, not aspirations.
-//! This template is left hardcoded until the worker route is wired
-//! (or the template is updated to post to `.../memberships/new`).
-//! See `rfcs/done/108-...md` "Known orphan UI" for the deferred-work
-//! entry.
+//! The three `form action=` URLs used to read the bare `.../memberships`
+//! collection path, which RFC 108 documented as unregistered and 404ing
+//! in production — true at the time, since nothing served these GET
+//! routes to reach the bug. `crates/backend/src/lib.rs` registers
+//! `.../memberships/new` (`form_tenant`/`form_org`/`form_group` GET,
+//! `submit_tenant`/`submit_org`/`submit_group` POST, all three), which
+//! this file's own module doc already named as the fix: "or the
+//! template is updated to post to `.../memberships/new`." Done here,
+//! using the same `routes::tenancy_console::*_memberships_new` catalog
+//! functions the rest of this file's sibling templates already use
+//! (RFC 108 escape contract) instead of the hand-built strings that
+//! were wrong.
 
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
+use cesauth_core::routes::tenancy_console as routes;
 
 use super::super::frame::{tenancy_console_frame, TenancyConsoleTab};
 
@@ -47,8 +44,8 @@ pub fn for_tenant(
     let title = format!("Add tenant member: {tenant_slug}");
     render(
         principal, &title,
-        &format!("/admin/tenancy/tenants/{}", escape(tenant_id)),
-        &format!("/admin/tenancy/tenants/{}/memberships", escape(tenant_id)),
+        &escape(&routes::tenant(tenant_id)),
+        &escape(&routes::tenant_memberships_new(tenant_id)),
         &format!("tenant <code>{}</code>", escape(tenant_slug)),
         user_id,
         Some(("role", &[
@@ -73,8 +70,8 @@ pub fn for_organization(
     let title = format!("Add organization member: {org_slug}");
     render(
         principal, &title,
-        &format!("/admin/tenancy/organizations/{}", escape(org_id)),
-        &format!("/admin/tenancy/organizations/{}/memberships", escape(org_id)),
+        &escape(&routes::organization(org_id)),
+        &escape(&routes::organization_memberships_new(org_id)),
         &format!("organization <code>{}</code>", escape(org_slug)),
         user_id,
         Some(("role", &[
@@ -100,8 +97,8 @@ pub fn for_group(
     // standalone /admin/tenancy/groups/:gid page in 0.9.0.
     render(
         principal, &title,
-        &format!("/admin/tenancy/tenants/{}", escape(tenant_id)),
-        &format!("/admin/tenancy/groups/{}/memberships", escape(group_id)),
+        &escape(&routes::tenant(tenant_id)),
+        &escape(&routes::group_memberships_new(group_id)),
         &format!("group <code>{}</code>", escape(group_slug)),
         user_id,
         None,
@@ -184,10 +181,14 @@ mod tests {
         AdminPrincipal { id: "x".into(), name: None,role: Role::Operations, user_id: None }
     }
 
+    /// RFC 145 cycle 3: was asserting the broken pre-fix action
+    /// (`.../memberships`, no `/new`) that RFC 108 had documented as
+    /// unregistered and 404ing. The registered route is
+    /// `.../memberships/new`.
     #[test]
     fn tenant_form_action_is_tenant_scoped() {
         let html = for_tenant(&p(), "t-acme", "acme", "", "member", None);
-        assert!(html.contains(r#"action="/admin/tenancy/tenants/t-acme/memberships""#));
+        assert!(html.contains(r#"action="/admin/tenancy/tenants/t-acme/memberships/new""#));
     }
 
     #[test]

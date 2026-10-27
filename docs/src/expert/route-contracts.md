@@ -138,44 +138,44 @@ code-review responsibility.
 | GET | `/admin/tenancy/tenants.json` | System admin | none | JSON (`tenants`) | n/a | n/a | N/A (GET) |
 | GET | `/admin/tenancy/tenants/:tid` | System admin | none | tenant detail | client | n/a | N/A (GET) |
 | GET | `/admin/tenancy/tenants/:tid/detail.json` | System admin | none | JSON (`csrf_token`) | n/a | n/a | N/A (GET) |
-| GET | `/admin/tenancy/tenants/:tid/subscription/history` | System admin | none | subscription history | client | n/a | N/A (GET) |
-| GET | `/admin/tenancy/organizations/:oid` | System admin | none | org detail | client | n/a | N/A (GET) |
-| GET | `/admin/tenancy/users/:uid/role_assignments` | System admin | none | role assignments | client | n/a | N/A (GET) |
-| GET | `/admin/tenancy/tenants/new` | System admin | none | new-tenant form | client | n/a | N/A (GET) |
+| GET | `/admin/tenancy/tenants/:tid/subscription/history` | System admin | none | subscription history | server | `tenancy_console::tests::rfc145_cycle3::subscription_history_page_renders_the_real_page` | N/A (GET) |
+| GET | `/admin/tenancy/organizations/:oid` | System admin | none | org detail | server | `tenancy_console::tests::rfc145_cycle3::organization_detail_page_renders_the_real_page` | N/A (GET) |
+| GET | `/admin/tenancy/users/:uid/role_assignments` | System admin | none | role assignments | server | `tenancy_console::tests::rfc145_cycle3::user_role_assignments_page_renders_the_real_page` | N/A (GET) |
+| GET | `/admin/tenancy/tenants/new` | System admin | none | new-tenant form | server | `tenancy_console::tests::rfc145_cycle3::tenant_create_form_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/tenancy/tenants/new` | System admin | `tenant_created` | redirect | client | n/a | required |
-| GET | `/admin/tenancy/tenants/:tid/status` | System admin | none | status form | client | n/a | N/A (GET) |
+| GET | `/admin/tenancy/tenants/:tid/status` | System admin | none | status form | server | `tenancy_console::tests::rfc145_cycle3::tenant_set_status_form_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/tenancy/tenants/:tid/status` | System admin | `tenant_status_changed` | redirect | client | n/a | required |
-| GET | `/admin/tenancy/tenants/:tid/organizations/new` | System admin | none | new-org form | client | n/a | N/A (GET) |
+| GET | `/admin/tenancy/tenants/:tid/organizations/new` | System admin | none | new-org form | server | `tenancy_console::tests::rfc145_cycle3::organization_create_form_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/tenancy/tenants/:tid/organizations/new` | System admin | `organization_created` | redirect | client | n/a | required |
-| GET | `/admin/tenancy/organizations/:oid/status` | System admin | none | status form | client | n/a | N/A (GET) |
+| GET | `/admin/tenancy/organizations/:oid/status` | System admin | none | status form | server | `tenancy_console::tests::rfc145_cycle3::organization_set_status_form_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/tenancy/organizations/:oid/status` | System admin | `organization_status_changed` | redirect | client | n/a | required |
-| GET | `/admin/tenancy/tenants/:tid/groups/new` | System admin | none | new-group form | client | n/a | N/A (GET) |
+| GET | `/admin/tenancy/tenants/:tid/groups/new` | System admin | none | new-group form | server | `tenancy_console::tests::rfc145_cycle3::group_create_for_tenant_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/tenancy/tenants/:tid/groups/new` | System admin | `group_created` | redirect | client | n/a | required |
-| GET | `/admin/tenancy/organizations/:oid/groups/new` | System admin | none | new-group form | client | n/a | N/A (GET) |
+| GET | `/admin/tenancy/organizations/:oid/groups/new` | System admin | none | new-group form | server | `tenancy_console::tests::rfc145_cycle3::group_create_for_organization_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/tenancy/organizations/:oid/groups/new` | System admin | `group_created` | redirect | client | n/a | required |
-| GET | `/admin/tenancy/groups/:gid/delete` | System admin | none | delete confirm | client | n/a | N/A (GET) |
+| GET | `/admin/tenancy/groups/:gid/delete` | System admin | none | delete confirm | server | `tenancy_console::tests::rfc145_cycle3::group_delete_confirm_page_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/tenancy/groups/:gid/delete` | System admin | `group_deleted` | redirect | client | n/a | required |
-| GET | `/admin/tenancy/tenants/:tid/subscription/plan` | System admin | none | plan form | client | n/a | N/A (GET) |
+| GET | `/admin/tenancy/tenants/:tid/subscription/plan` | System admin | none | plan form | server | `tenancy_console::tests::rfc145_cycle3::subscription_set_plan_form_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/tenancy/tenants/:tid/subscription/plan` | System admin | `subscription_plan_changed` | redirect | client | n/a | required |
-| GET | `/admin/tenancy/tenants/:tid/subscription/status` | System admin | none | status form | client | n/a | N/A (GET) |
+| GET | `/admin/tenancy/tenants/:tid/subscription/status` | System admin | none | status form | server | `tenancy_console::tests::rfc145_cycle3::subscription_set_status_form_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/tenancy/tenants/:tid/subscription/status` | System admin | `subscription_status_changed` | redirect | client | n/a | required |
-| GET | `/admin/tenancy/tenants/:tid/memberships/new` | System admin | none | add-member form | client | n/a | N/A (GET) |
+| GET | `/admin/tenancy/tenants/:tid/memberships/new` | System admin | none | add-member form | server | `tenancy_console::tests::rfc145_cycle3::membership_add_for_tenant_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/tenancy/tenants/:tid/memberships/new` | System admin | `membership_added` | redirect | client | n/a | required |
-| GET | `/admin/tenancy/tenants/:tid/memberships/:uid/delete` | System admin | none | remove-member confirm | client | n/a | N/A (GET) |
+| GET | `/admin/tenancy/tenants/:tid/memberships/:uid/delete` | System admin | none | remove-member confirm | server | `tenancy_console::tests::rfc145_cycle3::membership_remove_for_tenant_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/tenancy/tenants/:tid/memberships/:uid/delete` | System admin | `membership_removed` | redirect | client | n/a | required |
-| GET | `/admin/tenancy/organizations/:oid/memberships/new` | System admin | none | add-member form | client | n/a | N/A (GET) |
+| GET | `/admin/tenancy/organizations/:oid/memberships/new` | System admin | none | add-member form | server | `tenancy_console::tests::rfc145_cycle3::membership_add_for_organization_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/tenancy/organizations/:oid/memberships/new` | System admin | `membership_added` | redirect | client | n/a | required |
-| GET | `/admin/tenancy/organizations/:oid/memberships/:uid/delete` | System admin | none | remove confirm | client | n/a | N/A (GET) |
+| GET | `/admin/tenancy/organizations/:oid/memberships/:uid/delete` | System admin | none | remove confirm | server | `tenancy_console::tests::rfc145_cycle3::membership_remove_for_organization_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/tenancy/organizations/:oid/memberships/:uid/delete` | System admin | `membership_removed` | redirect | client | n/a | required |
-| GET | `/admin/tenancy/groups/:gid/memberships/new` | System admin | none | add-member form | client | n/a | N/A (GET) |
+| GET | `/admin/tenancy/groups/:gid/memberships/new` | System admin | none | add-member form | server | `tenancy_console::tests::rfc145_cycle3::membership_add_for_group_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/tenancy/groups/:gid/memberships/new` | System admin | `membership_added` | redirect | client | n/a | required |
-| GET | `/admin/tenancy/groups/:gid/memberships/:uid/delete` | System admin | none | remove confirm | client | n/a | N/A (GET) |
+| GET | `/admin/tenancy/groups/:gid/memberships/:uid/delete` | System admin | none | remove confirm | server | `tenancy_console::tests::rfc145_cycle3::membership_remove_for_group_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/tenancy/groups/:gid/memberships/:uid/delete` | System admin | `membership_removed` | redirect | client | n/a | required |
-| GET | `/admin/tenancy/users/:uid/role_assignments/new` | System admin | none | grant-role form | client | n/a | N/A (GET) |
+| GET | `/admin/tenancy/users/:uid/role_assignments/new` | System admin | none | grant-role form | server | `tenancy_console::tests::rfc145_cycle3::role_assignment_create_form_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/tenancy/users/:uid/role_assignments/new` | System admin | `role_assignment_created` | redirect | client | n/a | required |
-| GET | `/admin/tenancy/role_assignments/:id/delete` | System admin | none | revoke confirm | client | n/a | N/A (GET) |
+| GET | `/admin/tenancy/role_assignments/:id/delete` | System admin | none | revoke confirm | server | `tenancy_console::tests::rfc145_cycle3::role_assignment_delete_confirm_page_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/tenancy/role_assignments/:id/delete` | System admin | `role_assignment_deleted` | redirect | client | n/a | required |
-| GET | `/admin/tenancy/users/:uid/tokens/new` | System admin | none | mint-token form | client | n/a | N/A (GET) |
+| GET | `/admin/tenancy/users/:uid/tokens/new` | System admin | none | mint-token form | server | `tenancy_console::tests::rfc145_cycle3::token_mint_form_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/tenancy/users/:uid/tokens/new` | System admin | `admin_token_minted` | redirect | client | n/a | required |
 
 ## Admin — tenant-admin console (`/admin/t/:slug`)
