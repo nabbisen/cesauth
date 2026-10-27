@@ -102,6 +102,15 @@ exemption list. Resolution belongs to follow-up work.
    suggesting the `tenancy_console` variant was authored before the
    routes were finalised.
 
+   > **Resolved 2026-10-27 by RFC 145 cycle 3 (`03d24ee`).** The three
+   > templates now post to `.../memberships/new` via the
+   > `routes::tenancy_console::*_memberships_new` catalog functions,
+   > which this item's own contingency named. Fixed in that cycle
+   > because wiring the GET made the form **reachable** for the first
+   > time, and a newly-reachable form that 404s on submit is the defect
+   > RFC 145 exists to close. Asserted by
+   > `membership_add_for_tenant_renders_the_real_page`.
+
 Rationale for multi-release implementation: the lifecycle policy
 (RFC 019 / `rfcs/archive/019-rfc-lifecycle-policy.md` §Granularity of
 transitions) allows partial implementation when the partial work

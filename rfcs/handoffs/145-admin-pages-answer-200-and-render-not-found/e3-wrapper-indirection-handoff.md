@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 145, the E3 wrapper-indirection gap
 
-**Governing RFC.** `rfcs/accepted/145-admin-pages-answer-200-and-render-not-found.md`
+**Governing RFC.** `rfcs/done/145-admin-pages-answer-200-and-render-not-found.md`
 §12.1–12.2. **Not a cycle** — a standalone check-only item, ahead of cycles 2
 and 3.
 

@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 145 cycle 1, the operator console's dead pages
 
-**Governing RFC.** `rfcs/accepted/145-admin-pages-answer-200-and-render-not-found.md`
+**Governing RFC.** `rfcs/done/145-admin-pages-answer-200-and-render-not-found.md`
 — **read §11 first.** §11 is the triage, measured on 2026-10-25, and it changes
 §4's and §9's expectations: nothing is deleted, the level is a patch, and the fix
 is RFC 143's, not a screen build.

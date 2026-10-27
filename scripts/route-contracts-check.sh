@@ -404,7 +404,7 @@ fi
 #                undetected before RFC 145 §15.1 found it by hand.
 #   - ABSENT   — no live route matches at all, by either rule. Fail.
 #
-# Three named, dated, reviewed exemptions only — same discipline as
+# Named, dated, reviewed exemptions only — one today — same discipline as
 # E3_EXEMPT above; this is not a general escape hatch (that decision
 # stays with whoever can grant it, not this file).
 #

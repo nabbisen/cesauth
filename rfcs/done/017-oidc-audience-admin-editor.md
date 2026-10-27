@@ -1,5 +1,23 @@
 # RFC 017: OIDC client audience-scoping admin editor
 
+> **2026-10-27 — this RFC's deliverable has never been reachable.** Found while
+> reviewing RFC 145 cycle 3, by following RFC 108's item 1.
+> `cesauth_frontend::tenant_admin::audience_edit_page` exists, has two tests,
+> and renders `<form action="/admin/t/{slug}/oidc-clients/{cid}/audience">` —
+> but **no `/admin/t/:slug/oidc-clients` route of any kind is registered in
+> `lib.rs`**, and the template has no caller outside its own tests. Neither the
+> page nor the form it posts to can be reached.
+>
+> **Already owned, not a new RFC.** [RFC 141](../accepted/141-oidc-client-registration.md)
+> §10.2 — *"The 'tenant admin editor' does not exist"* — documents this with
+> measurements and owns the fix. A second record would duplicate it.
+>
+> **Kept here because this RFC is a second [RFC 047](./047-deletion-worker-layer.md):**
+> `done/`, **Status: Implemented**, shipped v0.53.0, and non-functional
+> throughout. One such case made [RFC 151](../accepted/151-done-cannot-distinguish-shipped-from-working.md)
+> arguable; two make it evidential. Under RFC 000 §22 this RFC's evidence term
+> is **`unknown`** at best, and it is exactly what the back-fill must catch.
+
 **Status**: Implemented
 **ROADMAP**: External UI/UX design update v0.50.1 — page 8 ("OIDC client editor"); closes the v0.50.0 "out-of-scope: admin UI for `oidc_clients.audience`" gap
 **ADR**: ADR-014 §Q1 (audience scoping shipped v0.50.0; admin UI was deferred)

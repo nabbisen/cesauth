@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 145 cycle 2, the tenant-admin dead pages
 
-**Governing RFC.** `rfcs/accepted/145-admin-pages-answer-200-and-render-not-found.md`
+**Governing RFC.** `rfcs/done/145-admin-pages-answer-200-and-render-not-found.md`
 — read **§11** (the triage), **§12** (what cycle 1 refuted), and **§13**, added
 2026-10-27, which is a compiler-verified worklist for this cycle.
 

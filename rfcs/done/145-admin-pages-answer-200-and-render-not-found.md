@@ -1,6 +1,17 @@
 # RFC 145 — Thirty-five admin pages answer 200 and render "Not Found"
 
-**Status.** Accepted — approved by the owner 2026-10-25.
+**Status.** **Done** — cycles 1–3 accepted; **shipped v0.85.1 (cycle 1), v0.86.1
+(cycle 2), v0.86.2 (cycle 3)**. **`exercised`** (RFC 000 §22): the
+`route-contracts-check.sh` gates — E3 (no `server`-declared handler reaches the
+shell) and **§4.2** (no `client`-declared row is *absent* or *shadowed* in
+`app.rs`) — run on every change and fail on a reversion of any of the 35 routes
+converted. Demonstrated live for all three §4.2 outcomes and for E3 on both a
+top-level page and a `forms::*` handler, and independently re-verified by the
+architect on an absent route, a shadow shape that does not occur in the tree,
+and a param-to-param exact match. The 12+21 template-level host tests
+(cycles 2–3) additionally guard each converted template's rendered output but
+**do not by themselves guard the wiring** — a handler reverted to the shell
+passes them unchanged; E3 and §4.2 are what catch that.
 **Tier.** P1 — one of the thirty-five is linked from a working console screen,
 so an operator following the UI reaches a Not Found page.
 **Size.** Medium. The triage is small per route; the count is what makes it

@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 145 cycle 3, the tenancy console's dead pages and the §4.2 gate
 
-**Governing RFC.** `rfcs/accepted/145-admin-pages-answer-200-and-render-not-found.md`
+**Governing RFC.** `rfcs/done/145-admin-pages-answer-200-and-render-not-found.md`
 — read **§11** (triage), **§13** (the compiler's worklist), and **§15**, which
 accepts cycle 2 and **corrects my own route count**. §15.1 and §15.2 are
 prerequisites for the gate, not background.

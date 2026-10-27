@@ -33,6 +33,19 @@ October 2026 by RFC 147, and fixed in 0.85.1 and 0.86.0.
 By the letter of both definitions, RFC 047 was correctly filed the entire time.
 **The policy was not violated; the policy is what permitted it.**
 
+**It is not one case any more.** Reviewing RFC 145 cycle 3 on 2026-10-27 turned
+up **[RFC 017](../done/017-oidc-audience-admin-editor.md)** — *"OIDC client
+audience-scoping admin editor"*, **Status: Implemented**, shipped **v0.53.0** —
+whose template exists, has two tests, and renders a form posting to a route
+`lib.rs` has never registered. The page has no caller outside its own tests.
+**Nobody has ever been able to open it.**
+
+Two independent instances, found five weeks apart and both by accident while
+doing something else, are the argument for §22's rule. The second one also
+shows what `reviewed` would have been worth here: the template was reviewed, it
+was correct, it had tests, **and none of that touched the question of whether
+anything routed to it.**
+
 ## 2. Why this is not merely tidiness
 
 `rfcs/README.md:135` says "the canonical catalogue is the filesystem at
