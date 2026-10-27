@@ -369,3 +369,93 @@ audit events and redirect with success parameters without ever touching the
 deletion-request repository, which is fully implemented and used by the sweep.
 **That is now RFC 147**, which owns the route. **RFC 145's scope drops from 34
 to 33**, and cycle 2 covers **10** tenant-admin routes rather than 11.
+
+## 13. The compiler has been reporting this defect all along (2026-10-27)
+
+Measuring the backend crate's warning count — to decide whether CI should
+enforce `-D warnings`, a decision I own — turned up something about **this** RFC
+instead.
+
+```
+$ cargo build -p cesauth-backend --tests 2>&1 | tail -3
+warning: `cesauth-backend` (lib test) generated 191 warnings (run `cargo fix --lib -p cesauth-backend --tests` to apply 178 suggestions)
+```
+
+**191**, not the 198 recorded earlier — 0.86.0 moved it, which is itself a
+reason the figure needs its command attached. Grouped by kind, the largest
+classes are **not** style:
+
+| Count | Warning |
+|---|---|
+| 19 / 19 / 16 | `unused variable: req` / `ctx` / `ctx_ta` |
+| 15 / 15 | `unused import: crate::routes::admin::console::render` / `::auth` |
+| 9 / 6 | `unused import: AdminAction` / `cesauth_frontend as ui` |
+
+That shape is this RFC's defect, stated by rustc. `tenant_admin/users.rs:1-24`:
+
+```rust
+use cesauth_frontend::tenant_admin::users_page;          // the server template
+use crate::routes::admin::console::render;               // the renderer
+…
+pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    …
+    json_api::shell(&req, &ctx, &format!("Users — {} …")).await   // the Leptos shell
+}
+```
+
+**The handler imports the server template and the renderer and uses neither**,
+because it returns the shell instead — which is exactly "documented
+`render=client`, serving the shell, with no route in `app.rs`". The compiler
+has said so on every build.
+
+### 13.1 A compiler-verified worklist for cycles 2 and 3
+
+Imported-but-unused *page templates*, which is a census of the remaining scope:
+
+```
+$ cargo clippy -p cesauth-backend --tests 2>&1 \
+    | grep -B1 -A3 "^warning: unused import" | grep -E "unused import|-->" \
+    | paste - - | grep -iE "page|frontend" | sort -u
+```
+
+- **tenancy_console** (6 files): `tenancy_console_overview_page`, `tenants_page`,
+  `tenant_detail_page` + `TenantDetailInput`, `organization_detail_page` +
+  `OrganizationDetailInput`, `user_role_assignments_page` +
+  `UserRoleAssignmentsInput`, `subscription_history_page`
+- **tenant_admin** (5 files): `users_page`, `organizations_page`,
+  `organization_detail_page`, `subscription_page`, `role_assignments_page` +
+  `TenantUserRoleAssignmentsInput`
+- **console** (7 files): `operations_page` + `CronPassDisplay`, and
+  `cesauth_frontend as ui` in `alerts.rs`, `audit.rs`, `audit_chain.rs`,
+  `cost.rs`, `overview.rs`, `safety.rs`
+
+This corroborates §2's count from an independent direction and **tells the dev
+team which template each route is supposed to render**, which the handoff would
+otherwise have to derive by hand.
+
+### 13.2 The warnings-gate decision, and why its order is not the obvious one
+
+**Decision: do not enable `-D warnings` now, and do not run `cargo fix` on the
+admin route modules before cycles 2 and 3 land.**
+
+The reason is not that 191 is a large diff. It is that `cargo fix` would
+**delete these imports** — it offers 178 such suggestions — and deleting them
+destroys the compiler's own report of a P1 defect, converting a visible bug into
+invisible dead code that no longer warns. **The imports should become used, by
+wiring the server template, not removed.** Enabling the gate first creates
+exactly the pressure to take the fast path.
+
+The order is therefore:
+
+1. **RFC 145 cycles 2 and 3** — the unused template imports become used, and
+   the `req` / `ctx` / `ctx_ta` parameters with them. Most of the 191 should
+   disappear as a *consequence* of the fix.
+2. **Re-measure**, then enable `-D unused_imports -D unused_variables` for the
+   backend crate — the two lints that carry defect signal — rather than a
+   blanket `-D warnings`.
+3. **Style lints separately** (`doc list item without indentation` and
+   `overindented`, 45 between them) in one mechanical commit, then folded in.
+
+A blanket `-D warnings` is rejected even at the end: it makes every future
+lint-set change in a toolchain bump a release-blocking failure, and the
+toolchain is pinned precisely so that bumps are deliberate events.

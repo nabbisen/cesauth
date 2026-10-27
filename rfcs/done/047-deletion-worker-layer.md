@@ -13,8 +13,9 @@
 > work: the self-service route authenticates the **user** and creates a real
 > request, and the daily cron executes due requests — proven through
 > `/cdn-cgi/local/scheduled`, the actual scheduled handler. **This annotation is
-> kept rather than deleted:** the record that this RFC sat in `done/` for two
-> years of releases while neither deliverable functioned is worth more than a
+> kept rather than deleted:** the record that this RFC sat in `done/` across **61
+> releases** — it entered `done/` at `99fe324`, 2026-06-05, and 61 tags were cut
+> between 0.53.0 and 0.86.0 — while neither deliverable functioned is worth more than a
 > clean-looking file, and it is the evidence behind the open question of whether
 > `done/` should mean *verified* rather than *shipped*.
 
