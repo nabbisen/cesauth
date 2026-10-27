@@ -57,6 +57,7 @@ sat here across 61 releases, correctly filed, with both deliverables dead.
 
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
+| [154](./proposed/154-the-second-factor-is-never-audited.md) | **The second factor is never audited.** No TOTP operation emits any event — not enrolment, not a successful verification, not a failure, not disablement, not recovery-code use; `grep EventKind:: crates/backend/src/routes/me/totp/` returns nothing, and `MfaVerified` is declared and emitted nowhere. RFC 143's attempt lockout therefore **trips silently**, so a brute-force attempt on a TOTP gate is invisible afterwards. Three doc comments in `recover.rs` describe audit records that are never written. Found by RFC 000 §22's back-fill | P1 | — |
 | [144](./proposed/144-introspection-reveals-family-existence.md) | **Introspection reveals that a family exists** to an authenticated caller presenting a forged jti: `expired`/`revoked` are classified before the jti comparison, which the mismatch path conflates to `unknown` precisely to avoid this. **Recorded as an RFC because it was lost once** as "recorded for RFC 118" | P3 | filler |
 
 ### Other proposed

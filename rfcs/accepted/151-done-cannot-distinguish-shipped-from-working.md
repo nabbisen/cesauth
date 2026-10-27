@@ -167,6 +167,29 @@ there. RFCs 043, 046, 047 and 049 are annotated; the remaining 24 have had no
 determination and are **`unknown` until they do**, which is §22.3's prescribed
 value and not a placeholder for an optimistic guess.
 
+### What the back-fill has determined so far
+
+| RFC | term | what fails if the deliverable breaks |
+|---|---|---|
+| **033** oidc nonce in id_token | `exercised` | 4 host tests in `cesauth-core` (`exchange_code_id_token_{carries,omits}_nonce_*`, `build_claims_nonce_{present,absent}_*`); two are renamed from the names §Tests gives |
+| **034** introspect handler wiring | `exercised` | `find_auth_view` in use at `oidc/introspect.rs:88`, plus a **negative** guard — `revoke/tests.rs:86` panics if revoke ever calls it |
+| **040** oidc `/userinfo` | `exercised` | exactly the **10** `#[test]`s its §Tests claims, in `core/src/oidc/userinfo.rs`; route registered twice (GET+POST) |
+| **044** deletion requests (core) | `exercised` | `core/src/deletion.rs` host tests, and since RFC 147 cycle 2 the path is driven end to end |
+| **045** audit EventKind additions | **`reviewed`** | nothing. The variants exist; **nothing fails if a kind loses its emitter** — which is how 10 of 71 came to have none |
+| **043 / 046 / 047 / 049** invitations + deletion worker | **`unknown`** | RFC 047 was dead for 61 releases; 043/046/049 are **RFC 153** |
+| the other 19 | **`unknown`** | not yet determined |
+
+**A method note worth keeping: the mechanical triage does not work.** I scored
+every P0/P1 RFC by whether it names a test that exists in a CI-run crate.
+**RFC 047 scores 1 of 1 and was completely dead.** So "names a test that
+exists" has no predictive power, and the term can only come from asking what
+fails *behaviourally*. That is why this table is short: each row is a reading,
+not a lookup.
+
+**The back-fill is finding things at a rate that is itself an argument.** Four
+RFCs examined produced RFC 153; the fifth (RFC 045) produced RFC 154 and the
+missing half of RFC 123's gate. **Two new P1 records from five determinations.**
+
 **This is reported at 4 of 28 rather than held until 28**, because the first
 finding is larger than the back-fill's bookkeeping and the owner should not
 learn of it a week late. The remaining 24 continue as their own scheduled work.

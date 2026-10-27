@@ -19,6 +19,37 @@ route↔EventKind coverage test that fails when a mutating route exists
 without a mapped event; (3) a redaction property test asserting no
 event payload can carry raw secret material.
 
+### 1.1 The missing direction (added 2026-10-27)
+
+§1(2) checks one direction: **a mutating route with no mapped event**. The
+other direction is unchecked and is not empty — measured during RFC 000 §22's
+back-fill:
+
+```
+$ # of 71 EventKind variants, those with no reference outside the enum:
+AuthSucceeded · SessionCreated · SessionStarted · SessionExpired
+SessionRevokedByAdmin · MfaVerified · WebauthnFailed
+AdminConsoleViewed · IntrospectionRowMissing · InvitationRevoked
+```
+
+**Ten declared kinds with no emitter.** Most are redundant with a
+differently-named kind that *is* emitted (`MagicLinkVerified`,
+`AdminSessionRevoked`, `SessionIdleTimeout`), so they are dead names rather
+than missing records — but **nothing distinguishes a dead name from an
+un-wired event**, and that ambiguity cost a wrong first inference even when
+read carefully.
+
+So the coverage test must fail in both directions: a mutating route with no
+event, **and** a declared kind with no emitter — the latter unless the variant
+carries an explicit "intentionally unemitted, because …" comment. RFC 141 §13
+and RFC 145 §4.2 were the same shape: two directions of one check, where only
+one had been built.
+
+**Three of the ten are owned elsewhere**, and this RFC should not claim them:
+`MfaVerified` by **RFC 154** (the whole `me/totp/` tree emits nothing, which is
+shippable now and should not wait for this programme), `InvitationRevoked` by
+**RFC 153**, `IntrospectionRowMissing` by **RFC 144**.
+
 ## 2. Motivation
 
 Spec §2.1 makes auditability non-negotiable and Forbidden Patterns
