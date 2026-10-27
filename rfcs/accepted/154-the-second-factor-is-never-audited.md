@@ -1,6 +1,11 @@
 # RFC 154 — The second factor is never audited
 
-**Status.** **Proposed** — awaiting owner authorization.
+**Status.** **Accepted** 2026-10-27. **Scheduled 0.87.0 — minor**, not a
+patch: §4 adds five new `EventKind` variants, and new event types appearing in
+an audit stream is additive surface that somebody parsing it should meet at a
+minor boundary. Rides with RFC 149 and RFC 148, which is a coherent release
+rather than a bundle — all three make the `/me` surface tell the truth about
+itself.
 **Tier.** P1. The control that exists to survive a compromised first factor
 leaves no record of being satisfied, failed, enrolled or removed.
 **Size.** Small. Event kinds mostly exist; the emitters do not.

@@ -177,7 +177,14 @@ value and not a placeholder for an optimistic guess.
 | **044** deletion requests (core) | `exercised` | `core/src/deletion.rs` host tests, and since RFC 147 cycle 2 the path is driven end to end |
 | **045** audit EventKind additions | **`reviewed`** | nothing. The variants exist; **nothing fails if a kind loses its emitter** — which is how 10 of 71 came to have none |
 | **043 / 046 / 047 / 049** invitations + deletion worker | **`unknown`** | RFC 047 was dead for 61 releases; 043/046/049 are **RFC 153** |
-| the other 19 | **`unknown`** | not yet determined |
+| **030** magic log sanitization (**P0**) | **`reviewed`** | nothing. `MagicLinkPayload` has a plain `derive(Debug)`; the "never log `code`" guarantee is a doc comment. **RFC 155** |
+| **074** generic auth-failure audit (**P0**) | **`reviewed`** | nothing. The generic messages are correct and no test asserts them. **RFC 155** |
+| the other 17 | **`unknown`** | not yet determined |
+
+**Two P0s carrying `reviewed` is the rule working in its first week.** §22 bars
+that, and the bar is what surfaced them: both guarantees hold today and neither
+has a failing witness. Recorded on the RFCs **before** the remedy ships, because
+deferring the annotation until the fix lands would have made the rule decorative.
 
 **A method note worth keeping: the mechanical triage does not work.** I scored
 every P0/P1 RFC by whether it names a test that exists in a CI-run crate.
