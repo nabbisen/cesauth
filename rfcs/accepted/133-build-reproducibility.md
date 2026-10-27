@@ -600,3 +600,60 @@ half B. It is no longer evidence of a fixed offset, which is what §15 implied.
 
 Both halves of this entry are the same lesson the 0.85.1–0.86.0 cycle kept
 teaching: a figure from two samples is a figure, not a pattern.
+
+## 15.2 A fourth reading, and a reason to doubt the first three (2026-10-27)
+
+0.86.1's bundle, CI against local at the same commit `1c180ca`:
+
+| | wasm gzip | `shim.js` gzip | total |
+|---|---|---|---|
+| CI (`Worker bundle size budget`) | 844,997 | 10,698 | **855,695** |
+| Local (`wrangler deploy --dry-run`, CI's method) | 845,153 | 10,699 | **855,852** |
+| **gap** | **156** | **1** | **157** |
+
+Against the three readings in §15 and §15.1 — totals **2,860 / 3,001 / 2,602**,
+wasm **2,740 / 2,881 / 2,115**, `shim.js` **119 / 120 / 120** — **both
+components collapsed by more than an order of magnitude.** The `shim.js`
+component, which §15 called "exactly 120 bytes both times" and §15.1 softened to
+"stable near 120 bytes", is **1**.
+
+### The likeliest explanation is my own measurement, not the toolchain
+
+**My local `shim.js` changed from 10,580 to 10,699, and 10,699 is what CI was
+already producing at 0.86.0.** The two sides did not converge; **mine moved to
+meet CI's**, which had been stable.
+
+The procedural difference is that this time I ran `make build-backend`
+immediately before `wrangler deploy --dry-run --outdir`. In the earlier
+readings I measured artifacts in `dist/`, **a directory that accumulates
+build outputs and is not cleaned between builds** — 32 stale `*_bg.wasm` files
+are sitting in it at the time of writing.
+
+**So a real possibility is that some or all of the 2,600–3,000 byte gap was a
+stale local artifact being compared against a fresh CI one** — a measurement
+error of mine, not cross-host nondeterminism. If that is right, §15's central
+observation is not evidence for half B at all, and the "two orders of magnitude
+above the 34 bytes at 0.84.3" framing is wrong.
+
+### What this does not establish
+
+**That the gap is 157, or that it is my error.** One reading taken with a
+changed procedure cannot overturn three taken with another, and the 156-byte
+wasm component is still unexplained. Treating this reading as the true one
+would repeat §15's original mistake in the opposite direction.
+
+### The controlled test, which has not been run
+
+The question is now answerable cheaply and should be answered before §15 is
+cited again:
+
+1. `rm -rf dist/ bundled/`, build once, measure.
+2. Build again without cleaning, measure again. A difference here is local
+   staleness and nothing to do with hosts.
+3. Compare a clean local build against CI at the same commit. **That** number
+   is the cross-host gap; everything in §15 and §15.1 predates this control.
+
+**Until step 3 is done, §15, §15.1 and this section are four readings of an
+uncontrolled experiment**, and the honest summary of RFC 133 half B's evidence
+is that it does not yet have any. The budget gate is unaffected either way —
+32% of 2,621,440 B at every reading.
