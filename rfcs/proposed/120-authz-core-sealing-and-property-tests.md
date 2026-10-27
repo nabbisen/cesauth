@@ -105,6 +105,26 @@ pattern). RFC 022's seed-sync test extends to assert catalog constants
 Logic byte-identical; only the parameter type changes. The batch
 variant follows.
 
+**Noted 2026-10-28, during RFC 000 §22's back-fill:** there are **two**
+decision implementations, and this RFC will have to change both.
+`check_permission` is the request-time enforcement path
+(`backend/.../tenant_admin/gate.rs` → `check_action` → `check_read`);
+`check_permissions_batch` is the affordances path that decides which controls
+the tenant-admin UI offers. **It reimplements the same two filters** — the
+`expires_at` test and `scope_covers` — in its own loop rather than delegating.
+
+By inspection they are equivalent today: same two filters, same
+`Allowed`/`Denied(PermissionMissing)` outcomes. **Nothing asserts that they
+stay equivalent**, and the two have asymmetric coverage — 20 test call sites
+for the single version (including all six of RFC 052's hardening suite) against
+7 for the batch. If they drift, the symptom is a UI offering a control the
+enforcement path refuses, or hiding one it would allow: the owner's *"users not
+to be confused"* clause, reached through an authorization bug.
+
+**This RFC's property tests should run against both**, or the batch should
+delegate. Either closes it; recording it here because §7.2 already commits to
+touching both.
+
 ### 7.3 Property tests
 
 Strategies generate: scope trees (1–3 tenants, 0–3 orgs each, 0–3

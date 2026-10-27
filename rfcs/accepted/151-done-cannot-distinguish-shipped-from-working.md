@@ -179,7 +179,9 @@ value and not a placeholder for an optimistic guess.
 | **043 / 046 / 047 / 049** invitations + deletion worker | **`unknown`** | RFC 047 was dead for 61 releases; 043/046/049 are **RFC 153** |
 | **030** magic log sanitization (**P0**) | **`reviewed`** | nothing. `MagicLinkPayload` has a plain `derive(Debug)`; the "never log `code`" guarantee is a doc comment. **RFC 155** |
 | **074** generic auth-failure audit (**P0**) | **`reviewed`** | nothing. The generic messages are correct and no test asserts them. **RFC 155** |
-| the other 17 | **`unknown`** | not yet determined |
+| **035** CI gate completeness | **`reviewed`** | its four workflows exist and run, and its `-D warnings` spec was superseded on the record by RFC 125. But **nothing fails if a workflow stops running** — the absence of a job is twelve green checks instead of thirteen. **RFC 156** |
+| **052** authz service hardening | **`exercised`** | `rfc_052_hardening.rs` (6 call sites) asserts cross-tenant rejection and the system_admin superset against `check_permission`, which **is** the request-time enforcement path via `tenant_admin/gate.rs` |
+| the other 15 | **`unknown`** | not yet determined |
 
 **Two P0s carrying `reviewed` is the rule working in its first week.** §22 bars
 that, and the bar is what surfaced them: both guarantees hold today and neither

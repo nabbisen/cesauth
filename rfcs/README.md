@@ -57,6 +57,7 @@ sat here across 61 releases, correctly filed, with both deliverables dead.
 
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
+| [156](./proposed/156-the-gate-set-has-no-gate.md) | **The gate set has no gate.** RFC 035 added the workflows, RFC 138 aligned them once, RFC 142 found CI had never run — and none left anything that fails when a gate *stops* running, because a missing job is twelve green checks instead of thirteen and nobody counts. **I didn't**: I wrote "all thirteen checks green" in four release records before checking. `fuzz.yml` is the live shape — it runs on no push, so no release commit is covered by it | P2 | — |
 | [144](./proposed/144-introspection-reveals-family-existence.md) | **Introspection reveals that a family exists** to an authenticated caller presenting a forged jti: `expired`/`revoked` are classified before the jti comparison, which the mismatch path conflates to `unknown` precisely to avoid this. **Recorded as an RFC because it was lost once** as "recorded for RFC 118" | P3 | filler |
 
 ### Other proposed
