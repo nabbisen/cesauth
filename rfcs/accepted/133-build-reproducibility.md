@@ -555,13 +555,14 @@ than noise** — about **0.35%** of the artifact, two orders of magnitude above 
 
 Two observations worth keeping, neither of them a cause:
 
-- **The `shim.js` gap is exactly 120 bytes both times.** `shim.js` is a
-  generated loader and `wrangler` is pinned at 4.131.2, so a stable
-  non-zero gap there is more surprising than the wasm's. One candidate is that
-  the loader embeds the wasm's content-hash filename, which necessarily differs
-  when the wasm does — but that would make the gap *derivative* of the wasm
-  difference, and a 40-character hash is a thin explanation for 120 compressed
-  bytes. **Not established.**
+- **The `shim.js` gap is stable near 120 bytes, but not exactly 120** — see
+  §15.1, which corrects an over-reading of two samples. `shim.js` is a generated
+  loader and `wrangler` is pinned at 4.131.2, so a consistently non-zero gap
+  there is still more surprising than the wasm's. One candidate is that the
+  loader embeds the wasm's content-hash filename, which necessarily differs when
+  the wasm does — but that makes the gap *derivative* of the wasm difference, and
+  a 40-character hash is a thin explanation for ~120 compressed bytes.
+  **Not established.**
 - **The wasm gap grew with the release commit** (2,740 → 2,881) across a change
   that was a version bump plus documentation, which is consistent with §14's
   finding that the pre-optimizer wasm moves on recompilation.
@@ -572,3 +573,30 @@ ceiling). What it changes is the evidence: half B can now be opened with a
 measured, repeatable figure and a named method instead of a single 34-byte
 curiosity. **Recorded in `.git-exclude/release/0.85.1-release-cut.md` §4 as a
 discrepancy-ledger entry.**
+
+### 15.1 A third reading, and a correction to §15 (2026-10-27)
+
+CI's `bundle-size` job on the **0.86.0** release commit `aae3aca` reports
+**847,989 B** gzip (wasm **837,290**, `shim.js` **10,699**) against my
+**845,387** (wasm **835,175**, `shim.js` **10,580**).
+
+| Commit | Release | CI total | Mine | Gap | `shim.js` | wasm |
+|---|---|---|---|---|---|---|
+| `dbbf5f2` | 0.85.1 readiness | 836,559 | 833,699 | +2,860 | +120 | +2,740 |
+| `c4970ec` | **0.85.1** | 836,806 | 833,805 | +3,001 | +120 | +2,881 |
+| `aae3aca` | **0.86.0** | 847,989 | 845,387 | **+2,602** | **+119** | +2,115 |
+
+**§15 said the `shim.js` gap was "exactly 120 bytes both times". With a third
+sample it is 119.** The figure is stable *near* 120, not identical, and I drew a
+sharper inference than two samples could support. The correction matters because
+"exactly" invited a mechanical explanation — a fixed-length difference — and
+"approximately" does not.
+
+**The wasm gap is not constant either**: 2,740 / 2,881 / 2,115. So the honest
+statement is **a cross-host gap of roughly 0.25–0.35% of the artifact, present
+on every commit measured, varying per build** — which is still two orders of
+magnitude above the 34 bytes recorded at 0.84.3, and still the case for opening
+half B. It is no longer evidence of a fixed offset, which is what §15 implied.
+
+Both halves of this entry are the same lesson the 0.85.1–0.86.0 cycle kept
+teaching: a figure from two samples is a figure, not a pattern.
