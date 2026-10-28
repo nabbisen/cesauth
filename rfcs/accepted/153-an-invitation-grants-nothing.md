@@ -1,10 +1,20 @@
 # RFC 153 — An invitation grants nothing
 
-**Status.** **Accepted** 2026-10-27. **A 1.0 requirement**, bounded to §7's
-left-hand column; the owner confirmed tenant-scoped self-service onboarding is
-wanted, and the requirement-vs-option judgement is §7. **Scheduling deferred**
-— it is a feature cycle, not a patch, and it is sequenced after the 0.86.x
-fixes already in flight.
+**Status.** **Accepted** 2026-10-27 — the defect is accepted and the work is
+wanted; the owner confirmed tenant-scoped self-service onboarding is in scope
+for the product.
+
+**On 1.0: §7 is my recommendation, not a decision.** Corrected 2026-10-28 at
+the owner's instruction — *"1.0 needs my clear authorization after
+confirmation. It has not been decided yet."* **1.0 is neither declared,
+scoped, nor dated.** §7 argues that *if* a 1.0 is cut, this belongs in it, and
+gives the reason (the fix changes the shape of the user record, so it is cheap
+before a compatibility commitment and expensive after). **Nothing in this RFC
+or the index should be read as 1.0 having a scope.**
+
+**Scheduling:** a feature cycle, not a patch, sequenced after the 0.87.x fixes
+in flight. Not blocked on the 1.0 question — the defect is worth fixing on its
+own merits, and §7's argument only affects *how late* it could safely be left.
 **Tier.** P1. The feature's stated purpose is to link an email address to **a
 tenant and an initial role**. Neither is ever applied. What ships is an email
 with an audit trail.
@@ -209,7 +219,8 @@ The owner asked. **Requirement — but a bounded one.**
 not an argument about 1.0. Because **the fix changes the shape of the user
 record.** A user must become creatable in a tenant other than the default,
 which changes what `users.tenant_id` means, when it is set, and whether
-`verify_user_in_tenant` is the right rule. 1.0 is this project's compatibility
+`verify_user_in_tenant` is the right rule. A 1.0, **if and when the owner
+authorizes one**, is this project's compatibility
 commitment point (`rfcs/README.md`: the public surface *"may change between
 minor versions"* — the implication being that after 1.0 it may not). Deferring
 means either breaking that promise later or carrying the current model
