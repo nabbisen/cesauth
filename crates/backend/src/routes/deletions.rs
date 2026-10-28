@@ -443,16 +443,31 @@ pub async fn admin_execute<D>(mut req: Request, ctx: RouteContext<D>) -> Result<
     let cfg = Config::from_env(&ctx.env)?;
 
     match deletion::execute_deletion(&del_repo, &user_repo, &invitation_repo, &request_id, &ctx_ta.principal.id, now).await {
-        Ok(()) => {
+        Ok(outcome) => {
+            // RFC 148 §7: the scrub outcome rides in the same audit event's
+            // detail that already distinguishes an admin-triggered
+            // execution from the sweep — no new EventKind.
             audit::write_owned(
                 &ctx.env, EventKind::DeletionExecuted,
                 Some(req_row.user_id.clone()),
                 None,
-                Some(format!("request:{request_id} admin-triggered by:{}", ctx_ta.principal.id)),
+                Some(format!(
+                    "request:{request_id} admin-triggered by:{} scrub:{}",
+                    ctx_ta.principal.id, outcome.scrub.as_str(),
+                )),
             ).await.ok();
             log::emit(&cfg.log, Level::Warn, Category::Auth,
                 &format!("deletion-request {request_id} executed by admin"),
                 Some(&req_row.user_id));
+            if outcome.scrub == deletion::ScrubOutcome::Failed {
+                // RFC 148 §7: a scrub failure must be loud, not just
+                // folded into the audit detail above — an operator
+                // scanning logs (not querying the audit table) must also
+                // see it.
+                log::emit(&cfg.log, Level::Error, Category::Auth,
+                    &format!("deletion-request {request_id}: invitation email scrub failed (admin-triggered)"),
+                    Some(&req_row.user_id));
+            }
             let mut resp = Response::empty()?.with_status(303);
             let _ = resp.headers_mut().set(
                 "location",

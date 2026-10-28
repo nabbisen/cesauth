@@ -267,19 +267,28 @@ pub async fn sweep_pending_deletions(env: &Env) -> worker::Result<usize> {
     let mut executed = 0_usize;
     for req in &due {
         match deletion::execute_deletion(&del_repo, &user_repo, &invitation_repo, &req.id, "sweep", now).await {
-            Ok(()) => {
+            Ok(outcome) => {
                 executed += 1;
                 // RFC 147 cycle 2 D5: `subject` is the affected (deleted)
                 // user, not the actor. Before this cycle this passed
                 // `None` — found live, not by inspection, when the first
                 // real sweep-triggered execution wrote a `subject: null`
                 // row. `executed_by` on the row itself already carries
-                // `"sweep"` as the actor (D6).
+                // `"sweep"` as the actor (D6). RFC 148 §7: the scrub
+                // outcome rides in the same detail string.
                 audit::write_owned(
                     env, audit::EventKind::DeletionExecuted,
                     Some(req.user_id.clone()), None,
-                    Some(format!("request:{} sweep", req.id)),
+                    Some(format!("request:{} sweep scrub:{}", req.id, outcome.scrub.as_str())),
                 ).await.ok();
+                if outcome.scrub == cesauth_core::deletion::ScrubOutcome::Failed {
+                    // RFC 148 §7: loud, not just in the audit detail — an
+                    // operator scanning the daily sweep's logs must also
+                    // see a scrub failure, same as the admin-triggered path.
+                    log::emit(&cfg.log, Level::Error, Category::Storage,
+                        &format!("deletion sweep id={}: invitation email scrub failed", req.id),
+                        Some(&req.user_id));
+                }
             }
             Err(e) => {
                 log::emit(&cfg.log, Level::Error, Category::Storage,

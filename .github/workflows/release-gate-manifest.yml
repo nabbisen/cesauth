@@ -1,0 +1,32 @@
+name: Release gate manifest check
+
+# RFC 156 — asserts that the workflows GitHub actually triggered for this
+# push to main match .github/release-gate-manifest.json's `release` list.
+#
+# Release-time, not per-PR: it needs the Actions API to see what triggered
+# for this exact commit, so it only makes sense after the push that starts
+# every other push-triggered workflow at (roughly) the same time.
+#
+# This is itself one of the required workflows (see the manifest) — if it
+# stops triggering, nothing catches that from the inside, the same
+# limitation every self-referential check has.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  check-manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare triggered workflows against the manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash scripts/release-gate-manifest-check.sh "${{ github.sha }}" "${{ github.repository }}"

@@ -1,0 +1,26 @@
+{
+  "_doc": "RFC 156 — the checked-in record of which GitHub Actions workflows a release (a push to main) is required to trigger. scripts/release-gate-manifest-check.sh compares this against what GitHub actually triggered for a commit; a mismatch means a gate silently stopped running, or a new workflow was added without being recorded here. See docs/src/expert/contributing.md#ci-gate-parity.",
+
+  "release": [
+    "audit.yml",
+    "browser-tests.yml",
+    "bundle-size.yml",
+    "clippy.yml",
+    "csr-bundle-check.yml",
+    "deny.yml",
+    "docs.yml",
+    "drift-scan.yml",
+    "release-gate-manifest.yml",
+    "route-contracts.yml",
+    "test.yml",
+    "trunk-release-build.yml",
+    "worker-build.yml"
+  ],
+
+  "not_on_release_path": [
+    {
+      "workflow": "fuzz.yml",
+      "reason": "Triggers on pull_request (path-filtered to crates/core/src/jwt/** and fuzz/**), a weekly schedule, and workflow_dispatch — never on push, so no release commit is covered by it. RFC 156 §4.1: a fuzz run is non-deterministic, and a release gate that can fail for reasons unrelated to the change under release is a bad release gate. The JWT parser (RFC 005) is independently-implemented code processing adversarial tokens on every request, so coverage still matters — the PR path filter plus the weekly schedule provide it without putting a non-deterministic job on the release path."
+    }
+  ]
+}

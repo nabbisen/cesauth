@@ -96,8 +96,13 @@ bash scripts/drift-scan.sh
 The gates above, and the ones handoffs require for a release, are the
 **described** gate set. What CI runs is a separate set of workflow files. Where
 the two differ, the difference is recorded here as a decision rather than
-discovered later (RFC 138). **No check blocks anything, by design.** CI runs all thirteen on every push and
-reports; enforcing them would require a pull-request workflow this project does
+discovered later (RFC 138). **No check blocks anything, by design.** CI runs
+thirteen workflows on every push to `main` and reports; a fourteenth
+(`fuzz.yml`) never triggers on a push at all, so it is not among them — see
+*CI gate parity* below and RFC 156, which also checked in the list these
+thirteen names are the `release` entries of (`.github/release-gate-manifest.json`)
+and a check that fails if a future push's triggered set stops matching it.
+Enforcing any of this would require a pull-request workflow this project does
 not want, for the reasons in *How a change reaches `main`* below. Inspect what is
 actually in effect with
 `gh api repos/{owner}/{repo}/rules/branches/main`, which reports the rules from
@@ -122,7 +127,8 @@ branch protection and answers `404` even when a ruleset governs the branch
 | `bash scripts/runtime-smoke-check.sh` | `worker-build.yml` (`runtime-smoke` job) | none. **Runs and passes in CI** (first measured on `3a88c20`, 2026-09-23; RFC 142); reported, not enforced. Its workflow builds the Worker in its own step before `wrangler dev` starts, because a cold compile outlasts the readiness deadline |
 | `npx playwright test` in `e2e/`, against `node_modules/.bin/wrangler dev` | `browser-tests.yml` | **Blocking in intent since 0.84.0** (RFC 131 R5f) and **it runs on every push and passes** — but nothing is a required status check in this repository, so a failure reports rather than blocks (RFC 142 §14). The workflow carries no `continue-on-error` and must not. **Running it locally needs `npx playwright install` first** (`e2e/`); without it every test fails instantly with "browserType.launch: Executable doesn't exist …", and `browser-tests.yml` runs the install step itself, so CI is unaffected |
 | — | `bundle-size.yml` | **CI-only.** A gzip budget on a `wrangler deploy --dry-run` bundle; not in the described set. Before RFC 142 it could not run (it needed the frontend's `dist/`) and, once it could, measured only the ~10 KB `shim.js` loader; it now sums every uploaded module (811,575 bytes gzip on `3a88c20`, 30% of the budget) |
-| — | `fuzz.yml` | **CI-only, deliberately outside the gate set.** Nightly toolchain; runs only on pull requests touching `crates/core/src/jwt/**` or `fuzz/**`, or by manual dispatch |
+| — | `release-gate-manifest.yml` | **CI-only, RFC 156.** Runs `scripts/release-gate-manifest-check.sh` against the Actions API for the pushed commit and fails if the triggered workflow set doesn't match `.github/release-gate-manifest.json`'s `release` list — the check for everything else in this section silently stopping |
+| — | `fuzz.yml` | **CI-only, deliberately outside the release gate set (RFC 156 §4.1, recorded in the manifest's `not_on_release_path`).** Nightly-toolchain libFuzzer pass; runs on pull requests touching `crates/core/src/jwt/**` or `fuzz/**`, on a weekly schedule (added by RFC 156), or by manual dispatch — **never on a push**, so no release commit is covered by it. A fuzz run is non-deterministic; a release gate that can fail for reasons unrelated to the change under release would be a bad one |
 
 **Not yet covered — local entry points that bypass the wrangler pin.**
 `make build-backend` and `make dev-backend` (the `Makefile`), and
