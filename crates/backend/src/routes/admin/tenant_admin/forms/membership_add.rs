@@ -73,11 +73,9 @@ pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<
     let user_id  = form.get("user_id").cloned().unwrap_or_default();
     let role_str = form.get("role").cloned().unwrap_or_default();
 
-    let role = match role_str.as_str() {
-        "owner"  => TenantMembershipRole::Owner,
-        "admin"  => TenantMembershipRole::Admin,
-        "member" => TenantMembershipRole::Member,
-        _ => return render::html_response(|| ui::for_tenant(
+    let role = match TenantMembershipRole::parse(&role_str) {
+        Some(r) => r,
+        None => return render::html_response(|| ui::for_tenant(
             &ctx_ta.principal, &ctx_ta.tenant, &user_id, &role_str,
             Some("Choose a role"),
         )),

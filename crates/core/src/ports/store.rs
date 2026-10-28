@@ -78,6 +78,18 @@ pub enum Challenge {
         code_hash:     String,   // sha256(otp) base64url
         attempts:      u32,
         expires_at:    i64,
+        /// **RFC 153.** Set when this magic-link challenge completes an
+        /// invitation rather than an ordinary self-signup. The handle this
+        /// challenge is stored under already rides from `/magic-link/request`
+        /// to `/magic-link/verify` without a cookie (it's a hidden field in
+        /// the rendered "check your inbox" page); this field rides along
+        /// with it for free, which is why it lives here rather than in a new
+        /// cookie — there is no cookie carrying this round trip to extend.
+        /// `#[serde(default)]` so challenges parked before this field
+        /// existed still deserialize (they're short-lived; this only
+        /// matters for the handful in flight across a deploy).
+        #[serde(default)]
+        invite_id: Option<String>,
     },
     /// Intermediate state between successful primary auth (Magic
     /// Link) and a fully-issued session, when the user has TOTP

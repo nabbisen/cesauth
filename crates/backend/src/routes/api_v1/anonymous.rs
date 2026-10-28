@@ -246,6 +246,7 @@ async fn issue_promote_otp<D>(
         code_hash:     issued.code_hash.clone(),
         attempts:      0,
         expires_at:    issued.expires_at,
+        invite_id:     None,
     }).await {
         worker::console_error!("magic_link challenge put failed: {e:?}");
         return Response::error("storage error", 500);

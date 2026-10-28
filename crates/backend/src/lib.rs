@@ -435,6 +435,7 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async ("/admin/t/:slug/invitations",                  |req, ctx| async move { routes::invitations::list(req, ctx).await })
         .get_async ("/admin/t/:slug/invitations.json",                  |req, ctx| async move { routes::invitations::list_json(req, ctx).await })
         .post_async("/admin/t/:slug/invitations",                  |req, ctx| async move { routes::invitations::issue(req, ctx).await })
+        .post_async("/admin/t/:slug/invitations/:id/revoke",       |req, ctx| async move { routes::invitations::revoke(req, ctx).await })
         .get_async ("/accept-invite",                              |req, ctx| async move { routes::invitations::accept_page(req, ctx).await })
         .post_async("/accept-invite",                              |req, ctx| async move { routes::invitations::accept_submit(req, ctx).await })
         // RFC 044: Deletion requests

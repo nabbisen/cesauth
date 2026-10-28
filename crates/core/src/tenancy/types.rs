@@ -228,6 +228,23 @@ pub enum TenantMembershipRole {
     Member,
 }
 
+impl TenantMembershipRole {
+    /// Parse the lowercase form used in form fields (`"owner"` /
+    /// `"admin"` / `"member"`). Shared by
+    /// `forms::membership_add::submit_tenant` (the admin "add member"
+    /// form) and RFC 153's invitation-completion path, which both accept
+    /// the same three values from a caller — pulled out so the mapping
+    /// exists in one place rather than two copies drifting apart.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "owner"  => Some(Self::Owner),
+            "admin"  => Some(Self::Admin),
+            "member" => Some(Self::Member),
+            _        => None,
+        }
+    }
+}
+
 /// `user_organization_memberships` row.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct OrganizationMembership {
@@ -250,4 +267,27 @@ pub struct GroupMembership {
     pub group_id:  Id,
     pub user_id:   Id,
     pub joined_at: UnixSeconds,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tenant_membership_role_parse_accepts_the_three_known_values() {
+        assert_eq!(TenantMembershipRole::parse("owner"),  Some(TenantMembershipRole::Owner));
+        assert_eq!(TenantMembershipRole::parse("admin"),  Some(TenantMembershipRole::Admin));
+        assert_eq!(TenantMembershipRole::parse("member"), Some(TenantMembershipRole::Member));
+    }
+
+    #[test]
+    fn tenant_membership_role_parse_rejects_everything_else() {
+        // RFC 153: an invitation's `role` column is operator-typed free
+        // text at issue time (no catalog validation there today) and
+        // reaches this parser unchecked at acceptance time — garbage in
+        // must come back `None`, not panic or silently default to a role.
+        for bad in ["Owner", "ADMIN", "members", "", " admin", "tenant_admin"] {
+            assert_eq!(TenantMembershipRole::parse(bad), None, "{bad:?} must not parse");
+        }
+    }
 }

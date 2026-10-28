@@ -118,6 +118,7 @@ async fn rfc140_bump_at_expires_at_is_not_found() {
         code_hash:     "h".to_owned(),
         attempts:      0,
         expires_at:    60,
+        invite_id:     None,
     };
     store.put(&rfc140_handle(), &ml).await.unwrap();
 
@@ -697,6 +698,7 @@ async fn c1_117_put_over_an_expired_never_taken_entry_is_conflict_and_leaves_it_
         code_hash:     "h".to_owned(),
         attempts:      0,
         expires_at:    exp + 1_000,
+        invite_id:     None,
     };
     store.put(&rfc140_handle(), &sample_auth_code()).await.unwrap();
 

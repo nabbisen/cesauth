@@ -172,6 +172,7 @@ async fn take_of_an_absent_handle_is_unknown_or_used() {
 async fn take_of_a_handle_that_is_not_an_authorization_code_is_refused() {
     let magic = Challenge::MagicLink {
         email_or_user: "a@example.com".to_owned(), code_hash: "h".to_owned(), attempts: 0, expires_at: 1_300,
+        invite_id: None,
     };
     assert_grant!(ConsumedCode::take(&store_with(magic).await, &handle(), 1_000, &authed("c-a")).await,
                   "handle is not a code");

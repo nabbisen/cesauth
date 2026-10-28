@@ -1,6 +1,8 @@
 //! `POST /magic-link/request` handler.
 
+use cesauth_cf::ports::repo::CloudflareInvitationRepository;
 use cesauth_cf::ports::store::{CloudflareAuthChallengeStore, CloudflareRateLimitStore};
+use cesauth_core::invitation::{self, InvitationVerifyOutcome};
 use cesauth_core::magic_link::{self, MagicLinkMailer, MagicLinkPayload, MagicLinkReason};
 use cesauth_core::ports::store::{AuthChallengeStore, Challenge, RateLimitStore};
 use serde::Deserialize;
@@ -32,6 +34,38 @@ struct RequestBody {
     /// KV flag says Turnstile is mandatory right now.
     #[serde(default, rename = "cf-turnstile-response")]
     turnstile: Option<String>,
+    /// **RFC 153.** Present when this request continues an invitation
+    /// acceptance (set by the hidden field on `accept_submit`'s
+    /// continue-to-sign-in page). Re-verified against the invitation store
+    /// below before being trusted — a client can send any string here.
+    #[serde(default)]
+    invite_id: Option<String>,
+}
+
+/// **RFC 153.** Terminal error for a form-encoded request whose attached
+/// `invite_id` did not re-verify as `Valid`. Mirrors
+/// `magic_link::verify::html_terminal_error`'s shape (same template, same
+/// nonce discipline) — not shared with it directly, since the two files
+/// have no existing shared helper module and introducing one for a single
+/// call site each would be more machinery than the duplication it avoids.
+fn invite_terminal_error(req: &Request) -> Result<Response> {
+    let locale = crate::i18n::resolve_locale(req);
+    let html = match crate::routes::admin::console::render::render_body_with_nonce(|| {
+        cesauth_frontend::templates::error_page_for(
+            "Invitation no longer valid",
+            "This invitation has expired, was revoked, or was already used. Please ask your admin for a new one.",
+            locale,
+        )
+    }) {
+        Ok(h)  => h,
+        Err(_) => {
+            worker::console_error!("csp_nonce_failure in magic_link::request (invalid invite_id)");
+            return Response::error("service temporarily unavailable", 500);
+        }
+    };
+    let mut resp = Response::from_html(html)?.with_status(400);
+    let _ = resp.headers_mut().set("cache-control", "no-store");
+    Ok(resp)
 }
 
 pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -79,6 +113,7 @@ pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
                 email:     form.get("email").cloned().unwrap_or_default(),
                 csrf:      form.get("csrf").cloned(),
                 turnstile: form.get(TURNSTILE_FIELD).cloned(),
+                invite_id: form.get("invite_id").cloned().filter(|s| !s.is_empty()),
             }
         }
     };
@@ -106,6 +141,30 @@ pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
     }
 
     let now = OffsetDateTime::now_utc().unix_timestamp();
+
+    // **RFC 153.** Re-verify an attached `invite_id` before parking a
+    // challenge for it — the client supplied this string, and the only
+    // other place it was supposed to come from (`accept_submit`'s own
+    // hidden field) already checked it, but trusting that without
+    // re-checking here would mean the first check was decorative.
+    // Unlike a wrong code or email (handled identically to avoid an
+    // enumeration oracle), an invitation that is not currently `Valid`
+    // gets a distinct, honest message: the user has made no commitment
+    // yet (no OTP sent), so there is nothing to lose by telling them
+    // plainly rather than silently sending an ordinary sign-in code that
+    // would not actually complete their invitation.
+    if let Some(id) = body.invite_id.as_deref().filter(|s| !s.is_empty()) {
+        let inv_repo = CloudflareInvitationRepository::new(&ctx.env);
+        match invitation::verify_invitation(&inv_repo, id, &body.email, now).await {
+            Ok(InvitationVerifyOutcome::Valid(_)) => {}
+            _ => return if is_form {
+                invite_terminal_error(&req)
+            } else {
+                oauth_error_response(&cesauth_core::CoreError::InvalidRequest("invite_id"))
+            },
+        }
+    }
+
     let bucket = format!("ml:req:{}", body.email.to_ascii_lowercase());
 
     // If Turnstile is flagged for this bucket, verify BEFORE incurring
@@ -174,6 +233,7 @@ pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
         code_hash:     issued.code_hash.clone(),
         attempts:      0,
         expires_at:    issued.expires_at,
+        invite_id:     body.invite_id.clone(),
     };
     if store.put(&handle, &chal).await.is_err() {
         return oauth_error_response(&cesauth_core::CoreError::Internal);

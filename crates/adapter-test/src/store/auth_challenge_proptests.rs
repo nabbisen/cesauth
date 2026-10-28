@@ -74,7 +74,7 @@ fn handle(h: usize) -> ChallengeHandle { ChallengeHandle::from_storage(format!("
 fn challenge(seq: u64, magic: bool, expires_at: i64) -> Challenge {
     let id = format!("v{seq}");
     if magic {
-        Challenge::MagicLink { email_or_user: id, code_hash: "h".into(), attempts: 0, expires_at }
+        Challenge::MagicLink { email_or_user: id, code_hash: "h".into(), attempts: 0, expires_at, invite_id: None }
     } else {
         Challenge::AuthCode {
             client_id: "c".into(), redirect_uri: "https://app.test/cb".into(), user_id: id,

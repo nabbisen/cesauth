@@ -48,7 +48,7 @@ code-review responsibility.
 | Method | Path | Actor | Audit kind | View / template | Rendering | Rendering test | CSRF |
 |---|---|---|---|---|---|---|---|
 | POST | `/magic-link/request` | Anonymous | `magic_link_issued` | `magic_link_sent_page_for` | server | `templates::tests::magic_link_sent_page_*` | required |
-| POST | `/magic-link/verify` | Anonymous | `magic_link_verified` | `complete_auth` redirect | server | n/a | required (form path) |
+| POST | `/magic-link/verify` | Anonymous | `magic_link_verified` (+ `invitation_accepted` when completing an invite, RFC 153) | `complete_auth` redirect | server | n/a | required (form path) |
 
 ## User self-service routes (`/me`)
 
@@ -101,9 +101,10 @@ code-review responsibility.
 | POST | `/admin/console/config/:bucket/apply` | System admin | `config_applied` | redirect | client | n/a | required |
 | POST | `/admin/t/:slug/invitations` | Tenant admin | `invitation_issued` | redirect | client | CSRF | N/A (SameSite=Strict) |
 | GET  | `/admin/t/:slug/invitations` | Tenant admin | none | HTML | client | n/a | required |
-| GET  | `/admin/t/:slug/invitations.json` | Tenant admin | none | JSON (`csrf_token`) | n/a | n/a | required |
+| GET  | `/admin/t/:slug/invitations.json` | Tenant admin | none | JSON (`csrf_token`, `invitations`) | n/a | n/a | required |
+| POST | `/admin/t/:slug/invitations/:id/revoke` | Tenant admin | `invitation_revoked` | redirect | client | n/a | N/A (SameSite=Strict) |
 | GET  | `/accept-invite` | public (invite link) | none | HTML | server | n/a | N/A |
-| POST | `/accept-invite` | public (invite link) | `invitation_accepted` | redirect | server | n/a | N/A |
+| POST | `/accept-invite` | public (invite link) | none | HTML | server | n/a | N/A |
 | POST | `/me/security/delete-account` | authenticated user | `deletion_requested` | JSON (`scheduled_at`) | n/a | n/a | N/A (JSON) |
 | POST | `/me/security/delete-account/request` | authenticated user | `deletion_requested` | redirect | client | n/a | required |
 | POST | `/me/security/delete-account/cancel` | authenticated user | `deletion_cancelled` | redirect | client | n/a | required |

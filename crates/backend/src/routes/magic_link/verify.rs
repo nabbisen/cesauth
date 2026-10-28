@@ -1,10 +1,15 @@
 //! `POST /magic-link/verify` handler.
 
-use cesauth_cf::ports::repo::CloudflareUserRepository;
+use cesauth_cf::ports::repo::{CloudflareInvitationRepository, CloudflareUserRepository};
 use cesauth_cf::ports::store::{CloudflareAuthChallengeStore, CloudflareRateLimitStore};
+use cesauth_cf::tenancy::CloudflareMembershipRepository;
+use cesauth_core::invitation::{self, InvitationVerifyOutcome};
 use cesauth_core::magic_link;
 use cesauth_core::ports::repo::UserRepository;
 use cesauth_core::ports::store::{AuthChallengeStore, AuthMethod, Challenge, RateLimitStore};
+use cesauth_core::ports::PortError;
+use cesauth_core::tenancy::ports::MembershipRepository;
+use cesauth_core::tenancy::types::{TenantMembership, TenantMembershipRole};
 use cesauth_core::types::{User, UserStatus};
 use serde::Deserialize;
 use time::OffsetDateTime;
@@ -240,9 +245,9 @@ pub async fn verify<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         },
     };
 
-    let (email, code_hash, expires_at) = match chal {
-        Challenge::MagicLink { email_or_user, code_hash, expires_at, .. } =>
-            (email_or_user, code_hash, expires_at),
+    let (email, code_hash, expires_at, invite_id) = match chal {
+        Challenge::MagicLink { email_or_user, code_hash, expires_at, invite_id, .. } =>
+            (email_or_user, code_hash, expires_at, invite_id),
         _ => return if is_json {
             oauth_error_response(&cesauth_core::CoreError::MagicLinkMismatch)
         } else {
@@ -281,7 +286,14 @@ pub async fn verify<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     // Resolve (or create) the user. Magic-link is the self-service
     // signup path: first-login mints a User with `email_verified=true`
     // because delivery of the one-time code *is* the verification.
-    let user_id = match resolve_or_create_user(&ctx.env, &email, now).await {
+    //
+    // **RFC 153.** When this challenge carries an `invite_id`, resolution
+    // also completes the invitation — tenant-correct creation (new user)
+    // or a membership grant (existing user), then `accept_invitation` with
+    // the real user id, then the audit event. See
+    // `resolve_or_create_user`'s doc for why a dead invitation at this
+    // point does not block the sign-in that already happened.
+    let user_id = match resolve_or_create_user(&ctx.env, &email, invite_id.as_deref(), now).await {
         Ok(id)  => id,
         Err(e)  => return if is_json {
             oauth_error_response(&e)
@@ -308,12 +320,45 @@ pub async fn verify<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
 /// via this path always start with `email_verified=true`. See
 /// `docs/src/expert/email-verification-audit.md` for the full
 /// per-path table.
+///
+/// **RFC 153.** `invite_id`, when present, is re-verified fresh here —
+/// not trusted from the challenge it arrived in — because an admin could
+/// have revoked the invitation in the gap between the challenge being
+/// parked and the user typing the emailed code. If it's still `Valid`:
+/// a brand-new user is created **in the invitation's tenant** rather than
+/// the default one; an existing user's `tenant_id` is left untouched
+/// (RFC 153 §2's decision — accepting an invitation to a different tenant
+/// does not change a user's home tenant) and they gain a
+/// `user_tenant_memberships` row instead. Either way,
+/// [`complete_invitation`] enforces §3's ordering: membership before
+/// acceptance, acceptance before the audit event.
+///
+/// **If the invitation is not `Valid`** (revoked, expired, already
+/// accepted by a concurrent attempt, or missing), sign-in still proceeds
+/// as an ordinary, uninvited signup. By this point the user has already
+/// typed a valid one-time code — refusing to sign them in over an
+/// invitation-state problem would be strictly worse than granting an
+/// ordinary account with no special membership, and silently blocking a
+/// correct OTP on an unrelated failure is exactly the shape of defect
+/// RFC 047 lived inside for 61 releases.
 async fn resolve_or_create_user(
-    env:   &Env,
-    email: &str,
-    now:   i64,
+    env:       &Env,
+    email:     &str,
+    invite_id: Option<&str>,
+    now:       i64,
 ) -> core::result::Result<String, cesauth_core::CoreError> {
     let repo = CloudflareUserRepository::new(env);
+
+    let inv = match invite_id {
+        Some(id) => {
+            let inv_repo = CloudflareInvitationRepository::new(env);
+            match invitation::verify_invitation(&inv_repo, id, email, now).await {
+                Ok(InvitationVerifyOutcome::Valid(inv)) => Some(inv),
+                _ => None,
+            }
+        }
+        None => None,
+    };
 
     if let Ok(Some(mut u)) = repo.find_by_email(email).await {
         // Existing user: ensure email_verified reflects this
@@ -328,15 +373,24 @@ async fn resolve_or_create_user(
             // successful login will retry the flip.
             let _ = repo.update(&u).await;
         }
+        if let Some(inv) = &inv {
+            complete_invitation(env, inv, &u.id, now).await;
+        }
         return Ok(u.id);
     }
 
+    let tenant_id = inv.as_ref()
+        .map(|i| i.tenant_id.clone())
+        .unwrap_or_else(|| cesauth_core::tenancy::DEFAULT_TENANT_ID.to_owned());
+
     let new = User {
-        id:             Uuid::new_v4().to_string(),
-        // Magic-link self-signup goes into the bootstrap tenant in
-        // 0.4.x. Multi-tenant signup (where the user picks/lands on
-        // a tenant first) is a 0.7.0+ design pass.
-        tenant_id:      cesauth_core::tenancy::DEFAULT_TENANT_ID.to_owned(),
+        id: Uuid::new_v4().to_string(),
+        // Magic-link self-signup goes into the bootstrap tenant, as
+        // before RFC 153. A brand-new user completing a *valid*
+        // invitation lands in the invitation's tenant instead — the
+        // first production path ever to create a user whose `tenant_id`
+        // is not the default (RFC 153's review, §4).
+        tenant_id,
         email:          Some(email.to_owned()),
         email_verified: true,
         display_name:   None,
@@ -347,16 +401,90 @@ async fn resolve_or_create_user(
     };
 
     match repo.create(&new).await {
-        Ok(()) => Ok(new.id),
+        Ok(()) => {
+            if let Some(inv) = &inv {
+                complete_invitation(env, inv, &new.id, now).await;
+            }
+            Ok(new.id)
+        }
         Err(_) => {
             // Conflict (or any other failure) - retry the lookup once
             // in case a concurrent request won the race.
             match repo.find_by_email(email).await {
-                Ok(Some(u)) => Ok(u.id),
-                _           => Err(cesauth_core::CoreError::Internal),
+                Ok(Some(u)) => {
+                    if let Some(inv) = &inv {
+                        complete_invitation(env, inv, &u.id, now).await;
+                    }
+                    Ok(u.id)
+                }
+                _ => Err(cesauth_core::CoreError::Internal),
             }
         }
     }
+}
+
+/// **RFC 153 §3's completion steps**, in the required order: membership
+/// before acceptance, acceptance before the audit event — so a failure at
+/// any step leaves the invitation `pending` (re-usable) rather than
+/// marked accepted with nothing granted. `inv` was already re-verified
+/// `Valid` by the caller.
+///
+/// Best-effort beyond ordering: a failure here must not undo the sign-in
+/// that already happened (the user already proved email control with a
+/// valid one-time code) — errors are logged, not propagated, matching
+/// `email_verified`'s existing best-effort precedent just above in this
+/// file. `add_tenant_membership`'s `Conflict` (the user is already a
+/// member — a retry after a prior partial failure, or a second
+/// invitation to a tenant they already belong to) is not an error: the
+/// membership this step exists to ensure already holds.
+async fn complete_invitation(
+    env:     &Env,
+    inv:     &invitation::Invitation,
+    user_id: &str,
+    now:     i64,
+) {
+    let Some(role) = TenantMembershipRole::parse(&inv.role) else {
+        worker::console_error!(
+            "invitation {} has unrecognized role {:?}; granting no membership",
+            inv.id, inv.role,
+        );
+        return;
+    };
+
+    let memberships = CloudflareMembershipRepository::new(env);
+    let membership = TenantMembership {
+        tenant_id: inv.tenant_id.clone(),
+        user_id:   user_id.to_owned(),
+        role,
+        joined_at: now,
+    };
+    match memberships.add_tenant_membership(&membership).await {
+        Ok(()) | Err(PortError::Conflict) => {}
+        Err(e) => {
+            worker::console_error!(
+                "invitation {} membership grant failed: {e:?}; left pending for retry",
+                inv.id,
+            );
+            return;
+        }
+    }
+
+    let inv_repo = CloudflareInvitationRepository::new(env);
+    if let Err(e) = invitation::accept_invitation(&inv_repo, &inv.id, user_id, now).await {
+        worker::console_error!(
+            "invitation {} accept failed after membership was granted: {e:?}",
+            inv.id,
+        );
+        return;
+    }
+
+    // RFC 153: subject is the real user id — never `None`, which is what
+    // `accept_submit` used to pass before acceptance moved here.
+    audit::write_owned(
+        env, EventKind::InvitationAccepted,
+        Some(user_id.to_owned()), None,
+        Some(format!("invite:{} email:{} tenant:{}", inv.id, inv.email, inv.tenant_id)),
+    ).await.ok();
 }
 
 #[cfg(test)]
