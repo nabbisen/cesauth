@@ -717,17 +717,19 @@ produced those numbers; most plausibly a smaller or older artifact was measured.
 | `770e4c7` | **0.86.2** | **381** | 0.044% |
 | `9d0783a` | **0.86.3** | **10** | 0.001% |
 | `d749fef` | **0.87.0** | **15** | 0.002% |
+| `a71ca1f` | **0.87.1** | **69** | 0.008% |
 
 (The 0.86.2 row was added after the cut. CI **868,077** = 857,378 + 10,699;
 mine **868,458** = 857,760 + 10,698. Both reconcile against their parts.)
 
 **Every internally consistent reading is in the tens-to-low-hundreds of
 bytes**: 34, 94, 157, 381, **10**. The first four each roughly doubled, which
-looked like a trend until the fifth broke it, and the sixth confirmed the
-break: 0.86.3's and 0.87.0's gaps are the **two smallest on record**, an order
-of magnitude below the four that preceded them. **Good thing no curve was
-drawn.** Six readings, no monotonic shape, and one claim they all support:
-**under 0.05% of the artifact, every time.** Four points whose method
+looked like a trend until the fifth broke it, and the sixth and seventh
+confirmed the break: **34 / 94 / 157 / 381 / 10 / 15 / 69**, with no monotonic
+shape across any four consecutive points. **Good thing no curve was drawn** —
+the refusal has now survived three additions, two of which would have
+contradicted any line fitted to the four before them. Seven readings, and one
+claim they all support: **under 0.05% of the artifact, every time.** Four points whose method
 changed partway through (the first three predate the clean-build control, and
 only the last two were taken with it) cannot support a curve, and reading one
 into them would be §15's mistake a fourth time. What the readings support is a
