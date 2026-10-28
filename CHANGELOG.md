@@ -14,6 +14,52 @@ changes will always be called out here.
 
 ---
 
+## [0.88.0] - 2026-10-29
+
+### An invitation now grants what it offers — RFC 153
+
+### Added
+
+- **Accepting an invitation places you in the tenant that invited you, with
+  the role it named.** Neither had ever happened. An invitation recorded an
+  email, a tenant and a role, sent a link, and applied none of it: the
+  invitation was marked accepted *before* any account existed, with a
+  placeholder in place of a user id; the identifier meant to carry the
+  invitation forward was read nowhere; the role was read exactly once, into an
+  audit message; and registration always placed the new user in the default
+  tenant. The flow now creates the user in the invitation's tenant, grants the
+  membership with the invitation's role, records the real user id, and emits
+  the audit event — **in that order**, so a failure at any step leaves the
+  invitation usable instead of consuming it.
+- **A user who abandons the flow is no longer locked out of their own
+  invitation.** Previously the first submission consumed it, so returning later
+  produced *"Already accepted. Please sign in"* to someone with no account, and
+  only a fresh invitation from an administrator could recover it.
+- **Invitations can be revoked.** `POST /admin/t/:slug/invitations/:id/revoke`,
+  with the invitations page listing what is pending and a per-row control. The
+  revoked state has been described by the schema since invitations shipped and
+  nothing could produce it.
+- An invited email that **already has an account** now gains the membership and
+  role too, rather than signing in and silently receiving neither. Their own
+  home tenant is left as it was.
+
+### Fixed
+
+- **The page that begins acceptance redirected to a URL that does not answer.**
+  It sent the browser to a `GET` of an endpoint registered only for `POST`, so
+  the invitee landed on a 404 — the flow was dead one step earlier than its
+  own design described. It now renders the next step directly.
+- Two administrative forms — add a member, grant a user-scoped role — returned
+  403 for every tenant but one, because they require the target user to belong
+  to the tenant and nothing could place a user in one. They succeed for an
+  invited user now.
+- Values interpolated into the invitation-acceptance page are escaped. The
+  page's own policy already prevented scripts from running, so this was markup
+  injection rather than a scripting hole, available only to someone who can
+  already issue invitations.
+
+---
+
 ## [0.87.1] - 2026-10-28
 
 ### Two silent failures made loud — RFC 148 §7, RFC 156
