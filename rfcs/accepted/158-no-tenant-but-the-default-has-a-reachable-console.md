@@ -1,6 +1,13 @@
 # RFC 158 — No tenant but the default has a reachable admin console
 
-**Status.** **Proposed** — awaiting owner authorization.
+**Status.** **Accepted** 2026-10-29. **Sequenced after RFC 153**, and for a
+reason rather than a queue position: RFC 153 is about to establish how
+`users.tenant_id` comes to hold a non-default value at **create** time, and
+§5's option (1) would reuse that. Designing both at once risks two mechanisms
+for one column. **§5 asks for a decision stage first**, in RFC 153 §2's shape —
+that mechanism produced a better answer than the RFC asking the question, and
+this question is harder. **Release not assigned** until that decision is made,
+because option (2) and option (3) are different sizes.
 **Tier.** **P1.** A documented, 35-route administrative surface that exactly
 one tenant can open.
 **Size.** Small in code — one repository on one function, or one dedicated

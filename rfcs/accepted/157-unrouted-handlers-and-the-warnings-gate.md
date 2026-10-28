@@ -1,6 +1,10 @@
 # RFC 157 — Sixteen unrouted route handlers, and the gate they are blocking
 
-**Status.** **Proposed** — awaiting owner authorization.
+**Status.** **Accepted** 2026-10-29. **Scheduled 0.88.1 — patch.** Deletions
+and one CI flag; no capability changes. **Not dispatched yet**: RFC 153 is in
+flight and its cycle was told explicitly not to delete any of these handlers as
+a side-effect, so dispatching this concurrently would invite exactly the
+collision that instruction prevents.
 **Tier.** P2. Nothing is broken. This clears the last obstacle to a gate the
 project decided it wanted in RFC 145 §13.2 and then could not turn on.
 **Size.** Small: deletions, then one CI flag.
