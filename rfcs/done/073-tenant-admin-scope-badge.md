@@ -1,6 +1,7 @@
 # RFC 073 — Tenant admin scope badge 標準化
 
 **Status**: Implemented  
+**Evidence**: **`exercised`** (RFC 000 §22, back-filled 2026-10-28) — `tenant_admin_frame_renders_scope_badge_with_correct_class`.
 **Tier**: P0  
 **Size**: Small  
 **Target**: v0.62.0  

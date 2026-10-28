@@ -18,6 +18,7 @@
 > RFC 155's scope.
 
 **Status**: Done. **`exercised`** (RFC 000 §22) —
+**Evidence**: **`exercised`** (RFC 000 §22, back-filled 2026-10-28) — see the `**Status**` line above — `magic_link::mailer::tests::debug_redacts_code_for_both_otp_and_url_shaped_values`, shipped 0.86.3 (RFC 155). Was `reviewed` until then.
 `cesauth_core::magic_link::mailer::tests::debug_redacts_code_for_both_otp_and_url_shaped_values`,
 which fails if `Debug` for `MagicLinkPayload` ever prints `code` again
 (demonstrated: reverting to the field-literal shape fails this test).  

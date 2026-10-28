@@ -21,6 +21,7 @@
 > complete as a handler and completes nothing as a flow.
 
 **Status**: Implemented  
+**Evidence**: **`unknown`** (RFC 000 §22, back-filled 2026-10-28) — "full implementation" completes no flow. See the annotation above and **RFC 153**.
 **Priority**: P1 (RFC 046 placeholder becomes real)  
 **Size**: Large
 

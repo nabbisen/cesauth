@@ -1,6 +1,7 @@
 # RFC 034 — /introspect handler wired to find_auth_view
 
 **Status**: Implemented  
+**Evidence**: **`exercised`** (RFC 000 §22, back-filled 2026-10-28) — `find_auth_view` is the live path at `oidc/introspect.rs:88`, and `revoke/tests.rs:86` panics if revoke ever calls it — a negative guard.
 **Priority**: P1 (RFC 026 hot path not connected)  
 **Size**: Small (~40 LOC change)  
 **Depends on**: RFC 026 (already merged)

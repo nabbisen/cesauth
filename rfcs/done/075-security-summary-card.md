@@ -1,6 +1,7 @@
 # RFC 075 — Security Center mobile state summary card
 
 **Status**: Implemented  
+**Evidence**: **`reviewed`** (RFC 000 §22, back-filled 2026-10-28) — no assertion for the card itself was located.
 **Tier**: P1  
 **Size**: Medium  
 **Target**: v0.62.0  

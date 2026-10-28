@@ -1,6 +1,7 @@
 # RFC 039 — Docs drift cleanup + drift-scan hardening
 
 **Status**: Implemented  
+**Evidence**: **`exercised`** (RFC 000 §22, back-filled 2026-10-28) — `scripts/drift-scan.sh`, which runs in CI and *is* this RFC's deliverable.
 **Priority**: P1 (misleading operator docs → operational accident)  
 **Size**: Small (~20 lines changed + drift-scan patterns)  
 **Depends on**: RFC 030

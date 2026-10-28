@@ -1,6 +1,7 @@
 # RFC 032 — Forward repair migration for existing DBs
 
 **Status**: Implemented  
+**Evidence**: **`exercised`** (RFC 000 §22, back-filled 2026-10-28) — `migration_chain` applies every migration in order (31 tests); if `0016`'s repair breaks, the chain fails.
 **Priority**: P0/P1 (existing production DB integrity)  
 **Size**: Small (~40 LOC SQL)  
 **Depends on**: RFC 020 (schema_meta already in place)

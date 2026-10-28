@@ -1,6 +1,7 @@
 # RFC 077 — Skip-to-content link (WCAG 2.4.1)
 
 **Status**: Implemented  
+**Evidence**: **`reviewed`** (RFC 000 §22, back-filled 2026-10-28) — the skip link renders in all three frames, each tagged with an `RFC 077` comment, and **no test or e2e spec asserts it**; the Playwright focus-order specs traverse it without naming it.
 **Tier**: P1  
 **Size**: Small  
 **Target**: v0.62.0  

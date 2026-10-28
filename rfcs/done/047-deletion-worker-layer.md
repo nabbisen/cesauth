@@ -20,6 +20,7 @@
 > `done/` should mean *verified* rather than *shipped*.
 
 **Status**: Implemented  
+**Evidence**: **`unknown`** (RFC 000 §22, back-filled 2026-10-28) — both deliverables were non-functional for 61 releases; fixed by RFC 147 cycle 2, but **nothing asserted them during that time** and the term records the history, not today's code. The deletion path is now covered by RFC 044's term.
 **Priority**: P1 (completes RFC 044 end-to-end)  
 **Size**: Large (~300 LOC)  
 **Depends on**: RFC 044, RFC 045

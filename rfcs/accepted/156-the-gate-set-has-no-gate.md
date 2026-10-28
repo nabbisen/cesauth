@@ -1,6 +1,11 @@
 # RFC 156 — The gate set has no gate
 
-**Status.** **Proposed** — awaiting owner authorization.
+**Status.** **Accepted** 2026-10-28. **Scheduled 0.87.1 — patch.** CI-only:
+it changes no shipped artifact, so nothing is sequenced behind it, and 0.87.0
+stays the single-theme release it is. Placed *after* 0.87.0 rather than before
+because §4's two sub-decisions — whether the fuzz job belongs on the release
+path, and how the manifest treats `workflow_dispatch`-only jobs — are mine to
+think through, not to rush into the next dispatch.
 **Tier.** P2. Nothing is broken today. The gate set is correct and complete as
 of this commit; **nothing keeps it that way, and a gate that stops running
 fails silently by construction.**

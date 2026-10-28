@@ -1,6 +1,7 @@
 # RFC 106 — Security Center i18n closure (TOTP enabled / disable / recovery banners)
 
 **Status**: Implemented (v0.67.0)  
+**Evidence**: **`unknown`** (RFC 000 §22, back-filled 2026-10-28) — locale assertions exist in the area but none was tied to this RFC's property within the back-fill's budget.
 **Tier**: P1  
 **Size**: Small  
 **Target**: v0.67.0  

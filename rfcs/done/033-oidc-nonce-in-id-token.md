@@ -1,6 +1,7 @@
 # RFC 033 — OIDC nonce reflected in id_token
 
 **Status**: Implemented  
+**Evidence**: **`exercised`** (RFC 000 §22, back-filled 2026-10-28) — `exchange_code_id_token_{carries,omits}_nonce_*` and `build_claims_nonce_{present,absent}_*` in `cesauth-core`.
 **Priority**: P1 (OIDC spec compliance, replay attack vector)  
 **Size**: Trivial (~5 LOC + tests)  
 **Depends on**: RFC 001

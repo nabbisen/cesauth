@@ -1,6 +1,7 @@
 # RFC 071 — Footer version hygiene + drift-scan reinforcement
 
 **Status**: Implemented  
+**Evidence**: **`exercised`** (RFC 000 §22, back-filled 2026-10-28) — `admin_frame_footer_has_no_version_caption` and `tenant_admin_frame_footer_has_no_version_caption`.
 **Tier**: P0  
 **Size**: Small  
 **Target**: v0.62.0  

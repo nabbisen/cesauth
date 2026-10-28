@@ -9,6 +9,7 @@
 > **[RFC 153](../proposed/153-an-invitation-grants-nothing.md)**.
 
 **Status**: Implemented  
+**Evidence**: **`unknown`** (RFC 000 §22, back-filled 2026-10-28) — the definition this RFC introduces — an invitation links an email to a tenant and a role — has never been implemented. See the annotation above and **RFC 153**.
 **Priority**: P1 (SaaS guide §4.4: required for tenant self-service onboarding)  
 **Size**: Large (~200 LOC core + 100 LOC migration + 150 LOC worker)  
 **Depends on**: RFC 001 (sessions), RFC 020 (migration chain)

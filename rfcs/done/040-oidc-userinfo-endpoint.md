@@ -1,6 +1,7 @@
 # RFC 040 — OIDC /userinfo endpoint
 
 **Status**: Implemented  
+**Evidence**: **`exercised`** (RFC 000 §22, back-filled 2026-10-28) — the 10 `#[test]`s in `core/src/oidc/userinfo.rs`, exactly the count its §Tests claims, with the route registered for GET and POST.
 **Priority**: P0 (OIDC Core §5.3 compliance — required now that id_tokens ship)  
 **Size**: Medium (~120 LOC core + 80 LOC worker)  
 **Depends on**: RFC 001 (id_token)

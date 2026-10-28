@@ -1,6 +1,7 @@
 # RFC 076 — Recovery code 保存確認ゲート
 
 **Status**: Implemented  
+**Evidence**: **`exercised`** (RFC 000 §22, back-filled 2026-10-28) — `recovery_codes_page_button_starts_disabled`.
 **Tier**: P1  
 **Size**: Small  
 **Target**: v0.62.0  

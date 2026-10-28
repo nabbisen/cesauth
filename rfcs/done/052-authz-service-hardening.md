@@ -1,6 +1,7 @@
 # RFC 052 — Authorization service hardening
 
 **Status**: Implemented  
+**Evidence**: **`exercised`** (RFC 000 §22, back-filled 2026-10-28) — `core/src/authz/tests/rfc_052_hardening.rs` (6 call sites) asserting cross-tenant rejection and the system_admin superset against `check_permission`, which **is** the request-time enforcement path via `tenant_admin/gate.rs`.
 **Priority**: P1 (SaaS guide §6.6 — "権限判定の一元化")  
 **Size**: Medium
 

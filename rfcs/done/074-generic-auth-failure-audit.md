@@ -15,6 +15,7 @@
 > against them.
 
 **Status**: Done. **`exercised`** (RFC 000 §22) —
+**Evidence**: **`exercised`** (RFC 000 §22, back-filled 2026-10-28) — see the `**Status**` line above — `rfc074_expired_and_mismatch_render_the_identical_code_message` and its sibling, shipped 0.86.3 (RFC 155). Was `reviewed` until then.
 `cesauth_backend::routes::magic_link::verify::tests::rfc074_expired_and_mismatch_render_the_identical_code_message`
 and `::rfc074_missing_and_wrong_variant_render_the_identical_challenge_message`,
 each demonstrated to fail on the natural refactor that would split its pair.  

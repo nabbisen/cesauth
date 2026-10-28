@@ -18,6 +18,7 @@
 > **[RFC 153](../proposed/153-an-invitation-grants-nothing.md)**.
 
 **Status**: Implemented  
+**Evidence**: **`unknown`** (RFC 000 §22, back-filled 2026-10-28) — the accept path grants neither the tenant nor the role, and revoke has no caller. See the annotation above and **RFC 153**.
 **Priority**: P1 (completes RFC 043 end-to-end)  
 **Size**: Large (~300 LOC: D1 adapter + 3 worker routes)  
 **Depends on**: RFC 043, RFC 045

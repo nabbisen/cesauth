@@ -1,6 +1,7 @@
 # RFC 108 — UI template route-catalog migration
 
 **Status**: Implemented (v0.68.0 partial → v0.69.0 catalog + admin/console → v0.70.0 closure; two pre-existing orphan UIs intentionally left out of scope, see "Known orphan UI")  
+**Evidence**: **`exercised`** (RFC 000 §22, back-filled 2026-10-28) — drift-scan plus `membership_add_for_tenant_renders_the_real_page`, added by RFC 145 cycle 3 when it fixed this RFC's item 2. **Item 1 remains open** and is owned by RFC 141 §10.2 — see the annotation above.
 **Tier**: P1  
 **Size**: Large  
 **Target**: v0.68.0  

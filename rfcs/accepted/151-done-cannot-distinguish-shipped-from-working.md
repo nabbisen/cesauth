@@ -167,7 +167,48 @@ there. RFCs 043, 046, 047 and 049 are annotated; the remaining 24 have had no
 determination and are **`unknown` until they do**, which is §22.3's prescribed
 value and not a placeholder for an optimistic guess.
 
-### What the back-fill has determined so far
+### The back-fill is complete — 28 of 28 (2026-10-28)
+
+Every P0/P1 RFC in `done/` now carries a machine-readable
+`**Evidence**: **\`term\`**` line. Measured, not asserted:
+
+```
+$ # P0/P1 RFCs in done/ with a parseable Evidence term
+28 — 16 exercised · 5 reviewed · 7 unknown
+```
+
+**What it cost and what it found.** Three new P1 records — **RFC 153**
+(an invitation grants nothing), **RFC 154** (the second factor is never
+audited), **RFC 155** (two P0 guarantees with no witness) — plus **RFC 156**
+(the gate set has no gate), the missing half of **RFC 123**'s coverage gate,
+and a note on **RFC 120** that two authorization decision paths are duplicated
+with nothing asserting they stay equivalent. **Four of those six came from the
+first seven determinations.**
+
+**The seven `unknown`s are not a backlog of ignorance.** Four of them —
+RFC 043, 046, 047, 049 — are `unknown` *because the work did not function*,
+and they say so. RFC 047's term records history rather than today's code: its
+deliverables work now, but nothing asserted them for 61 releases, which is the
+fact the field exists to preserve. The remaining three (078, 105, 106) are
+honestly undetermined: assertions exist near those surfaces and I could not tie
+one to each RFC's property within the budget. **`unknown` there is the correct
+value and §22.3 says so.**
+
+**The five `reviewed`s are a worklist, not a verdict.** Each names the property
+that has no witness: RFC 072's locale-driven `lang` (only the admin frame's
+fixed `ja` is asserted), RFC 075's card, RFC 077's skip link (present in three
+frames, tagged by comment, asserted nowhere), RFC 035's workflow set, and
+RFC 045's event kinds. **Two P0s that were `reviewed` are now `exercised`,
+shipped in 0.86.3 as RFC 155** — the rule's first full cycle from flag to fix.
+
+**One thing the method taught.** The mechanical shortcut does not work: I
+scored every RFC by whether it names a test that exists in a CI-run crate, and
+**RFC 047 scores 1 of 1 while having been completely dead.** Each of the 28 is
+a reading. The one time I tried to shortcut a reading — concluding "no callers"
+from a `grep | head -5` — I was one step from filing a false finding that
+cesauth's authorization invariants were untested.
+
+### What the back-fill determined, in detail
 
 | RFC | term | what fails if the deliverable breaks |
 |---|---|---|

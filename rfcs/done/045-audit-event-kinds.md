@@ -16,6 +16,7 @@
 > emitted and asserted, but nothing fails if a kind loses its emitter.
 
 **Status**: Implemented  
+**Evidence**: **`reviewed`** (RFC 000 §22, back-filled 2026-10-28) — the variants exist and the deletion kinds are emitted and asserted, but **nothing fails if a kind loses its emitter**, which is how 10 of 71 came to have none. See the annotation above, **RFC 154** and **RFC 123 §1.1**.
 **Priority**: P1 — prerequisite for RFC 046/047  
 **Size**: Small (~30 LOC enum + as_str)
 

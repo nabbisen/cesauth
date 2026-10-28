@@ -1,6 +1,7 @@
 # RFC 050 — migrate-test SQL coverage for invitation/deletion
 
 **Status**: Implemented  
+**Evidence**: **`exercised`** (RFC 000 §22, back-filled 2026-10-28) — `crates/migrate-test/tests/migration_chain/rfc_050_sql.rs`, inside the 31 `migration_chain` tests.
 **Priority**: P1 (validate D1 adapter queries against real SQLite)  
 **Size**: Small
 

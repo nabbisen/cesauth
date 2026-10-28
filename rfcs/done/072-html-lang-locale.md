@@ -1,6 +1,7 @@
 # RFC 072 — `<html lang>` attribute locale binding
 
 **Status**: Implemented  
+**Evidence**: **`reviewed`** (RFC 000 §22, back-filled 2026-10-28) — the one assertion on record fixes `lang="ja"` on the **admin** frame; `chrome.rs:318` renders `<html lang="{lang}">` from the negotiated locale and **nothing asserts that**, which is this RFC's actual subject.
 **Tier**: P0  
 **Size**: Small  
 **Target**: v0.62.0  

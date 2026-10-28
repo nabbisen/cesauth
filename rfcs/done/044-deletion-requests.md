@@ -1,6 +1,7 @@
 # RFC 044 — User deletion requests (GDPR / account deletion)
 
 **Status**: Implemented  
+**Evidence**: **`exercised`** (RFC 000 §22, back-filled 2026-10-28) — `core/src/deletion.rs`'s host tests, and since RFC 147 cycle 2 the whole path is driven end to end.
 **Priority**: P1 (SaaS guide §4.4: required for GDPR Article 17 "right to erasure")  
 **Size**: Medium (~150 LOC core + 80 LOC migration + 100 LOC worker)  
 **Depends on**: RFC 021 (ON DELETE CASCADE), RFC 020

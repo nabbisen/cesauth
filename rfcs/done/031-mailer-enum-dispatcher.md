@@ -1,6 +1,7 @@
 # RFC 031 — MagicLinkMailer enum dispatcher
 
 **Status**: Implemented  
+**Evidence**: **`exercised`** (RFC 000 §22, back-filled 2026-10-28) — the wasm32 backend and csr CI checks — RFC 035 deferred WASM CI *until* this landed, so those gates exist because of it and fail if a `dyn` returns.
 **Priority**: P0 (build blocker)  
 **Size**: Medium (~80 LOC change)  
 **Depends on**: RFC 030

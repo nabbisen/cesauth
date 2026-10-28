@@ -1,6 +1,7 @@
 # RFC 041 — Token service type parameter refactor
 
 **Status**: Implemented  
+**Evidence**: **`exercised`** (RFC 000 §22, back-filled 2026-10-28) — `core/src/service/token/tests.rs`, plus the type change being load-bearing at compile time.
 **Priority**: P1 (technical debt: 5+ generic type parameters per function)  
 **Size**: Medium refactor (~0 LOC net change, significant internal restructure)  
 **Depends on**: nothing

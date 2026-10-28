@@ -1,6 +1,7 @@
 # RFC 105 — Admin / tenant_admin / tenancy_console frame design-token unification
 
 **Status**: Implemented (v0.67.0)  
+**Evidence**: **`unknown`** (RFC 000 §22, back-filled 2026-10-28) — no assertion on design tokens was found in either frame; not established either way.
 **Tier**: P1  
 **Size**: Medium  
 **Target**: v0.67.0  

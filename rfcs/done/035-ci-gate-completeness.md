@@ -1,6 +1,7 @@
 # RFC 035 — CI gate completeness
 
 **Status**: Implemented  
+**Evidence**: **`reviewed`** (RFC 000 §22, back-filled 2026-10-28) — its four workflows exist and run, and RFC 125 superseded its `-D warnings` spec on the record. But **nothing fails if a workflow stops running** — see RFC 156.
 **Priority**: P1 (release gate deficit)  
 **Size**: Medium (4 new workflows)  
 **Depends on**: RFC 029 (fmt workflow already added)

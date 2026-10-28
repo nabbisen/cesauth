@@ -1,6 +1,7 @@
 # RFC 078 — Tenant admin UI ページの i18n 化と JA/EN rendering test
 
 **Status**: Implemented  
+**Evidence**: **`unknown`** (RFC 000 §22, back-filled 2026-10-28) — locale assertions exist on neighbouring templates but none was tied to this RFC's property within the back-fill's budget.
 **Tier**: P1  
 **Size**: Medium  
 **Target**: v0.62.0  
