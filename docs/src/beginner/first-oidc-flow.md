@@ -63,7 +63,7 @@ the plaintext OTP goes in an email; here it is in the audit log:
 
 ```sh
 AUDIT=$(curl -s 'http://localhost:8787/__dev/audit?body=1' |
-        jq '[.keys[].body | select(.kind=="magic_link_issued")] | .[-1]')
+        jq '[.rows[] | select(.kind=="magic_link_issued")] | .[-1]')
 echo "$AUDIT" | jq .
 ```
 
@@ -116,7 +116,7 @@ Confirm `magic_link_verified` landed in the audit log:
 
 ```sh
 curl -s 'http://localhost:8787/__dev/audit?body=1' |
-  jq '[.keys[].body | select(.kind=="magic_link_verified")] | .[-1]'
+  jq '[.rows[] | select(.kind=="magic_link_verified")] | .[-1]'
 ```
 
 Bob is now authenticated. In a real browser flow `/authorize` would

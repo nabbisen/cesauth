@@ -1,7 +1,21 @@
 # RFC 149 — No user can request their own deletion, and the endpoint that would do it answers unreadably
 
-**Status.** **Accepted** 2026-10-27. **Scheduled 0.87.0** (minor — it adds a
-capability users do not have today). **Sequenced after RFC 150**; see §6.
+**Status.** **Done** — **shipped v0.87.0**. §5's self-service cancellation and
+§2's JSON contract both landed; the alert now carries the control that stops
+the deletion.
+**Evidence**: **`exercised`** (RFC 000 §22) — the full §2 contract table and
+§5's self-cancellation driven against a real `wrangler dev` + local D1, with a
+fires/does-not-fire demonstration that `cancel_self`'s `cancel_deletion` call
+is real wiring and not a no-op: stubbed out, the handler still answers `302`
+while the row stays `pending` for ever, which is RFC 147 §2's failure exactly.
+**One correction to this RFC's own §4**, recorded by the implementing cycle:
+§4 justified the form-encoded route by invoking RFC 143's no-JavaScript
+principle. **`/me/security` is `client`-declared and needs JavaScript to render
+at all**, so that justification does not hold for this surface. The decision
+stands on its other merit — a native `<form>` post with a double-submit token
+is simpler and matches `me::sessions::post_revoke` — but it buys CSRF clarity,
+**not** no-JS operation.
+
 **Tier.** P1 — a capability the product documents and routes, that no user can
 reach, and whose one response code means two opposite things.
 **Size.** Small-to-medium: one template section, one form, one handler's

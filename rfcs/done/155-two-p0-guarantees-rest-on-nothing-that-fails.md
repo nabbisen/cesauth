@@ -1,11 +1,15 @@
 # RFC 155 — Two P0 security guarantees rest on nothing that fails
 
-**Status.** **Accepted** 2026-10-27 — scheduled **0.86.3, patch**. Both
-deliverables make code or tests match a claim the record already makes; no
-capability is added. *(Architect-decided scope: these are two small
-enforcement gaps of one shape, found together. Numbered rather than folded
-into a handoff because RFC 144's standing lesson is what happens to a finding
-that lives only in one.)*
+**Status.** **Done** — **shipped v0.86.3**. Both deliverables landed and
+moved RFC 030 and RFC 074 from `reviewed` to `exercised`, which was this RFC's
+whole purpose.
+**Evidence**: **`exercised`** (RFC 000 §22) — `debug_redacts_code_for_both_otp_and_url_shaped_values`
+(asserting both shapes `code` takes, OTP and accept-URL) and
+`rfc074_expired_and_mismatch_render_the_identical_code_message` with its
+sibling, each demonstrated to fail when the control is removed: the `Debug`
+impl reverted to printing `code`, and the message function reverted to
+branching per variant — the exact "natural refactor" §3 names.
+
 **Tier.** P1 as a record. The two underlying RFCs are **P0**, and under
 RFC 000 §22 neither may sit in `done/` on `reviewed`.
 **Size.** Small: one manual `Debug`, one test, one assertion set.

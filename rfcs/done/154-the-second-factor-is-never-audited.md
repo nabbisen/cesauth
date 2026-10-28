@@ -1,11 +1,17 @@
 # RFC 154 — The second factor is never audited
 
-**Status.** **Accepted** 2026-10-27. **Scheduled 0.87.0 — minor**, not a
-patch: §4 adds five new `EventKind` variants, and new event types appearing in
-an audit stream is additive surface that somebody parsing it should meet at a
-minor boundary. Rides with RFC 149 and RFC 148, which is a coherent release
-rather than a bundle — all three make the `/me` surface tell the truth about
-itself.
+**Status.** **Done** — **shipped v0.87.0**. All six TOTP transitions emit, and
+`MfaVerified` — declared since its introduction and emitted nowhere — finally
+has a sender.
+**Evidence**: **`exercised`** (RFC 000 §22) — all six kinds driven against a
+real enrol → 4 failures → lockout → verify → recovery-code → disable cycle on
+`wrangler dev` with local D1, asserted in order and count, plus a
+fires/does-not-fire on `MfaVerified`: with the emission removed a correct code
+still signs the user in and writes no row. The other seven unemitted variants
+are now each annotated "intentionally unemitted, because …"; the cycle also
+found that **`SessionRevokedByAdmin`'s own doc comment was false** (*"Both fire
+for one admin action"* — only `AdminSessionRevoked` does) and corrected it.
+
 **Tier.** P1. The control that exists to survive a compromised first factor
 leaves no record of being satisfied, failed, enrolled or removed.
 **Size.** Small. Event kinds mostly exist; the emitters do not.

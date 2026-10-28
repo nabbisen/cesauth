@@ -168,3 +168,77 @@ survive this RFC unchanged.** Deleting the email address makes the product
 cleaner; it does not make the project a compliance authority, and replacing a
 careful disclaimer with a confident one would be the same defect class in a new
 place. The paragraph gains the scrub and keeps the modesty.
+
+## 7. The scrub works and its failure is invisible — why this RFC has not closed (2026-10-28)
+
+0.87.0 implemented §5's decision and the implementation is correct. **The
+guarantee is still not observable**, so the RFC stays `accepted`.
+
+### 7.1 What is established
+
+`core/src/deletion.rs`, inside `execute_deletion`:
+
+```rust
+let email = user_repo.find_by_id(&req.user_id).await
+    .ok()                       // ← a failed read yields None
+    .and_then(|u| u.email);
+user_repo.delete_by_id(&req.user_id).await.map_err(|_| CoreError::Internal)?;
+if let Some(email) = email {
+    invitation_repo.scrub_email(&email, request_id).await.ok();   // ← error discarded
+}
+```
+
+and the signature is `-> CoreResult<()>`. So **both callers —
+`routes/deletions.rs:445` and `sweep.rs:269` — receive `Ok(())` whether the
+scrub succeeded, failed, or was never attempted.** No log, no audit detail, no
+return value. In the failure case the address remains and **nothing anywhere
+records that it did.**
+
+### 7.2 Why the implementation is nonetheless right
+
+The scrub runs **after** the user row is deleted, and it must. Reporting a
+scrub failure as a failure of `execute_deletion` would tell the caller the
+deletion failed when the user is already gone — and the caller's retry would
+then get `deletion request is not pending`. The cycle's reasoning
+(*"a scrub failure must not be reported as a failure to delete the user, who is
+already gone by then"*) is correct.
+
+**Discarding the error is not the only way to honour that**, and it is the one
+that leaves no trace.
+
+### 7.3 Why this did not block the release
+
+**0.87.0 is strictly better than its absence.** Before it, the address *always*
+remained. After it, the address remains only when a read or a write fails.
+Holding the tag to perfect the failure path would have kept the worse state in
+production longer, for a benefit available in the next patch.
+
+**What did have to change immediately** is the documentation.
+`admin-operations.md` was rewritten by the cycle to say `execute_deletion`
+*"replaces `email` in every matching row"* — unconditionally, with no mention
+of best-effort. **That sentence asserted something the code does not reliably
+do**, on a privacy guarantee, which is this project's signature defect created
+fresh in the release that fixed three other instances of it. Corrected in the
+same release: the paragraph now states the best-effort behaviour and points
+here.
+
+### 7.4 What closes this RFC — 0.87.1
+
+Make the outcome observable, without making it a deletion failure:
+
+1. `execute_deletion` returns the scrub outcome — `CoreResult<ExecuteOutcome>`
+   with a `scrub: ScrubOutcome` field (`Scrubbed` / `NoEmailOnFile` /
+   `Failed`), or the smallest equivalent.
+2. Both callers act on it: the admin route and the sweep **log** a `Failed`,
+   and it goes into the `deletion_executed` audit event's detail — that event
+   already carries free text and already distinguishes the sweep from an admin.
+3. `NoEmailOnFile` is **not** a failure — an anonymous-promoted account may
+   genuinely have no address — but it must be distinguishable from `Scrubbed`,
+   because "nothing to scrub" and "scrub did not happen" look identical today.
+4. A test per outcome, and the documentation's best-effort paragraph replaced
+   by what is then true.
+
+**Evidence term when it closes:** `exercised` — the cycle's SQL witnesses in
+`migrate-test/.../rfc_148_scrub.rs` already cover the happy path; what is
+missing is a witness for the failure path, which is exactly the shape RFC 155
+was about.

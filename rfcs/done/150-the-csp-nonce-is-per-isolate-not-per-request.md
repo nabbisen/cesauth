@@ -1,7 +1,15 @@
 # RFC 150 — Outside the admin console, the CSP nonce is per-isolate, not per-request
 
-**Status.** **Accepted** 2026-10-27. **Scheduled 0.86.2** (patch — every
-deliverable is a fix). **Blocks RFC 149**, which adds a form to this surface.
+**Status.** **Done** — **shipped v0.86.3**.
+**Evidence**: **`exercised`** (RFC 000 §22) — the `route-contracts-check.sh`
+nonce gate: every `Response::from_html` in `crates/backend/src` must have a
+nonce-setting call in its own enclosing function, with one named indirection
+re-verified each run and an unresolvable function a hard failure. Demonstrated
+failing on a reverted site, on the known wrapper's fact breaking, and
+(architect, in review) on a responder placed outside `routes/` — which it
+originally missed and now catches. The three live measurements that established
+the defect are `observed`, not `exercised`, and are labelled so in §4.
+
 **Tier.** P1 — RFC 006's stated invariant is a *per-request* nonce. On seven
 HTML responders it is per-isolate, which is a different and weaker thing.
 **Size.** Small per site; the gate is the lasting part.

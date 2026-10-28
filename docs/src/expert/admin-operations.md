@@ -119,7 +119,13 @@ and `revoked_by` — so a deleted user's invitation history survives the
 row's physical delete. **RFC 148 decided this: scrub, not purge.**
 `execute_deletion` reads the user's email before the delete and replaces
 `email` in every matching `invitation_tokens` row with a per-row tombstone
-(`deleted-<request id>-<row id>@invalid`); `issued_by`, `issued_at`,
+(`deleted-<request id>-<row id>@invalid`). **The scrub is best-effort and its
+outcome is not currently reported**: it runs after the user row is already
+gone, so a failure cannot be surfaced as a failure to delete the user, and
+`execute_deletion` returns `Ok(())` either way. If the pre-delete email read or
+the scrub write fails, the address remains and nothing records that it did —
+**tracked in RFC 148 §7, which is why that RFC has not closed.** The columns
+`issued_by`, `issued_at`,
 `role`, `accepted_at` and `revoked_*` are left exactly as they were — that
 is the administrative record of what an admin did, not the deleted user's
 data to erase. (`accepted_by` is always the literal
