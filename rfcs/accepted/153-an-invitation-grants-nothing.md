@@ -12,6 +12,12 @@ gives the reason (the fix changes the shape of the user record, so it is cheap
 before a compatibility commitment and expensive after). **Nothing in this RFC
 or the index should be read as 1.0 having a scope.**
 
+**Dispatched 2026-10-28** for **0.88.0**, minor:
+`handoffs/153-an-invitation-grants-nothing/handoff.md`. The handoff makes §6.3's
+`users.tenant_id`-versus-membership choice a **mandatory report-and-stop before
+implementation** — it changes the meaning of a persisted column, and that is
+the one decision in this cycle I want to see before the code.
+
 **Scheduling:** a feature cycle, not a patch, sequenced after the 0.87.x fixes
 in flight. Not blocked on the 1.0 question — the defect is worth fixing on its
 own merits, and §7's argument only affects *how late* it could safely be left.

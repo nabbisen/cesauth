@@ -57,6 +57,7 @@ sat here across 61 releases, correctly filed, with both deliverables dead.
 
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
+| [157](./proposed/157-unrouted-handlers-and-the-warnings-gate.md) | **Sixteen unrouted route handlers, and the gate they are blocking.** Of 218 handler-shaped `pub async fn`s in `routes/`, **16 are routed by nothing** — 15 `*_json` companions plus `admin::auth::list_tokens`; 3 are referenced nowhere in the crate at all. **RFC 145 §13.2's prohibition on touching the unused imports has expired**: the defect whose evidence it preserved was fixed in v0.86.1/v0.86.2, and the rule outlived its reason. Clears the way for `-D unused_imports -D unused_variables`; blanket `-D warnings` stays rejected, now for the sharper reason that rustc's and clippy's warning populations are two different sets | P2 | — |
 | [144](./proposed/144-introspection-reveals-family-existence.md) | **Introspection reveals that a family exists** to an authenticated caller presenting a forged jti: `expired`/`revoked` are classified before the jti comparison, which the mismatch path conflates to `unknown` precisely to avoid this. **Recorded as an RFC because it was lost once** as "recorded for RFC 118" | P3 | filler |
 
 ### Other proposed
