@@ -104,7 +104,9 @@ code-review responsibility.
 | GET  | `/admin/t/:slug/invitations.json` | Tenant admin | none | JSON (`csrf_token`) | n/a | n/a | required |
 | GET  | `/accept-invite` | public (invite link) | none | HTML | server | n/a | N/A |
 | POST | `/accept-invite` | public (invite link) | `invitation_accepted` | redirect | server | n/a | N/A |
-| POST | `/me/security/delete-account` | authenticated user | `deletion_requested` | redirect | n/a | n/a | N/A (JSON) |
+| POST | `/me/security/delete-account` | authenticated user | `deletion_requested` | JSON (`scheduled_at`) | n/a | n/a | N/A (JSON) |
+| POST | `/me/security/delete-account/request` | authenticated user | `deletion_requested` | redirect | client | n/a | required |
+| POST | `/me/security/delete-account/cancel` | authenticated user | `deletion_cancelled` | redirect | client | n/a | required |
 | GET  | `/admin/t/:slug/deletion-requests` | Tenant admin | none | HTML | server | `tenant_admin::tests::deletion_requests_page_renders_the_real_csrf_token` | required |
 | POST | `/admin/t/:slug/deletion-requests/:id/cancel` | Tenant admin | `deletion_cancelled` | redirect | client | n/a | required |
 | POST | `/admin/t/:slug/deletion-requests/:id/execute` | Tenant admin | `deletion_executed` | redirect | client | n/a | required |

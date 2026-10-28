@@ -99,6 +99,32 @@ pub trait InvitationRepository {
     async fn list_pending_by_tenant(
         &self, tenant_id: &str, now: UnixSeconds,
     ) -> PortResult<Vec<Invitation>>;
+
+    /// **RFC 148.** Replace `email` with a per-row tombstone
+    /// ([`invitation_tombstone`]) for every invitation whose `email`
+    /// matches a user who has just been deleted. `deletion_request_id`
+    /// keys the tombstone so two different deletions never produce the
+    /// same opaque value.
+    ///
+    /// Scope is global, not tenant-scoped: the same address can be
+    /// invited into more than one tenant, and it is the same personal
+    /// datum in each — `execute_deletion` has no tenant-scoped email to
+    /// hand this beyond the one the deleted user themself carried.
+    async fn scrub_email(&self, email: &str, deletion_request_id: &str) -> PortResult<()>;
+}
+
+/// Build the per-row tombstone `email` value RFC 148 requires after a
+/// user's account is deleted. Keyed off the deletion request id, with the
+/// invitation row's own (always-unique) id appended, so that two rows
+/// scrubbed in the same pass — or by two different deletions reusing the
+/// same tenant — never collide under the partial unique index
+/// (`migrations/0018_invitation_tokens.sql:42-44`,
+/// `WHERE accepted_at IS NULL AND revoked_at IS NULL`). A hash of the
+/// original address would still be a pointer to the person, so the
+/// opaque part carries no trace of it; `.invalid` is reserved by
+/// RFC 2606 for exactly this use.
+pub fn invitation_tombstone(deletion_request_id: &str, invitation_id: &str) -> String {
+    format!("deleted-{deletion_request_id}-{invitation_id}@invalid")
 }
 
 // ---------------------------------------------------------------------------
@@ -275,6 +301,14 @@ mod tests {
                 .cloned()
                 .collect())
         }
+        async fn scrub_email(&self, email: &str, deletion_request_id: &str) -> PortResult<()> {
+            for inv in self.0.borrow_mut().values_mut() {
+                if inv.email.eq_ignore_ascii_case(email) {
+                    inv.email = invitation_tombstone(deletion_request_id, &inv.id);
+                }
+            }
+            Ok(())
+        }
     }
 
     const NOW: i64 = 1_700_000_000;
@@ -383,6 +417,55 @@ mod tests {
         let outcome = verify_invitation(&repo, &inv.id, "mallory@example.com", NOW + 1).await.unwrap();
         assert_eq!(outcome, InvitationVerifyOutcome::NotFound,
             "wrong email must return NotFound (not reveal the invite exists)");
+    }
+
+    // ── RFC 148: scrub_email ──────────────────────────────────────────────
+
+    #[test]
+    fn tombstone_is_distinct_per_row_and_carries_no_address() {
+        let a = invitation_tombstone("req-1", "inv-a");
+        let b = invitation_tombstone("req-1", "inv-b");
+        assert_ne!(a, b, "two rows scrubbed by the same deletion must not collide");
+        assert!(a.ends_with("@invalid"), "{a}");
+        assert!(!a.contains("alice"), "the opaque part must not echo the original address");
+    }
+
+    #[tokio::test]
+    async fn scrub_email_replaces_the_address_and_preserves_the_administrative_columns() {
+        let repo = StubRepo::default();
+        let inv = issue_invitation(&repo, "t-1", "alice@example.com", "tenant_member",
+                                   "admin-1", DEFAULT_INVITE_TTL_SECS, NOW).await.unwrap();
+        accept_invitation(&repo, &inv.id, "pending-registration", NOW + 1).await.unwrap();
+
+        repo.scrub_email("alice@example.com", "req-del-1").await.unwrap();
+
+        let scrubbed = repo.find_by_id(&inv.id).await.unwrap().unwrap();
+        assert_eq!(scrubbed.email, invitation_tombstone("req-del-1", &inv.id));
+        assert!(!scrubbed.email.to_ascii_lowercase().contains("alice"),
+            "the real address must not survive in any form");
+        // Administrative record (RFC 148 §5) is untouched.
+        assert_eq!(scrubbed.issued_by, "admin-1");
+        assert_eq!(scrubbed.issued_at, NOW);
+        assert_eq!(scrubbed.role, "tenant_member");
+        assert_eq!(scrubbed.accepted_at, Some(NOW + 1));
+        assert_eq!(scrubbed.accepted_by.as_deref(), Some("pending-registration"));
+        assert_eq!(scrubbed.revoked_by, None);
+    }
+
+    #[tokio::test]
+    async fn scrub_email_is_case_insensitive_and_leaves_other_addresses_alone() {
+        let repo = StubRepo::default();
+        let target = issue_invitation(&repo, "t-1", "Alice@Example.com", "member",
+                                      "admin", DEFAULT_INVITE_TTL_SECS, NOW).await.unwrap();
+        let other = issue_invitation(&repo, "t-2", "bob@example.com", "member",
+                                     "admin", DEFAULT_INVITE_TTL_SECS, NOW).await.unwrap();
+
+        repo.scrub_email("alice@example.com", "req-del-2").await.unwrap();
+
+        let scrubbed = repo.find_by_id(&target.id).await.unwrap().unwrap();
+        assert_ne!(scrubbed.email, "Alice@Example.com");
+        let untouched = repo.find_by_id(&other.id).await.unwrap().unwrap();
+        assert_eq!(untouched.email, "bob@example.com", "an unrelated address must not be touched");
     }
 
     #[tokio::test]

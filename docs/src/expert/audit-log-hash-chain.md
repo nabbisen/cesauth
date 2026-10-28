@@ -46,6 +46,34 @@ wrangler d1 execute cesauth-prod --remote \
   --command "SELECT * FROM audit_events WHERE seq = 12345"
 ```
 
+## Second-factor (TOTP) events
+
+**RFC 154 (0.87.0).** Before this release, no TOTP operation wrote a row
+here at all — not enrolment, not a successful or failed verification, not
+the attempt-limit lockout, not disablement, not a recovery-code
+redemption. An operator investigating a suspected compromise could not
+tell whether the second factor had been satisfied, attacked, removed, or
+bypassed via a recovery code. Six kinds now cover every TOTP state
+transition, all subject = the affected user:
+
+| Kind | Fires when |
+|---|---|
+| `mfa_enrolled` | A TOTP authenticator is confirmed (first or additional) |
+| `mfa_verified` | A submitted code passes verification |
+| `mfa_failed` | A submitted code fails verification, under the attempt limit |
+| `mfa_locked_out` | The per-gate attempt limit (RFC 143, 5 attempts) is reached |
+| `mfa_disabled` | A user removes all of their TOTP authenticators |
+| `mfa_recovery_code_used` | A recovery code is redeemed in place of a TOTP code |
+
+Declared-but-intentionally-unemitted kinds (`auth_succeeded`,
+`session_created`, `session_started`, `session_expired`,
+`session_revoked_by_admin`, `webauthn_failed`, `admin_console_viewed`) are
+each documented at their `EventKind` variant in `audit.rs` with the reason
+they carry no emitter — either a more specific kind already records the
+same fact, or the event was a deliberate decision not to audit. RFC 123
+will add a coverage gate that treats an undocumented gap of this kind as a
+failure; until then, the doc comment is the record.
+
 The admin console's audit search (under `/admin/console/audit`)
 queries the same table through the
 `CloudflareAuditQuerySource` adapter — operators who prefer a

@@ -114,10 +114,17 @@ Physically deletes the user row; `ON DELETE CASCADE` removes every child
 table that references `users(id)` (authenticators, sessions, TOTP state,
 tenancy memberships and role assignments — 28 tables in all). **One
 exception: `invitation_tokens` is not removed.** It carries no foreign key
-to `users(id)` — only a plain-text `email` plus `issued_by` / `accepted_by`
-/ `revoked_by` user ids — so a deleted user's invitation history for this
-tenant survives the deletion. Whether to purge or scrub it is a separate
-design question, out of this cycle's scope (RFC 147 §14).
+to `users(id)` — only a plain-text `email` plus `issued_by`, `accepted_by`
+and `revoked_by` — so a deleted user's invitation history survives the
+row's physical delete. **RFC 148 decided this: scrub, not purge.**
+`execute_deletion` reads the user's email before the delete and replaces
+`email` in every matching `invitation_tokens` row with a per-row tombstone
+(`deleted-<request id>-<row id>@invalid`); `issued_by`, `issued_at`,
+`role`, `accepted_at` and `revoked_*` are left exactly as they were — that
+is the administrative record of what an admin did, not the deleted user's
+data to erase. (`accepted_by` is always the literal
+`"pending-registration"` and `revoked_by` is always `NULL` today — RFC 153
+owns why — so neither has ever held anything to scrub.)
 
 A `deletion_executed` audit event is emitted with `subject` = the deleted
 user; the row's `executed_by` column distinguishes an admin-triggered

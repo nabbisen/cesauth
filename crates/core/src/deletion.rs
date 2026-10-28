@@ -34,6 +34,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::{CoreError, CoreResult};
+use crate::invitation::InvitationRepository;
 use crate::ports::{PortError, PortResult};
 use crate::ports::repo::UserRepository;
 use crate::types::UnixSeconds;
@@ -154,18 +155,28 @@ where
 /// CASCADE (RFC 021) removes all child rows.  The `deletion_requests` row
 /// is retained with `status = 'executed'` for audit.
 ///
+/// **RFC 148.** `invitation_tokens` holds no foreign key to `users(id)`,
+/// so `ON DELETE CASCADE` does not reach it — a deleted user's invitation
+/// rows would otherwise keep their email address forever. The address is
+/// read *before* the physical delete (it is gone from `users` afterward)
+/// and the matching `invitation_tokens` rows are scrubbed *after* it,
+/// best-effort: a scrub failure must not be reported as a failure to
+/// delete the user, since the user row is already gone by that point.
+///
 /// Returns `Err(CoreError::InvalidRequest)` if the request does not exist
 /// or is not in `Pending` state.
-pub async fn execute_deletion<DR, UR>(
-    del_repo:    &DR,
-    user_repo:   &UR,
-    request_id:  &str,
-    executed_by: &str,
-    now:         UnixSeconds,
+pub async fn execute_deletion<DR, UR, IR>(
+    del_repo:        &DR,
+    user_repo:       &UR,
+    invitation_repo: &IR,
+    request_id:      &str,
+    executed_by:     &str,
+    now:             UnixSeconds,
 ) -> CoreResult<()>
 where
     DR: DeletionRequestRepository,
     UR: UserRepository,
+    IR: InvitationRepository,
 {
     let req = del_repo
         .find_by_id(request_id)
@@ -177,8 +188,19 @@ where
         return Err(CoreError::InvalidRequest("deletion request is not pending"));
     }
 
+    let email = user_repo
+        .find_by_id(&req.user_id)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|u| u.email);
+
     // Physical delete.  ON DELETE CASCADE handles all child tables.
     user_repo.delete_by_id(&req.user_id).await.map_err(|_| CoreError::Internal)?;
+
+    if let Some(email) = email {
+        invitation_repo.scrub_email(&email, request_id).await.ok();
+    }
 
     // Mark the request as executed (for audit trail).
     del_repo
@@ -221,6 +243,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::invitation::{invitation_tombstone, Invitation};
     use std::cell::RefCell;
     use std::collections::HashMap;
 
@@ -272,18 +295,75 @@ mod tests {
         }
     }
 
-    // Stub UserRepository
+    // Stub UserRepository. `users` lets a test seed an email so
+    // `execute_deletion`'s RFC 148 scrub has something to read before the
+    // user row disappears.
     #[derive(Default)]
-    struct StubUserRepo(RefCell<Vec<String>>);
+    struct StubUserRepo {
+        deleted: RefCell<Vec<String>>,
+        users:   RefCell<HashMap<String, crate::types::User>>,
+    }
+    impl StubUserRepo {
+        fn seed(&self, user: crate::types::User) {
+            self.users.borrow_mut().insert(user.id.clone(), user);
+        }
+    }
     impl crate::ports::repo::UserRepository for StubUserRepo {
-        async fn find_by_id(&self, _: &str) -> crate::ports::PortResult<Option<crate::types::User>> { Ok(None) }
+        async fn find_by_id(&self, id: &str) -> crate::ports::PortResult<Option<crate::types::User>> {
+            Ok(self.users.borrow().get(id).cloned())
+        }
         async fn find_by_email(&self, _: &str) -> crate::ports::PortResult<Option<crate::types::User>> { Ok(None) }
         async fn create(&self, _: &crate::types::User) -> crate::ports::PortResult<()> { Ok(()) }
         async fn update(&self, _: &crate::types::User) -> crate::ports::PortResult<()> { Ok(()) }
         async fn list_by_tenant(&self, _: &str) -> crate::ports::PortResult<Vec<crate::types::User>> { Ok(vec![]) }
         async fn list_anonymous_expired(&self, _: i64) -> crate::ports::PortResult<Vec<crate::types::User>> { Ok(vec![]) }
         async fn delete_by_id(&self, id: &str) -> crate::ports::PortResult<()> {
-            self.0.borrow_mut().push(id.to_owned());
+            self.deleted.borrow_mut().push(id.to_owned());
+            Ok(())
+        }
+    }
+
+    fn stub_user(id: &str, tenant_id: &str, email: &str) -> crate::types::User {
+        crate::types::User {
+            id:             id.to_owned(),
+            tenant_id:      tenant_id.to_owned(),
+            email:          Some(email.to_owned()),
+            email_verified: true,
+            display_name:   None,
+            account_type:   crate::tenancy::AccountType::HumanUser,
+            status:         crate::types::UserStatus::Active,
+            created_at:     NOW,
+            updated_at:     NOW,
+        }
+    }
+
+    // Stub InvitationRepository — only `scrub_email` and `find_by_id` are
+    // exercised by this module's tests; the rest exist to satisfy the trait.
+    #[derive(Default)]
+    struct StubInvitationRepo(RefCell<HashMap<String, Invitation>>);
+    impl StubInvitationRepo {
+        fn seed(&self, inv: Invitation) {
+            self.0.borrow_mut().insert(inv.id.clone(), inv);
+        }
+    }
+    impl crate::invitation::InvitationRepository for StubInvitationRepo {
+        async fn create(&self, inv: &Invitation) -> PortResult<()> {
+            self.0.borrow_mut().insert(inv.id.clone(), inv.clone());
+            Ok(())
+        }
+        async fn find_by_id(&self, id: &str) -> PortResult<Option<Invitation>> {
+            Ok(self.0.borrow().get(id).cloned())
+        }
+        async fn find_pending_by_tenant_email(&self, _: &str, _: &str, _: i64) -> PortResult<Option<Invitation>> { Ok(None) }
+        async fn mark_accepted(&self, _: &str, _: &str, _: i64) -> PortResult<()> { Ok(()) }
+        async fn mark_revoked(&self, _: &str, _: &str, _: i64) -> PortResult<()> { Ok(()) }
+        async fn list_pending_by_tenant(&self, _: &str, _: i64) -> PortResult<Vec<Invitation>> { Ok(vec![]) }
+        async fn scrub_email(&self, email: &str, deletion_request_id: &str) -> PortResult<()> {
+            for inv in self.0.borrow_mut().values_mut() {
+                if inv.email.eq_ignore_ascii_case(email) {
+                    inv.email = invitation_tombstone(deletion_request_id, &inv.id);
+                }
+            }
             Ok(())
         }
     }
@@ -311,12 +391,14 @@ mod tests {
     async fn execute_deletes_user_and_marks_executed() {
         let dr = StubDelRepo::default();
         let ur = StubUserRepo::default();
+        let ir = StubInvitationRepo::default();
+        ur.seed(stub_user("u-exec", "t-1", "exec@example.com"));
         // Schedule with 0 grace so it's immediately due.
         let req = schedule_deletion(&dr, "u-exec", "t-1", "u-exec", None, 0, NOW).await.unwrap();
-        execute_deletion(&dr, &ur, &req.id, "sweep", NOW).await.unwrap();
+        execute_deletion(&dr, &ur, &ir, &req.id, "sweep", NOW).await.unwrap();
 
         // User repo received the delete call.
-        assert!(ur.0.borrow().contains(&"u-exec".to_owned()),
+        assert!(ur.deleted.borrow().contains(&"u-exec".to_owned()),
             "delete_by_id must be called on user");
 
         // Request row is marked executed.
@@ -328,11 +410,55 @@ mod tests {
     async fn execute_non_pending_returns_error() {
         let dr = StubDelRepo::default();
         let ur = StubUserRepo::default();
+        let ir = StubInvitationRepo::default();
         let req = schedule_deletion(&dr, "u-x", "t-1", "u-x", None, 0, NOW).await.unwrap();
         cancel_deletion(&dr, &req.id, "admin", NOW + 1).await.unwrap();
         // Trying to execute a cancelled request should fail.
-        let result = execute_deletion(&dr, &ur, &req.id, "sweep", NOW + 2).await;
+        let result = execute_deletion(&dr, &ur, &ir, &req.id, "sweep", NOW + 2).await;
         assert!(matches!(result, Err(CoreError::InvalidRequest(_))));
+    }
+
+    /// RFC 148. `execute_deletion` has no foreign key to lean on for
+    /// `invitation_tokens` — it must read the user's email before the
+    /// physical delete and scrub it afterward. Demonstrated to fail if
+    /// the scrub call is removed: reverting the `scrub_email` call in
+    /// `execute_deletion` leaves this row's email untouched and this
+    /// assertion fails (see the fires/does-not-fire evidence log).
+    #[tokio::test]
+    async fn execute_deletion_scrubs_the_deleted_users_invitation_email() {
+        let dr = StubDelRepo::default();
+        let ur = StubUserRepo::default();
+        let ir = StubInvitationRepo::default();
+        ur.seed(stub_user("u-inv", "t-1", "invitee@example.com"));
+        ir.seed(Invitation {
+            id: "inv-1".into(), tenant_id: "t-1".into(), email: "invitee@example.com".into(),
+            role: "tenant_member".into(), issued_by: "admin-1".into(),
+            issued_at: NOW - 1000, expires_at: NOW + 1000,
+            accepted_at: Some(NOW - 500), accepted_by: Some("pending-registration".into()),
+            revoked_at: None, revoked_by: None,
+        });
+
+        let req = schedule_deletion(&dr, "u-inv", "t-1", "u-inv", None, 0, NOW).await.unwrap();
+        execute_deletion(&dr, &ur, &ir, &req.id, "sweep", NOW).await.unwrap();
+
+        let scrubbed = ir.0.borrow().get("inv-1").cloned().unwrap();
+        assert_eq!(scrubbed.email, invitation_tombstone(&req.id, "inv-1"));
+        assert_eq!(scrubbed.issued_by, "admin-1", "the administrative record must survive");
+        assert_eq!(scrubbed.accepted_by.as_deref(), Some("pending-registration"));
+        assert_eq!(scrubbed.accepted_at, Some(NOW - 500));
+    }
+
+    /// A user with no email on file (anonymous-account edge case) must
+    /// not make `execute_deletion` fail — there is nothing to scrub.
+    #[tokio::test]
+    async fn execute_deletion_with_no_user_email_does_not_fail() {
+        let dr = StubDelRepo::default();
+        let ur = StubUserRepo::default();
+        let ir = StubInvitationRepo::default();
+        // No `ur.seed(...)` call: `find_by_id` returns `None`.
+        let req = schedule_deletion(&dr, "u-anon", "t-1", "u-anon", None, 0, NOW).await.unwrap();
+        let result = execute_deletion(&dr, &ur, &ir, &req.id, "sweep", NOW).await;
+        assert!(result.is_ok(), "{result:?}");
     }
 
     #[tokio::test]
@@ -349,8 +475,9 @@ mod tests {
     async fn cancel_non_pending_returns_error() {
         let dr = StubDelRepo::default();
         let ur = StubUserRepo::default();
+        let ir = StubInvitationRepo::default();
         let req = schedule_deletion(&dr, "u-y", "t-1", "u-y", None, 0, NOW).await.unwrap();
-        execute_deletion(&dr, &ur, &req.id, "sweep", NOW).await.unwrap();
+        execute_deletion(&dr, &ur, &ir, &req.id, "sweep", NOW).await.unwrap();
         let result = cancel_deletion(&dr, &req.id, "admin", NOW + 1).await;
         assert!(matches!(result, Err(CoreError::InvalidRequest(_))),
             "cancelling an executed request must fail");

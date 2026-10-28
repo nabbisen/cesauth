@@ -36,6 +36,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 use worker::{Request, Response, Result};
 
+use crate::audit::{self, EventKind};
 use crate::config::{
     load_totp_encryption_key, load_totp_encryption_key_id,
 };
@@ -484,6 +485,10 @@ pub async fn post_confirm_handler(
         }
 
         EnrollConfirmDecision::SuccessAdditionalAuthenticator => {
+            // RFC 154: enrolment completed, regardless of whether this is
+            // the user's first authenticator or an additional one.
+            audit::write_owned(&env, EventKind::MfaEnrolled, Some(session.user_id.to_string()), None, None)
+                .await.ok();
             // Already had recovery codes from a prior
             // enrollment. Skip the recovery-codes page. The
             // user lands back on the Security Center with a
@@ -497,6 +502,9 @@ pub async fn post_confirm_handler(
         }
 
         EnrollConfirmDecision::SuccessFirstEnrollment { plaintext_codes } => {
+            // RFC 154: enrolment completed.
+            audit::write_owned(&env, EventKind::MfaEnrolled, Some(session.user_id.to_string()), None, None)
+                .await.ok();
             // Render the recovery-codes page once. The
             // "continue" link on this page points to
             // /me/security, where the flash we set here will

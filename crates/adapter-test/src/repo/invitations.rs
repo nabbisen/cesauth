@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use cesauth_core::invitation::{Invitation, InvitationRepository};
+use cesauth_core::invitation::{invitation_tombstone, Invitation, InvitationRepository};
 use cesauth_core::ports::PortResult;
 use cesauth_core::types::UnixSeconds;
 
@@ -73,5 +73,14 @@ impl InvitationRepository for InMemoryInvitationRepository {
             .filter(|i| i.tenant_id == tenant_id && i.is_valid_at(now))
             .cloned()
             .collect())
+    }
+
+    async fn scrub_email(&self, email: &str, deletion_request_id: &str) -> PortResult<()> {
+        for inv in self.rows.lock().unwrap().values_mut() {
+            if inv.email.eq_ignore_ascii_case(email) {
+                inv.email = invitation_tombstone(deletion_request_id, &inv.id);
+            }
+        }
+        Ok(())
     }
 }

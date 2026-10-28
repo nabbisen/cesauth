@@ -175,4 +175,29 @@ impl InvitationRepository for CloudflareInvitationRepository<'_> {
             .map(|rows| rows.into_iter().map(InvRow::into_domain).collect())
             .map_err(|e| run_err("invitation.list_pending deserialize", e))
     }
+
+    /// **RFC 148.** `email` carries `COLLATE NOCASE`
+    /// (`migrations/0018_invitation_tokens.sql:23`), so `WHERE email = ?2`
+    /// matches case-insensitively without an explicit `COLLATE` here. The
+    /// new value is built in SQL, not read back and rewritten in Rust, so
+    /// every matching row — including ones this call doesn't otherwise
+    /// need to look at — gets its own tombstone keyed by its own `id`.
+    /// Mirrors [`cesauth_core::invitation::invitation_tombstone`]; the
+    /// pairing is exercised against a real migration chain in
+    /// `migrate-test`'s `rfc_148_scrub` module, not here (D1 is
+    /// WASM-only and cannot run under a host test).
+    async fn scrub_email(&self, email: &str, deletion_request_id: &str) -> PortResult<()> {
+        let db = db(self.env)?;
+        db.prepare(
+            "UPDATE invitation_tokens \
+             SET email = 'deleted-' || ?1 || '-' || id || '@invalid' \
+             WHERE email = ?2"
+        )
+        .bind(&[deletion_request_id.into(), email.into()])
+        .map_err(|e| run_err("invitation.scrub_email bind", e))?
+        .run()
+        .await
+        .map_err(|e| run_err("invitation.scrub_email run", e))?;
+        Ok(())
+    }
 }

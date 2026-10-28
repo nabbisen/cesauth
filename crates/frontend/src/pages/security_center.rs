@@ -67,6 +67,12 @@ pub fn SecurityCenter() -> impl IntoView {
     }
 }
 
+/// **RFC 149 §4.** The grace period the delete-account section states, in
+/// whole days — derived from the same constant the backend schedules
+/// against (`cesauth_core::deletion::DEFAULT_GRACE_SECS`), so the number
+/// shown here cannot drift from the number actually enforced.
+const DELETION_GRACE_PERIOD_DAYS: i64 = cesauth_core::deletion::DEFAULT_GRACE_SECS / 86_400;
+
 // ─── State view ─────────────────────────────────────────────────────────────
 
 #[component]
@@ -75,17 +81,48 @@ fn SecurityCenterView(state: SecurityCenterState) -> impl IntoView {
         <div class="security-status">
             <h1>"Security"</h1>
 
-            // ── Pending deletion notice (RFC 147 cycle 2 D11) ───────────
-            {state.pending_deletion_scheduled_at.map(|ts| view! {
-                <section role="alert" aria-labelledby="deletion-pending-heading">
-                    <h2 id="deletion-pending-heading">"Account deletion scheduled"</h2>
-                    <p class="badge badge-warn">
-                        "Your account is scheduled for deletion on "
-                        {cesauth_core::util::format_unix_as_iso8601(ts)}
-                        "."
-                    </p>
-                </section>
-            })}
+            // ── Delete account / pending deletion (RFC 147 cycle 2 D11;
+            //    rewritten RFC 149 §2/§4/§5) ───────────────────────────
+            {
+                let csrf = state.csrf_token.clone();
+                match state.pending_deletion_scheduled_at {
+                    Some(ts) => view! {
+                        <section role="alert" aria-labelledby="deletion-pending-heading">
+                            <h2 id="deletion-pending-heading">"Account deletion scheduled"</h2>
+                            <p class="badge badge-warn">
+                                "Your account is scheduled for deletion on "
+                                {cesauth_core::util::format_unix_as_iso8601(ts)}
+                                ". This can be stopped any time before then — use the button \
+                                 below to cancel it. Once the deletion is carried out, nothing \
+                                 in cesauth can reverse it."
+                            </p>
+                            <form method="POST" action="/me/security/delete-account/cancel">
+                                <input type="hidden" name="csrf" value=csrf.clone() />
+                                <button type="submit">"Cancel deletion"</button>
+                            </form>
+                        </section>
+                    }.into_any(),
+                    None => view! {
+                        <section aria-labelledby="delete-account-heading">
+                            <h2 id="delete-account-heading">"Delete account"</h2>
+                            <p>
+                                "Deleting your account removes your sign-in credentials and \
+                                 tenancy memberships after a "
+                                {DELETION_GRACE_PERIOD_DAYS}
+                                "-day grace period, during which you can cancel the request \
+                                 from this page. Once the grace period ends the deletion is \
+                                 carried out, and nothing in cesauth can reverse it."
+                            </p>
+                            <form method="POST" action="/me/security/delete-account/request">
+                                <input type="hidden" name="csrf" value=csrf.clone() />
+                                <button type="submit" class="btn-danger">
+                                    "Request account deletion"
+                                </button>
+                            </form>
+                        </section>
+                    }.into_any(),
+                }
+            }
 
             // ── Primary credential ───────────────────────────────────────
             <section aria-labelledby="primary-method-heading">

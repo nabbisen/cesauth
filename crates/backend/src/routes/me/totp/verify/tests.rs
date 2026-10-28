@@ -338,7 +338,11 @@ async fn verify_post_wrong_code_under_threshold_returns_bad_code_and_reparks() {
         &form, &cookie, "000000", TOTP_HANDLE,
         &store, &totp_repo, &fixed_key(), now,
     ).await;
-    assert!(matches!(decision, VerifyPostDecision::BadCode));
+    match decision {
+        VerifyPostDecision::BadCode { user_id } => assert_eq!(user_id, USER_ID,
+            "RFC 154: MfaFailed's subject must be the real user, not a placeholder"),
+        other => panic!("expected BadCode, got {other:?}"),
+    }
 
     // Challenge re-parked with attempts incremented.
     let parked = store.peek(&totp_handle(), 1_700_000_000).await.unwrap().expect("re-parked");
@@ -364,7 +368,11 @@ async fn verify_post_wrong_code_at_threshold_returns_lockout_no_repark() {
         &form, &cookie, "000000", TOTP_HANDLE,
         &store, &totp_repo, &fixed_key(), now,
     ).await;
-    assert!(matches!(decision, VerifyPostDecision::Lockout));
+    match decision {
+        VerifyPostDecision::Lockout { user_id } => assert_eq!(user_id, USER_ID,
+            "RFC 154: MfaLockedOut's subject must be the real user, not a placeholder"),
+        other => panic!("expected Lockout, got {other:?}"),
+    }
 
     // Challenge consumed (taken at step 2) and NOT re-parked
     // (lockout branch returns before put). The user must restart
@@ -387,7 +395,7 @@ async fn verify_post_malformed_code_treated_as_bad_code() {
         &form, &cookie, "abcdef", TOTP_HANDLE,
         &store, &totp_repo, &fixed_key(), now,
     ).await;
-    assert!(matches!(decision, VerifyPostDecision::BadCode));
+    assert!(matches!(decision, VerifyPostDecision::BadCode { .. }));
 
     let parked = store.peek(&totp_handle(), 1_700_000_000).await.unwrap().expect("re-parked");
     match parked {

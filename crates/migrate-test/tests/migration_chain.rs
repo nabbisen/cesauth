@@ -28,3 +28,5 @@ mod repair_and_fks;
 mod rfc_050_sql;
 #[path = "migration_chain/rfc_051_authenticators.rs"]
 mod rfc_051_authenticators;
+#[path = "migration_chain/rfc_148_scrub.rs"]
+mod rfc_148_scrub;

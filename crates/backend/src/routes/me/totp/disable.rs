@@ -46,6 +46,7 @@ use cesauth_core::totp::storage::{
 use cesauth_frontend::templates;
 use worker::{Request, Response, Result};
 
+use crate::audit::{self, EventKind};
 use crate::csrf;
 use crate::flash;
 use crate::routes::me::auth as me_auth;
@@ -205,6 +206,17 @@ pub async fn post_handler(
         DisableDecision::CsrfFailure     => Response::error("Bad Request", 400),
         DisableDecision::AuthDeleteError => Response::error("totp disable failed (authenticators)", 500),
         DisableDecision::Success => {
+            // RFC 154: TOTP disablement used to leave no audit trace — an
+            // attacker who reached an authenticated session and disabled
+            // TOTP left no record of having done so (RFC 154 §3). This
+            // route has no admin-initiated path, so the actor is always
+            // the user themself; record it explicitly rather than
+            // leaving it implied by `subject` alone.
+            audit::write_owned(
+                &env, EventKind::MfaDisabled,
+                Some(session.user_id.to_string()), None,
+                Some(format!("actor:{}", session.user_id)),
+            ).await.ok();
             // Redirect to the Security Center with a success
             // flash. The user clicked disable; landing them on
             // the index page (a) confirms the new state ("TOTP:

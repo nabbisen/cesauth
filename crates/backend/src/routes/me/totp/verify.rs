@@ -35,6 +35,7 @@ use cesauth_frontend::templates;
 use time::OffsetDateTime;
 use worker::{Request, Response, Result};
 
+use crate::audit::{self, EventKind};
 use crate::config::{
     Config, load_totp_encryption_key,
 };
@@ -239,13 +240,17 @@ pub(crate) enum VerifyPostDecision {
 
     /// Wrong code AND `new_attempts >= MAX_ATTEMPTS`. Gate
     /// locked out. Handler clears the gate cookie + 302's to
-    /// /login.
-    Lockout,
+    /// /login. **RFC 154**: carries `user_id` so the handler can
+    /// emit `MfaLockedOut` — before this RFC the lockout tripped
+    /// silently, with no audit trace of a brute-force attempt
+    /// against the second factor.
+    Lockout { user_id: String },
 
     /// Wrong code under the lockout threshold. Challenge has
     /// been re-parked with bumped attempts. Handler re-renders
-    /// the verify page with an inline error.
-    BadCode,
+    /// the verify page with an inline error. **RFC 154**: carries
+    /// `user_id` so the handler can emit `MfaFailed`.
+    BadCode { user_id: String },
 
     /// Re-park `put` failed on a wrong-code branch. Handler
     /// surfaces as 5xx.
@@ -347,7 +352,7 @@ where
         Err(_) => {
             let new_attempts = attempts.saturating_add(1);
             if attempts_exhausted(new_attempts) {
-                return VerifyPostDecision::Lockout;
+                return VerifyPostDecision::Lockout { user_id };
             }
 
             // Re-park with bumped attempts. The challenge handle
@@ -372,7 +377,7 @@ where
             if challenges.put(&cesauth_core::types::ChallengeHandle::from_storage(totp_handle), &bumped).await.is_err() {
                 return VerifyPostDecision::RepkFailed;
             }
-            VerifyPostDecision::BadCode
+            VerifyPostDecision::BadCode { user_id }
         }
     }
 }
@@ -423,12 +428,33 @@ pub async fn post_handler(
     match decision {
         VerifyPostDecision::CsrfFailure => Response::error("Bad Request", 400),
 
-        VerifyPostDecision::NoChallenge | VerifyPostDecision::Lockout => {
+        VerifyPostDecision::NoChallenge => clear_gate_and_redirect("/login"),
+
+        // RFC 154: the lockout used to trip silently — no audit trace of a
+        // brute-force attempt against the second factor. `user_id` is the
+        // subject, matching RFC 154 §4's table.
+        VerifyPostDecision::Lockout { user_id } => {
+            audit::write_owned(&env, EventKind::MfaLockedOut, Some(user_id), None, None)
+                .await.ok();
             clear_gate_and_redirect("/login")
         }
 
-        VerifyPostDecision::NoUserAuthenticator { user_id, auth_method, ar_fields }
-        | VerifyPostDecision::Success           { user_id, auth_method, ar_fields } => {
+        // Soft success: the TOTP gate stopped gating (no active
+        // authenticator found) rather than a code being verified. Not a
+        // verification outcome, so no `MfaVerified` here — that would
+        // claim a check happened that did not.
+        VerifyPostDecision::NoUserAuthenticator { user_id, auth_method, ar_fields } => {
+            complete_auth_post_gate(
+                &env, &cfg, &user_id, auth_method, ar_fields,
+                Some(cookie_header.as_str()),
+            ).await
+        }
+
+        VerifyPostDecision::Success { user_id, auth_method, ar_fields } => {
+            // RFC 154: `MfaVerified` existed in the enum, declared and
+            // emitted nowhere, until this line.
+            audit::write_owned(&env, EventKind::MfaVerified, Some(user_id.clone()), None, None)
+                .await.ok();
             complete_auth_post_gate(
                 &env, &cfg, &user_id, auth_method, ar_fields,
                 Some(cookie_header.as_str()),
@@ -448,7 +474,10 @@ pub async fn post_handler(
             "totp challenge re-put failed".into()
         )),
 
-        VerifyPostDecision::BadCode => {
+        VerifyPostDecision::BadCode { user_id } => {
+            // RFC 154: a failed verification used to leave no trace.
+            audit::write_owned(&env, EventKind::MfaFailed, Some(user_id), None, None)
+                .await.ok();
             // Re-render the verify page with an inline error.
             // Generic message — don't leak whether the parse or
             // the verify failed (an attacker could otherwise

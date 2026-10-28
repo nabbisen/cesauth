@@ -38,6 +38,7 @@ pub(super) fn make_state(
         recovery_codes_remaining: n,
         active_sessions_count:    None,
         pending_deletion_scheduled_at: None,
+        csrf_token:               String::new(),
     }
 }
 

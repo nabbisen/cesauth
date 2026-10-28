@@ -237,7 +237,9 @@ async fn totp_unconfirmed_sweep(
 ///
 /// Returns the number of deletions executed this pass.
 pub async fn sweep_pending_deletions(env: &Env) -> worker::Result<usize> {
-    use cesauth_cf::ports::repo::{CloudflareDeletionRequestRepository, CloudflareUserRepository};
+    use cesauth_cf::ports::repo::{
+        CloudflareDeletionRequestRepository, CloudflareInvitationRepository, CloudflareUserRepository,
+    };
     use cesauth_core::deletion;
 
     let cfg = match crate::config::Config::from_env(env) {
@@ -251,6 +253,7 @@ pub async fn sweep_pending_deletions(env: &Env) -> worker::Result<usize> {
     let now = OffsetDateTime::now_utc().unix_timestamp();
     let del_repo  = CloudflareDeletionRequestRepository::new(env);
     let user_repo = CloudflareUserRepository::new(env);
+    let invitation_repo = CloudflareInvitationRepository::new(env);
 
     let due = match del_repo.list_due(now).await {
         Ok(v)  => v,
@@ -263,7 +266,7 @@ pub async fn sweep_pending_deletions(env: &Env) -> worker::Result<usize> {
 
     let mut executed = 0_usize;
     for req in &due {
-        match deletion::execute_deletion(&del_repo, &user_repo, &req.id, "sweep", now).await {
+        match deletion::execute_deletion(&del_repo, &user_repo, &invitation_repo, &req.id, "sweep", now).await {
             Ok(()) => {
                 executed += 1;
                 // RFC 147 cycle 2 D5: `subject` is the affected (deleted)

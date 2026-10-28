@@ -64,7 +64,7 @@ impl PrimaryAuthMethod {
 /// meaningful when `totp_enabled` is `true` — the rendering
 /// suppresses the recovery section when TOTP is off, since
 /// unconfirmed users have no codes.
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SecurityCenterState {
     pub primary_method:           PrimaryAuthMethod,
     pub totp_enabled:             bool,
@@ -81,6 +81,11 @@ pub struct SecurityCenterState {
     /// also the wrong place to keep state the database already holds).
     /// Deliberately minimal: no request id, no requester.
     pub pending_deletion_scheduled_at: Option<i64>,
+    /// **RFC 149.** Fresh CSRF token minted alongside this state, for the
+    /// delete-account request/cancel forms the page renders — the same
+    /// mint-with-the-state shape `sessions.json` already uses for its own
+    /// revoke forms (`routes::me::sessions::get_json_handler`).
+    pub csrf_token: String,
 }
 
 /// Same as [`security_center_page`] but allows the caller to

@@ -11,8 +11,12 @@
 //!
 //! Per ADR-009 §Q6 the recovery path does NOT advance the TOTP
 //! authenticator's `last_used_step` — recovery bypasses TOTP,
-//! it doesn't use it. The redeemed-code timestamp is the
-//! audit record.
+//! it doesn't use it. The redeemed-code timestamp in
+//! `totp_recovery_codes` is the row-level record of which code
+//! was used. **RFC 154** adds the audit-*log* record,
+//! `MfaRecoveryCodeUsed`, emitted in `post_handler`'s `Success`
+//! arm below — before that, "the audit record" above referred to
+//! nothing the audit log actually held.
 //!
 //! Per ADR-009 §Q6 once a code is used it's marked redeemed and
 //! cannot be reused. The user keeps their other recovery codes
@@ -37,6 +41,7 @@ use cesauth_core::totp::storage::TotpRecoveryCodeRepository;
 use time::OffsetDateTime;
 use worker::{Request, Response, Result};
 
+use crate::audit::{self, EventKind};
 use crate::config::Config;
 use crate::csrf;
 use crate::flash;
@@ -62,8 +67,13 @@ pub(crate) enum RecoverDecision {
     CsrfFailure,
 
     /// Form's `code` field was empty after CSRF passed. Handler
-    /// returns 400 — separated from CsrfFailure so a future
-    /// audit log distinguishes the two failure modes.
+    /// returns 400 — kept as its own decision, distinct from
+    /// `CsrfFailure`, so the two failure modes are never
+    /// conflated at the call site. **RFC 154**: neither is a TOTP
+    /// state transition, so neither gets an audit event; this
+    /// comment previously promised "a future audit log" would
+    /// distinguish them, which was never built and is not what
+    /// RFC 154's table (§4) asks for.
     EmptyCode,
 
     /// Challenge `take` returned None, wrong variant, or store
@@ -88,8 +98,11 @@ pub(crate) enum RecoverDecision {
 
     /// Mark-redeemed UPDATE failed. Most plausible cause is a
     /// concurrent redemption (two browser tabs racing). Fail
-    /// closed: clear gate + 302. Phase 2's audit chain will
-    /// record the attempt regardless.
+    /// closed: clear gate + 302. **RFC 154**: this is a storage
+    /// race, not one of the table's six TOTP state transitions,
+    /// so it gets no audit event — this comment's "Phase 2's
+    /// audit chain will record the attempt regardless" never
+    /// happened and RFC 154 does not add it.
     MarkRedeemedFailed,
 
     /// All gates passed and the recovery code is now consumed.
@@ -240,6 +253,11 @@ pub async fn post_handler(
             ))
         }
         RecoverDecision::Success { user_id, auth_method, ar_fields } => {
+            // RFC 154: before this, no recovery-code redemption ever
+            // entered the audit log, despite the module doc's long-standing
+            // (and wrong) claim that one did — see the correction above.
+            audit::write_owned(&env, EventKind::MfaRecoveryCodeUsed, Some(user_id.clone()), None, None)
+                .await.ok();
             // Resume the original post-gate flow. Setting the
             // flash on the resulting response (which is either a
             // 302 to the RP's redirect_uri or a 302 to /,

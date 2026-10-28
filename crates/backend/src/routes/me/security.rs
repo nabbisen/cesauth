@@ -46,6 +46,7 @@ use cesauth_core::totp::storage::{
 use cesauth_frontend::templates::{PrimaryAuthMethod, SecurityCenterState};
 use worker::{Request, Response, Result};
 
+use crate::csrf;
 use crate::routes::me::auth as me_auth;
 
 /// `GET /me/security` — render the Security Center (Leptos CSR shell).
@@ -80,10 +81,22 @@ pub async fn get_json_handler(req: Request, env: worker::Env) -> Result<Response
         Err(_) => return Response::error("Unauthorized", 401),
     };
 
-    let state = build_state(&env, &session).await?;
+    let mut state = build_state(&env, &session).await?;
+
+    // RFC 149: mint the CSRF token the delete-account request/cancel forms
+    // need, the same mint-alongside-the-state shape
+    // `routes::me::sessions::get_json_handler` already uses for its own
+    // revoke forms.
+    let csrf_token = match csrf::mint() {
+        Ok(t)  => t,
+        Err(_) => return Response::error("service temporarily unavailable", 500),
+    };
+    let set_cookie = csrf::set_cookie_header(&csrf_token);
+    state.csrf_token = csrf_token;
 
     let mut resp = Response::from_json(&state)?;
     resp.headers_mut().set("cache-control", "no-store").ok();
+    resp.headers_mut().append("set-cookie", &set_cookie).ok();
     Ok(resp)
 }
 
@@ -129,6 +142,9 @@ async fn build_state(
         recovery_codes_remaining: recovery_count,
         active_sessions_count: None,
         pending_deletion_scheduled_at,
+        // Set by the caller (`get_json_handler`) once minted — this
+        // function has no CSRF concerns of its own.
+        csrf_token: String::new(),
     })
 }
 

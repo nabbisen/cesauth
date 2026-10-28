@@ -61,23 +61,71 @@ use worker::{Env, Result};
 #[serde(rename_all = "snake_case")]
 pub enum EventKind {
     // Authentication attempts
+    /// **RFC 154.** Intentionally unemitted: a successful authentication is
+    /// already recorded under the method that succeeded — `MagicLinkVerified`
+    /// or `WebauthnVerified` — which is strictly more informative than this
+    /// generic kind would be. Kept declared (not deleted) because the enum
+    /// is `#[non_exhaustive]`-adjacent in spirit — other code may still
+    /// match on it — and RFC 123 will add a coverage gate for exactly this
+    /// declared-but-unemitted state, which this RFC classified rather than
+    /// silently resolved either way.
     AuthSucceeded,
     AuthFailed,
 
     // ── RFC 053 — Session lifecycle events ───────────────────────────────
     /// A new persistent session was created after successful authentication.
     /// Payload: `session_id`, `user_id`, `auth_method` (webauthn|magic_link|totp).
+    ///
+    /// **RFC 154.** Intentionally unemitted, for the same reason as
+    /// `AuthSucceeded` just above: a session begins exactly when
+    /// `MagicLinkVerified` / `WebauthnVerified` fires, so a separate
+    /// "session created" row would duplicate, not add, information.
     SessionCreated,
     /// A session was explicitly revoked (by the user or an admin).
     /// Payload: `session_id`, `user_id`, `revoked_by`.
     SessionRevoked,
     /// A session was found idle-expired during the session-index cron pass.
     /// Payload: `session_id`, `user_id`, `expired_at`.
+    ///
+    /// **RFC 154.** Intentionally unemitted: superseded by the more specific
+    /// `SessionIdleTimeout` / `SessionAbsoluteTimeout` (below), both of
+    /// which name *which* timeout fired — information this generic kind
+    /// cannot carry.
     SessionExpired,
     /// MFA step (TOTP or WebAuthn assertion) was verified during
     /// an authentication flow that required step-up.
     /// Payload: `user_id`, `mfa_kind` (totp|webauthn).
+    /// **RFC 154.** Declared since this enum's introduction, emitted
+    /// nowhere until this RFC wired `crates/backend/src/routes/me/totp/verify.rs`
+    /// to write it on a successful TOTP verification. Before this, TOTP's
+    /// second-factor step left no success record at all (RFC 154 §1).
     MfaVerified,
+    /// **RFC 154.** TOTP enrolment completed — the user confirmed the
+    /// six-digit code from their authenticator app, so the row moves from
+    /// unconfirmed to active. Payload: `user_id`.
+    /// Emitted by `routes/me/totp/enroll.rs::post_confirm_handler`.
+    MfaEnrolled,
+    /// **RFC 154.** A TOTP verification attempt failed (wrong code).
+    /// Distinct from `MfaLockedOut`, below — this fires on every wrong
+    /// attempt under the limit; that one fires once, when the limit is
+    /// reached. Payload: `user_id`. Emitted by
+    /// `routes/me/totp/verify.rs::post_handler`.
+    MfaFailed,
+    /// **RFC 154.** The per-session TOTP attempt limit (RFC 143) was
+    /// reached — the gate locks and the user must restart the challenge.
+    /// Before this RFC the lockout tripped with no audit trace at all
+    /// (RFC 154 §3): "a brute-force attempt against a TOTP gate is
+    /// invisible after the fact." Payload: `user_id`. Emitted by
+    /// `routes/me/totp/verify.rs::post_handler`.
+    MfaLockedOut,
+    /// **RFC 154.** TOTP was disabled for a user. Payload: `user_id`,
+    /// `actor` (the user themself — this route has no admin-initiated
+    /// path). Emitted by `routes/me/totp/disable.rs::post_handler`.
+    MfaDisabled,
+    /// **RFC 154.** A recovery code was redeemed in place of a TOTP code.
+    /// Payload: `user_id`. Emitted by
+    /// `routes/me/totp/recover.rs::post_handler`.
+    MfaRecoveryCodeUsed,
     /// **v0.50.3 (RFC 011)** — `csrf::mint()` was called but the
     /// platform CSPRNG (`getrandom`) returned an error. The request
     /// that triggered the form-render was aborted with HTTP 500 rather
@@ -108,6 +156,12 @@ pub enum EventKind {
     AdminClientDeleted,
     // Admin console (v0.3.0)
     AdminLoginFailed,
+    /// **RFC 154.** Intentionally unemitted: a decision not to audit, not a
+    /// gap. Every *mutating* admin-console action already has its own
+    /// specific event (`AdminClientUpdated`, `AdminThresholdUpdated`, etc.);
+    /// a page-view event for the console's read-only pages would be a
+    /// high-volume row that records navigation, not an action, and nothing
+    /// downstream consumes "an admin looked at a page" as a signal.
     AdminConsoleViewed,
     AdminBucketSafetyVerified,
     AdminBucketSafetyChanged,
@@ -265,6 +319,13 @@ pub enum EventKind {
     // WebAuthn
     WebauthnRegistered,
     WebauthnVerified,
+    /// **RFC 154.** Intentionally unemitted: a failed WebAuthn assertion is
+    /// recorded today as the generic `AuthFailed`
+    /// (`routes/webauthn/authenticate.rs`, `routes/webauthn/register.rs`) —
+    /// the failure *is* audited, just under a shared kind rather than this
+    /// more specific one. Narrowing that to `WebauthnFailed` would be a
+    /// real improvement but is a change to an already-emitted event, not a
+    /// gap this RFC's scope covers.
     WebauthnFailed,
     // Magic Link
     MagicLinkIssued,
@@ -286,6 +347,10 @@ pub enum EventKind {
     /// rejection; `transient` is a retryable provider hiccup.
     MagicLinkDeliveryFailed,
     // Sessions
+    /// **RFC 154.** Intentionally unemitted, same reasoning as
+    /// `SessionCreated` above — this is a second declared name for the
+    /// same "a session began" moment, which `MagicLinkVerified` /
+    /// `WebauthnVerified` already records.
     SessionStarted,
     // NOTE: `SessionRevoked` is defined above (line ~73) under the RFC 053 session
     // lifecycle section. That is the canonical definition; the duplicate that used
@@ -301,6 +366,14 @@ pub enum EventKind {
     /// view; this is the *session's* view. Both fire for one
     /// admin action so the audit chain has both an admin-action
     /// row and a session-lifecycle row.
+    ///
+    /// **RFC 154.** That design was never implemented: `AdminSessionRevoked`
+    /// fires alone (`routes/admin/legacy.rs`), and this companion row does
+    /// not. Intentionally left unemitted rather than wired here — adding
+    /// the session's-view row is a real change to an already-shipped admin
+    /// flow, outside the TOTP-focused scope of this RFC — but recorded so
+    /// the next reader does not, as RFC 154 §2 put it, draw the same wrong
+    /// first inference that this is a missing success-path audit.
     SessionRevokedByAdmin,
     /// **v0.35.0** — Idle timeout fired. Session was inactive
     /// past the configured `session_idle_timeout_secs` window
@@ -345,6 +418,11 @@ impl EventKind {
             Self::SessionRevoked              => "session_revoked",
             Self::SessionExpired              => "session_expired",
             Self::MfaVerified                 => "mfa_verified",
+            Self::MfaEnrolled                  => "mfa_enrolled",
+            Self::MfaFailed                    => "mfa_failed",
+            Self::MfaLockedOut                 => "mfa_locked_out",
+            Self::MfaDisabled                  => "mfa_disabled",
+            Self::MfaRecoveryCodeUsed          => "mfa_recovery_code_used",
             Self::AuthFailed                   => "auth_failed",
             Self::CsrfRngFailure               => "csrf_rng_failure",
             Self::AdminUserCreated             => "admin_user_created",

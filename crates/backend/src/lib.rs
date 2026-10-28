@@ -229,9 +229,16 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .post_async("/me/security/sessions/:session_id/revoke", |req, ctx| async move {
             routes::me::sessions::post_revoke(req, ctx).await
         })
-        // RFC 044: Self-service deletion request
+        // RFC 044: Self-service deletion request (JSON contract, RFC 149 §2)
         .post_async("/me/security/delete-account", |req, ctx| async move {
             routes::deletions::request_self(req, ctx).await
+        })
+        // RFC 149: form-encoded human path + self-service cancel
+        .post_async("/me/security/delete-account/request", |req, ctx| async move {
+            routes::deletions::request_self_form(req, ctx).await
+        })
+        .post_async("/me/security/delete-account/cancel", |req, ctx| async move {
+            routes::deletions::cancel_self(req, ctx).await
         })
         .get_async ("/me/security/totp/enroll",         |req, ctx| async move {
             routes::me::totp::enroll::get_handler(req, ctx.env).await
