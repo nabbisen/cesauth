@@ -170,26 +170,7 @@ pub async fn accept_page<D>(req: Request, ctx: RouteContext<D>) -> Result<Respon
     let body = match outcome {
         InvitationVerifyOutcome::Valid(inv) => {
             let csrf = crate::csrf::mint().map_err(|_| worker::Error::RustError("csrf".into()))?;
-            format!(
-                r#"<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
-<title>Accept Invitation</title></head>
-<body>
-<h1>You've been invited!</h1>
-<p>You have been invited to join <strong>{tenant}</strong>.</p>
-<p>To accept this invitation, complete your registration using the magic link
-sent to <strong>{email}</strong>.</p>
-<form method="POST" action="/accept-invite">
-  <input type="hidden" name="invite_id" value="{id}">
-  <input type="hidden" name="email" value="{email}">
-  <input type="hidden" name="csrf_token" value="{csrf}">
-  <button type="submit">Accept invitation</button>
-</form>
-</body></html>"#,
-                tenant = inv.tenant_id,
-                email  = inv.email,
-                id     = inv.id,
-                csrf   = csrf,
-            )
+            accept_invite_page(&inv.tenant_id, &inv.email, &inv.id, &csrf)
         }
         InvitationVerifyOutcome::Expired =>
             "<html><body><p>This invitation has expired. Please request a new one.</p></body></html>".to_owned(),
@@ -264,6 +245,41 @@ pub async fn accept_submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<
     Ok(resp)
 }
 
+/// Pure render for `accept_page`'s `Valid` arm — pulled out of the handler on
+/// review of RFC 153 for the same reason `accept_continue_page` was: so the
+/// escaping is host-testable without a `worker::Env`.
+///
+/// **All four fields are escaped.** `email` is admin-supplied at invitation
+/// time and reaches `value="{email}"`, an attribute context, so breaking out
+/// of the attribute was possible before this. The response's CSP is
+/// `script-src 'none'`, so no injected handler could ever have executed and
+/// `form-action 'self'` blocked redirecting the form — markup injection, not
+/// XSS. Escaped anyway, and tested, because the sibling page below escapes the
+/// same fields and an unescaped twin beside it is the inconsistency that
+/// outlives the reasoning.
+fn accept_invite_page(tenant: &str, email: &str, invite_id: &str, csrf: &str) -> String {
+    format!(
+        r#"<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<title>Accept Invitation</title></head>
+<body>
+<h1>You've been invited!</h1>
+<p>You have been invited to join <strong>{tenant}</strong>.</p>
+<p>To accept this invitation, complete your registration using the magic link
+sent to <strong>{email}</strong>.</p>
+<form method="POST" action="/accept-invite">
+  <input type="hidden" name="invite_id" value="{id}">
+  <input type="hidden" name="email" value="{email}">
+  <input type="hidden" name="csrf_token" value="{csrf}">
+  <button type="submit">Accept invitation</button>
+</form>
+</body></html>"#,
+        tenant = cesauth_frontend::escape(tenant),
+        email  = cesauth_frontend::escape(email),
+        id     = cesauth_frontend::escape(invite_id),
+        csrf   = cesauth_frontend::escape(csrf),
+    )
+}
+
 /// Pure render for `accept_submit`'s continuation page — pulled out of the
 /// handler so the escaping and the form's three fields are host-testable
 /// without a `worker::Env` (RFC 143's `decide_verify_*` / `render_*_page`
@@ -298,6 +314,26 @@ mod tests {
     /// field here that isn't fully under this codebase's control (an
     /// operator types it at issue time), so it's the one worth a
     /// deliberately hostile fixture.
+    #[test]
+    fn accept_invite_page_escapes_every_interpolated_field() {
+        // Added on review of RFC 153. `email` is admin-supplied and lands in
+        // an attribute context; before this it was interpolated raw. The CSP
+        // on this response is `script-src 'none'`, so this never was XSS —
+        // but the attribute could be broken out of, and nothing asserted
+        // otherwise.
+        let html = accept_invite_page(
+            "t-acme",
+            r#"evil" autofocus onfocus="x"#,
+            "inv-1",
+            "tok",
+        );
+        assert!(!html.contains(r#"evil" autofocus"#),
+            "the raw quote must not survive into the attribute: {html}");
+        assert!(html.contains("&quot;"), "the quote must be escaped: {html}");
+        assert!(html.contains(r#"name="invite_id" value="inv-1""#), "{html}");
+        assert!(html.contains(r#"name="csrf_token" value="tok""#), "{html}");
+    }
+
     #[test]
     fn accept_continue_page_escapes_the_email_and_carries_all_three_fields() {
         let html = accept_continue_page(

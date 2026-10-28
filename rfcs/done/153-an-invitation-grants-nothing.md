@@ -1,26 +1,27 @@
 # RFC 153 — An invitation grants nothing
 
-**Status.** **Accepted** 2026-10-27 — the defect is accepted and the work is
-wanted; the owner confirmed tenant-scoped self-service onboarding is in scope
-for the product.
+**Status.** **Done** — **shipped v0.88.0**. An accepted invitation now creates
+the user in the invitation's tenant, grants the membership with the
+invitation's role, and records the real user id in `accepted_by`. Revoke is
+wired, reaching a state the `0018` migration documented and nothing could
+produce.
+**Evidence**: **`exercised`** (RFC 000 §22) — a live end-to-end run against
+`wrangler dev` with **database-row assertions** (membership in the invitation's
+tenant with its role, `users.tenant_id` set to it, `accepted_by` = the new
+user's id), the abandonment case proving the invitation stays re-usable, revoke
+driven through the new route, and a fires/does-not-fire on the membership grant
+showing a forced failure leaves the invitation pending **and still lets the
+user sign in**. Host-testable parts — `TenantMembershipRole::parse` and both
+rendered pages' escaping — are unit-tested; the rest touches `worker::Env` and
+cannot be (RFC 146 §2).
 
-**On 1.0: §7 is my recommendation, not a decision.** Corrected 2026-10-28 at
-the owner's instruction — *"1.0 needs my clear authorization after
-confirmation. It has not been decided yet."* **1.0 is neither declared,
-scoped, nor dated.** §7 argues that *if* a 1.0 is cut, this belongs in it, and
-gives the reason (the fix changes the shape of the user record, so it is cheap
-before a compatibility commitment and expensive after). **Nothing in this RFC
-or the index should be read as 1.0 having a scope.**
+**`users.tenant_id` now holds a non-default value through a product path for
+the first time in this project's history.** That is what makes any tenant other
+than the default addressable at all — and what leaves
+[RFC 158](../accepted/158-no-tenant-but-the-default-has-a-reachable-console.md)
+with only the *owner* case: a user named at tenant creation rather than
+invited.
 
-**Dispatched 2026-10-28** for **0.88.0**, minor:
-`handoffs/153-an-invitation-grants-nothing/handoff.md`. The handoff makes §6.3's
-`users.tenant_id`-versus-membership choice a **mandatory report-and-stop before
-implementation** — it changes the meaning of a persisted column, and that is
-the one decision in this cycle I want to see before the code.
-
-**Scheduling:** a feature cycle, not a patch, sequenced after the 0.87.x fixes
-in flight. Not blocked on the 1.0 question — the defect is worth fixing on its
-own merits, and §7's argument only affects *how late* it could safely be left.
 **Tier.** P1. The feature's stated purpose is to link an email address to **a
 tenant and an initial role**. Neither is ever applied. What ships is an email
 with an audit trail.
