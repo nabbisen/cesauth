@@ -14,6 +14,61 @@ changes will always be called out here.
 
 ---
 
+## [0.87.0] - 2026-10-28
+
+### The `/me` surface tells the truth about itself — RFC 149, RFC 148, RFC 154
+
+### Added
+
+- **A user can request deletion of their own account, and cancel it.** The
+  endpoint had existed since v0.53.0 with **no caller** — no form, no link, no
+  test — so the capability was documented and unreachable. `/me/security` now
+  carries a "Delete account" section stating the consequence and the grace
+  period in days, read from the same constant the server enforces so the number
+  shown cannot drift from the number applied. A pending deletion's notice now
+  states the deadline, that it can be stopped, and carries the control that
+  stops it; previously it was an alert naming a date with no way out and no
+  explanation of who could act. Both forms post natively with a double-submit
+  CSRF token. **Nothing implies an executed deletion is reversible, because it
+  is not.**
+- **Six audit events for the second factor.** Enrolment, verification success,
+  verification failure, the attempt-limit lockout, disablement and
+  recovery-code use each now write a record. None did before: an operator
+  investigating a suspected compromise could not tell whether the second factor
+  had been satisfied, and the attempt lockout tripped silently, so a
+  brute-force attempt against a TOTP gate left no trace. `mfa_verified` had
+  been declared since its introduction and emitted nowhere.
+
+### Changed
+
+- **`POST /me/security/delete-account` answers JSON, not a redirect.** It
+  returned `302` both when a deletion was scheduled and when the caller was not
+  authenticated, so a client following redirects received `200` and an HTML
+  page in both cases and could not tell whether it had just scheduled the
+  destruction of an account. It now returns `200` with `{"scheduled_at": …}`,
+  `401` for an unauthenticated caller, and JSON bodies for the `409` and `400`
+  cases. **The `Content-Type: application/json` requirement is unchanged** —
+  it is this route's CSRF control.
+- Seven audit event kinds that are deliberately never emitted now say so on the
+  variant, naming the kind that supersedes each. One of their existing comments
+  was itself wrong about which events fire; corrected.
+
+### Fixed
+
+- **Deleting an account now scrubs the user's email address from
+  `invitation_tokens`**, the one table that holds a deleted user's personal data
+  and no foreign key to `users`. The address is replaced with a per-row
+  tombstone; the administrative record of what an admin did — who issued the
+  invitation, when, and with what role — is kept, because that is not the
+  deleted user's data to erase. **The scrub is best-effort and its outcome is
+  not yet reported**: it necessarily runs after the user row is gone, and a
+  failure currently leaves the address in place with nothing recording it.
+  Tracked, and the reason that RFC is not yet closed.
+- Two `jq` examples in the first-OIDC-flow tutorial selected a field shape the
+  dev audit route has not returned for some time.
+
+---
+
 ## [0.86.3] - 2026-10-28
 
 ### Three documented security controls now have something that fails — RFC 150, RFC 152 half A, RFC 155
