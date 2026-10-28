@@ -1,7 +1,18 @@
 # RFC 148 — Account deletion leaves the user's email address behind
 
-**Status.** **Accepted** 2026-10-27. **Scheduled 0.87.0** (minor — the scrub
-write is a fix, but it rides with RFC 149's new surface; see §6).
+**Status.** **Done** — **shipped v0.87.0** (the scrub) and **v0.87.1**
+(§7, its outcome made observable).
+**Evidence**: **`exercised`** (RFC 000 §22) — four real-schema SQL witnesses in
+`migrate-test/tests/migration_chain/rfc_148_scrub.rs`, including a genuine
+collision demonstration showing a naive tombstone violates the partial unique
+index while the per-request+per-row one does not on identical data; plus five
+`core::deletion` tests covering the whole `ScrubOutcome` space, of which
+`execute_deletion_reports_failed_when_scrub_email_errors` is the one §7 said
+was missing — it asserts `Failed` **and** that the deletion still completed.
+**Precisely: the outcome is exercised; the callers' reporting of it is not** —
+removing `scrub:{}` from both call sites fails nothing. §8.1, owned by
+RFC 123 §1.2.
+
 **Tier.** P1 — in an identity product, a personal datum that outlives the
 account it identifies is a substantive gap, not a tidiness one.
 **Size.** Small in code; the design question is the work.
@@ -242,3 +253,39 @@ Make the outcome observable, without making it a deletion failure:
 `migrate-test/.../rfc_148_scrub.rs` already cover the happy path; what is
 missing is a witness for the failure path, which is exactly the shape RFC 155
 was about.
+
+## 8. §7 closed, and one residual it did not ask for (2026-10-28)
+
+0.87.1 delivered §7.4's four items. `execute_deletion` returns
+`ExecuteOutcome { scrub: ScrubOutcome }`, both types `#[must_use]`; five tests
+cover `Scrubbed` / `NoEmailOnFile` / read-failure / scrub-failure, the last
+also asserting the deletion **still completed** — constraint (2) proven under
+the exact failure this RFC is about. Both callers carry `scrub:<outcome>` in
+the `deletion_executed` detail and log a `Failed` at `Level::Error`.
+
+**One reading improved on the specification.** §7.4 did not say what to do with
+`Ok(None)` — a user that should have been found and was not. The cycle mapped
+it to `Failed` rather than `NoEmailOnFile`, because it tells us nothing about
+whether an email existed and so is not evidence that nothing needed scrubbing.
+That is the distinction this whole section exists to preserve, and it is a
+better answer than the one I specified.
+
+### 8.1 The residual: the reporting has no witness
+
+§7.4 item 2 required both callers to report the outcome. They do. **Nothing
+asserts that they do.** Verified in review by removing `scrub:{}` from the
+audit detail in both `routes/deletions.rs` and `sweep.rs` and running the full
+host suite: **911 + 221 passed, nothing failed.** Deleting the reporting
+regresses silently.
+
+**That is this section's own defect one level up**, in the cycle that fixed it
+one level down — and it is an observation, not a missed requirement: §7.4 asked
+for "a test per outcome" and got five.
+
+**It is not reopened here**, because the caller path is not host-testable —
+`log::emit` and `audit::write_owned` take `worker::Env`, the impossibility
+class RFC 146 §2 established. **The detail string is testable**: extract the
+`format!` into a pure function and assert it, as RFC 143 did for
+`decide_verify_*` and RFC 155 for its message functions. **Owned by
+[RFC 123](../proposed/123-audit-event-completeness.md) §1.2**, which already
+holds audit-event content.

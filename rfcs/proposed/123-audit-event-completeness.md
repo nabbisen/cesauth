@@ -50,6 +50,26 @@ one had been built.
 shippable now and should not wait for this programme), `InvitationRevoked` by
 **RFC 153**, `IntrospectionRowMissing` by **RFC 144**.
 
+### 1.2 Audit event *detail* has no witness either (added 2026-10-28)
+
+§1(2) and §1.1 are about which **kinds** exist and which are emitted. A third
+gap is the **content**: an event's detail string is built with `format!` at the
+call site and nothing asserts it.
+
+**Measured**, reviewing 0.87.1: RFC 148 §7 required the deletion scrub's
+outcome to ride in the `deletion_executed` detail. It does. Removing
+`scrub:{}` from **both** call sites and running the full host suite gives
+**911 + 221 passed, 0 failed** — the reporting regresses silently.
+
+The call sites are not host-testable; `audit::write_owned` takes
+`worker::Env`, which cannot be constructed on the host (RFC 146 §2). **The
+string is.** This project's own pattern applies: extract the `format!` into a
+pure function and assert it, as RFC 143 did with `decide_verify_*` and RFC 155
+with its message functions. Where an event's detail carries a **decision** —
+`scrub:<outcome>`, `executed_by` distinguishing the sweep from an admin,
+`cancelled_by` distinguishing a self-cancel — that extraction should be part of
+this RFC's coverage property, not left per call site.
+
 ## 2. Motivation
 
 Spec §2.1 makes auditability non-negotiable and Forbidden Patterns

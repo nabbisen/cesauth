@@ -1,11 +1,16 @@
 # RFC 156 — The gate set has no gate
 
-**Status.** **Accepted** 2026-10-28. **Scheduled 0.87.1 — patch.** CI-only:
-it changes no shipped artifact, so nothing is sequenced behind it, and 0.87.0
-stays the single-theme release it is. Placed *after* 0.87.0 rather than before
-because §4's two sub-decisions — whether the fuzz job belongs on the release
-path, and how the manifest treats `workflow_dispatch`-only jobs — are mine to
-think through, not to rush into the next dispatch.
+**Status.** **Done** — **shipped v0.87.1**.
+**Evidence**: **`exercised`** (RFC 000 §22) — `scripts/release-gate-manifest-check.sh`
+plus `.github/release-gate-manifest.json`, demonstrated against real commit
+history in three directions: passing on an accurate manifest, failing on a
+mutated one naming both the unexpected and the missing workflow, and
+(architect, in review) failing on an exemption whose `reason` is blank — the
+path the code commented and the cycle had not exercised. §4's two
+sub-decisions were **decided**: the fuzz job gets a weekly schedule and stays
+off the release path, recorded in the manifest's `not_on_release_path` with a
+reason the check requires to be non-empty.
+
 **Tier.** P2. Nothing is broken today. The gate set is correct and complete as
 of this commit; **nothing keeps it that way, and a gate that stops running
 fails silently by construction.**
