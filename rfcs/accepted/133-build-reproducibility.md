@@ -718,6 +718,7 @@ produced those numbers; most plausibly a smaller or older artifact was measured.
 | `9d0783a` | **0.86.3** | **10** | 0.001% |
 | `d749fef` | **0.87.0** | **15** | 0.002% |
 | `a71ca1f` | **0.87.1** | **69** | 0.008% |
+| `7f9c8ce` | **0.88.0** | **391** | 0.044% |
 
 (The 0.86.2 row was added after the cut. CI **868,077** = 857,378 + 10,699;
 mine **868,458** = 857,760 + 10,698. Both reconcile against their parts.)
@@ -725,8 +726,9 @@ mine **868,458** = 857,760 + 10,698. Both reconcile against their parts.)
 **Every internally consistent reading is in the tens-to-low-hundreds of
 bytes**: 34, 94, 157, 381, **10**. The first four each roughly doubled, which
 looked like a trend until the fifth broke it, and the sixth and seventh
-confirmed the break: **34 / 94 / 157 / 381 / 10 / 15 / 69**, with no monotonic
-shape across any four consecutive points. **Good thing no curve was drawn** —
+confirmed the break: **34 / 94 / 157 / 381 / 10 / 15 / 69 / 391**, with no
+monotonic shape across any four consecutive points — the largest and the
+smallest readings sit three apart. **Good thing no curve was drawn** —
 the refusal has now survived three additions, two of which would have
 contradicted any line fitted to the four before them. Seven readings, and one
 claim they all support: **under 0.05% of the artifact, every time.** Four points whose method
