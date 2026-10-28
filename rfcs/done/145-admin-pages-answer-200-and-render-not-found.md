@@ -1,5 +1,20 @@
 # RFC 145 — Thirty-five admin pages answer 200 and render "Not Found"
 
+> **2026-10-29 — thirty-four of these pages serve a surface one tenant can
+> open.** `/admin/t/:slug/*` is gated by `resolve_tenant_admin` on
+> `users.tenant_id == tenant.id` with no system-admin bypass, and nothing in
+> cesauth sets that column to anything but `"tenant-default"`. So the pages this
+> RFC made render are reachable only for the default tenant; for every other
+> tenant nobody can open them. **[RFC 158](../proposed/158-no-tenant-but-the-default-has-a-reachable-console.md)**
+> owns it; found by the dev team while researching RFC 153 §2.
+>
+> **This RFC's work stands** — the default tenant is real and those pages work
+> there, and the `server`/`client` contract and the §4.2 gate are
+> surface-independent. **What was overstated, across three cycles and by me, is
+> the reach.** Nobody asked who could open the pages being fixed. "It renders"
+> and "someone can reach it" are two claims, and this RFC only ever established
+> the first.
+
 **Status.** **Done** — cycles 1–3 accepted; **shipped v0.85.1 (cycle 1), v0.86.1
 (cycle 2), v0.86.2 (cycle 3)**. **`exercised`** (RFC 000 §22): the
 `route-contracts-check.sh` gates — E3 (no `server`-declared handler reaches the

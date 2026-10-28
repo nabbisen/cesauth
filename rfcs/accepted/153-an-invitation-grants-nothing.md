@@ -51,8 +51,14 @@ message string.**
 
 ## 2. What is established
 
-**`invite_id` is passed forward and read by nobody.** `accept_submit`
-(`routes/invitations.rs:253-256`) redirects to
+**`invite_id` is passed forward and read by nobody** — and **the redirect it
+rides on is dead**, which is earlier and worse. Established by the implementing
+cycle, 2026-10-29, and verified in review: `/magic-link/request` is registered
+`post_async` **only**, with no GET handler and no rewrite, so `accept_submit`'s
+`303` to that path as a URL makes the browser issue a **GET** and land on the
+catchall 404. **The user never arrives anywhere that could read `invite_id`.**
+This paragraph originally said only that it was read nowhere; that
+understated it. `accept_submit` (`routes/invitations.rs:253-256`) redirects to
 `/magic-link/request?email=…&invite_id=…`, and:
 
 ```
