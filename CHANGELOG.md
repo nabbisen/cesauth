@@ -14,6 +14,44 @@ changes will always be called out here.
 
 ---
 
+## [0.87.1] - 2026-10-28
+
+### Two silent failures made loud — RFC 148 §7, RFC 156
+
+Both changes are about the same thing: something could stop working and nobody
+would find out.
+
+### Fixed
+
+- **The invitation-email scrub now reports whether it happened.** v0.87.0 made
+  account deletion scrub the address from `invitation_tokens`; the scrub
+  necessarily runs after the user row is already gone, so a failure cannot be
+  reported as a failure to delete the user — and it was reported as nothing at
+  all. `execute_deletion` now returns the outcome (`scrubbed`,
+  `no_email_on_file`, or `failed`), both the admin route and the daily sweep
+  record it in the `deletion_executed` audit event and log a failure as an
+  error, and "there was no address to scrub" is distinguishable from "the
+  scrub did not happen" — which it was not before.
+
+### Added
+
+- **A manifest of the gates a release must pass, and a check that they ran.**
+  Nothing previously noticed if a CI workflow stopped running: a missing job is
+  twelve green checks instead of thirteen, and nobody counts. The required set
+  is now checked in at `.github/release-gate-manifest.json`, with a separate
+  category for workflows deliberately off the release path — each needing a
+  stated reason, which the check enforces. A new workflow verifies, on every
+  push to `main`, that every required gate triggered and that nothing
+  triggered which the manifest does not know about. **It reports; it does not
+  block**, consistent with every other gate here.
+- The JWT-parser fuzz job gains a **weekly schedule**. It triggers on pull
+  requests touching the parser and on demand, but on no push — so no release
+  had ever been covered by it. Keeping it off the release path is deliberate
+  and now recorded as a decision with its reason: a non-deterministic
+  60-second run should not gate releases that go nowhere near the parser.
+
+---
+
 ## [0.87.0] - 2026-10-28
 
 ### The `/me` surface tells the truth about itself — RFC 149, RFC 148, RFC 154

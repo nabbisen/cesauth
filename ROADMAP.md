@@ -376,6 +376,7 @@ started.
   any CI gate is enforced (`main` still has no branch protection), or that
   it works on Cloudflare — **nobody has deployed this tree**.
 
+- ✅ **v0.87.1 — RFC 148 §7 + RFC 156: the scrub reports its outcome, and the gate set gets a gate. Shipped 2026-10-28.**
 - ✅ **v0.87.0 — RFC 149, RFC 148, RFC 154: self-service deletion, the email scrub, and the second factor's audit trail. Shipped 2026-10-28.**
 - ✅ **v0.86.3 — RFC 150, RFC 152 half A, RFC 155: three documented security controls get a failing witness. Shipped 2026-10-28.**
 - ✅ **v0.86.2 — RFC 145 cycle 3 + the §4.2 gate; RFC 145 complete (35 routes). Shipped 2026-10-27.**
