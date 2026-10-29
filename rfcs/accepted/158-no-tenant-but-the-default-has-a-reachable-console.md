@@ -135,7 +135,9 @@ the tenant.
 **Shape:** `UserRepository::assign_tenant`, a dedicated adapter `UPDATE`, a core
 service function, called by `create_tenant` for its owner, inheriting
 `ManageTenancy` from the flow that already gates it. **Assignment last**, so a
-failure leaves the outcome degraded-but-not-worse. One new `EventKind`, which
+failure leaves the outcome degraded-but-not-worse — refined by **§5.3**,
+which replaces "degraded" with a reported outcome, and by **§5.2**, which
+found a second caller. One new `EventKind`, which
 makes it **0.89.0, minor** — consistent with RFC 154.
 
 ### 5.1 `UserRepository::update()` silently ignores `tenant_id`
@@ -149,6 +151,89 @@ mutates `tenant_id` and calls `update()` gets **no error and no effect.**
 `update()` can move a user between tenants, because nothing complains when it
 tries, **will ship a no-op and call it done.** This programme's signature
 failure shape, sitting one function away from the work option 2 adds.
+
+### 5.2 There are two callers, not one — and fifteen call sites, not two
+
+Found by the implementation cycle at the handoff's own first report-and-stop
+condition. `crates/backend/src/routes/api_v1/tenants.rs:48` — `POST
+/api/v1/tenants`, routed at `lib.rs:467`, documented at
+`route-contracts.md:230` — calls `create_tenant` independently of the console
+form. Both callers gate on the identical permission (`api_v1/tenants.rs:36`
+`require(AdminAction::ManageTenancy, …)`; the console's `require_manage` →
+`ensure_role_allows(…, ManageTenancy)`), so the design does not change.
+
+`grep -rn "create_tenant(" crates/ --include='*.rs'` → **15 call sites: 2
+production, 13 in `adapter-test`.** The decision report said "the one caller"
+and I repeated it into the handoff without running that command; the cycle's
+own report then said "three adapter-test call sites, which construct their own
+stub `UserRepository` already" — also wrong, in both halves:
+`grep -c "InMemoryUserRepository"` over those three files returns `0, 0, 0`,
+and `common.rs` does not import `UserRepository` at all.
+
+**Both callers must assign the owner's home tenant.** A tenant whose owner can
+open their console beside one whose owner cannot, decided by which door the
+tenant came through, is a latent inconsistency an operator cannot see.
+
+### 5.3 So the assignment belongs inside `create_tenant`, with a reported outcome
+
+If each caller performs the assignment, a third caller can omit it and
+reintroduce this RFC's own bug. ADR-003's *"URL-prefix separation makes such
+bugs structurally impossible"* — the sentence this RFC used to reject option 3
+— is the project's preference for structural over conventional guarantees;
+applied consistently it puts the assignment where no caller can forget it.
+
+That raises the question the decision stage never reached: **what does a failed
+assignment report?** Propagating it tells the caller creation failed when the
+tenant and membership rows exist; discarding it lets the caller emit an audit
+record for something that may not have happened. **RFC 148 §7 already settled
+this shape** for a secondary write after a primary one in a store with no
+multi-row transactions (`deletion.rs:159-202`): the failure must not be
+reported as a failure of the primary operation, and the caller *must* be able
+to tell "nothing to do" from "it did not happen".
+
+So `create_tenant` returns a `#[must_use]` outcome **struct** — for the reason
+`ExecuteOutcome`'s own doc gives, that a future field can join it without
+another signature change — carrying the tenant and an `OwnerHomeOutcome
+{ Assigned, KeptExistingHome, Failed }` with `as_str()`, one-to-one with
+`ScrubOutcome`. `Failed` absorbs "the owner row could not be found", which
+`ScrubOutcome` already classes as a storage inconsistency rather than evidence
+of anything. `user_tenant_assigned` is emitted **only** on `Assigned`; the
+other two ride in the `tenant_created` detail, as RFC 148 §7.4 does.
+
+### 5.4 An owner who already has a home tenant keeps it
+
+`resolve_tenant_admin` (`tenant_admin.rs:168-175`) gates on `users.tenant_id ==
+tenant.id`, so silently overwriting an existing home **revokes that user's
+admin access to their previous tenant** — this RFC's bug, inflicted
+deliberately on someone else.
+
+Refusing the creation instead (409) was drafted and rejected: today naming an
+already-homed user as owner **succeeds**, so refusing is a behaviour regression
+on a live API for a reason about console reach rather than data integrity — the
+membership row, which is what confers ownership, is unaffected — and it would
+assert a product rule (one owner, one tenant) that is the owner's to make, not
+the architect's.
+
+**Decided: create the tenant, keep the existing home, report
+`KeptExistingHome`.** `tenant-default` (`tenancy/types.rs:21`; the column's own
+`DEFAULT 'tenant-default'` at `migrations/0016:46`) is the only home value the
+assignment overwrites.
+
+### 5.5 Two defects found while verifying, recorded and not fixed here
+
+Same discipline as §5.1 — these are not this RFC's defects:
+
+- **A bad owner id leaves an orphan tenant.** `tenants.create()` succeeds, then
+  `add_tenant_membership()` fails on the `user_tenant_memberships.user_id`
+  foreign key, and the tenant row stays; `create_tenant`'s own doc comment
+  admits it. A pre-flight owner read would fix it — and would force 13 test
+  call sites to seed users. The owner read therefore goes **after** both
+  inserts, immediately before the assignment, leaving this behaviour exactly as
+  it is.
+- **The API path's audit records carry no `via=` marker**, so the *absence* of a
+  marker is how an API-created tenant is distinguished from a console-created
+  one. That gets worse once a second event is emitted from both doors, but
+  fixing it changes an existing audit detail format.
 
 ## 6. Why P1 and not P0
 
