@@ -4,10 +4,23 @@
 reason rather than a queue position: RFC 153 is about to establish how
 `users.tenant_id` comes to hold a non-default value at **create** time, and
 §5's option (1) would reuse that. Designing both at once risks two mechanisms
-for one column. **§5 asks for a decision stage first**, in RFC 153 §2's shape —
-that mechanism produced a better answer than the RFC asking the question, and
-this question is harder. **Release not assigned** until that decision is made,
-because option (2) and option (3) are different sizes.
+for one column. **Decision stage dispatched 2026-10-29**:
+`handoffs/158-no-tenant-but-the-default-has-a-reachable-console/decision-stage-handoff.md`.
+**Release not assigned** until the choice is made, because §5's options are
+different sizes.
+
+### A fourth option, closed before it was offered
+
+RFC 153 shipping made *"let tenant creation invite the owner, and let RFC 153's
+path set the column"* look like the cheap answer. **It only works for an owner
+with no account yet.** Verified: `create_tenant` requires an **existing** user
+(`owner_user_id`, miss → *"Owner user id not found"*), and
+`resolve_or_create_user`'s existing-user branch **returns before** the
+`tenant_id` computation — RFC 153 §1's decision, deliberately, so an existing
+user's home tenant is never reassigned.
+
+**That new-versus-existing split may itself be the shape of the answer**, and
+it is handed to the decision stage rather than settled here.
 **Tier.** **P1.** A documented, 35-route administrative surface that exactly
 one tenant can open.
 **Size.** Small in code — one repository on one function, or one dedicated
