@@ -10,6 +10,11 @@ misunderstand"* is the standard, and this is the last lie left on a form RFC
 is a `§4.1` consequence — reusing `NotFound` is a fix (patch), a new
 `PortError` variant is additive surface on `core::ports` (minor) — so it is
 decided at dispatch, not now.
+**Decision stage dispatched 2026-10-29**, after 0.89.0 was cut:
+`handoffs/160-every-constraint-failure-is-a-conflict/decision-stage-handoff.md`
+— deliverable (0) is the **four observed D1 error strings**, before any design
+argument, because this defect is made of an assumption about them that nobody
+printed.
 **Tier.** P2. Nothing is exposed, nothing is corrupted, nothing is
 unreachable. An operator is told the wrong thing about why their request
 failed, and a public API answers with the wrong status class.
