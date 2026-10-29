@@ -163,6 +163,61 @@ is a separate RFC rather than nine more rows on RFC 157's list.**
 4. **Then re-run RFC 157's census** with the routing check instead of the name
    test, and record the number it gives.
 
+## 4.1 The census was not zero: a tenth, and its doc comment is why
+
+The check's first run against the tree found one handler beyond the nine:
+**`routes::admin::console::preview::handler`**. Verified in review —
+`lib.rs:294` routes `POST /admin/console/config/:bucket/preview` to
+`routes::admin::console::config::preview`, a **different function** in the
+sibling file (`config.rs:77`, a real gated implementation); a qualified grep
+for `preview::handler` returns zero; only `console.rs:41`'s `pub mod preview;`
+keeps the file alive; `route-contracts.md:100` documents the live handler and
+says nothing about this one.
+
+**Why it survived**: `preview.rs`'s own doc comment says *"the route itself is
+registered but returns 501 Not Implemented until the full implementation
+ships."* **That is false** — the route is registered to `config::preview`, and
+the implementation it was waiting for already landed there. A reader who opened
+the file to check was told it was fine. RFC 138's described-vs-actual class,
+inside one file.
+
+**Decided: a tenth deletion**, the disposition RFC 157 gave its twenty-nine —
+not an `E4_EXEMPT` entry, because an exemption list carrying entries that
+should simply be deleted stops being read, which is §4's own argument against
+false positives applied to its own escape hatch.
+
+### 4.2 The check cannot see eleven live handlers, and says so to no one
+
+Found in review by re-deriving the population the check's coverage claim rests
+on:
+
+```
+pub async fn in routes/, non-test                     216
+matched by the signature-shape regex                  183
+unmatched                                              33
+  … registered handlers in the me:: family             11
+  … helpers and pure decision functions                22
+```
+
+The eleven — `me::security::{get_handler,get_json_handler}`,
+`me::totp::{disable,enroll,verify,recover}`'s handlers — are all **registered**
+(checked individually). They are invisible because the regex requires
+`(req: Request, ctx: RouteContext<D>)` on one line, and that family is written
+`(req: Request, env: worker::Env)` or across several lines.
+
+**Nothing is wrong today; the gate is.** This RFC exists because a bare-name
+test let nine dead handlers through. A qualified-path test that silently
+excludes an entire signature family leaves a dead handler added to `me/totp/`
+tomorrow exactly as invisible as those nine — and the check reports nothing,
+not even that it examined 183 of 194.
+
+**The requirement is that the covered population cannot shrink silently**: a
+`pub async fn` in `routes/` must be either classified as a handler or named as
+a non-handler with a reason, and anything else fails the check. The mechanism
+is the implementer's choice. This is RFC 156's subject — *a gate that stops
+covering something must fail* — one level in, in the gate RFC 156's successor
+is adding.
+
 ## 5. The lesson worth keeping in the record
 
 RFC 157's premise was that **the compiler reports unrouted handlers** through
