@@ -14,6 +14,61 @@ changes will always be called out here.
 
 ---
 
+## [0.89.0] - 2026-10-29
+
+### A new tenant's owner can reach their own console — RFC 158
+
+### Added
+
+- **Creating a tenant now assigns its owner's home tenant.** `/admin/t/<slug>/*`
+  — the 35-route tenant-admin console — is gated on `users.tenant_id` matching
+  the tenant in the URL, and **nothing had ever set that column to anything but
+  the default**. Every tenant except the default one was therefore unreachable
+  by its own administrator, and by anyone else: there is no system-admin bypass
+  on that surface, by ADR-003's design. A tenant's owner can now open it.
+
+  The assignment happens **inside `create_tenant`**, not at its callers. It has
+  two independent ones — the tenancy console's create form and
+  `POST /api/v1/tenants` — and a third would otherwise be able to omit it and
+  reintroduce exactly this defect.
+
+- **`UserRepository::assign_tenant`**, a dedicated single-field port method
+  with its own audit event (`user_tenant_assigned`), shaped like the existing
+  `set_status`/`set_plan` methods rather than widening `update()`. `update()`'s
+  statement deliberately omits `tenant_id` and silently ignores a changed one —
+  now documented in place, because nothing complains when a caller tries.
+
+- **`POST /api/v1/tenants`' `201` response gains an `owner_home` field.**
+  **Additive**: every field the response already carried stays at the top
+  level. It reports what this call did to the owner's home tenant —
+  `assigned`, `kept_existing_home` or `failed` — which a caller has no other
+  way to learn, there being no `GET /api/v1/users/:uid`.
+
+### Changed
+
+- **An owner who already administers another tenant keeps that home.** Moving
+  it would revoke their access to the tenant they already administer — this
+  release's own defect, inflicted on someone else. The tenant is still created
+  and the owner membership still written; only the home column is left alone.
+  A refusal (`409`) was considered and rejected: naming an already-homed user
+  as owner succeeds today, and the membership row, which is what confers
+  ownership, is unaffected.
+
+- **The tenancy console reports the outcome to the operator**, instead of only
+  to the audit table. When the owner's home was assigned, the form redirects as
+  before. When it was kept or could not be written, a page says the tenant was
+  created, why the owner's home is what it is, and that **the owner cannot open
+  this tenant's console yet** — the one fact the operator could not previously
+  learn from any surface.
+
+### Fixed
+
+- **A failed home assignment is never reported as a failed tenant creation.**
+  The tenant and membership rows already exist by that point, so the outcome is
+  returned as a value and recorded in the `tenant_created` audit detail, not
+  propagated as an error. A config-load failure on that path cannot turn the
+  created tenant into a `500` either.
+
 ## [0.88.1] - 2026-10-29
 
 ### Twenty-nine unreachable handlers removed, and a guard against more — RFC 157

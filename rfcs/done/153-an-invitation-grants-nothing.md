@@ -18,7 +18,7 @@ cannot be (RFC 146 §2).
 **`users.tenant_id` now holds a non-default value through a product path for
 the first time in this project's history.** That is what makes any tenant other
 than the default addressable at all — and what leaves
-[RFC 158](../accepted/158-no-tenant-but-the-default-has-a-reachable-console.md)
+[RFC 158](./158-no-tenant-but-the-default-has-a-reachable-console.md)
 with only the *owner* case: a user named at tenant creation rather than
 invited.
 

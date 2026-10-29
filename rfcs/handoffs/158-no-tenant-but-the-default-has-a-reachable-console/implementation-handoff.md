@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 158, implementation
 
-**Governing RFC.** `rfcs/accepted/158-no-tenant-but-the-default-has-a-reachable-console.md`
+**Governing RFC.** `rfcs/done/158-no-tenant-but-the-default-has-a-reachable-console.md`
 — **§5 as decided 2026-10-29**, and **§5.1**, which is a trap sitting one
 function away from this work.
 **Decision review.** `.git-exclude/reviewed/158-decision-review.md`

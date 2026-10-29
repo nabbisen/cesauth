@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 158, decision stage only
 
-**Governing RFC.** `rfcs/accepted/158-no-tenant-but-the-default-has-a-reachable-console.md`
+**Governing RFC.** `rfcs/done/158-no-tenant-but-the-default-has-a-reachable-console.md`
 
 **Stage.** **A decision report. No code.** RFC 158 §5 asks for this explicitly,
 in RFC 153 §2's shape — that mechanism has now produced a better answer than

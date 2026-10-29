@@ -1,13 +1,36 @@
 # RFC 158 — No tenant but the default has a reachable admin console
 
-**Status.** **Accepted** 2026-10-29. **Sequenced after RFC 153**, and for a
-reason rather than a queue position: RFC 153 is about to establish how
-`users.tenant_id` comes to hold a non-default value at **create** time, and
-§5's option (1) would reuse that. Designing both at once risks two mechanisms
-for one column. **Decision stage dispatched 2026-10-29**:
-`handoffs/158-no-tenant-but-the-default-has-a-reachable-console/decision-stage-handoff.md`.
-**Release not assigned** until the choice is made, because §5's options are
-different sizes.
+**Status.** **Done** — **shipped v0.89.0**. `create_tenant` assigns its
+owner's `users.tenant_id` when that owner's home is still the default, through
+the dedicated `UserRepository::assign_tenant`, for **both** of its independent
+callers, and reports the outcome to the operator and the API caller as well as
+to the audit table.
+**Evidence**: **`exercised`** (RFC 000 §22) — two tenants created live against
+`wrangler dev` + local D1 through **two different callers** (the tenancy
+console form and `POST /api/v1/tenants`), each owner's `users.tenant_id` and
+membership row asserted by query, and **each owner then opened
+`/admin/t/<slug>/` and its `detail.json` and got 200, not 403** — the only
+proof the gate passes for them. All three `OwnerHomeOutcome` variants
+exercised live and as host tests, including `KeptExistingHome` with the
+consequence checked (the owner still 403s on the new tenant and keeps the old
+one) and `Failed` reached both by a forced write failure and, combined with a
+forced `Config::from_env` failure, to show the response stays `200`/`201`
+rather than becoming a `500`. Negative check: a non-owner in the default tenant
+still gets 403. Both source-level probes restored byte-identically, which the
+clean tree at `fe2ec18` independently confirms. Host tests **1,623**,
+`migration_chain` 35, routes 193, 13 workflows green on every commit in the
+chain.
+
+**Four cycles**, each of which found something the one before had asserted:
+the decision stage closed a fourth option and corrected the architect's
+reasoning for choosing option 2; the implementation stopped at a condition the
+handoff named and found a **second caller** the decision stage and the
+architect had both called "the one caller"; cycle 2 fixed the architect's own
+omission — an outcome reported only to machine-readable sinks — and a `?` that
+could have turned a created tenant into a `500`; and cycle 2's *unrequested*
+evidence opened **RFC 160**, by showing that an unknown owner id answers `409
+conflict` because every SQLite constraint class collapses into one
+`PortError`.
 
 ### A fourth option, closed before it was offered
 

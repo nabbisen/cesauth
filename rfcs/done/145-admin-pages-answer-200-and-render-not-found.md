@@ -5,7 +5,7 @@
 > `users.tenant_id == tenant.id` with no system-admin bypass, and nothing in
 > cesauth sets that column to anything but `"tenant-default"`. So the pages this
 > RFC made render are reachable only for the default tenant; for every other
-> tenant nobody can open them. **[RFC 158](../proposed/158-no-tenant-but-the-default-has-a-reachable-console.md)**
+> tenant nobody can open them. **[RFC 158](./158-no-tenant-but-the-default-has-a-reachable-console.md)**
 > owns it; found by the dev team while researching RFC 153 §2.
 >
 > **This RFC's work stands** — the default tenant is real and those pages work
