@@ -284,7 +284,31 @@ failed owner-home assignment as a failed tenant creation**, the one thing
 `OwnerHomeOutcome` exists to prevent, and the reason the audit write two lines
 above uses `.ok()`. The precedent followed (`deletions.rs:443`) loads config
 *before* its operation, where a failure can only refuse a request that has
-changed nothing. Fixed in cycle 2.
+changed nothing. Fixed in cycle 2 (`fe2ec18`): neither caller propagates it.
+
+### 5.8 Both landed, and the cycle's own evidence opened RFC 160
+
+Cycle 2 (`fe2ec18`) shipped §5.6 and §5.7, re-verified at **1,623** host tests
+/ 0 failed, `migration_chain` 35, routes 193, bundle 882,747 B reconciling to
+33% of budget with full 64-character digests. `Assigned` still answers `303`;
+the other two outcomes render a page that says the tenant was created, why the
+owner's home is what it is, and that the owner cannot open this tenant's
+console yet. The `201` body gained an additive `owner_home` beside the tenant's
+existing top-level fields — **a surface-contract change on a public route**,
+recorded as one.
+
+**The cycle's unrequested step C3 found a different defect.**
+`POST /api/v1/tenants` with an unknown `owner_user_id` answers `409
+{"error":"conflict"}`, because `msg.contains("unique") ||
+msg.contains("constraint")` — eight sites — collapses every SQLite constraint
+class into `PortError::Conflict`. So the console renders *"Slug already taken
+in this deployment"* for a mistyped owner id, and its `NotFound => "Owner user
+id not found"` arm cannot be reached by the cause it was written for. **RFC 158's
+decision stage asserted that this failure arrives as `NotFound`, and the
+architect accepted that claim without checking the variant.**
+
+**Not folded in** — a shared adapter helper behind eight unrelated operations,
+turning on a `PortError` vocabulary decision. **RFC 160, proposed.**
 
 ## 6. Why P1 and not P0
 
