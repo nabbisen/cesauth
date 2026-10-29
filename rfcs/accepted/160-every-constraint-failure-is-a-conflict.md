@@ -15,6 +15,10 @@ decided at dispatch, not now.
 — deliverable (0) is the **four observed D1 error strings**, before any design
 argument, because this defect is made of an assumption about them that nobody
 printed.
+**Decided 2026-10-29: reuse `NotFound`** (§4.5) — the architect's position, a
+new variant, lost to the observed error string. **Implementation dispatched**:
+`handoffs/160-every-constraint-failure-is-a-conflict/implementation-handoff.md`.
+**0.89.1, patch.**
 **Tier.** P2. Nothing is exposed, nothing is corrupted, nothing is
 unreachable. An operator is told the wrong thing about why their request
 failed, and a public API answers with the wrong status class.
@@ -127,6 +131,84 @@ its own RFC rather than a fourth cycle.
 
 **Not in scope:** the orphan tenant a failed membership insert leaves behind
 (RFC 158 §5.5) — same code path, different defect, still open.
+
+## 4.5 Decided 2026-10-29 at the decision stage: reuse `PortError::NotFound`
+
+**Not a new variant**, which was the architect's position, **and the fact that
+closes it is the observed error string, not the cost census.** D1's foreign-key
+message —
+
+    FOREIGN KEY constraint failed: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_FOREIGNKEY)
+
+— **names neither the column nor the referenced table**, while UNIQUE, CHECK and
+NOT NULL all name their column or constraint expression. A variant *"carrying
+which reference was missing"* therefore has no payload available: the adapter's
+`context` names the **statement**, not which of its foreign keys failed, and
+`user_tenant_memberships` has two (`migrations/0016:171-173`). The
+discrimination that justified the variant is unobtainable by anyone.
+
+`PreconditionFailed` is also out: its doc asserts *a state transition the store
+refuses*, and a missing row has no state. The symmetry does not apply to
+`NotFound` — an INSERT addresses no existing row, so a `NotFound` from an
+INSERT has exactly one possible subject, the thing it referenced.
+
+**Eight sites are two changes.** Only `memberships.rs` and `groups.rs` can
+produce a foreign-key failure in production. `tenants` has no foreign key at
+all; `organizations` is pre-checked in core before the adapter runs;
+`subscriptions.rs` and `authz/roles.rs` **have no production caller**;
+`audit.rs` and `totp_recovery_codes.rs` are UNIQUE-only in practice.
+**`groups.rs` is a second live foreign-key site the governing RFC's evidence
+did not name** — `api_v1/groups.rs::create` checks neither `tid` nor
+`organization_id`, and `create_group` takes only a `GroupRepository`, so it
+structurally cannot.
+
+**Four dead arms come alive, not seven.** §2 named one; the cycle found seven;
+four is right. The three in `tenant_admin/forms/membership_add.rs` sit behind
+`verify_user_in_tenant`, which already 404s on an absent user, and behind their
+own container lookups — both foreign keys are proven present before the
+statement runs, so those arms can fire only on a race.
+
+**CHECK and NOT NULL are not classified.** Neither is reachable by any caller:
+every `CHECK` column is written from a Rust enum via a `_str()` helper, every
+`NOT NULL` column from a non-`Option` field — which is why provoking them for
+the record needed a sentinel-gated probe in production code. Classifying two
+branches nothing can produce would ship untestable code into the very helper
+whose untested assumption caused this RFC. **UNIQUE and FOREIGN KEY only.**
+
+**Patch, 0.89.1**: no `core::ports` edit, and neither exhaustive match
+(`api_v1/auth.rs:72-84`, `core/service/clients.rs:186-188`) needs touching.
+
+### 4.6 A revived arm is correct only where the other foreign key is proven
+
+All four revived arms say some form of *"<user> id not found"*, and the error
+cannot tell the two foreign keys apart. All four are nonetheless true today —
+`tenant_create` inserted the tenant itself moments earlier, and each
+`tenancy_console` handler resolves its container first — **so they are correct
+by a property of their callers, not by anything the classification guarantees.**
+A future handler that inserts a membership without resolving its container
+inherits a confidently wrong message, and nothing in this fix would catch it.
+
+**The rule for the implementation stage, and after it:** an arm may name a
+subject only where every other foreign key on that statement is already proven
+to exist. Otherwise it must name the possibilities or say nothing specific.
+
+### 4.7 The two API paths are decided here, not at the implementation stage
+
+Reuse sends both live foreign-key paths to a bare `404`, which is the objection
+the architect raised against reuse. It is answered per handler rather than paid
+for with a variant everywhere:
+
+- **`POST /api/v1/tenants`** has no path parameter, so a `NotFound` can only be
+  the owner reference → **400 naming `owner_user_id`**.
+- **`POST /api/v1/tenants/:tid/groups`** resolves the tenant first — one
+  `tenants.get`, as every console handler already does — making `:tid` an
+  honest 404, after which the remaining `NotFound` can only be
+  `organization_id` → **400 naming it**. **Not** by giving `create_group` a
+  `TenantRepository`: that is a core signature change with a test ripple, which
+  is RFC 158 §5.2's lesson.
+
+Deciding this here rather than deferring it is RFC 158 §5.6's lesson: a sink
+that no person reads is not a report.
 
 ## 5. The lesson worth keeping in the record
 
