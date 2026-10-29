@@ -110,11 +110,45 @@ the tenant.
    *owners* specifically, but it reopens ADR-003 and so is the owner's call,
    not mine.
 
-**(2) is my inclination** and I am not confident in it. (1) is tempting and
-fights an explicit comment; (3) is clean and reopens an accepted ADR. **This
-RFC should go to a decision stage like RFC 153 §2 did** — that mechanism just
-produced a better answer than the RFC asking the question, and this question is
-harder.
+**Decided 2026-10-29 at the decision stage: option 2.** My inclination, and
+**the reasoning that selects it is the cycle's, not mine.**
+
+- **Option 3 reopens the specific alternative ADR-003 already rejected** —
+  *"Single console with role-conditional rendering (rejected)"* (`:147`), whose
+  reason 2 reads *"A bug in the conditional-rendering logic leaks cross-tenant
+  data."* ADR-003 rejected that shape at the **view** layer; option 3 would
+  introduce it at the **gate**, so the objection applies more forcefully. My
+  §5 said only "it reopens an accepted ADR", which is shallow by comparison.
+- **Option 1's cheapness dissolves when written out.** Shape (a) — widening
+  `UserRepository::update` — gives every current and future caller an implicit
+  obligation never to pass a mutated `tenant_id`, a permanent wide blast radius
+  for a narrow need. Shape (b) — a narrow private write — **is option 2 minus
+  the naming.** So there was no trade-off to offer. My framing ("fights an
+  explicit comment", a "weaker objection than it sounds") was the wrong
+  objection.
+- **Option 2 is the house idiom, not an invention.** Four existing narrow
+  single-field setters — `billing::set_plan`, `billing::set_status`,
+  `tenancy::set_status` for tenants and organizations — each with its own
+  emitted `EventKind`. `assign_tenant` is the fifth instance of a pattern
+  already used four times in this area. A check I had not made.
+
+**Shape:** `UserRepository::assign_tenant`, a dedicated adapter `UPDATE`, a core
+service function, called by `create_tenant` for its owner, inheriting
+`ManageTenancy` from the flow that already gates it. **Assignment last**, so a
+failure leaves the outcome degraded-but-not-worse. One new `EventKind`, which
+makes it **0.89.0, minor** — consistent with RFC 154.
+
+### 5.1 `UserRepository::update()` silently ignores `tenant_id`
+
+Found at the decision stage, verified in review. The statement is
+`UPDATE users SET email, email_verified, display_name, account_type, status,
+updated_at WHERE id` — **no `tenant_id`.** A caller who fetches a `User`,
+mutates `tenant_id` and calls `update()` gets **no error and no effect.**
+
+**Recorded because of what it would cost later**: a future cycle assuming
+`update()` can move a user between tenants, because nothing complains when it
+tries, **will ship a no-op and call it done.** This programme's signature
+failure shape, sitting one function away from the work option 2 adds.
 
 ## 6. Why P1 and not P0
 
