@@ -14,6 +14,12 @@ made RFC 157's twenty-nine deletions a patch.
 **No decision stage, and §3's premise is why** — see §2.1. The per-page
 archaeology §4 step 1 asks for was three greps, and doing it before paying for
 a stage turned one design fork into zero.
+
+**Continuation complete 2026-10-30** (`132c3a0`): the tenth deleted, E4's
+coverage asserted structurally, census **zero**. **Third cycle dispatched
+2026-10-30** for §4.3 and §4.4, both found in review of that commit:
+`handoffs/159-nine-dead-handlers-no-lint-can-see/cycle-3-handoff.md`. The cut
+waits on it.
 **Tier.** P2. Nothing is broken and nothing is reachable. The value is the
 check, not the deletions.
 **Size.** Small for the nine; the check is the lasting part.
@@ -217,6 +223,65 @@ a non-handler with a reason, and anything else fails the check. The mechanism
 is the implementer's choice. This is RFC 156's subject — *a gate that stops
 covering something must fail* — one level in, in the gate RFC 156's successor
 is adding.
+
+### 4.3 The gate prints `0 unclassified` in the run where it found one
+
+§4.2 is met: the check now asserts its own coverage, and a function matching
+neither handler shape nor `NAMED_NON_HANDLERS` is a hard failure, demonstrated
+by a fourth fires probe. One line of the delivered implementation undoes part of
+that in the only run that matters.
+
+The coverage line's `0 unclassified` is a **string literal**. The unclassified
+block sets `exit_code=1` without exiting, so in a failing run the gate prints
+the finding and then prints that there are none — verified in review:
+
+```
+❌  pub async fn(s) under routes/ matching NEITHER known handler signature shape NOR on NAMED_NON_HANDLERS:
+    crates/backend/src/routes/admin/console/_probe_shape.rs:1 (fn weird_new_shape)
+…
+ℹ️   E4 coverage: scanned 216 pub async fn under routes/ -- 193 classified as handlers (182 RouteContext-shaped, 11 Env-shaped), 22 named non-handlers, 0 unclassified
+```
+
+**216 ≠ 193 + 22 + 0.** The figure does not reconcile against its own parts, and
+the summary line is the one a maintainer greps for. No dead handler can ship
+behind it — the build is red either way — so this is an honesty defect in the
+gate's reporting, not a hole in the gate. **Requirement: print the count, and
+make the four figures sum to the scanned total in every run, passing or
+failing.**
+
+### 4.4 A commented-out registration reads as live — and as documented
+
+E4 decides liveness with `grep -qF "routes::<path>("` against `lib.rs`:
+unanchored, comment-blind. Commenting out `lib.rs:285` — the one edit a developer
+makes to disable a route — leaves `GET /admin/console.json` unserved, its
+handler unreachable, and the gate reporting **exit 0, every handler reachable**.
+
+**This is the defect the implementation cycle found and fixed on the other side
+of the same resolver.** The `pub use` grep is `^pub use …`, anchored, which is
+exactly why the renaming probe fires on a commented-out re-export. The `lib.rs`
+grep never got the same treatment.
+
+**The half that reaches users is not E4's.** The registered-route extraction
+(RFC 027/125, `grep -E '\.(get|post|put|delete)_async\s*\("'`) is comment-blind
+too: with that line commented the count stayed **193**, so `route-contracts.md`
+is still required to document — and still credited with documenting — a route
+the Worker does not serve. **A disabled route leaves the published contract
+table asserting it exists, with every gate green.** One character of edit, a
+documentation lie, no diagnostic.
+
+Latent today, checked rather than assumed: zero commented-out `routes::` call
+sites and zero commented-out `*_async("` registrations in `lib.rs`.
+
+**Requirement: a line whose first non-whitespace is `//` is not a registration,
+for both greps, from one shared step.** Whole lines only — `//` occurs inside
+path and URL strings, and `lib.rs:523` registers the catch-all `"/*catchall"`,
+which a naive `/* … */` stripper eats the file from.
+
+**Not in scope here:** the third implementation of this same extraction,
+`no_duplicate_route_registrations` in `lib.rs`'s own test module, which is blind
+to whitespace as well as comments and so covers 105 of 193 routes. That is
+[RFC 163](../proposed/163-two-route-extractors-two-blind-spots.md) — RFC 011's
+deliverable, and a fork (two extractors or one) rather than a repair.
 
 ## 5. The lesson worth keeping in the record
 
