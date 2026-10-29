@@ -235,6 +235,57 @@ Same discipline as §5.1 — these are not this RFC's defects:
   one. That gets worse once a second event is emitted from both doors, but
   fixing it changes an existing audit detail format.
 
+### 5.6 The outcome must be reported to a person, not only to the audit table
+
+Implemented 2026-10-29 (`27171b8`) and **found incomplete in review.** §5.3's
+three sinks — the `user_tenant_assigned` event, the `owner_home=` field in the
+`tenant_created` detail, and the error log line — are all machine-readable.
+**None of them is seen by the operator who just created the tenant.**
+
+Demonstrated by the cycle's own evidence: an operator names an already-homed
+user as owner, the console answers **`303 See Other`** to a tenant detail page
+like any success, and that owner then gets **403** on the console they were
+just made owner of. The API is worse — there is no `GET /api/v1/users/:uid`
+(`route-contracts.md:247` has only `/role_assignments`), so a script calling
+`POST /api/v1/tenants` has **no way at all** to learn whether the owner it
+named can administer the tenant it just created.
+
+**This is RFC 158's own defect one layer up**: the console is reachable, and
+the person provisioning it cannot tell whether it is reachable by the person
+they named. Decided for cycle 2:
+
+- **Console.** On `Assigned`, the `303` is unchanged. On `KeptExistingHome` or
+  `Failed`, render a page that confirms the tenant was created, names what
+  happened to the owner's home and what it means for their console access, and
+  links on to the tenant. The console has **no flash or notice mechanism**
+  (checked: nothing in `tenancy_console` reads a query parameter or a flash
+  cookie), and this RFC does not invent one — a page is a function beside
+  `tenant_create_form` in the module that already renders this form's errors.
+- **API.** The `201` body keeps every field it has today at the top level and
+  gains `owner_home`. Additive, so a client reading `id` or `slug` is
+  unaffected — but it is a surface-contract change and is recorded as one.
+  `GET` responses are untouched; the home tenant is a property of the user,
+  not of the tenant.
+
+**Still 0.89.0, minor.** An added response field is additive surface, the same
+reasoning that made the new `EventKind` a minor.
+
+### 5.7 `Config::from_env(…)?` must not run after the writes
+
+Found in review of `27171b8`. Both callers load the config **only** on the
+`Failed` branch, with `?`, after the tenant and membership rows are written:
+
+    } else if outcome.owner_home == OwnerHomeOutcome::Failed {
+        let cfg = Config::from_env(&ctx.env)?;
+
+`Config::from_env` is fallible (`config.rs:90-97`), so a bad deployment
+variable turns a created tenant into a `500` with no body — **reporting a
+failed owner-home assignment as a failed tenant creation**, the one thing
+`OwnerHomeOutcome` exists to prevent, and the reason the audit write two lines
+above uses `.ok()`. The precedent followed (`deletions.rs:443`) loads config
+*before* its operation, where a failure can only refuse a request that has
+changed nothing. Fixed in cycle 2.
+
 ## 6. Why P1 and not P0
 
 Nothing is exposed and nothing is corrupted. A surface is unusable, and it has
