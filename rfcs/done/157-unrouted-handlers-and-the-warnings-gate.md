@@ -1,11 +1,26 @@
 # RFC 157 — Sixteen unrouted route handlers, and the gate they are blocking
 
-**Status.** **Accepted** 2026-10-29. **Scheduled 0.88.1 — patch.** Deletions
-and one CI flag; no capability changes. **Dispatched 2026-10-29**:
-`handoffs/157-unrouted-handlers-and-the-warnings-gate/handoff.md`. Held until
-RFC 153 shipped in 0.88.0, because that cycle was told explicitly not to delete
-any of these handlers as a side-effect and dispatching concurrently would have
-invited the collision that instruction prevents.
+**Status.** **Done** — **shipped v0.88.1**. All 29 unrouted handlers deleted,
+the leftover imports §13.2 had preserved as evidence removed, and
+`unused_imports`/`unused_variables` denied for `cesauth-backend`.
+**Evidence**: **`exercised`** (RFC 000 §22) — `#![deny(unused_imports,
+unused_variables)]` at `crates/backend/src/lib.rs:30`, demonstrated to fail
+the build on a reintroduced unused import (by the cycle in
+`tenant_admin/organizations.rs`, and by the architect in `sweep.rs`, a file the
+cycle never touched) and to pass once restored byte-identically. The population
+it guards is empty: re-derivation gives **126** handler-shaped functions under
+`admin::` and **9** unrouted, all of them RFC 159's, remainder **0**.
+
+**The mechanism is not the one this RFC specified, and the deviation is an
+improvement.** §4 step 4 called for `-D unused_imports -D unused_variables` on
+`clippy.yml`'s invocation. Run as written, a command-line `-D` on
+`cargo clippy -p cesauth-backend` denies the lint in that crate's workspace
+**dependencies** too and fails on `cesauth-core`'s pre-existing `ClientId`
+warning — out of this RFC's scope. The crate attribute scopes correctly **and
+travels with the source**, so a local `cargo build` enforces what CI does.
+Recorded in `docs/src/expert/contributing.md`'s gate-set table, since it is the
+one gate with no workflow of its own.
+
 **Tier.** P2. Nothing is broken. This clears the last obstacle to a gate the
 project decided it wanted in RFC 145 §13.2 and then could not turn on.
 **Size.** Small: deletions, then one CI flag.
