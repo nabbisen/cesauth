@@ -6,7 +6,7 @@ use cesauth_core::tenancy::types::{Group, GroupParent, GroupStatus};
 use serde::Deserialize;
 use worker::Env;
 
-use crate::ports::repo::{d1_int, db, run_err};
+use crate::ports::repo::{classify_insert_err, d1_int, db, run_err};
 
 pub struct CloudflareGroupRepository<'a> {
     env: &'a Env,
@@ -92,14 +92,7 @@ impl GroupRepository for CloudflareGroupRepository<'_> {
             ])
             .map_err(|e| run_err("group.create bind", e))?
             .run().await
-            .map_err(|e| {
-                let msg = format!("{e}").to_ascii_lowercase();
-                if msg.contains("unique") || msg.contains("constraint") {
-                    PortError::Conflict
-                } else {
-                    run_err("group.create run", e)
-                }
-            })?;
+            .map_err(|e| classify_insert_err("group.create run", e))?;
         Ok(())
     }
 

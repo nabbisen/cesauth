@@ -19,7 +19,7 @@ use cesauth_core::ports::{PortError, PortResult};
 use serde::Deserialize;
 use worker::Env;
 
-use crate::ports::repo::{d1_int, db, run_err};
+use crate::ports::repo::{classify_insert_err, d1_int, db, run_err};
 
 pub struct CloudflareRoleRepository<'a> {
     env: &'a Env,
@@ -90,14 +90,10 @@ impl RoleRepository for CloudflareRoleRepository<'_> {
             ])
             .map_err(|e| run_err("role.create bind", e))?
             .run().await
-            .map_err(|e| {
-                let msg = format!("{e}").to_ascii_lowercase();
-                if msg.contains("unique") || msg.contains("constraint") {
-                    PortError::Conflict
-                } else {
-                    run_err("role.create run", e)
-                }
-            })?;
+            // RFC 160: no production caller exists for this method today
+            // (verified — every call site is a test); classified anyway
+            // so it is correct the moment one does.
+            .map_err(|e| classify_insert_err("role.create run", e))?;
         Ok(())
     }
 

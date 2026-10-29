@@ -70,6 +70,13 @@ pub async fn create<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         owner_role:    TenantMembershipRole::Owner,
     }, now).await {
         Ok(o)  => o,
+        // RFC 160 §4.7: this route has no path parameter, so a
+        // `NotFound` out of `create_tenant` can only be the owner
+        // reference — the tenant row is minted fresh by this same call,
+        // never looked up. Naming the field beats the bare 404
+        // `port_error_response` would otherwise return for a path that
+        // itself exists.
+        Err(PortError::NotFound) => return bad_request("owner_user_id not found"),
         Err(e) => return port_error_response(e),
     };
     let tenant = outcome.tenant;

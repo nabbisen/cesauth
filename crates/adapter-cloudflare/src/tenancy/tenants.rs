@@ -6,7 +6,7 @@ use cesauth_core::tenancy::types::{Tenant, TenantStatus};
 use serde::Deserialize;
 use worker::Env;
 
-use crate::ports::repo::{d1_int, db, run_err};
+use crate::ports::repo::{classify_insert_err, d1_int, db, run_err};
 
 pub struct CloudflareTenantRepository<'a> {
     env: &'a Env,
@@ -80,17 +80,11 @@ impl TenantRepository for CloudflareTenantRepository<'_> {
             ])
             .map_err(|e| run_err("tenant.create bind", e))?
             .run().await
-            .map_err(|e| {
-                // Slug collision surfaces as a SQLite UNIQUE-violation
-                // string. We map it to Conflict so the service layer
-                // can react; everything else stays Unavailable.
-                let msg = format!("{e}").to_ascii_lowercase();
-                if msg.contains("unique") || msg.contains("constraint") {
-                    PortError::Conflict
-                } else {
-                    run_err("tenant.create run", e)
-                }
-            })?;
+            // Slug collision surfaces as a SQLite UNIQUE-violation
+            // string, classified to Conflict; everything else stays
+            // Unavailable (RFC 160 — this table has no foreign key, so
+            // UNIQUE is the only constraint class reachable here).
+            .map_err(|e| classify_insert_err("tenant.create run", e))?;
         Ok(())
     }
 

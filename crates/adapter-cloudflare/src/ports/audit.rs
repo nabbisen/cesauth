@@ -208,13 +208,19 @@ impl AuditEventRepository for CloudflareAuditEventRepository<'_> {
                     });
                 }
                 Err(e) => {
-                    let msg = format!("{e}");
+                    // RFC 160: case-folded once, matching the specific
+                    // extended result code rather than the bare word
+                    // `constraint` (which CHECK/NOT NULL also contain —
+                    // not reachable on this table, which has no FK and
+                    // no CHECK, but the specific match costs nothing and
+                    // stops being wrong by accident if that ever changes).
+                    let msg = format!("{e}").to_ascii_lowercase();
                     // UNIQUE-violation on `seq` or `id`: a concurrent
                     // writer beat us. Retry with the new tail. The id
                     // case is a duplicate event_id from the caller —
                     // shouldn't happen with UUIDs, but treat as
                     // permanent failure rather than retry storm.
-                    if msg.contains("UNIQUE") || msg.contains("constraint") {
+                    if msg.contains("sqlite_constraint_unique") {
                         if msg.contains(".id") || msg.contains("audit_events.id") {
                             return Err(PortError::Conflict);
                         }

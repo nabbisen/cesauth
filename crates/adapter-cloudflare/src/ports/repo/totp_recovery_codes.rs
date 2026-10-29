@@ -14,7 +14,7 @@ use serde::Deserialize;
 use worker::wasm_bindgen::JsValue;
 use worker::Env;
 
-use super::{d1_int, db, run_err};
+use super::{classify_insert_err, d1_int, db, run_err};
 
 
 pub struct CloudflareTotpRecoveryCodeRepository<'a> {
@@ -89,18 +89,10 @@ impl TotpRecoveryCodeRepository for CloudflareTotpRecoveryCodeRepository<'_> {
         // PortError::Conflict for the caller.
         match db.batch(stmts).await {
             Ok(_)  => Ok(()),
-            Err(e) => {
-                // Best-effort error classification. D1 surfaces
-                // constraint-failure messages textually; if the
-                // message mentions "UNIQUE" or "constraint", it's
-                // a Conflict, otherwise generic Unavailable.
-                let msg = format!("{e}");
-                if msg.contains("UNIQUE") || msg.contains("constraint") {
-                    Err(PortError::Conflict)
-                } else {
-                    Err(run_err("totp_recovery_codes.bulk_create batch", e))
-                }
-            }
+            // RFC 160: `user_id` is a foreign key, but always the
+            // caller's own authenticated id in practice, so UNIQUE (the
+            // PRIMARY KEY on `id`) is the only class reachable here.
+            Err(e) => Err(classify_insert_err("totp_recovery_codes.bulk_create batch", e)),
         }
     }
 

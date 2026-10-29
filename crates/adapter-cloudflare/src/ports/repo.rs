@@ -74,3 +74,83 @@ pub(crate) fn run_err(context: &'static str, e: worker::Error) -> PortError {
     worker::console_error!("d1 {}: {}", context, e);
     PortError::Unavailable
 }
+
+/// Classify a D1 INSERT failure by SQLite's extended result code, which
+/// D1 embeds verbatim in the error message as `(extended:
+/// SQLITE_CONSTRAINT_<CLASS>)` — more specific than matching the bare
+/// word `constraint`, which every constraint class (UNIQUE, FOREIGN KEY,
+/// CHECK, NOT NULL) contains, and which is RFC 160's defect: all four
+/// collapsed into `Conflict`.
+///
+/// **Only UNIQUE and FOREIGN KEY are classified.** CHECK and NOT NULL are
+/// not reachable by any production caller today — every `CHECK`-
+/// constrained column in this schema is written from a Rust enum through
+/// a `_str()` helper, never a raw caller-controlled string, and every
+/// `NOT NULL` column backing an INSERT here is bound from a non-`Option`
+/// field. Classifying branches nothing can produce would put untestable
+/// code in the exact helper whose untested assumption caused this RFC
+/// (RFC 160 §4.5/§1.1 — provoking those two classes at all required a
+/// temporary, sentinel-gated bind substitution in production code,
+/// restored afterward, specifically because no real caller can reach
+/// them). Anything else — including a genuine CHECK/NOT NULL failure, if
+/// a future change ever makes one reachable — falls through to
+/// [`run_err`], today's path, unchanged.
+///
+/// `FOREIGN KEY` maps to [`PortError::NotFound`]: an INSERT addresses no
+/// existing row, so the only possible subject is something it
+/// *referenced* — "the record does not exist" (`NotFound`'s own doc) is
+/// already true of that. D1's message names neither the column nor the
+/// referenced table, so a variant meant to carry "which reference was
+/// missing" has no payload to carry; reusing `NotFound` costs nothing
+/// a new variant would have bought.
+#[inline]
+pub(crate) fn classify_insert_err(context: &'static str, e: worker::Error) -> PortError {
+    let msg = format!("{e}").to_ascii_lowercase();
+    if msg.contains("sqlite_constraint_foreignkey") {
+        PortError::NotFound
+    } else if msg.contains("sqlite_constraint_unique") {
+        PortError::Conflict
+    } else {
+        run_err(context, e)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // RFC 160 §0's own recorded strings, verbatim — `worker::Error::
+    // RustError` is a plain Rust variant (not an FFI binding), so this
+    // runs on the host like any other pure-function test.
+
+    const UNIQUE_MSG: &str =
+        "D1: D1Error { cause: JsValue(Error: UNIQUE constraint failed: tenants.slug: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_UNIQUE)) }";
+    const FOREIGN_KEY_MSG: &str =
+        "D1: D1Error { cause: JsValue(Error: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_FOREIGNKEY)) }";
+
+    fn err(s: &str) -> worker::Error { worker::Error::RustError(s.to_owned()) }
+
+    #[test]
+    fn unique_classifies_as_conflict() {
+        assert!(matches!(classify_insert_err("test", err(UNIQUE_MSG)), PortError::Conflict));
+    }
+
+    #[test]
+    fn foreign_key_classifies_as_not_found() {
+        assert!(matches!(classify_insert_err("test", err(FOREIGN_KEY_MSG)), PortError::NotFound));
+    }
+
+    // RFC 160 §4.5: CHECK and NOT NULL are not reachable by any
+    // production caller today, and this helper does not special-case
+    // them — they, and any other unrecognized message, fall through to
+    // `run_err`'s `Unavailable`, not silently become a `Conflict` the
+    // way the pre-RFC-160 `contains("constraint")` test would have.
+    //
+    // **Flagging, not silently substituting**: that fallthrough has no
+    // host test here. `run_err` calls `worker::console_error!`, which
+    // panics ("function not implemented on non-wasm32 targets") the
+    // moment it runs outside wasm32 — the same limitation that applies
+    // to every other `worker::Env`-touching call in this workspace.
+    // Confirmed directly: adding that assertion aborts the test binary
+    // (SIGABRT), not a normal test failure.
+}

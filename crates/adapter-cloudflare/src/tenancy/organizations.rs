@@ -6,7 +6,7 @@ use cesauth_core::tenancy::types::{Organization, OrganizationStatus};
 use serde::Deserialize;
 use worker::Env;
 
-use crate::ports::repo::{d1_int, db, run_err};
+use crate::ports::repo::{classify_insert_err, d1_int, db, run_err};
 
 pub struct CloudflareOrganizationRepository<'a> {
     env: &'a Env,
@@ -88,14 +88,11 @@ impl OrganizationRepository for CloudflareOrganizationRepository<'_> {
             ])
             .map_err(|e| run_err("organization.create bind", e))?
             .run().await
-            .map_err(|e| {
-                let msg = format!("{e}").to_ascii_lowercase();
-                if msg.contains("unique") || msg.contains("constraint") {
-                    PortError::Conflict
-                } else {
-                    run_err("organization.create run", e)
-                }
-            })?;
+            // RFC 160: tenant_id's foreign key is already proven by
+            // `create_organization` (core/tenancy/service.rs) before this
+            // runs, so UNIQUE ((tenant_id, slug) or id) is the only
+            // constraint class reachable here in practice.
+            .map_err(|e| classify_insert_err("organization.create run", e))?;
         Ok(())
     }
 

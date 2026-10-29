@@ -1,8 +1,9 @@
 //! `/api/v1/tenants/:tid/groups/...` route handlers.
 
-use cesauth_cf::tenancy::CloudflareGroupRepository;
+use cesauth_cf::tenancy::{CloudflareGroupRepository, CloudflareTenantRepository};
 use cesauth_core::admin::types::AdminAction;
-use cesauth_core::tenancy::ports::{GroupRepository, NewGroupInput};
+use cesauth_core::ports::PortError;
+use cesauth_core::tenancy::ports::{GroupRepository, NewGroupInput, TenantRepository};
 use cesauth_core::tenancy::service::create_group;
 use cesauth_core::tenancy::types::GroupParent;
 use serde::Deserialize;
@@ -56,6 +57,22 @@ pub async fn create<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         return resp;
     }
 
+    // RFC 160 §4.7: `create_group` takes no `TenantRepository` and never
+    // checks `tenant_id` exists (confirmed — it only validates a
+    // cross-tenant *consistency* rule, not existence). Resolving the
+    // tenant here, before calling it, makes `:tid` an honest 404 rather
+    // than folding it into whatever `organization_id` produces; it is
+    // the same check every console group-create handler already runs.
+    // Not added to `create_group`'s own signature — that would be a
+    // core signature change with a test ripple across its call sites
+    // (RFC 158 §5.2's lesson), for a check the caller can make itself.
+    let tenants = CloudflareTenantRepository::new(&ctx.env);
+    match tenants.get(&tid).await {
+        Ok(Some(_)) => {}
+        Ok(None)    => return not_found(),
+        Err(e)      => return port_error_response(e),
+    }
+
     let now = OffsetDateTime::now_utc().unix_timestamp();
     let groups = CloudflareGroupRepository::new(&ctx.env);
 
@@ -67,6 +84,10 @@ pub async fn create<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         organization_tenant_id: None,
     }, now).await {
         Ok(g)  => g,
+        // The tenant is already proven to exist above, so a `NotFound`
+        // here can only be `organization_id` (the parent-kind=organization
+        // branch's own foreign key).
+        Err(PortError::NotFound) => return bad_request("organization_id not found"),
         Err(e) => return port_error_response(e),
     };
 

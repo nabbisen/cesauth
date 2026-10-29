@@ -13,7 +13,7 @@ use cesauth_core::tenancy::types::{
 use serde::Deserialize;
 use worker::Env;
 
-use crate::ports::repo::{d1_int, db, run_err};
+use crate::ports::repo::{classify_insert_err, d1_int, db, run_err};
 
 pub struct CloudflareMembershipRepository<'a> {
     env: &'a Env,
@@ -109,19 +109,6 @@ impl GroupMembershipRow {
 }
 
 // -------------------------------------------------------------------------
-// Helper: classify INSERT errors
-// -------------------------------------------------------------------------
-
-fn map_insert_err(context: &'static str, e: worker::Error) -> PortError {
-    let msg = format!("{e}").to_ascii_lowercase();
-    if msg.contains("unique") || msg.contains("constraint") {
-        PortError::Conflict
-    } else {
-        run_err(context, e)
-    }
-}
-
-// -------------------------------------------------------------------------
 // Trait impl
 // -------------------------------------------------------------------------
 
@@ -140,7 +127,7 @@ impl MembershipRepository for CloudflareMembershipRepository<'_> {
             ])
             .map_err(|e| run_err("tenant_membership.add bind", e))?
             .run().await
-            .map_err(|e| map_insert_err("tenant_membership.add run", e))?;
+            .map_err(|e| classify_insert_err("tenant_membership.add run", e))?;
         Ok(())
     }
 
@@ -192,7 +179,7 @@ impl MembershipRepository for CloudflareMembershipRepository<'_> {
                 org_role_str(m.role).into(), d1_int(m.joined_at),
             ])
             .map_err(|e| run_err("org_membership.add bind", e))?
-            .run().await.map_err(|e| map_insert_err("org_membership.add run", e))?;
+            .run().await.map_err(|e| classify_insert_err("org_membership.add run", e))?;
         Ok(())
     }
 
@@ -245,7 +232,7 @@ impl MembershipRepository for CloudflareMembershipRepository<'_> {
                 d1_int(m.joined_at),
             ])
             .map_err(|e| run_err("group_membership.add bind", e))?
-            .run().await.map_err(|e| map_insert_err("group_membership.add run", e))?;
+            .run().await.map_err(|e| classify_insert_err("group_membership.add run", e))?;
         Ok(())
     }
 
