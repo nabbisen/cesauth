@@ -6,8 +6,14 @@ and this is P2 (nine functions nothing reaches). **Release unassigned**, for
 the same reason RFC 158's is: §4's two deliverables are different sizes and the
 per-page question in step 1 is answered by looking, not by scheduling.
 
-**Not dispatched**: RFC 157 is in flight on the adjacent fifteen. Dispatching
-this concurrently would put two cycles in the same nine modules' neighbours.
+**Implementation dispatched 2026-10-29**, after 0.89.1 was cut:
+`handoffs/159-nine-dead-handlers-no-lint-can-see/implementation-handoff.md`.
+**0.89.2, patch** — deleting dead code and adding a check, the same shape that
+made RFC 157's twenty-nine deletions a patch.
+
+**No decision stage, and §3's premise is why** — see §2.1. The per-page
+archaeology §4 step 1 asks for was three greps, and doing it before paying for
+a stage turned one design fork into zero.
 **Tier.** P2. Nothing is broken and nothing is reachable. The value is the
 check, not the deletions.
 **Size.** Small for the nine; the check is the lasting part.
@@ -58,11 +64,53 @@ unused-variable sites and **none is in these nine files** — each passes `req`
 and `ctx` onward, so `unused_variables` and `unused_imports` are both blind.
 **RFC 157's gate will ship green over all nine.**
 
-**Nothing is broken.** The frontend fetches five `.json` paths —
-`/admin/console.json`, `/admin/console/tokens.json`, `/admin/tenancy.json`,
-`/admin/tenancy/tenants.json`, `/admin/tenancy/tenants/{tid}.json` — and **all
-five are routed.** So the nine are dead, not broken, and there is no runtime
+**Nothing is broken by the nine.** ~~The frontend fetches five `.json`
+paths … and all five are routed.~~ **Corrected 2026-10-29**: it references
+**sixteen**, this list was only the operator-console subset, and **two of the
+sixteen are not routed** — see
+[RFC 162](../proposed/162-two-console-pages-fetch-urls-nothing-serves.md),
+which this count is how I found. None of the sixteen is one of the nine, so
+**this RFC's conclusion is unaffected and only its count was wrong.** So the nine are dead, not broken, and there is no runtime
 symptom to chase.
+
+## 2.1 §3's premise is wrong: the six sit beside pages that render nothing
+
+Established 2026-10-29 by the architect, doing §4 step 1's archaeology before
+dispatching a stage for it. **§3 below is left as written** — it was the
+reasoning that justified separating this RFC from 157, and it should stay
+visible as a thing that was argued and then disproved.
+
+§3 says the six `admin::console::*` handlers *"sit beside live,
+`client`-declared Leptos pages"*, and that *"a `page_json` companion is exactly
+the shape a CSR page would consume, so for these six 'nothing fetches it today'
+is not 'nothing should'."* **The pages those six sit beside fetch nothing and
+render nothing.** `crates/frontend/src/pages/operator/console.rs`'s own section
+comment reads `// ─── Generic placeholder pages ───`, and each of the six
+renders a heading, a back-link, and one sentence promising data that never
+arrives. The fetch idiom — `gloo_net::http::Request::get` — is present in
+`ConsoleOverview`, `ConsoleTokens` and `operator/tenancy.rs`, and **absent from
+all six.**
+
+**So the "wire it" branch does not exist.** There is no consumer to wire; the
+handler and the page are two unconnected halves of an unbuilt feature, and
+building the feature needs a route, a contract row, a data query and a design
+that a dormant handler supplies none of.
+
+**The other three are RFC 157's mechanical shape**, not a different question:
+`admin::tenancy_console::{organizations,role_assignments,subscription}`'s
+sibling `page` handlers are routed and server-rendered (`lib.rs:334-336`, RFC
+145 cycle 3's work), so their `page_json` companions are dead for exactly the
+reason RFC 157's fifteen were.
+
+**All nine are therefore dead with no fork**, and §4 step 1 collapses into
+step 2, which was always the point of this RFC.
+
+**The pages are a separate matter and not this RFC's.** Six routed, reachable
+operator pages that promise data and render none is a product-scope question —
+build them, remove them, or say when — and it is
+[RFC 161](../proposed/161-six-operator-pages-promise-data-and-render-none.md),
+proposed, for the owner. **It does not block this RFC and this RFC does not
+wait for it.**
 
 ## 3. Why these need a different question than RFC 157's fifteen
 
@@ -109,7 +157,10 @@ is a separate RFC rather than nine more rows on RFC 157's list.**
    dead handler sharing a name with a routed one — because that is the class
    that produced this RFC and a pair without it proves nothing about it.
 
-3. **Then re-run RFC 157's census** with the routing check instead of the name
+3. **Not the inverse check.** *"Every URL the frontend fetches has a route"*
+   is RFC 162's, and it is a sibling of step 2's, not part of it. The two may
+   share a script later; neither waits for the other.
+4. **Then re-run RFC 157's census** with the routing check instead of the name
    test, and record the number it gives.
 
 ## 5. The lesson worth keeping in the record
