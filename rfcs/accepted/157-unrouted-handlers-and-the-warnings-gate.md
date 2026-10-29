@@ -75,9 +75,30 @@ not referenced in lib.rs at all:          16
 > named that weakness and then called the list built with it sound.** They are
 > **RFC 159**.
 >
-> **Corrected arithmetic: 24 real unrouted handlers** = 15 + 9, of which **11
-> are referenced nowhere in the crate at all** and **13 only by their own
-> tests**.
+> **Corrected again 2026-10-29 at a second deliverable (0) stop, and this is
+> the authoritative count.** Derived from the tree rather than by checking
+> named candidates, by the cycle and independently by me with matching results:
+>
+> ```
+> real handler-shaped pub async fns under admin::   155
+> unrouted by full qualified path                    38
+>     this cycle's triage (15 approved + 14 found)   29
+>     RFC 159's dashboard page_json set               9
+> ```
+>
+> **38, not 24** — the 15 I first approved were missing **fourteen more** of
+> the identical `form_json`/`confirm_json` shape, hidden by the same bare-name
+> collision that hid the nine. **Of the 38, 23 are referenced nowhere in the
+> crate at all and 15 only by their own tests.**
+>
+> **Whole-tree check: there are no unrouted handlers outside `admin::`.** My
+> own first pass reported two in `oidc::`, which were false positives —
+> `oidc.rs:16` and `:20` are **renaming** re-exports (`pub use userinfo::handler
+> as userinfo_handler`) and my script resolved only brace re-exports.
+>
+> **My number was wrong three times** on this RFC: sixteen including a phantom,
+> then fifteen missing nine, then fifteen missing fourteen. The count to cite
+> is the derivation, not any figure I supplied.
 
 Fifteen are `*_json` companions — `confirm_tenant_json`, `form_org_json`,
 `confirm_group_json` and so on. Of the fifteen, **two are referenced nowhere in

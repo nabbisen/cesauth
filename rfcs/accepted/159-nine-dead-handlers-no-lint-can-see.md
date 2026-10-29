@@ -90,9 +90,20 @@ is a separate RFC rather than nine more rows on RFC 157's list.**
    family, with a named and dated exemption list.
 
    **It must not be built on a bare-name test.** That is precisely what hid
-   these nine. Match the qualified path, and **account for re-exports**:
-   `admin.rs:32`'s `pub use legacy::{create_user, revoke_session}` makes a
-   naive path test report two routed functions as dead.
+   these nine — and, a stop later, fourteen more. Match the qualified path, and
+   **account for both forms of re-export**:
+
+   - **brace** — `admin.rs:32`'s `pub use legacy::{create_user,
+     revoke_session}`;
+   - **renaming** — `oidc.rs:16`'s `pub use userinfo::handler as
+     userinfo_handler` and `:20`'s `pub use introspect::handler as introspect`.
+
+   **Established by getting it wrong in review:** a path test that handled only
+   the brace form reported `oidc::{introspect,userinfo}::handler` as dead when
+   both are routed. **That is the false-positive direction, which is the worse
+   one for a gate** — it makes people write exemptions for things that are
+   fine, and an exemption list that accumulates correct entries stops being
+   read.
 
    **And its fires/does-not-fire pair must include a name-collision case** — a
    dead handler sharing a name with a routed one — because that is the class
