@@ -1,6 +1,12 @@
 # RFC 164 — The link sweep RFC 000 mandates is unenforced, and nine links rotted
 
-**Status.** **Proposed** 2026-10-30. Awaiting nabbisen's acceptance.
+**Status.** **Accepted** 2026-10-30. **Release 0.89.4 — patch**: a gate section
+and a link repair, no capability added. **Queued behind RFC 159's cycle 3
+(0.89.2) and RFC 162 (0.89.3)** — not dispatched, because its commits would
+otherwise land on `main` under a tag not meant to carry them.
+**§4's fork is decided at dispatch, not here**: the recommendation is to
+de-link the two lifecycle documents' fourteen example links rather than exempt
+the files.
 **Tier.** **P2.** Nothing is exposed and nothing is broken at runtime. The
 corpus the whole process runs on sends readers to the wrong folder, which
 means to the wrong **status**.
