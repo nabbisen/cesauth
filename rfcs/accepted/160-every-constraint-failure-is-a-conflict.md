@@ -263,6 +263,28 @@ that an unrecognized constraint message does not become `Conflict`** — which i
 exactly this RFC's bug, and exactly what a future re-broadening of the match
 would reintroduce, with both existing tests staying green. **Fixed in cycle 2.**
 
+### 4.10 Cycle 2 landed; the ninth site's consumers are three, and none is sensitive
+
+`6280b1b`: `users.rs::create` routes through the shared helper, and
+`classify_insert_message` carries the decision as a pure function with
+`classify_insert_err` the thin wrapper that logs on `None` — five host tests,
+of which CHECK, NOT NULL and an unrelated message are the guard that did not
+exist. Re-verified at **1,630** host tests / 0 failed, `migration_chain` 35,
+routes 193, bundle 882,731 B reconciling at 33% with full digests.
+
+**The fires witness had to be the pure function, not the wrapper** — found by
+the cycle, not specified: reverting the foreign-key arm and calling the wrapper
+sends the message into `run_err`, which **aborts** the binary rather than
+failing the assertion, so a wrapper-level probe would have proved nothing.
+
+**`UserRepository::create` has three production consumers, not one**:
+`admin/legacy.rs:80`, `magic_link/verify.rs:403`, `api_v1/anonymous.rs:128`.
+All three match a wildcard rather than the variant, so none is sensitive to the
+reclassification and no arm was added anywhere. `magic_link/verify.rs` is the
+only one where a foreign-key failure is genuinely reachable — RFC 153 made that
+path's `tenant_id` come from an invitation rather than a constant — and it
+answers `CoreError::Internal`: vague, true, and not this RFC's to improve.
+
 ## 5. The lesson worth keeping in the record
 
 This was found in a cycle's **unrequested** evidence. The dev team ran
