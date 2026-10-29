@@ -106,7 +106,7 @@ The root file keeps:
   ## Older releases
 
   v0.50.x and earlier are recorded under
-  [`docs/changelog-archive/`](./docs/changelog-archive/README.md),
+  [`docs/changelog-archive/`](../../docs/changelog-archive/README.md),
   split by minor-version range:
   - v0.41-v0.49 → `CHANGELOG-0.41-to-0.49.md`
   - v0.31-v0.40 → `CHANGELOG-0.31-to-0.40.md`

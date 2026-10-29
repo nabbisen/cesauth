@@ -3,11 +3,11 @@
 > **2026-10-27 — one kind this RFC family introduced is never emitted.**
 > Determined while assigning this RFC's evidence term under RFC 000 §22.
 > `InvitationRevoked` has no emitter because `revoke_invitation` has no caller
-> ([RFC 153](../accepted/153-an-invitation-grants-nothing.md)). A wider sweep
+> ([RFC 153](./153-an-invitation-grants-nothing.md)). A wider sweep
 > found **10 of 71 `EventKind` variants with no reference outside the enum**;
 > most are redundant with differently-named kinds that *are* emitted, but
 > `MfaVerified` has nothing behind it and the whole `me/totp/` tree emits no
-> event at all — **[RFC 154](../proposed/154-the-second-factor-is-never-audited.md)**.
+> event at all — **[RFC 154](./154-the-second-factor-is-never-audited.md)**.
 > The missing gate direction is recorded in
 > [RFC 123](../proposed/123-audit-event-completeness.md) §1.1.
 >

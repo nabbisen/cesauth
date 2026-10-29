@@ -6,7 +6,7 @@
 > applies neither: an accepted invitation produces no tenant membership and no
 > role assignment, and the `role` column this RFC introduces is read exactly
 > once in the codebase, into an audit message string. See
-> **[RFC 153](../proposed/153-an-invitation-grants-nothing.md)**.
+> **[RFC 153](./153-an-invitation-grants-nothing.md)**.
 
 **Status**: Implemented  
 **Evidence**: **`unknown`** (RFC 000 §22, back-filled 2026-10-28) — the definition this RFC introduces — an invitation links an email to a tenant and a role — has never been implemented. See the annotation above and **RFC 153**.

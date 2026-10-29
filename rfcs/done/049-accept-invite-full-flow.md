@@ -15,7 +15,7 @@
 > host-tested, and has no caller, so the `revoked` state is unreachable.
 >
 > **This RFC's evidence term under RFC 000 §22 is `unknown` at best.** Owned by
-> **[RFC 153](../proposed/153-an-invitation-grants-nothing.md)**.
+> **[RFC 153](./153-an-invitation-grants-nothing.md)**.
 
 > **The title "full implementation" is the part to distrust**: the handler is
 > complete as a handler and completes nothing as a flow.

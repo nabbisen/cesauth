@@ -50,7 +50,7 @@ assignment**, which is RFC 043's entire definition of an invitation; the
 `revoke_invitation` has no caller, so the `revoked` state is unreachable.
 RFC 046 and **[RFC 049](../done/049-accept-invite-full-flow.md)** — titled
 *"full implementation"* — are both `done/`, both **Implemented**, both P1.
-Now **[RFC 153](../proposed/153-an-invitation-grants-nothing.md)**.
+Now **[RFC 153](../done/153-an-invitation-grants-nothing.md)**.
 
 Three instances, and the third one arrived **before the back-fill had covered
 a tenth of its 28 RFCs**. Two found by accident were the argument for §22's

@@ -8,7 +8,7 @@
 > the most natural refactor available — would have reintroduced the oracle
 > silently.
 >
-> **[RFC 155](../accepted/155-two-p0-guarantees-rest-on-nothing-that-fails.md)**
+> **[RFC 155](./155-two-p0-guarantees-rest-on-nothing-that-fails.md)**
 > extracted the message selection into two pure decision functions
 > (`incorrect_or_expired_code_message`, `challenge_lookup_failure_message`)
 > that the handler now calls, and asserted both conflations directly

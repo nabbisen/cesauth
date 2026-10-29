@@ -2,7 +2,7 @@
 
 **Status**: Implemented
 **ROADMAP**: `## Planned (0.x) / Later` — "OIDC `id_token` issuance"
-**ADR**: [ADR-008](../docs/src/expert/adr/008-id-token-issuance.md) (Draft, all eleven design questions resolved)
+**ADR**: [ADR-008](../../docs/src/expert/adr/008-id-token-issuance.md) (Draft, all eleven design questions resolved)
 **Estimated scope**: Medium — ~600 LOC across 4 files + test additions, one schema migration, one wire change
 
 ## Background

@@ -10,7 +10,7 @@
 > by a doc comment, and for invitations `code` is a full accept URL, not
 > an expiring OTP.
 >
-> **[RFC 155](../accepted/155-two-p0-guarantees-rest-on-nothing-that-fails.md)**
+> **[RFC 155](./155-two-p0-guarantees-rest-on-nothing-that-fails.md)**
 > replaced the `derive(Debug)` with a hand-written impl that redacts `code`
 > as `REDACTION_MARKER`, asserted against both an OTP-shaped and a
 > URL-shaped fixture. §Decision(1) — `Category::Magic` as sensitive — is

@@ -15,7 +15,7 @@
 > host-tested, and has no caller, so the `revoked` state is unreachable.
 >
 > **This RFC's evidence term under RFC 000 §22 is `unknown` at best.** Owned by
-> **[RFC 153](../proposed/153-an-invitation-grants-nothing.md)**.
+> **[RFC 153](./153-an-invitation-grants-nothing.md)**.
 
 **Status**: Implemented  
 **Evidence**: **`unknown`** (RFC 000 §22, back-filled 2026-10-28) — the accept path grants neither the tenant nor the role, and revoke has no caller. See the annotation above and **RFC 153**.

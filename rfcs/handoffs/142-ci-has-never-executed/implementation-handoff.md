@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 142, no CI workflow has ever run
 
-**Governing RFC.** [`rfcs/accepted/142-ci-has-never-executed.md`](../../accepted/142-ci-has-never-executed.md)
+**Governing RFC.** [`rfcs/done/142-ci-has-never-executed.md`](../../done/142-ci-has-never-executed.md)
 **Target release.** 0.84.3, alongside RFC 133 half A. **Level: patch** — gates
 that were supposed to run start running.
 **Prepared by.** Architect · **Implemented by.** Mid-capability model
