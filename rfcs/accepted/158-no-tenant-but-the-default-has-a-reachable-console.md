@@ -308,7 +308,7 @@ decision stage asserted that this failure arrives as `NotFound`, and the
 architect accepted that claim without checking the variant.**
 
 **Not folded in** — a shared adapter helper behind eight unrelated operations,
-turning on a `PortError` vocabulary decision. **RFC 160, proposed.**
+turning on a `PortError` vocabulary decision. **RFC 160, accepted** 2026-10-29.
 
 ## 6. Why P1 and not P0
 

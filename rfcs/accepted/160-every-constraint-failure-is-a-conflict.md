@@ -1,6 +1,15 @@
 # RFC 160 — Every constraint failure is a `Conflict`
 
-**Status.** **Proposed** 2026-10-29. Needs nabbisen's acceptance.
+**Status.** **Accepted** 2026-10-29.
+**Sequenced next, ahead of RFC 159.** Both are P2, and 159 was queued first —
+but 159's own Status says *"nothing is broken and nothing is reachable; the
+value is the check, not the deletions"*, while this one has an operator being
+told the wrong field is wrong. *"APIs and UI/UX for users not to be confused or
+misunderstand"* is the standard, and this is the last lie left on a form RFC
+158 spent four cycles making honest. **Release unassigned**: the version level
+is a `§4.1` consequence — reusing `NotFound` is a fix (patch), a new
+`PortError` variant is additive surface on `core::ports` (minor) — so it is
+decided at dispatch, not now.
 **Tier.** P2. Nothing is exposed, nothing is corrupted, nothing is
 unreachable. An operator is told the wrong thing about why their request
 failed, and a public API answers with the wrong status class.
