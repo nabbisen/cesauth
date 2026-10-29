@@ -58,10 +58,30 @@ not referenced in lib.rs at all:          16
     2  admin::console            1  admin::auth
 ```
 
+> **Corrected 2026-10-29, at deliverable (0): the population is fifteen, and
+> the count missed nine others.** Both defects were in my measurement, which
+> this RFC had labelled *"facts already measured — do not re-derive"* — a label
+> that told the cycle not to check the thing that was wrong.
+>
+> **`admin::auth::list_tokens` does not exist.** It is a `///` line inside a
+> ` ```ignore ` fenced example for the `require_system_admin!` macro
+> (`routes/admin/auth.rs:161`). **My regex matched inside a doc comment** —
+> the same bug this project corrected once before, in a cascade check whose
+> regex matched `user_id` inside SQL comments.
+>
+> **And nine more real unrouted handlers were missed**, all named `page_json`,
+> because the bare-name test sees that string in `lib.rs` (eight *routed*
+> functions share the name) and clears every function with it. **This RFC
+> named that weakness and then called the list built with it sound.** They are
+> **RFC 159**.
+>
+> **Corrected arithmetic: 24 real unrouted handlers** = 15 + 9, of which **11
+> are referenced nowhere in the crate at all** and **13 only by their own
+> tests**.
+
 Fifteen are `*_json` companions — `confirm_tenant_json`, `form_org_json`,
-`confirm_group_json` and so on — and one is `admin::auth::list_tokens`. Of the
-sixteen, **three are referenced nowhere in the crate at all**
-(`auth::list_tokens`, `console::tokens::new_form_json`,
+`confirm_group_json` and so on. Of the fifteen, **two are referenced nowhere in
+the crate at all** (`console::tokens::new_form_json`,
 `console::config::edit_form_json`); the other thirteen are reached only by
 their own tests.
 
@@ -106,9 +126,28 @@ produced sixteen.
    toolchains, and the toolchain is pinned precisely so bumps are deliberate
    events. The two populations get two decisions.
 
-**The gate is the point, not the tidiness.** Sixteen handlers routed by nothing
+**The gate is the point, not the tidiness.** Handlers routed by nothing
 accumulated silently because nothing failed. That is the same sentence as
 RFC 156's, one layer in.
+
+### 4.1 The gate's blind spot, stated before it ships
+
+**Neither lint can see a dead handler that uses its parameters.** Established
+at deliverable (0): none of RFC 159's nine produces a warning, because each
+passes `req` and `ctx` on to `operator_json_api::…` before doing nothing
+useful with the result.
+
+So this RFC's premise — *unused imports and variables are the compiler's
+report of an unrouted handler* — **is incomplete, and the gate inherits that.**
+It catches the residue that leaves parameters unused and is blind to the
+residue that does not. **Recorded here rather than discovered after the gate
+ships**, which is the one time in this programme that "a check that quietly
+does less than it appears" has been caught in advance.
+
+**What would close it** is a routing check, not a lint: a handler-shaped
+`pub async fn` in `routes/` whose qualified path appears nowhere in `lib.rs`
+fails. That is RFC 159's natural second deliverable and is not in this
+cycle.
 
 ## 5. Open question for the owner
 

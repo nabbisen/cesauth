@@ -57,6 +57,7 @@ sat here across 61 releases, correctly filed, with both deliverables dead.
 
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
+| [159](./proposed/159-nine-dead-handlers-no-lint-can-see.md) | **Nine dead handlers no lint can see.** Nine `page_json` handlers are registered by nothing, referenced by nothing and fetched by nothing — and **no lint can see them**, because each uses its parameters before doing nothing useful, so RFC 157's gate ships green over all nine. Missed by that RFC's census because a bare-name test clears every function sharing a name with a routed one. **Found by the dev team reconciling a count I had labelled "do not re-derive"** | P2 | — |
 | [144](./proposed/144-introspection-reveals-family-existence.md) | **Introspection reveals that a family exists** to an authenticated caller presenting a forged jti: `expired`/`revoked` are classified before the jti comparison, which the mismatch path conflates to `unknown` precisely to avoid this. **Recorded as an RFC because it was lost once** as "recorded for RFC 118" | P3 | filler |
 
 ### Other proposed
