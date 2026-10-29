@@ -57,6 +57,7 @@ sat here across 61 releases, correctly filed, with both deliverables dead.
 
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
+| [161](./proposed/161-six-operator-pages-promise-data-and-render-none.md) | **Six operator console pages promise data and render none.** `/admin/console/{audit,audit/chain,safety,cost,alerts,config}` are routed and reachable and each renders a heading, a back-link and one sentence saying the data will appear there; `console.rs`'s own section comment calls them *"Generic placeholder pages"*, and none of them fetches anything. **Their dead `page_json` companions are the other half of the same unbuilt feature** — which is how this was found, doing RFC 159 §4's per-page archaeology before dispatching it. **Build / remove / say-when is product scope, so no recommendation is offered** | P2 | unassigned |
 | [144](./proposed/144-introspection-reveals-family-existence.md) | **Introspection reveals that a family exists** to an authenticated caller presenting a forged jti: `expired`/`revoked` are classified before the jti comparison, which the mismatch path conflates to `unknown` precisely to avoid this. **Recorded as an RFC because it was lost once** as "recorded for RFC 118" | P3 | filler |
 
 ### Other proposed
@@ -219,7 +220,7 @@ discussion happened.
 
 ## Adding a new RFC
 
-Next number: **161**. Create `rfcs/proposed/161-slug.md` with `**Status.** Proposed`
+Next number: **162**. Create `rfcs/proposed/162-slug.md` with `**Status.** Proposed`
 and add a row above, in the same commit.
 
 Transitions (folder is authoritative; update Status and this index in the same
