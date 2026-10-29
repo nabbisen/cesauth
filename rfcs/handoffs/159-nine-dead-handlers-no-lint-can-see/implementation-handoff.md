@@ -3,7 +3,7 @@
 **Governing RFC.** `rfcs/accepted/159-nine-dead-handlers-no-lint-can-see.md`
 — **§2.1 first**, which disproves §3 and is why there is no decision stage,
 then **§4 steps 2 and 3**, which are the whole of the work.
-**Related, not yours.** `rfcs/proposed/161-six-operator-pages-promise-data-and-render-none.md`
+**Related, not yours.** `rfcs/accepted/161-six-operator-pages-promise-data-and-render-none.md`
 — the other half of the same unbuilt feature. **Do not touch those pages.**
 
 **Target release.** **0.89.2 — patch.** Deleting dead code and adding a check,

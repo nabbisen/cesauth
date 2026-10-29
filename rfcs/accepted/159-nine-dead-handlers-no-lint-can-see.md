@@ -74,7 +74,7 @@ and `ctx` onward, so `unused_variables` and `unused_imports` are both blind.
 paths … and all five are routed.~~ **Corrected 2026-10-29**: it references
 **sixteen**, this list was only the operator-console subset, and **two of the
 sixteen are not routed** — see
-[RFC 162](../proposed/162-two-console-pages-fetch-urls-nothing-serves.md),
+[RFC 162](../accepted/162-two-console-pages-fetch-urls-nothing-serves.md),
 which this count is how I found. None of the sixteen is one of the nine, so
 **this RFC's conclusion is unaffected and only its count was wrong.** So the nine are dead, not broken, and there is no runtime
 symptom to chase.
@@ -114,7 +114,7 @@ step 2, which was always the point of this RFC.
 **The pages are a separate matter and not this RFC's.** Six routed, reachable
 operator pages that promise data and render none is a product-scope question —
 build them, remove them, or say when — and it is
-[RFC 161](../proposed/161-six-operator-pages-promise-data-and-render-none.md),
+[RFC 161](../accepted/161-six-operator-pages-promise-data-and-render-none.md),
 proposed, for the owner. **It does not block this RFC and this RFC does not
 wait for it.**
 

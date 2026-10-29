@@ -1,8 +1,15 @@
 # RFC 161 — Six operator console pages promise data and render none
 
-**Status.** **Proposed** 2026-10-29. Needs nabbisen's acceptance — **this one
-is a product-scope question, not a cleanup**, which is why it is not folded
-into RFC 159.
+**Status.** **Accepted** 2026-10-30. **Release unassigned, and it cannot be
+assigned yet** — §3's three ways out are a product decision the owner has not
+made, and the version level follows from it: **building** any of the six is
+added capability (**minor**), **removing** them or **saying when** is a
+**patch**. Accepting this RFC settles that the six pages are a defect worth
+answering; it does not settle which answer. **Not dispatched**, and not
+dispatchable, until that choice exists.
+
+**This one is a product-scope question, not a cleanup**, which is why it is not
+folded into RFC 159.
 **Tier.** P2. Nothing is exposed, nothing is corrupted, nothing is broken. Six
 routed pages an operator can reach tell them data will appear there, and it
 never does.

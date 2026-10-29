@@ -1,6 +1,12 @@
 # RFC 162 — Two console pages fetch URLs nothing serves
 
-**Status.** **Proposed** 2026-10-29. Needs nabbisen's acceptance.
+**Status.** **Accepted** 2026-10-30. **Release 0.89.3 — patch**: two wrong URLs
+and a check, the same shape that made RFC 159's deletions-plus-a-gate a patch.
+**Queued behind RFC 159's cycle 3** — 0.89.2 is uncut, and dispatching this
+onto `main` first would put its code under a tag that is not meant to carry it.
+**Deliverable (0) in §3 is a report-and-stop**: if `curl` shows either URL is
+somehow served, this RFC's premise is wrong and nothing gets fixed until that
+is explained.
 **Tier.** **P1.** One of the two is the **tenant-admin overview** — the first
 page a tenant's owner lands on, on the console RFC 158 spent four cycles making
 reachable for the first time in the project's history. It asks for a URL no
