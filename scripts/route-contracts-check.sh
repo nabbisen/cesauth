@@ -650,8 +650,304 @@ if [ -n "$nonce_violations" ]; then
   exit_code=1
 fi
 
+# ── E4 (RFC 159): every handler-shaped `pub async fn` in routes/ must be
+#    reachable from lib.rs ──────────────────────────────────────────────
+#
+# RFC 125/145/150/157 all check something a *registered* route must do.
+# None of them asks the opposite question: is a handler-shaped function
+# registered at all? RFC 157's own cycle found fourteen that weren't,
+# and a bare-name grep used to find them had already been shown (RFC 159
+# §1) to hide a dead handler sharing its name with a live one — a
+# same-named sibling makes the bare name "exist" in lib.rs even though
+# *this* definition is never called. So this check works off each
+# handler's full qualified path, not its bare name, same discipline as
+# E3's resolver below it.
+#
+# A handler's natural qualified path is its file location relative to
+# routes/ (routes/admin/console/alerts.rs, fn page_json -> qualified
+# admin::console::alerts::page_json). RFC 159's own two named cases show
+# that is not the only path that reaches it: a **one-level-up**
+# re-export in the file that declares `mod <leaf>;` also reaches it,
+# in either of two shapes (both exist today, both must resolve):
+#   brace    -- admin.rs:32's `pub use legacy::{create_user, revoke_session};`
+#   renaming -- oidc.rs:16/20's `pub use userinfo::handler as userinfo_handler;`
+# (the trivial same-name case, `pub use leaf::fn;`, is the same shape
+# E3's Shape 2 already resolves in the other direction, and is handled
+# here too since it is just the renaming form with no alias). One level
+# only -- same E3/NONCE precedent in this file; a re-export chain deeper
+# than that is out of scope until a route using one is ever declared.
+#
+# A handler with no live qualified path -- natural or one-level
+# flattened -- fails. Named, dated, reviewed exemptions only, same
+# discipline as E3_EXEMPT/GATE_42_EXEMPT/NONCE_EXEMPT above. Empty by
+# design: RFC 159 deleted its ten known-dead handlers (the nine named at
+# dispatch, plus `admin::console::preview::handler` -- a tenth E4 itself
+# found on its first real run, confirmed dead and folded in rather than
+# exempted) rather than exempting them.
+E4_EXEMPT=""
+
+# RFC 159 continuation (§4.2): a qualified-path check only covers what it
+# can recognise as a handler in the first place. The first E4 draft
+# matched exactly one signature shape -- `(req: Request, ctx:
+# RouteContext<D>)` on one physical line -- and so silently never looked
+# at the eleven real, registered handlers under `me::security`/`me::totp`,
+# which take `(req: Request, env: worker::Env)` instead (no `<D>`, no
+# RouteContext -- `lib.rs` calls them as `routes::me::...(req,
+# ctx.env)`), often spread across several lines. All eleven turned out to
+# already be registered, so nothing was hiding there *today* -- but a dead
+# handler added to that family tomorrow would have been exactly as
+# invisible as the nine this RFC exists to catch, and the check would not
+# even have said it had skipped them.
+#
+# So coverage, not just reachability, is now asserted: every top-level
+# `pub async fn` under routes/ (216 as of this writing, test files
+# excluded) must be either
+#   (A) the RouteContext handler shape,
+#   (B) the Env handler shape, or
+#   (N) on NAMED_NON_HANDLERS below, with a reason,
+# and anything in none of the three is a hard failure -- "a new shape
+# appeared and nobody taught the gate about it" must stop the build, not
+# print nothing. (A) and (B) are deliberately a *structural* match, not an
+# enumerated list: every handler in this crate takes its `req` and its
+# `ctx`/`env` **by value** (it owns the request, being the entry point);
+# every non-handler below takes at least one of them **by reference** (or
+# has no `req`/`env` parameter at all), because it is a helper called BY a
+# handler, not the handler itself. That split holds for all 216 functions
+# checked while building this, with zero exceptions on either side, so
+# widening (A)/(B) to a new owned-param handler family costs nothing, and
+# NAMED_NON_HANDLERS only has to carry the irreducible by-reference
+# helpers -- it does not have to grow every time a new route is added.
+#
+# Grouped by why each is a helper, not a route handler -- "it takes its
+# req/env by reference" is the mechanical tell in every case, which is
+# exactly what keeps it out of (A)/(B):
+#
+#   admin/auth.rs::{resolve_from_request,resolve_or_respond} -- principal
+#     resolution called BY admin handlers, not registered itself.
+#   admin/operator_json_api.rs::{resolve_admin,shell} -- the operator-
+#     console shell/resolve pair E3's own wrapper resolution already
+#     names one level down from this list.
+#   admin/tenancy_console/forms/common.rs::{require_manage,parse_form} --
+#     shared form-helper utilities used by multiple tenancy-console forms.
+#   admin/tenant_admin/gate.rs::{resolve_or_respond,check_action,
+#     check_read,build_affordances} -- the tenant-admin authorization gate.
+#   admin/tenant_admin/json_api.rs::{resolve_ctx,shell} -- the same
+#     resolve/shell pair as operator_json_api, for the tenant_admin family.
+#   api_v1/auth.rs::require -- the API-level permission-check helper.
+#   api_v1/quota.rs::{check_quota,unwrap_storage,count_users,
+#     count_organizations,count_groups} -- quota accounting and a
+#     storage-result unwrapper; none takes a `Request` at all, only `&Env`
+#     (or nothing).
+#   leptos_shell.rs::leptos_html_shell -- the shared shell renderer E3's
+#     own `fn_body_has_shell` greps for by name; a route handler calls it,
+#     it is not one.
+#   me/auth.rs::resolve_or_redirect -- the `me::` family's session
+#     resolution helper, same role as admin/auth.rs's pair above.
+#   me/totp/disable.rs::decide_disable_post,
+#   me/totp/verify.rs::decide_verify_get -- pure decision functions
+#     extracted from their handlers (RFC 150); `decide_verify_get` is the
+#     one NONCE's own `nonce_set_via_known_wrapper` already names as a
+#     one-level wrapper target.
+NAMED_NON_HANDLERS="crates/backend/src/routes/admin/auth.rs::resolve_from_request
+crates/backend/src/routes/admin/auth.rs::resolve_or_respond
+crates/backend/src/routes/admin/operator_json_api.rs::resolve_admin
+crates/backend/src/routes/admin/operator_json_api.rs::shell
+crates/backend/src/routes/admin/tenancy_console/forms/common.rs::require_manage
+crates/backend/src/routes/admin/tenancy_console/forms/common.rs::parse_form
+crates/backend/src/routes/admin/tenant_admin/gate.rs::resolve_or_respond
+crates/backend/src/routes/admin/tenant_admin/gate.rs::check_action
+crates/backend/src/routes/admin/tenant_admin/gate.rs::check_read
+crates/backend/src/routes/admin/tenant_admin/gate.rs::build_affordances
+crates/backend/src/routes/admin/tenant_admin/json_api.rs::resolve_ctx
+crates/backend/src/routes/admin/tenant_admin/json_api.rs::shell
+crates/backend/src/routes/api_v1/auth.rs::require
+crates/backend/src/routes/api_v1/quota.rs::check_quota
+crates/backend/src/routes/api_v1/quota.rs::unwrap_storage
+crates/backend/src/routes/api_v1/quota.rs::count_users
+crates/backend/src/routes/api_v1/quota.rs::count_organizations
+crates/backend/src/routes/api_v1/quota.rs::count_groups
+crates/backend/src/routes/leptos_shell.rs::leptos_html_shell
+crates/backend/src/routes/me/auth.rs::resolve_or_redirect
+crates/backend/src/routes/me/totp/disable.rs::decide_disable_post
+crates/backend/src/routes/me/totp/verify.rs::decide_verify_get"
+
+ROUTES_DIR="$REPO_ROOT/crates/backend/src/routes"
+ROUTES_ROOT_FILE="$REPO_ROOT/crates/backend/src/routes.rs"
+
+# File path (under routes/, or routes.rs itself) -> its own module path,
+# "" for routes.rs (the crate-relative root -- routes::<name> with
+# nothing in between).
+e4_modpath_of() {
+  local file="$1"
+  if [ "$file" = "$ROUTES_ROOT_FILE" ]; then
+    echo ""
+    return
+  fi
+  local rel="${file#"$ROUTES_DIR"/}"
+  rel="${rel%.rs}"
+  echo "${rel//\//::}"
+}
+
+# Echoes zero or more additional bare names this handler is ALSO
+# reachable as, one level up, by resolving every `pub use <leaf>::...;`
+# statement in $3 (the file declaring `mod <leaf>;`) that mentions fn
+# $2. Handles brace (`{a, b}`) and renaming (`a as b`) forms; a plain
+# `leaf::fn;` falls out of the same renaming-form parse with no alias.
+e4_reexport_names() {
+  local leaf="$1" fn="$2" parent_file="$3"
+  [ -f "$parent_file" ] || return 0
+  local stmt body item name alias
+  while IFS= read -r stmt; do
+    [ -z "$stmt" ] && continue
+    body="${stmt#pub use "${leaf}"::}"
+    body="${body%;}"
+    if [[ "$body" == \{*\} ]]; then
+      body="${body#\{}"
+      body="${body%\}}"
+    fi
+    IFS=',' read -ra items <<< "$body"
+    for item in "${items[@]}"; do
+      item="$(echo "$item" | xargs)"
+      name="$item"
+      alias=""
+      if [[ "$item" == *" as "* ]]; then
+        name="${item% as *}"
+        alias="${item##* as }"
+      fi
+      if [ "$name" = "$fn" ]; then
+        if [ -n "$alias" ]; then echo "$alias"; else echo "$fn"; fi
+      fi
+    done
+  done < <(grep -oE "^pub use ${leaf}::[A-Za-z0-9_{}, ]+;" "$parent_file" || true)
+}
+
+# Every top-level `pub async fn <name>` under routes/ (test files
+# excluded), one record per function: file \t start-line \t name \t
+# signature. The signature is captured from the `pub async fn` line
+# through the first subsequent line containing `{` (that line closes
+# either the signature itself or a trailing `where` clause -- both
+# precede the body in every shape this crate uses) and internal
+# whitespace is squeezed to single spaces, so a signature spread over
+# several aligned-column lines matches the same single-line regex a
+# one-line signature does.
+e4_all_defs() {
+  local f
+  while IFS= read -r f; do
+    awk -v file="$f" '
+      /^pub async fn [a-zA-Z0-9_]+/ {
+        if (match($0, /fn [a-zA-Z0-9_]+/)) { name = substr($0, RSTART+3, RLENGTH-3) }
+        start = NR
+        buf = $0
+        if (index($0, "{") > 0) { printf "%s\t%d\t%s\t%s\n", file, start, name, buf; next }
+        capturing = 1
+        next
+      }
+      capturing {
+        buf = buf " " $0
+        if (index($0, "{") > 0) {
+          printf "%s\t%d\t%s\t%s\n", file, start, name, buf
+          capturing = 0
+        }
+      }
+    ' "$f"
+  done < <(grep -rl '^pub async fn' "$ROUTES_DIR" --include='*.rs' | grep -v '/tests\?\.rs$\|/tests/')
+}
+
+# Shape A: owned (req: Request, ctx: RouteContext<D>) -> (worker::)?Result<Response>
+e4_shapeA_re='fn [a-zA-Z0-9_]+<[A-Za-z]+>\( ?(mut )?_?req: Request, *_?ctx: RouteContext<[A-Za-z]+>,? ?\) -> (worker::)?Result<Response> ?\{'
+# Shape B: owned (req: Request, env: worker::Env) -> (worker::)?Result<Response>
+e4_shapeB_re='fn [a-zA-Z0-9_]+\( ?(mut )?_?req: Request, *_?env: worker::Env,? ?\) -> (worker::)?Result<Response> ?\{'
+
+e4_total=0
+e4_countA=0
+e4_countB=0
+e4_unclassified=""
+e4_handlers=""  # file \t name, one per classified handler (A or B)
+
+while IFS=$'\t' read -r file line name buf; do
+  [ -z "$file" ] && continue
+  e4_total=$((e4_total + 1))
+  sig=$(echo "$buf" | tr -s '[:space:]' ' ')
+  if [[ "$sig" =~ $e4_shapeA_re ]] || [[ "$sig" =~ $e4_shapeB_re ]]; then
+    if [[ "$sig" =~ $e4_shapeA_re ]]; then e4_countA=$((e4_countA + 1)); else e4_countB=$((e4_countB + 1)); fi
+    e4_handlers="${e4_handlers}${file}\t${name}\n"
+  else
+    rel="${file#"$REPO_ROOT"/}"
+    key="${rel}::${name}"
+    named=$(printf '%s\n' "$NAMED_NON_HANDLERS" | grep -Fx "$key" || true)
+    if [ -z "$named" ]; then
+      e4_unclassified="${e4_unclassified}${rel}:${line} (fn ${name})\n"
+    fi
+  fi
+done < <(e4_all_defs)
+
+if [ -n "$e4_unclassified" ]; then
+  echo "❌  pub async fn(s) under routes/ matching NEITHER known handler signature" \
+       "shape NOR on NAMED_NON_HANDLERS:" >&2
+  printf '%b' "$e4_unclassified" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line" >&2; done
+  echo "" >&2
+  echo "    A new signature shape appeared and the gate was not taught about it --" >&2
+  echo "    that must stop the build, not pass silently (RFC 159 §4.2). Either it is" >&2
+  echo "    a handler (widen the (A)/(B) shape regexes in this script) or it is a" >&2
+  echo "    helper (add it to NAMED_NON_HANDLERS above, with a reason)." >&2
+  exit_code=1
+fi
+
+e4_dead=""
+while IFS=$'\t' read -r file name; do
+  [ -z "$file" ] && continue
+
+  modpath=$(e4_modpath_of "$file")
+  if [ -n "$modpath" ]; then natural="${modpath}::${name}"; else natural="$name"; fi
+
+  live=0
+  if grep -qF "routes::${natural}(" "$LIB_RS"; then
+    live=1
+  fi
+
+  if [ "$live" -eq 0 ]; then
+    leaf="$(basename "$file" .rs)"
+    parent_file="$(dirname "$file").rs"
+    parent_modpath=$(e4_modpath_of "$parent_file")
+    while IFS= read -r alias; do
+      [ -z "$alias" ] && continue
+      if [ -n "$parent_modpath" ]; then flat="${parent_modpath}::${alias}"; else flat="$alias"; fi
+      if grep -qF "routes::${flat}(" "$LIB_RS"; then
+        live=1
+        break
+      fi
+    done < <(e4_reexport_names "$leaf" "$name" "$parent_file")
+  fi
+
+  if [ "$live" -eq 0 ]; then
+    rel="${file#"$REPO_ROOT"/}"
+    key="routes::${natural}"
+    exempted=$(printf '%s\n' "$E4_EXEMPT" | grep -Fx "$key" || true)
+    if [ -z "$exempted" ]; then
+      e4_dead="${e4_dead}${key} (${rel}, fn ${name})\n"
+    fi
+  fi
+done < <(printf '%b' "$e4_handlers")
+
+if [ -n "$e4_dead" ]; then
+  echo "❌  Handler-shaped fn(s) with NO qualified path reachable from lib.rs" \
+       "(dead -- registered nowhere, directly or via a one-level re-export):" >&2
+  printf '%b' "$e4_dead" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line" >&2; done
+  echo "" >&2
+  echo "    Either route it in crates/backend/src/lib.rs, delete it, or add a named," >&2
+  echo "    dated, reasoned entry to E4_EXEMPT above -- not a silent pass." >&2
+  exit_code=1
+fi
+
+e4_handler_count=$((e4_countA + e4_countB))
+e4_named_count=$(printf '%s\n' "$NAMED_NON_HANDLERS" | grep -c . || true)
+echo "ℹ️   E4 coverage: scanned ${e4_total} pub async fn under routes/ -- ${e4_handler_count}" \
+     "classified as handlers (${e4_countA} RouteContext-shaped, ${e4_countB} Env-shaped)," \
+     "${e4_named_count} named non-handlers, 0 unclassified"
+
 if [ "$exit_code" -eq 0 ]; then
-  echo "✅  All ${registered_count} routes are documented in route-contracts.md"
+  echo "✅  All ${registered_count} routes are documented in route-contracts.md, and every" \
+       "handler-shaped fn in routes/ is reachable from lib.rs"
 fi
 
 exit "$exit_code"

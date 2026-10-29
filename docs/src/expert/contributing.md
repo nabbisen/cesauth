@@ -212,6 +212,19 @@ fields (actor, audit kind, view, rendering test, CSRF).  The CI check
 `scripts/route-contracts-check.sh` (`.github/workflows/route-contracts.yml`)
 will fail if the table is missing the new route.
 
+The same script's **E4** check (RFC 159) runs the other direction: every
+handler-shaped `pub async fn` under `crates/backend/src/routes/` must be
+reachable from `lib.rs`, either directly or through one level of
+re-export (`pub use`, brace or renaming form) in the file that declares
+`mod <leaf>;` for it. A handler written and never wired up fails the
+check rather than sitting dead and undetected, which is what let nine
+(then a tenth) slip through before this existed. E4 also asserts its own
+coverage: a `pub async fn` under `routes/` that matches neither of the
+two known handler signature shapes, and isn't named on
+`NAMED_NON_HANDLERS` in the script with a reason, fails loudly instead of
+being silently skipped — adding a genuinely new helper there means adding
+it to that list, not just making the function compile.
+
 ## RFC lifecycle
 
 New design decisions go in `rfcs/proposed/NNN-title.md`. The lifecycle is
