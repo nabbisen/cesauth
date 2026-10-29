@@ -52,17 +52,15 @@ async fn owner_already_homed_elsewhere_keeps_that_home() {
     let members = InMemoryMembershipRepository::default();
     let users   = InMemoryUserRepository::default();
 
-    // The owner already administers a different, non-default tenant.
-    let existing_home = create_tenant(&tenants, &members, &users, &NewTenantInput {
-        slug: "beta", display_name: "Beta",
-        owner_user_id: "u-beta-owner", owner_role: TenantMembershipRole::Owner,
-    }, 500).await.unwrap().tenant;
-    users.create(&user("u-beta-owner", DEFAULT_TENANT_ID)).await.unwrap();
-    // RFC 158: the Beta creation above assigned u-beta-owner's home to
-    // Beta already (Assigned). Seed a second owner who is independently
-    // homed at Beta — the case this test is actually about: naming an
-    // already-homed user as owner of a *second*, unrelated tenant.
-    users.create(&user("u-already-homed", &existing_home.id)).await.unwrap();
+    // The owner already administers a different, non-default tenant —
+    // seeded directly at that tenant's id, not derived from an earlier
+    // create_tenant call (an earlier draft of this test tried that and
+    // got the outcome wrong: the owner for that earlier call hadn't
+    // been seeded yet either, so it would have come back Failed, not
+    // Assigned — the point of this test is the home-tenant value
+    // alone, not how it got there).
+    let other_tenant_id = "t-beta";
+    users.create(&user("u-already-homed", other_tenant_id)).await.unwrap();
 
     let outcome = create_tenant(&tenants, &members, &users, &NewTenantInput {
         slug: "acme", display_name: "Acme",
@@ -71,7 +69,7 @@ async fn owner_already_homed_elsewhere_keeps_that_home() {
 
     assert_eq!(outcome.owner_home, OwnerHomeOutcome::KeptExistingHome);
     let owner = users.find_by_id("u-already-homed").await.unwrap().unwrap();
-    assert_eq!(owner.tenant_id, existing_home.id,
+    assert_eq!(owner.tenant_id, other_tenant_id,
         "an owner already homed elsewhere must keep that home, not move to the new tenant");
 }
 
@@ -95,4 +93,26 @@ async fn unknown_owner_is_a_failed_outcome_not_a_creation_failure() {
     assert!(found.is_some(), "the tenant row must exist despite the Failed owner-home outcome");
     let owners = members.list_tenant_members(&outcome.tenant.id).await.unwrap();
     assert_eq!(owners.len(), 1, "the membership row must exist despite the Failed owner-home outcome");
+}
+
+/// The owner is found and eligible (home is the default), but the
+/// write itself fails — the one `Failed` sub-case the other tests
+/// above don't reach, since both of them fail at the read.
+#[tokio::test]
+async fn assign_tenant_write_failure_is_also_a_failed_outcome() {
+    let tenants = InMemoryTenantRepository::default();
+    let members = InMemoryMembershipRepository::default();
+    let users   = InMemoryUserRepository::default();
+    users.create(&user("u-owner", DEFAULT_TENANT_ID)).await.unwrap();
+    users.set_fail_assign_tenant(true);
+
+    let outcome = create_tenant(&tenants, &members, &users, &NewTenantInput {
+        slug: "acme", display_name: "Acme",
+        owner_user_id: "u-owner", owner_role: TenantMembershipRole::Owner,
+    }, 1000).await.unwrap();
+
+    assert_eq!(outcome.owner_home, OwnerHomeOutcome::Failed);
+    let owner = users.find_by_id("u-owner").await.unwrap().unwrap();
+    assert_eq!(owner.tenant_id, DEFAULT_TENANT_ID,
+        "a failed write must not change the owner's home tenant");
 }

@@ -5,7 +5,7 @@ use cesauth_cf::tenancy::{CloudflareMembershipRepository, CloudflareTenantReposi
 use cesauth_core::tenancy::ports::NewTenantInput;
 use cesauth_core::tenancy::service::{create_tenant, OwnerHomeOutcome};
 use cesauth_core::tenancy::types::TenantMembershipRole;
-use cesauth_frontend::tenancy_console::forms::tenant_create::tenant_create_form;
+use cesauth_frontend::tenancy_console::forms::tenant_create::{tenant_create_form, tenant_created_owner_home_notice};
 use time::OffsetDateTime;
 use worker::{Request, Response, Result, RouteContext};
 
@@ -91,16 +91,34 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
             Some(owner_user_id.clone()), Some(tenant.id.clone()),
             Some(format!("via=tenancy-console,tenant={}", tenant.id)),
         ).await.ok();
-    } else if outcome.owner_home == OwnerHomeOutcome::Failed {
+        // RFC 158 §5.6: Assigned is unchanged — straight to the tenant
+        // detail page, exactly as before this RFC existed.
+        return redirect_303(&format!("/admin/tenancy/tenants/{}", tenant.id));
+    }
+
+    if outcome.owner_home == OwnerHomeOutcome::Failed {
         // RFC 158: a failed owner-home assignment must be loud, not
         // just folded into the tenant_created detail above — an
         // operator scanning logs (not querying the audit table) must
         // also see that the new tenant's owner cannot reach its console.
-        let cfg = Config::from_env(&ctx.env)?;
-        log::emit(&cfg.log, Level::Error, Category::Storage,
-            &format!("tenant {}: owner-home assignment failed for user {owner_user_id}", tenant.id),
-            Some(&owner_user_id));
+        //
+        // §5.7: do NOT propagate a config-load failure here with `?` —
+        // the tenant and membership rows already exist by this point,
+        // so a bad deployment variable must not turn "owner-home
+        // assignment failed" into "tenant creation failed" with a 500.
+        if let Ok(cfg) = Config::from_env(&ctx.env) {
+            log::emit(&cfg.log, Level::Error, Category::Storage,
+                &format!("tenant {}: owner-home assignment failed for user {owner_user_id}", tenant.id),
+                Some(&owner_user_id));
+        }
     }
 
-    redirect_303(&format!("/admin/tenancy/tenants/{}", tenant.id))
+    // RFC 158 §5.6: KeptExistingHome and Failed render a page instead of
+    // redirecting — a 303 to an ordinary success page is how this RFC's
+    // own gap stayed invisible: the operator who just named an owner has
+    // no other way to learn that owner cannot open the console they were
+    // just given.
+    render::html_response(|| tenant_created_owner_home_notice(
+        &principal, &tenant.id, &tenant.slug, &owner_user_id, outcome.owner_home,
+    ))
 }

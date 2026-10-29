@@ -11,7 +11,22 @@ use cesauth_core::types::{UnixSeconds, User};
 
 #[derive(Debug, Default)]
 pub struct InMemoryUserRepository {
-    by_id: Mutex<HashMap<String, User>>,
+    by_id:              Mutex<HashMap<String, User>>,
+    /// RFC 158: forces `assign_tenant` to fail even when the user
+    /// exists, so a test can reach `OwnerHomeOutcome::Failed` through
+    /// the write failing rather than only through the owner not being
+    /// found — the branch the decision step's doc comment calls "must
+    /// be surfaced loudly".
+    fail_assign_tenant: std::sync::atomic::AtomicBool,
+}
+
+impl InMemoryUserRepository {
+    /// RFC 158: make the next (and every subsequent) `assign_tenant`
+    /// call fail with `PortError::Unavailable`, regardless of whether
+    /// the user exists.
+    pub fn set_fail_assign_tenant(&self, fail: bool) {
+        self.fail_assign_tenant.store(fail, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 impl UserRepository for InMemoryUserRepository {
@@ -60,6 +75,9 @@ impl UserRepository for InMemoryUserRepository {
         tenant_id: &str,
         now:       UnixSeconds,
     ) -> PortResult<()> {
+        if self.fail_assign_tenant.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(PortError::Unavailable);
+        }
         let mut m = self.by_id.lock().map_err(|_| PortError::Unavailable)?;
         match m.get_mut(user_id) {
             Some(u) => { u.tenant_id = tenant_id.to_owned(); u.updated_at = now; Ok(()) }

@@ -7,6 +7,7 @@
 use crate::escape;
 use cesauth_core::admin::types::AdminPrincipal;
 use cesauth_core::routes::tenancy_console as routes;
+use cesauth_core::tenancy::service::OwnerHomeOutcome;
 
 use super::super::frame::{tenancy_console_frame, TenancyConsoleTab};
 
@@ -35,6 +36,57 @@ pub fn tenant_create_form(
         help  = render_help(),
     );
     tenancy_console_frame("New tenant", principal.role, principal.name.as_deref(), TenancyConsoleTab::Tenants, &body)
+}
+
+/// **RFC 158 §5.6.** The tenant was created — `Assigned` still redirects
+/// straight to the tenant detail page, same as before this RFC — but
+/// `KeptExistingHome` and `Failed` render this page instead, because a
+/// `303` to an ordinary-looking success page is exactly how the gap
+/// this RFC closed stayed invisible for as long as it did: the operator
+/// who just named an owner has no other way to learn that owner cannot
+/// open the console they were just given.
+///
+/// Must not be called with `Assigned` — there is nothing for this page
+/// to say in that case, and the caller still redirects for it.
+pub fn tenant_created_owner_home_notice(
+    principal:     &AdminPrincipal,
+    tenant_id:     &str,
+    tenant_slug:   &str,
+    owner_user_id: &str,
+    owner_home:    OwnerHomeOutcome,
+) -> String {
+    let explanation = match owner_home {
+        OwnerHomeOutcome::KeptExistingHome => format!(
+            "The owner (<code>{owner}</code>) already administers a different \
+             tenant. Moving their home tenant here would have taken away their \
+             access to that tenant, so it was left alone.",
+            owner = escape(owner_user_id),
+        ),
+        OwnerHomeOutcome::Failed => format!(
+            "The owner's (<code>{owner}</code>) home tenant could not be \
+             assigned — a storage error, recorded in the audit log and the \
+             server log.",
+            owner = escape(owner_user_id),
+        ),
+        OwnerHomeOutcome::Assigned => unreachable!(
+            "tenant_created_owner_home_notice must not be called for Assigned — \
+             that outcome still redirects"
+        ),
+    };
+    let body = format!(
+        r#"<section aria-label="Tenant created">
+  <p role="status"><span class="badge ok">created</span> Tenant <code>{slug}</code> was created.</p>
+  <p>{explanation}</p>
+  <p><strong>As a result, <code>{owner}</code> cannot open this tenant's
+     console yet.</strong></p>
+  <p><a href="{detail_url}">Continue to the tenant detail page →</a></p>
+</section>"#,
+        slug        = escape(tenant_slug),
+        explanation = explanation,
+        owner       = escape(owner_user_id),
+        detail_url  = routes::tenant(tenant_id),
+    );
+    tenancy_console_frame("Tenant created", principal.role, principal.name.as_deref(), TenancyConsoleTab::Tenants, &body)
 }
 
 fn render_error(error: Option<&str>) -> String {
@@ -134,6 +186,48 @@ mod tests {
         // payload must not break out into HTML.
         let html = tenant_create_form(&p(), "x", "<script>alert(1)</script>", "u", None);
         assert!(!html.contains("<script>"), "display_name must be escaped");
+        assert!(html.contains("&lt;script&gt;"));
+    }
+
+    // ── RFC 158 §5.6: tenant_created_owner_home_notice ───────────────────
+
+    #[test]
+    fn kept_existing_home_notice_says_created_and_explains_why() {
+        let html = tenant_created_owner_home_notice(
+            &p(), "t-1", "acme", "u-owner", OwnerHomeOutcome::KeptExistingHome,
+        );
+        assert!(html.contains("was created"), "must say the tenant was created");
+        assert!(html.contains("already administers a different"),
+            "must explain why the home was left alone");
+        assert!(html.contains("cannot open this tenant's"),
+            "must say the owner cannot open the console");
+        assert!(html.contains(r#"href="/admin/tenancy/tenants/t-1""#),
+            "must link on to the tenant detail page");
+    }
+
+    #[test]
+    fn failed_notice_says_created_and_names_a_storage_error() {
+        let html = tenant_created_owner_home_notice(
+            &p(), "t-2", "beta", "u-owner", OwnerHomeOutcome::Failed,
+        );
+        assert!(html.contains("was created"));
+        assert!(html.contains("storage error"));
+        assert!(html.contains("cannot open this tenant's"));
+        assert!(html.contains(r#"href="/admin/tenancy/tenants/t-2""#));
+    }
+
+    #[test]
+    #[should_panic(expected = "must not be called for Assigned")]
+    fn notice_panics_if_called_for_assigned() {
+        tenant_created_owner_home_notice(&p(), "t-3", "gamma", "u-owner", OwnerHomeOutcome::Assigned);
+    }
+
+    #[test]
+    fn notice_escapes_a_hostile_owner_user_id() {
+        let html = tenant_created_owner_home_notice(
+            &p(), "t-1", "acme", "<script>alert(1)</script>", OwnerHomeOutcome::KeptExistingHome,
+        );
+        assert!(!html.contains("<script>"), "owner_user_id must be escaped");
         assert!(html.contains("&lt;script&gt;"));
     }
 }
