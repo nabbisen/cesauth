@@ -7,7 +7,7 @@ use serde::Deserialize;
 use worker::wasm_bindgen::JsValue;
 use worker::Env;
 
-use super::{d1_int, db, run_err};
+use super::{classify_insert_err, d1_int, db, run_err};
 
 
 pub struct CloudflareUserRepository<'a> {
@@ -124,15 +124,15 @@ impl UserRepository for CloudflareUserRepository<'_> {
             .await;
         match result {
             Ok(_)  => Ok(()),
-            Err(e) => {
-                let msg = e.to_string();
-                if msg.contains("UNIQUE") || msg.contains("constraint failed") {
-                    Err(PortError::Conflict)
-                } else {
-                    worker::console_error!("d1 users.create: {msg}");
-                    Err(PortError::Unavailable)
-                }
-            }
+            // RFC 160 §4.8: `tenant_id` is a foreign key
+            // (`REFERENCES tenants(id)`), and the previous test here —
+            // `contains("UNIQUE") || contains("constraint failed")` —
+            // classified a `FOREIGN KEY constraint failed` message as
+            // `Conflict` too, the same defect this RFC exists to fix,
+            // at a site its own census missed (the population was a
+            // grep for the literal `contains("constraint")`, which
+            // does not match `contains("constraint failed")`).
+            Err(e) => Err(classify_insert_err("users.create run", e)),
         }
     }
 

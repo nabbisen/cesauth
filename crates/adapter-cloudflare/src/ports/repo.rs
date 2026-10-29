@@ -103,15 +103,32 @@ pub(crate) fn run_err(context: &'static str, e: worker::Error) -> PortError {
 /// referenced table, so a variant meant to carry "which reference was
 /// missing" has no payload to carry; reusing `NotFound` costs nothing
 /// a new variant would have bought.
+///
+/// **RFC 160 §4.9.** Split from the logging deliberately: the previous
+/// single function could not be host-tested on its fallthrough branch
+/// at all (`run_err` calls `worker::console_error!`, which aborts the
+/// host test binary outside wasm32), which left this exact classifier
+/// — the one whose untested assumption caused this RFC — without a
+/// regression guard on the one property that matters most: that an
+/// *unrecognized* message does **not** silently become `Conflict`
+/// again. This pure function carries the decision; [`classify_insert_err`],
+/// below, is the thin wrapper that adds the log line on `None`.
+pub(crate) fn classify_insert_message(msg: &str) -> Option<PortError> {
+    let msg = msg.to_ascii_lowercase();
+    if msg.contains("sqlite_constraint_foreignkey") {
+        Some(PortError::NotFound)
+    } else if msg.contains("sqlite_constraint_unique") {
+        Some(PortError::Conflict)
+    } else {
+        None
+    }
+}
+
 #[inline]
 pub(crate) fn classify_insert_err(context: &'static str, e: worker::Error) -> PortError {
-    let msg = format!("{e}").to_ascii_lowercase();
-    if msg.contains("sqlite_constraint_foreignkey") {
-        PortError::NotFound
-    } else if msg.contains("sqlite_constraint_unique") {
-        PortError::Conflict
-    } else {
-        run_err(context, e)
+    match classify_insert_message(&e.to_string()) {
+        Some(classified) => classified,
+        None              => run_err(context, e),
     }
 }
 
@@ -127,30 +144,64 @@ mod tests {
         "D1: D1Error { cause: JsValue(Error: UNIQUE constraint failed: tenants.slug: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_UNIQUE)) }";
     const FOREIGN_KEY_MSG: &str =
         "D1: D1Error { cause: JsValue(Error: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_FOREIGNKEY)) }";
+    const CHECK_MSG: &str =
+        "D1: D1Error { cause: JsValue(Error: CHECK constraint failed: status IN ('pending', 'active', 'suspended', 'deleted'): SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_CHECK)) }";
+    const NOT_NULL_MSG: &str =
+        "D1: D1Error { cause: JsValue(Error: NOT NULL constraint failed: tenants.display_name: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_NOTNULL)) }";
+    const UNRELATED_MSG: &str = "D1_ERROR: too many SQL variables";
 
     fn err(s: &str) -> worker::Error { worker::Error::RustError(s.to_owned()) }
 
+    // ── classify_insert_message: the pure decision, all five cases ──────
+
     #[test]
-    fn unique_classifies_as_conflict() {
+    fn message_unique_is_conflict() {
+        assert!(matches!(classify_insert_message(UNIQUE_MSG), Some(PortError::Conflict)));
+    }
+
+    #[test]
+    fn message_foreign_key_is_not_found() {
+        assert!(matches!(classify_insert_message(FOREIGN_KEY_MSG), Some(PortError::NotFound)));
+    }
+
+    #[test]
+    fn message_check_is_unclassified() {
+        // RFC 160 §4.5: not reachable by any production caller — and
+        // §4.9's own point: this is the regression guard that did not
+        // exist before the split. An unrecognized message, including a
+        // genuine CHECK failure, must NOT silently become a `Conflict`
+        // the way the pre-RFC-160 `contains("constraint")` test would
+        // have (CHECK messages also contain the bare word `constraint`).
+        assert!(classify_insert_message(CHECK_MSG).is_none());
+    }
+
+    #[test]
+    fn message_not_null_is_unclassified() {
+        assert!(classify_insert_message(NOT_NULL_MSG).is_none());
+    }
+
+    #[test]
+    fn message_with_no_constraint_text_is_unclassified() {
+        assert!(classify_insert_message(UNRELATED_MSG).is_none());
+    }
+
+    // ── classify_insert_err: the thin wrapper, on the two branches that
+    //    return before reaching `run_err`'s host-unsafe logging ──────
+
+    #[test]
+    fn err_unique_classifies_as_conflict() {
         assert!(matches!(classify_insert_err("test", err(UNIQUE_MSG)), PortError::Conflict));
     }
 
     #[test]
-    fn foreign_key_classifies_as_not_found() {
+    fn err_foreign_key_classifies_as_not_found() {
         assert!(matches!(classify_insert_err("test", err(FOREIGN_KEY_MSG)), PortError::NotFound));
     }
 
-    // RFC 160 §4.5: CHECK and NOT NULL are not reachable by any
-    // production caller today, and this helper does not special-case
-    // them — they, and any other unrecognized message, fall through to
-    // `run_err`'s `Unavailable`, not silently become a `Conflict` the
-    // way the pre-RFC-160 `contains("constraint")` test would have.
-    //
-    // **Flagging, not silently substituting**: that fallthrough has no
-    // host test here. `run_err` calls `worker::console_error!`, which
-    // panics ("function not implemented on non-wasm32 targets") the
-    // moment it runs outside wasm32 — the same limitation that applies
-    // to every other `worker::Env`-touching call in this workspace.
-    // Confirmed directly: adding that assertion aborts the test binary
-    // (SIGABRT), not a normal test failure.
+    // `classify_insert_err`'s own fallthrough (an unrecognized message
+    // reaching `run_err`) still has no host test — `run_err` calls
+    // `worker::console_error!`, which aborts the host test binary
+    // ("function not implemented on non-wasm32 targets") rather than
+    // failing normally. Confirmed directly. The pure function above is
+    // what now carries the regression guard that call could not.
 }
