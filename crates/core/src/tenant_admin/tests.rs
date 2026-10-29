@@ -57,6 +57,13 @@ impl UserRepository for StubUsers {
         Ok(())
     }
     async fn update(&self, _: &User) -> PortResult<()> { Ok(()) }
+    async fn assign_tenant(&self, user_id: &str, tenant_id: &str, now: i64) -> PortResult<()> {
+        let mut rows = self.rows.borrow_mut();
+        match rows.iter_mut().find(|u| u.id == user_id) {
+            Some(u) => { u.tenant_id = tenant_id.to_owned(); u.updated_at = now; Ok(()) }
+            None    => Err(PortError::NotFound),
+        }
+    }
     async fn list_by_tenant(&self, tid: &str) -> PortResult<Vec<User>> {
         Ok(self.rows.borrow().iter().filter(|u| u.tenant_id == tid).cloned().collect())
     }

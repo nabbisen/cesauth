@@ -148,6 +148,11 @@ impl UserRepository for CloudflareUserRepository<'_> {
         // own dedicated path with audit trail. account_type IS
         // updatable (operators may re-grade an account from
         // `human_user` to `service_account`).
+        //
+        // RFC 158 §5.1: that dedicated path is `assign_tenant`, below —
+        // not this method. Passing a `User` with a changed `tenant_id`
+        // here is silently ignored: no error, no effect. Do not assume
+        // this method can move a user between tenants.
         let result = db.prepare(
             "UPDATE users SET email = ?2, email_verified = ?3, display_name = ?4, account_type = ?5, status = ?6, updated_at = ?7 \
              WHERE id = ?1"
@@ -168,6 +173,26 @@ impl UserRepository for CloudflareUserRepository<'_> {
         // D1 reports rows-changed through meta; if missing, we optimistically
         // assume success (NotFound is surfaced by the caller re-reading).
         let _ = result;
+        Ok(())
+    }
+
+    async fn assign_tenant(
+        &self,
+        user_id:   &str,
+        tenant_id: &str,
+        now:       cesauth_core::types::UnixSeconds,
+    ) -> PortResult<()> {
+        let db = db(self.env)?;
+        let res = db.prepare(
+            "UPDATE users SET tenant_id = ?2, updated_at = ?3 WHERE id = ?1"
+        )
+            .bind(&[user_id.into(), tenant_id.into(), d1_int(now)])
+            .map_err(|e| run_err("users.assign_tenant bind", e))?
+            .run().await
+            .map_err(|e| run_err("users.assign_tenant run", e))?;
+        if res.meta().ok().flatten().and_then(|m| m.changes).unwrap_or(0) == 0 {
+            return Err(PortError::NotFound);
+        }
         Ok(())
     }
 

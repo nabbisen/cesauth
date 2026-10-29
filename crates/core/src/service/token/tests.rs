@@ -238,6 +238,7 @@ mod id_token_tests {
         async fn find_by_email(&self, _: &str) -> PortResult<Option<User>> { Ok(None) }
         async fn create(&self, _: &User) -> PortResult<()> { Ok(()) }
         async fn update(&self, _: &User) -> PortResult<()> { Ok(()) }
+        async fn assign_tenant(&self, _: &str, _: &str, _: i64) -> PortResult<()> { Ok(()) }
         async fn list_by_tenant(&self, _: &str) -> PortResult<Vec<User>> { Ok(vec![]) }
         async fn list_anonymous_expired(&self, _: crate::types::UnixSeconds) -> PortResult<Vec<User>> { Ok(vec![]) }
         async fn delete_by_id(&self, _: &str) -> PortResult<()> { Ok(()) }

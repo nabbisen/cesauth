@@ -54,6 +54,19 @@ impl UserRepository for InMemoryUserRepository {
         Ok(())
     }
 
+    async fn assign_tenant(
+        &self,
+        user_id:   &str,
+        tenant_id: &str,
+        now:       UnixSeconds,
+    ) -> PortResult<()> {
+        let mut m = self.by_id.lock().map_err(|_| PortError::Unavailable)?;
+        match m.get_mut(user_id) {
+            Some(u) => { u.tenant_id = tenant_id.to_owned(); u.updated_at = now; Ok(()) }
+            None    => Err(PortError::NotFound),
+        }
+    }
+
     async fn list_by_tenant(&self, tenant_id: &str) -> PortResult<Vec<User>> {
         let m = self.by_id.lock().map_err(|_| PortError::Unavailable)?;
         let mut out: Vec<User> = m.values()

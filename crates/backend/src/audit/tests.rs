@@ -313,3 +313,28 @@ fn scanner_flags_denylisted_material_and_stops_at_the_call_boundary() {
          as `unparsed` rather than passing over them"
     );
 }
+
+// ── RFC 158: tenant_created detail string ──────────────────────────────
+
+#[test]
+fn tenant_created_detail_carries_the_console_prefix_and_outcome() {
+    use cesauth_core::tenancy::service::OwnerHomeOutcome;
+    let detail = super::tenant_created_detail(
+        "via=tenancy-console,", "acme", OwnerHomeOutcome::Assigned,
+    );
+    assert_eq!(detail, "via=tenancy-console,slug=acme,owner_home=assigned");
+}
+
+#[test]
+fn tenant_created_detail_carries_no_prefix_for_the_api_path() {
+    use cesauth_core::tenancy::service::OwnerHomeOutcome;
+    let detail = super::tenant_created_detail("", "acme", OwnerHomeOutcome::KeptExistingHome);
+    assert_eq!(detail, "slug=acme,owner_home=kept_existing_home");
+}
+
+#[test]
+fn tenant_created_detail_surfaces_a_failed_owner_home_outcome() {
+    use cesauth_core::tenancy::service::OwnerHomeOutcome;
+    let detail = super::tenant_created_detail("", "acme", OwnerHomeOutcome::Failed);
+    assert_eq!(detail, "slug=acme,owner_home=failed");
+}

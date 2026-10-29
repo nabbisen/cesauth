@@ -49,9 +49,20 @@ pub(super) use crate::authz::{
 pub(super) use crate::billing::{
     InMemoryPlanRepository, InMemorySubscriptionHistoryRepository, InMemorySubscriptionRepository,
 };
+pub(super) use crate::repo::InMemoryUserRepository;
 pub(super) use crate::tenancy::{
     InMemoryGroupRepository, InMemoryMembershipRepository, InMemoryOrganizationRepository,
     InMemoryTenantRepository,
 };
+
+/// **RFC 158.** `create_tenant` reads the owner through a
+/// `UserRepository` after both inserts; most of this module's tests
+/// predate that and don't seed one, so an owner id like `"u-alice"`
+/// resolves to nobody and the owner-home outcome comes back `Failed` —
+/// harmless for tests that aren't about owner-home reachability at
+/// all, which is every call site this helper feeds.
+pub(super) fn empty_users() -> InMemoryUserRepository {
+    InMemoryUserRepository::default()
+}
 
 // ---------------------------------------------------------------------

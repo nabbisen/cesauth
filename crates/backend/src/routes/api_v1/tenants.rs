@@ -1,18 +1,21 @@
 //! `/api/v1/tenants/...` route handlers.
 
+use cesauth_cf::ports::repo::CloudflareUserRepository;
 use cesauth_cf::tenancy::{
     CloudflareMembershipRepository, CloudflareTenantRepository,
 };
 use cesauth_core::admin::types::AdminAction;
 use cesauth_core::ports::PortError;
 use cesauth_core::tenancy::ports::{NewTenantInput, TenantRepository};
-use cesauth_core::tenancy::service::create_tenant;
+use cesauth_core::tenancy::service::{create_tenant, OwnerHomeOutcome};
 use cesauth_core::tenancy::types::{TenantMembershipRole, TenantStatus};
 use serde::Deserialize;
 use time::OffsetDateTime;
 use worker::{Request, Response, Result, RouteContext};
 
 use crate::audit::{self, EventKind};
+use crate::config::Config;
+use crate::log::{self, Category, Level};
 use crate::routes::api_v1::auth::{
     bad_request, json, not_found, port_error_response, require,
 };
@@ -44,22 +47,39 @@ pub async fn create<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     let now = OffsetDateTime::now_utc().unix_timestamp();
     let tenants = CloudflareTenantRepository::new(&ctx.env);
     let members = CloudflareMembershipRepository::new(&ctx.env);
+    let users = CloudflareUserRepository::new(&ctx.env);
 
-    let tenant = match create_tenant(&tenants, &members, &NewTenantInput {
+    let outcome = match create_tenant(&tenants, &members, &users, &NewTenantInput {
         slug:          &body.slug,
         display_name:  &body.display_name,
         owner_user_id: &body.owner_user_id,
         owner_role:    TenantMembershipRole::Owner,
     }, now).await {
-        Ok(t)  => t,
+        Ok(o)  => o,
         Err(e) => return port_error_response(e),
     };
+    let tenant = outcome.tenant;
 
     audit::write_owned(
         &ctx.env, EventKind::TenantCreated,
         Some(principal.id.clone()), Some(tenant.id.clone()),
-        Some(format!("slug={}", tenant.slug)),
+        Some(audit::tenant_created_detail("", &tenant.slug, outcome.owner_home)),
     ).await.ok();
+
+    if outcome.owner_home == OwnerHomeOutcome::Assigned {
+        audit::write_owned(
+            &ctx.env, EventKind::UserTenantAssigned,
+            Some(body.owner_user_id.clone()), Some(tenant.id.clone()),
+            Some(format!("tenant={}", tenant.id)),
+        ).await.ok();
+    } else if outcome.owner_home == OwnerHomeOutcome::Failed {
+        // RFC 158: loud, not just in the audit detail — see the
+        // console caller's identical handling.
+        let cfg = Config::from_env(&ctx.env)?;
+        log::emit(&cfg.log, Level::Error, Category::Storage,
+            &format!("tenant {}: owner-home assignment failed for user {}", tenant.id, body.owner_user_id),
+            Some(&body.owner_user_id));
+    }
 
     json(201, &tenant)
 }

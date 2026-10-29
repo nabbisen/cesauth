@@ -16,12 +16,13 @@ async fn end_to_end_tenant_org_group_membership() {
     let members  = InMemoryMembershipRepository::default();
 
     // Create the tenant + owner membership.
-    let tenant = ten::create_tenant(&tenants, &members, &NewTenantInput {
+    let users = empty_users();
+    let tenant = ten::create_tenant(&tenants, &members, &users, &NewTenantInput {
         slug: "acme",
         display_name: "Acme Corp",
         owner_user_id: "u-alice",
         owner_role: TenantMembershipRole::Owner,
-    }, 1000).await.unwrap();
+    }, 1000).await.unwrap().tenant;
     assert_eq!(tenant.slug, "acme");
     assert_eq!(tenant.status, TenantStatus::Active);
 
@@ -73,8 +74,9 @@ async fn create_tenant_rejects_invalid_slug() {
         too_long.as_str(),
         "with space",
     ];
+    let users = empty_users();
     for bad in bad_slugs {
-        let r = ten::create_tenant(&tenants, &members, &NewTenantInput {
+        let r = ten::create_tenant(&tenants, &members, &users, &NewTenantInput {
             slug: bad,
             display_name: "x",
             owner_user_id: "u",
@@ -89,12 +91,13 @@ async fn create_tenant_rejects_invalid_slug() {
 async fn create_tenant_rejects_duplicate_slug() {
     let tenants = InMemoryTenantRepository::default();
     let members = InMemoryMembershipRepository::default();
+    let users   = empty_users();
     let input = NewTenantInput {
         slug: "acme", display_name: "Acme",
         owner_user_id: "u", owner_role: TenantMembershipRole::Owner,
     };
-    ten::create_tenant(&tenants, &members, &input, 0).await.unwrap();
-    let err = ten::create_tenant(&tenants, &members, &input, 1).await.unwrap_err();
+    let _ = ten::create_tenant(&tenants, &members, &users, &input, 0).await.unwrap();
+    let err = ten::create_tenant(&tenants, &members, &users, &input, 1).await.unwrap_err();
     assert!(matches!(err, PortError::Conflict));
 }
 
@@ -103,11 +106,12 @@ async fn create_organization_in_suspended_tenant_is_rejected() {
     let tenants = InMemoryTenantRepository::default();
     let orgs    = InMemoryOrganizationRepository::default();
     let members = InMemoryMembershipRepository::default();
+    let users   = empty_users();
 
-    let t = ten::create_tenant(&tenants, &members, &NewTenantInput {
+    let t = ten::create_tenant(&tenants, &members, &users, &NewTenantInput {
         slug: "acme", display_name: "Acme",
         owner_user_id: "u", owner_role: TenantMembershipRole::Owner,
-    }, 0).await.unwrap();
+    }, 0).await.unwrap().tenant;
     tenants.set_status(&t.id, TenantStatus::Suspended, 100).await.unwrap();
 
     let r = ten::create_organization(&tenants, &orgs, &t.id, "eng", "Eng", 200).await;

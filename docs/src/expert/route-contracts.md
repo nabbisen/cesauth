@@ -145,7 +145,7 @@ code-review responsibility.
 | GET | `/admin/tenancy/organizations/:oid` | System admin | none | org detail | server | `tenancy_console::tests::rfc145_cycle3::organization_detail_page_renders_the_real_page` | N/A (GET) |
 | GET | `/admin/tenancy/users/:uid/role_assignments` | System admin | none | role assignments | server | `tenancy_console::tests::rfc145_cycle3::user_role_assignments_page_renders_the_real_page` | N/A (GET) |
 | GET | `/admin/tenancy/tenants/new` | System admin | none | new-tenant form | server | `tenancy_console::tests::rfc145_cycle3::tenant_create_form_renders_the_real_page` | N/A (GET) |
-| POST | `/admin/tenancy/tenants/new` | System admin | `tenant_created` | redirect | client | n/a | N/A (SameSite=Strict) |
+| POST | `/admin/tenancy/tenants/new` | System admin | `tenant_created` (+ `user_tenant_assigned` when the owner's home tenant was the default, RFC 158) | redirect | client | n/a | N/A (SameSite=Strict) |
 | GET | `/admin/tenancy/tenants/:tid/status` | System admin | none | status form | server | `tenancy_console::tests::rfc145_cycle3::tenant_set_status_form_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/tenancy/tenants/:tid/status` | System admin | `tenant_status_changed` | redirect | client | n/a | N/A (SameSite=Strict) |
 | GET | `/admin/tenancy/tenants/:tid/organizations/new` | System admin | none | new-org form | server | `tenancy_console::tests::rfc145_cycle3::organization_create_form_renders_the_real_page` | N/A (GET) |
@@ -227,7 +227,7 @@ code-review responsibility.
 
 | Method | Path | Actor | Audit kind | View / template | Rendering | Rendering test | CSRF |
 |---|---|---|---|---|---|---|---|
-| POST | `/api/v1/tenants` | System admin (bearer) | `tenant_created` | JSON | n/a | n/a | N/A (bearer) |
+| POST | `/api/v1/tenants` | System admin (bearer) | `tenant_created` (+ `user_tenant_assigned` when the owner's home tenant was the default, RFC 158) | JSON | n/a | n/a | N/A (bearer) |
 | GET | `/api/v1/tenants` | System admin (bearer) | none | JSON | n/a | n/a | N/A (bearer) |
 | GET | `/api/v1/tenants/:tid` | System admin (bearer) | none | JSON | n/a | n/a | N/A (bearer) |
 | POST | `/api/v1/tenants/:tid/status` | System admin (bearer) | `tenant_status_changed` | JSON | n/a | n/a | N/A (bearer) |

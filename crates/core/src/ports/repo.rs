@@ -63,6 +63,21 @@ pub trait UserRepository {
     /// (idempotent — the sweep may race with itself in
     /// pathological scheduling). Errors are storage-level.
     async fn delete_by_id(&self, id: &str) -> PortResult<()>;
+
+    /// Move a user to a different tenant. RFC 158: a dedicated,
+    /// single-field method rather than a path through [`Self::update`]
+    /// — shaped like `TenantRepository::set_status` /
+    /// `SubscriptionRepository::set_plan`, the house idiom for a
+    /// specific, consequential field change. `update()`'s own `UPDATE`
+    /// statement deliberately omits `tenant_id` (see its adapter), so
+    /// this is the only way this column changes after `create()`.
+    /// Returns `NotFound` if the id does not exist.
+    async fn assign_tenant(
+        &self,
+        user_id:   &str,
+        tenant_id: &str,
+        now:       UnixSeconds,
+    ) -> PortResult<()>;
 }
 
 /// `oidc_clients` table.

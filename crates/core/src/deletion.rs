@@ -383,6 +383,7 @@ mod tests {
         async fn find_by_email(&self, _: &str) -> crate::ports::PortResult<Option<crate::types::User>> { Ok(None) }
         async fn create(&self, _: &crate::types::User) -> crate::ports::PortResult<()> { Ok(()) }
         async fn update(&self, _: &crate::types::User) -> crate::ports::PortResult<()> { Ok(()) }
+        async fn assign_tenant(&self, _: &str, _: &str, _: i64) -> crate::ports::PortResult<()> { Ok(()) }
         async fn list_by_tenant(&self, _: &str) -> crate::ports::PortResult<Vec<crate::types::User>> { Ok(vec![]) }
         async fn list_anonymous_expired(&self, _: i64) -> crate::ports::PortResult<Vec<crate::types::User>> { Ok(vec![]) }
         async fn delete_by_id(&self, id: &str) -> crate::ports::PortResult<()> {

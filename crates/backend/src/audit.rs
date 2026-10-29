@@ -173,6 +173,11 @@ pub enum EventKind {
     TenantCreated,
     TenantUpdated,
     TenantStatusChanged,
+    /// **RFC 158.** `users.tenant_id` was changed via the dedicated
+    /// `UserRepository::assign_tenant` path — today, only `create_tenant`
+    /// calling it for the new tenant's owner. Payload: `subject` =
+    /// the moved user's id, detail carries the destination tenant.
+    UserTenantAssigned,
     OrganizationCreated,
     OrganizationUpdated,
     OrganizationStatusChanged,
@@ -441,6 +446,7 @@ impl EventKind {
             Self::TenantCreated                => "tenant_created",
             Self::TenantUpdated                => "tenant_updated",
             Self::TenantStatusChanged          => "tenant_status_changed",
+            Self::UserTenantAssigned           => "user_tenant_assigned",
             Self::OrganizationCreated          => "organization_created",
             Self::OrganizationUpdated          => "organization_updated",
             Self::OrganizationStatusChanged    => "organization_status_changed",
@@ -539,6 +545,24 @@ impl<'a> Event<'a> {
     pub fn with_reason(mut self, r: &'a str) -> Self       { self.reason     = Some(r);  self }
     /// RFC 036: set the per-request correlation id from the cf-ray header.
     pub fn with_request_id(mut self, rid: &'a str) -> Self { self.request_id = Some(rid); self }
+}
+
+/// Build the `tenant_created` audit detail string. **RFC 158**: both
+/// `create_tenant` callers (the tenancy-console form and
+/// `POST /api/v1/tenants`) must record the owner-home outcome in this
+/// same detail, not just the slug — a step past RFC 148 §7.4's own
+/// precedent (`deletions.rs`, `sweep.rs`), which inlines an equivalent
+/// `format!` directly inside a `worker::Env`-touching handler that
+/// cannot be host-tested at all. `via` is each caller's own existing
+/// prefix: `"via=tenancy-console,"` for the console, `""` for the
+/// public API, which carries none (a pre-existing gap RFC 158 §5.5
+/// leaves open, not fixed here).
+pub fn tenant_created_detail(
+    via:        &str,
+    slug:       &str,
+    owner_home: cesauth_core::tenancy::service::OwnerHomeOutcome,
+) -> String {
+    format!("{via}slug={slug},owner_home={}", owner_home.as_str())
 }
 
 /// Append an event to the chain. Best-effort: a write failure

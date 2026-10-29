@@ -1,14 +1,17 @@
 //! `GET/POST /admin/tenancy/tenants/new` — tenant create form.
 
+use cesauth_cf::ports::repo::CloudflareUserRepository;
 use cesauth_cf::tenancy::{CloudflareMembershipRepository, CloudflareTenantRepository};
 use cesauth_core::tenancy::ports::NewTenantInput;
-use cesauth_core::tenancy::service::create_tenant;
+use cesauth_core::tenancy::service::{create_tenant, OwnerHomeOutcome};
 use cesauth_core::tenancy::types::TenantMembershipRole;
 use cesauth_frontend::tenancy_console::forms::tenant_create::tenant_create_form;
 use time::OffsetDateTime;
 use worker::{Request, Response, Result, RouteContext};
 
 use crate::audit::{self, EventKind};
+use crate::config::Config;
+use crate::log::{self, Category, Level};
 use crate::routes::admin::console::render;
 use crate::routes::admin::tenancy_console::forms::common::{parse_form, redirect_303, require_manage};
 
@@ -47,14 +50,15 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     let now = OffsetDateTime::now_utc().unix_timestamp();
     let tenants = CloudflareTenantRepository::new(&ctx.env);
     let members = CloudflareMembershipRepository::new(&ctx.env);
+    let users = CloudflareUserRepository::new(&ctx.env);
 
-    let tenant = match create_tenant(&tenants, &members, &NewTenantInput {
+    let outcome = match create_tenant(&tenants, &members, &users, &NewTenantInput {
         slug:          &slug,
         display_name:  &display_name,
         owner_user_id: &owner_user_id,
         owner_role:    TenantMembershipRole::Owner,
     }, now).await {
-        Ok(t) => t,
+        Ok(o) => o,
         Err(e) => {
             // Re-render with the operator-visible reason. Conflict
             // = slug already taken (most common); other variants
@@ -73,12 +77,30 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
             ));
         }
     };
+    let tenant = outcome.tenant;
 
     audit::write_owned(
         &ctx.env, EventKind::TenantCreated,
         Some(principal.id.clone()), Some(tenant.id.clone()),
-        Some(format!("via=tenancy-console,slug={}", tenant.slug)),
+        Some(audit::tenant_created_detail("via=tenancy-console,", &tenant.slug, outcome.owner_home)),
     ).await.ok();
+
+    if outcome.owner_home == OwnerHomeOutcome::Assigned {
+        audit::write_owned(
+            &ctx.env, EventKind::UserTenantAssigned,
+            Some(owner_user_id.clone()), Some(tenant.id.clone()),
+            Some(format!("via=tenancy-console,tenant={}", tenant.id)),
+        ).await.ok();
+    } else if outcome.owner_home == OwnerHomeOutcome::Failed {
+        // RFC 158: a failed owner-home assignment must be loud, not
+        // just folded into the tenant_created detail above — an
+        // operator scanning logs (not querying the audit table) must
+        // also see that the new tenant's owner cannot reach its console.
+        let cfg = Config::from_env(&ctx.env)?;
+        log::emit(&cfg.log, Level::Error, Category::Storage,
+            &format!("tenant {}: owner-home assignment failed for user {owner_user_id}", tenant.id),
+            Some(&owner_user_id));
+    }
 
     redirect_303(&format!("/admin/tenancy/tenants/{}", tenant.id))
 }

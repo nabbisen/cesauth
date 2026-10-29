@@ -15,6 +15,7 @@
 //! - [`membership_negative`]   — membership negative paths
 //! - [`rfc_056_soft_delete`]   — RFC 056 soft delete tests
 //! - [`rfc_058_onboarding`]    — RFC 058 onboarding E2E (SaaS guide §16.2/§16.6)
+//! - [`rfc_158_owner_home`]    — RFC 158 `create_tenant`'s owner-home assignment
 
 mod common;
 mod end_to_end;
@@ -23,3 +24,4 @@ mod billing;
 mod membership_negative;
 mod rfc_056_soft_delete;
 mod rfc_058_onboarding;
+mod rfc_158_owner_home;

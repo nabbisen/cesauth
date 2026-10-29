@@ -10,6 +10,7 @@
 //! unit-testable against the in-memory adapters.
 
 use crate::error::CoreError;
+use crate::ports::repo::UserRepository;
 use crate::ports::{PortError, PortResult};
 use crate::types::UnixSeconds;
 use uuid::Uuid;
@@ -19,26 +20,132 @@ use super::ports::{
     GroupRepository, TenantRepository,
 };
 use super::types::{
-    Group, GroupMembership, GroupStatus, Organization, OrganizationMembership,
-    OrganizationRole, OrganizationStatus, Tenant, TenantMembership, TenantStatus,
+    DEFAULT_TENANT_ID, Group, GroupMembership, GroupStatus, Organization,
+    OrganizationMembership, OrganizationRole, OrganizationStatus, Tenant,
+    TenantMembership, TenantStatus,
 };
 
-/// Create a tenant plus its owner membership as one operation.
+/// Outcome of assigning a newly-created tenant's owner to that tenant's
+/// `users.tenant_id` — the home-tenant column `resolve_tenant_admin`
+/// gates `/admin/t/:slug/*` on (RFC 158).
 ///
-/// The new tenant is written first; if that fails, the membership is
-/// never written. If the tenant-write succeeds but the membership
-/// write fails, the tenant row is left in place (the caller can
-/// retry the membership). This mirrors how D1 batch semantics
-/// behave: no multi-row transactionality, idempotent retry instead.
-pub async fn create_tenant<T, M>(
+/// **One-to-one with [`crate::deletion::ScrubOutcome`]**, for the same
+/// reason: a secondary write after a primary one that already
+/// succeeded must not collapse into a bare `Err`, because the caller
+/// (`create_tenant`) must not report "creation failed" once the tenant
+/// and membership rows already exist.
+#[must_use = "a Failed owner-home outcome must be logged and recorded in \
+              the tenant_created audit detail (RFC 158), not discarded"]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OwnerHomeOutcome {
+    /// The owner's home tenant was the default, and is now this one.
+    Assigned,
+    /// The owner already had a different, non-default home tenant.
+    /// **Not a failure** — RFC 158 §5.4: overwriting it would revoke
+    /// their admin access to the tenant they already administer, which
+    /// this RFC exists to fix, not inflict on someone else. Left
+    /// untouched.
+    KeptExistingHome,
+    /// The owner's home could not be assigned. Covers three cases the
+    /// caller cannot tell apart from the inside, and must not pretend
+    /// to: the owner row could not be found (a storage inconsistency —
+    /// `add_tenant_membership` already succeeded against the same id,
+    /// so this is not "no such user"), the read failed, or the
+    /// `assign_tenant` write itself failed. **Must be surfaced loudly**
+    /// — logged, and recorded in the `tenant_created` audit event's
+    /// detail — never silently treated as equivalent to
+    /// [`Self::KeptExistingHome`].
+    Failed,
+}
+
+impl OwnerHomeOutcome {
+    /// Snake-case form for log lines and audit detail strings.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Assigned         => "assigned",
+            Self::KeptExistingHome => "kept_existing_home",
+            Self::Failed           => "failed",
+        }
+    }
+}
+
+/// Decide what happens to the owner's home tenant when a new tenant is
+/// created for them, and do it. Reads the owner's current `tenant_id`
+/// and, only if it is still the default, writes the new one via
+/// [`UserRepository::assign_tenant`].
+///
+/// **Testable without creating a tenant** — seed a `UserRepository`
+/// double with zero or one user (home tenant default, or not) and call
+/// this directly; no `TenantRepository`/`MembershipRepository` needed.
+/// **Never returns `Err`** — every failure this call can hit is already
+/// an [`OwnerHomeOutcome`] variant, for the same reason
+/// [`crate::deletion::execute_deletion`]'s scrub outcome is a value, not
+/// a propagated error.
+async fn decide_owner_home<U: UserRepository>(
+    users:         &U,
+    owner_user_id: &str,
+    new_tenant_id: &str,
+    now_unix:      UnixSeconds,
+) -> OwnerHomeOutcome {
+    let owner = match users.find_by_id(owner_user_id).await {
+        Ok(Some(u)) => u,
+        Ok(None) | Err(_) => return OwnerHomeOutcome::Failed,
+    };
+    if owner.tenant_id != DEFAULT_TENANT_ID {
+        return OwnerHomeOutcome::KeptExistingHome;
+    }
+    match users.assign_tenant(owner_user_id, new_tenant_id, now_unix).await {
+        Ok(())  => OwnerHomeOutcome::Assigned,
+        Err(_)  => OwnerHomeOutcome::Failed,
+    }
+}
+
+/// Outcome of [`create_tenant`]. A struct (not a bare `Tenant`) so a
+/// future field can join `owner_home` without another signature
+/// change, and so `let _ = create_tenant(...)` discards a named thing
+/// rather than an anonymous one.
+#[must_use = "a Failed owner-home outcome must be logged and recorded in \
+              the tenant_created audit detail (RFC 158), not discarded"]
+#[derive(Debug, Clone)]
+pub struct CreateTenantOutcome {
+    pub tenant:     Tenant,
+    pub owner_home: OwnerHomeOutcome,
+}
+
+/// Create a tenant plus its owner membership and home-tenant
+/// assignment as one operation.
+///
+/// The new tenant is written first; if that fails, nothing else is.
+/// If the tenant-write succeeds but the membership write fails, the
+/// tenant row is left in place (the caller can retry the membership).
+/// This mirrors how D1 batch semantics behave: no multi-row
+/// transactionality, idempotent retry instead.
+///
+/// **RFC 158.** The owner's `users.tenant_id` is decided and, if
+/// appropriate, assigned **last** — after the tenant and the
+/// membership both succeed — via [`decide_owner_home`]. Before this,
+/// no path ever moved a tenant's owner's home tenant off the default,
+/// so `/admin/t/:slug/*` — gated on exactly that column — was
+/// unreachable for every tenant but one.
+///
+/// **The owner is read after both inserts, not before.** A pre-flight
+/// read would also fix the pre-existing "a bad owner id leaves an
+/// orphan tenant row" defect (`add_tenant_membership`'s foreign-key
+/// failure happens after `tenants.create()` already succeeded) — but
+/// that defect is not this RFC's, and fixing it here would be a second,
+/// un-reviewed design choice riding along with this one. Left exactly
+/// as it behaves today.
+pub async fn create_tenant<T, M, U>(
     tenants:     &T,
     memberships: &M,
+    users:       &U,
     input:       &NewTenantInput<'_>,
     now_unix:    UnixSeconds,
-) -> PortResult<Tenant>
+) -> PortResult<CreateTenantOutcome>
 where
     T: TenantRepository,
     M: MembershipRepository,
+    U: UserRepository,
 {
     validate_slug(input.slug)?;
     let tenant = Tenant {
@@ -58,7 +165,9 @@ where
         joined_at: now_unix,
     }).await?;
 
-    Ok(tenant)
+    let owner_home = decide_owner_home(users, input.owner_user_id, &tenant.id, now_unix).await;
+
+    Ok(CreateTenantOutcome { tenant, owner_home })
 }
 
 /// Add a user to an existing tenant with the given membership role.
@@ -390,5 +499,87 @@ mod tests {
     fn slug_special_chars_are_rejected() {
         assert!(validate_slug("my_tenant").is_err()); // underscore not allowed
         assert!(validate_slug("my.tenant").is_err()); // dot not allowed
+    }
+
+    // ── decide_owner_home ───────────────────────────────────────────────
+    // RFC 158: "testable without creating a tenant" — a tiny local
+    // `UserRepository` stub, no `TenantRepository`/`MembershipRepository`
+    // in sight, same shape as `core::tenant_admin::tests::StubUsers`.
+
+    use crate::ports::repo::UserRepository;
+    use crate::ports::PortError;
+    use crate::types::{User, UserStatus};
+    use std::cell::RefCell;
+
+    #[derive(Default)]
+    struct StubUsers {
+        rows: RefCell<Vec<User>>,
+        fail: std::cell::Cell<bool>,
+    }
+    impl StubUsers {
+        fn seed(&self, u: User) { self.rows.borrow_mut().push(u); }
+    }
+    impl UserRepository for StubUsers {
+        async fn find_by_id(&self, id: &str) -> PortResult<Option<User>> {
+            if self.fail.get() { return Err(PortError::Unavailable); }
+            Ok(self.rows.borrow().iter().find(|u| u.id == id).cloned())
+        }
+        async fn find_by_email(&self, _: &str) -> PortResult<Option<User>> { Ok(None) }
+        async fn create(&self, _: &User) -> PortResult<()> { Ok(()) }
+        async fn update(&self, _: &User) -> PortResult<()> { Ok(()) }
+        async fn assign_tenant(&self, user_id: &str, tenant_id: &str, now: UnixSeconds) -> PortResult<()> {
+            let mut rows = self.rows.borrow_mut();
+            match rows.iter_mut().find(|u| u.id == user_id) {
+                Some(u) => { u.tenant_id = tenant_id.to_owned(); u.updated_at = now; Ok(()) }
+                None    => Err(PortError::NotFound),
+            }
+        }
+        async fn list_by_tenant(&self, _: &str) -> PortResult<Vec<User>> { Ok(vec![]) }
+        async fn list_anonymous_expired(&self, _: i64) -> PortResult<Vec<User>> { Ok(vec![]) }
+        async fn delete_by_id(&self, _: &str) -> PortResult<()> { Ok(()) }
+    }
+
+    fn stub_user(id: &str, tenant_id: &str) -> User {
+        User {
+            id: id.to_owned(), tenant_id: tenant_id.to_owned(),
+            email: None, email_verified: false, display_name: None,
+            account_type: crate::tenancy::AccountType::HumanUser,
+            status: UserStatus::Active, created_at: 0, updated_at: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn decide_owner_home_assigns_when_owner_is_on_the_default_tenant() {
+        let users = StubUsers::default();
+        users.seed(stub_user("u-1", DEFAULT_TENANT_ID));
+        let outcome = decide_owner_home(&users, "u-1", "t-new", 100).await;
+        assert_eq!(outcome, OwnerHomeOutcome::Assigned);
+        assert_eq!(users.rows.borrow()[0].tenant_id, "t-new");
+    }
+
+    #[tokio::test]
+    async fn decide_owner_home_keeps_an_existing_non_default_home() {
+        let users = StubUsers::default();
+        users.seed(stub_user("u-1", "t-other"));
+        let outcome = decide_owner_home(&users, "u-1", "t-new", 100).await;
+        assert_eq!(outcome, OwnerHomeOutcome::KeptExistingHome);
+        assert_eq!(users.rows.borrow()[0].tenant_id, "t-other",
+            "the existing home must be untouched");
+    }
+
+    #[tokio::test]
+    async fn decide_owner_home_fails_when_owner_is_not_found() {
+        let users = StubUsers::default();
+        let outcome = decide_owner_home(&users, "u-ghost", "t-new", 100).await;
+        assert_eq!(outcome, OwnerHomeOutcome::Failed);
+    }
+
+    #[tokio::test]
+    async fn decide_owner_home_fails_when_the_read_itself_fails() {
+        let users = StubUsers::default();
+        users.seed(stub_user("u-1", DEFAULT_TENANT_ID));
+        users.fail.set(true);
+        let outcome = decide_owner_home(&users, "u-1", "t-new", 100).await;
+        assert_eq!(outcome, OwnerHomeOutcome::Failed);
     }
 }

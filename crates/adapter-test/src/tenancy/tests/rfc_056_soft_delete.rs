@@ -16,6 +16,7 @@ async fn soft_delete_tenant_sets_deleted_status() {
 
     let tenants  = InMemoryTenantRepository::default();
     let members  = InMemoryMembershipRepository::default();
+    let users    = empty_users();
     let now = 1_700_000_000i64;
 
     let input = NewTenantInput {
@@ -24,7 +25,7 @@ async fn soft_delete_tenant_sets_deleted_status() {
         owner_user_id: "u-owner",
         owner_role:    TenantMembershipRole::Owner,
     };
-    let tenant = create_tenant(&tenants, &members, &input, now).await.unwrap();
+    let tenant = create_tenant(&tenants, &members, &users, &input, now).await.unwrap().tenant;
     soft_delete_tenant(&tenants, &tenant.id, now + 1).await.unwrap();
 
     let found = tenants.get(&tenant.id).await.unwrap().unwrap();
@@ -40,6 +41,7 @@ async fn suspend_and_restore_tenant_roundtrip() {
 
     let tenants  = InMemoryTenantRepository::default();
     let members  = InMemoryMembershipRepository::default();
+    let users    = empty_users();
     let now = 1_700_000_000i64;
 
     let input = NewTenantInput {
@@ -48,7 +50,7 @@ async fn suspend_and_restore_tenant_roundtrip() {
         owner_user_id: "u-s",
         owner_role:    TenantMembershipRole::Owner,
     };
-    let tenant = create_tenant(&tenants, &members, &input, now).await.unwrap();
+    let tenant = create_tenant(&tenants, &members, &users, &input, now).await.unwrap().tenant;
 
     suspend_tenant(&tenants, &tenant.id, now + 1).await.unwrap();
     let suspended = tenants.get(&tenant.id).await.unwrap().unwrap();
@@ -68,11 +70,12 @@ async fn soft_delete_organization_sets_deleted_status() {
     let tenants  = InMemoryTenantRepository::default();
     let orgs     = InMemoryOrganizationRepository::default();
     let members  = InMemoryMembershipRepository::default();
+    let users    = empty_users();
     let now = 1_700_000_000i64;
 
-    let t = create_tenant(&tenants, &members, &NewTenantInput {
+    let t = create_tenant(&tenants, &members, &users, &NewTenantInput {
         slug: "org-del-t", display_name: "T", owner_user_id: "u", owner_role: TenantMembershipRole::Owner,
-    }, now).await.unwrap();
+    }, now).await.unwrap().tenant;
 
     let org = create_organization(&tenants, &orgs, &t.id, "org-del", "Org", now).await.unwrap();
 

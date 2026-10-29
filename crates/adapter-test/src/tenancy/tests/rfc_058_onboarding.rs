@@ -23,15 +23,16 @@ async fn full_onboarding_create_tenant_grant_role_check_permission() {
     let tenants  = InMemoryTenantRepository::default();
     let orgs     = InMemoryOrganizationRepository::default();
     let members  = InMemoryMembershipRepository::default();
+    let users    = empty_users();
     let roles    = InMemoryRoleRepository::default();
     let asgs     = InMemoryRoleAssignmentRepository::default();
     let now = 1_700_000_000i64;
 
     // 1. Create tenant with owner.
-    let tenant = ten::create_tenant(&tenants, &members, &NewTenantInput {
+    let tenant = ten::create_tenant(&tenants, &members, &users, &NewTenantInput {
         slug: "onboard-co", display_name: "Onboard Co",
         owner_user_id: "u-admin", owner_role: TenantMembershipRole::Owner,
-    }, now).await.unwrap();
+    }, now).await.unwrap().tenant;
 
     // 2. Add a regular user to the tenant.
     ten::add_user_to_tenant(&members, &cesauth_core::tenancy::types::TenantMembership {
@@ -94,12 +95,13 @@ async fn onboarding_org_and_group_creation() {
     let orgs     = InMemoryOrganizationRepository::default();
     let groups   = InMemoryGroupRepository::default();
     let members  = InMemoryMembershipRepository::default();
+    let users    = empty_users();
     let now = 1_700_000_000i64;
 
-    let tenant = ten::create_tenant(&tenants, &members, &NewTenantInput {
+    let tenant = ten::create_tenant(&tenants, &members, &users, &NewTenantInput {
         slug: "multi-org", display_name: "Multi Org Co",
         owner_user_id: "u-owner", owner_role: TenantMembershipRole::Owner,
-    }, now).await.unwrap();
+    }, now).await.unwrap().tenant;
 
     // Create two organizations.
     let eng = ten::create_organization(&tenants, &orgs, &tenant.id, "eng", "Engineering", now + 10).await.unwrap();
@@ -138,12 +140,13 @@ async fn soft_deleted_tenant_status_reflects_correctly() {
 
     let tenants  = InMemoryTenantRepository::default();
     let members  = InMemoryMembershipRepository::default();
+    let users    = empty_users();
     let now = 1_700_000_000i64;
 
-    let tenant = create_tenant(&tenants, &members, &NewTenantInput {
+    let tenant = create_tenant(&tenants, &members, &users, &NewTenantInput {
         slug: "to-delete", display_name: "To Delete",
         owner_user_id: "u-1", owner_role: TenantMembershipRole::Owner,
-    }, now).await.unwrap();
+    }, now).await.unwrap().tenant;
 
     // Soft delete.
     soft_delete_tenant(&tenants, &tenant.id, now + 100).await.unwrap();
@@ -165,18 +168,19 @@ async fn negative_paths_duplicate_and_cross_tenant() {
     let tenants  = InMemoryTenantRepository::default();
     let orgs     = InMemoryOrganizationRepository::default();
     let members  = InMemoryMembershipRepository::default();
+    let users    = empty_users();
     let now = 1_700_000_000i64;
 
     // Create two tenants.
-    let t1 = ten::create_tenant(&tenants, &members, &NewTenantInput {
+    let t1 = ten::create_tenant(&tenants, &members, &users, &NewTenantInput {
         slug: "t-one", display_name: "T1",
         owner_user_id: "u-a", owner_role: TenantMembershipRole::Owner,
-    }, now).await.unwrap();
+    }, now).await.unwrap().tenant;
 
-    let t2 = ten::create_tenant(&tenants, &members, &NewTenantInput {
+    let t2 = ten::create_tenant(&tenants, &members, &users, &NewTenantInput {
         slug: "t-two", display_name: "T2",
         owner_user_id: "u-b", owner_role: TenantMembershipRole::Owner,
-    }, now).await.unwrap();
+    }, now).await.unwrap().tenant;
 
     // Duplicate slug within a tenant → conflict.
     ten::create_organization(&tenants, &orgs, &t1.id, "eng", "Engineering", now).await.unwrap();
