@@ -1,24 +1,36 @@
 # RFC 160 — Every constraint failure is a `Conflict`
 
-**Status.** **Accepted** 2026-10-29.
-**Sequenced next, ahead of RFC 159.** Both are P2, and 159 was queued first —
-but 159's own Status says *"nothing is broken and nothing is reachable; the
-value is the check, not the deletions"*, while this one has an operator being
-told the wrong field is wrong. *"APIs and UI/UX for users not to be confused or
-misunderstand"* is the standard, and this is the last lie left on a form RFC
-158 spent four cycles making honest. **Release unassigned**: the version level
-is a `§4.1` consequence — reusing `NotFound` is a fix (patch), a new
-`PortError` variant is additive surface on `core::ports` (minor) — so it is
-decided at dispatch, not now.
-**Decision stage dispatched 2026-10-29**, after 0.89.0 was cut:
-`handoffs/160-every-constraint-failure-is-a-conflict/decision-stage-handoff.md`
-— deliverable (0) is the **four observed D1 error strings**, before any design
-argument, because this defect is made of an assumption about them that nobody
-printed.
-**Decided 2026-10-29: reuse `NotFound`** (§4.5) — the architect's position, a
-new variant, lost to the observed error string. **Implementation dispatched**:
-`handoffs/160-every-constraint-failure-is-a-conflict/implementation-handoff.md`.
-**0.89.1, patch.**
+**Status.** **Done** — **shipped v0.89.1**. D1 constraint failures are
+classified by SQLite's extended result code rather than by whether the message
+contains the word `constraint`, which all four classes do: `FOREIGN KEY` is now
+`NotFound`, `UNIQUE` stays `Conflict`, and CHECK/NOT NULL are deliberately left
+unclassified because no caller can produce either. One shared helper serves all
+ten call sites.
+**Evidence**: **`exercised`** (RFC 000 §22) — live against `wrangler dev` +
+local D1: `POST /api/v1/tenants` with an unknown owner answers **400 naming
+`owner_user_id`** (was 409); the same slug resubmitted still answers **409**;
+`POST /api/v1/tenants/:tid/groups` answers **404** for an unknown `:tid` and
+**400 naming `organization_id`** for an unknown one, and still **409** for a
+duplicate slug; the console renders **"Owner user id not found"** for a
+mistyped owner **and still renders "Slug already taken in this deployment"**
+for a genuinely taken slug, in the same walkthrough; a membership form renders
+**"User id not found"** instead of "Storage error"; and a duplicate email still
+answers **409 "email already in use"** after the tenth site was reclassified.
+Seven host tests over the four error strings recorded at the decision stage,
+five of them on the pure `classify_insert_message` — including the three
+(CHECK, NOT NULL, unrelated) that guard against the match being re-broadened —
+with a fires/does-not-fire pair on that function, which is the only place the
+witness can live (§4.10). Host tests **1,630**, `migration_chain` 35, routes
+193, 13 workflows green.
+
+**Two cycles, and each found something outside what it was given.** Cycle 1's
+census corrected this RFC's own framing — eight sites are two changes, and
+`groups.rs` is a second live foreign-key site the RFC's evidence never named —
+and its decision stage closed the architect's preferred option with an observed
+error string rather than an argument. Cycle 2 fixed a site the architect's own
+grep had excluded (§4.8) and found that the regression guard's witness had to
+be the pure function rather than the wrapper, which aborts (§4.10).
+
 **Tier.** P2. Nothing is exposed, nothing is corrupted, nothing is
 unreachable. An operator is told the wrong thing about why their request
 failed, and a public API answers with the wrong status class.

@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 160, implementation
 
-**Governing RFC.** `rfcs/accepted/160-every-constraint-failure-is-a-conflict.md`
+**Governing RFC.** `rfcs/done/160-every-constraint-failure-is-a-conflict.md`
 — **§4.5 as decided**, plus **§4.6** (the rule that keeps a revived arm
 honest) and **§4.7** (the two API paths, decided rather than deferred).
 **Decision review.** `.git-exclude/reviewed/160-decision-review.md`

@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 160, cycle 2
 
-**Governing RFC.** `rfcs/accepted/160-every-constraint-failure-is-a-conflict.md`
+**Governing RFC.** `rfcs/done/160-every-constraint-failure-is-a-conflict.md`
 — **§4.8** and **§4.9**, both new.
 **Review.** `.git-exclude/reviewed/160-implementation-review.md`
 **Builds on.** `28b25b3`, which is accepted and stays.

@@ -14,6 +14,54 @@ changes will always be called out here.
 
 ---
 
+## [0.89.1] - 2026-10-29
+
+### A missing reference is no longer reported as a duplicate one — RFC 160
+
+### Fixed
+
+- **An operator who mistyped a tenant owner's id was told their slug was
+  taken.** Every D1 constraint failure was classified by whether its message
+  contained the word `constraint`, which all four classes do — UNIQUE, FOREIGN
+  KEY, CHECK and NOT NULL — so all four became `PortError::Conflict`. A
+  foreign-key violation means *a row you referenced does not exist*, which is
+  not a conflict with an existing one, and the console's own
+  "Owner user id not found" message could never be reached by the cause it was
+  written for.
+
+  The classification now matches SQLite's extended result code, which D1
+  embeds verbatim: `SQLITE_CONSTRAINT_FOREIGNKEY` maps to `NotFound`,
+  `SQLITE_CONSTRAINT_UNIQUE` to `Conflict`, and anything else is left exactly
+  as it was. One shared helper now serves all ten
+  call sites that previously each carried their own copy of the test. CHECK and
+  NOT NULL are deliberately **not** classified: no caller can produce either,
+  because every `CHECK` column is written from a Rust enum and every `NOT NULL`
+  column from a non-optional field, and branching on cases nothing can reach
+  would put untestable code in the helper this release exists to fix.
+
+- **`POST /api/v1/tenants` with an unknown `owner_user_id`** answered `409
+  conflict`, indistinguishable from a slug collision. It now answers **`400`
+  naming the field**. This route has no path parameter and mints its tenant row
+  in the same call, so a missing reference can only be the owner.
+
+- **`POST /api/v1/tenants/:tid/groups`** now resolves the tenant before
+  creating the group, so an unknown `:tid` is an honest **`404`** and an unknown
+  `organization_id` is a **`400` naming that field** — previously both were
+  folded into one `409`.
+
+- **Creating a user against a tenant that does not exist** reported
+  "email already in use". The same cause, at a call site whose spelling of the
+  test — `constraint failed` rather than `constraint` — had kept it out of the
+  original survey.
+
+### Changed
+
+- Several admin-console forms begin showing a message they have always
+  contained: a mistyped user id in the membership forms now reads
+  **"User id not found"** rather than "Storage error", and the tenant-create
+  form distinguishes a bad owner id from a taken slug. No new messages were
+  written for this — the arms existed and could not fire.
+
 ## [0.89.0] - 2026-10-29
 
 ### A new tenant's owner can reach their own console — RFC 158

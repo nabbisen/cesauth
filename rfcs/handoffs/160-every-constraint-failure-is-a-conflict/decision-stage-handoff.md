@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 160, decision stage
 
-**Governing RFC.** `rfcs/accepted/160-every-constraint-failure-is-a-conflict.md`
+**Governing RFC.** `rfcs/done/160-every-constraint-failure-is-a-conflict.md`
 **Prior art worth reading first.** `rfcs/done/158-no-tenant-but-the-default-has-a-reachable-console.md`
 §5.5 and §5.8 — RFC 160 came out of RFC 158's cycle-2 evidence, and §5.8 names
 the claim that went unchecked for four cycles.
