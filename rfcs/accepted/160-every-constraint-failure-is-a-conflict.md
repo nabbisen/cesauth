@@ -210,6 +210,59 @@ for with a variant everywhere:
 Deciding this here rather than deferring it is RFC 158 §5.6's lesson: a sink
 that no person reads is not a report.
 
+## 4.8 The population was wrong, and one site outside it carries the defect
+
+Implemented `28b25b3`; found in review of that commit. **§2's population came
+from the architect's grep**, which searched the literal strings
+`contains("unique")`, `contains("constraint")` and `contains("foreign")`
+**including the closing `")`** — so it could never match
+`contains("constraint failed")`. Four more sites spell the test differently and
+were in neither the RFC's census nor the cycle's.
+
+**The population, re-derived loosely and completely** — `grep -rn
+"msg.contains(" crates/adapter-cloudflare/src`, **9 lines across 6 sites**
+after `28b25b3`'s consolidation: `ports/repo.rs:109-111` (the new shared
+classifier), `ports/audit.rs:223-224` (its own id-vs-seq logic, tightened),
+`anonymous.rs:94-96`, `ports/repo/users.rs:129`, `ports/repo/invitations.rs:84`,
+`ports/repo/deletions.rs:91`. **No further site exists.** The count that
+mattered was never "eight"; it was "every place a D1 error message is read",
+and that is the grep that should have opened this RFC.
+
+**`ports/repo/users.rs:129` carries this RFC's defect.**
+`UserRepository::create` tests `msg.contains("UNIQUE") || msg.contains
+("constraint failed")`; `users.tenant_id` is a foreign key
+(`migrations/0016:46`) and `FOREIGN KEY constraint failed` contains
+`constraint failed`. So a user created against a nonexistent tenant returns
+`Conflict`, which `admin/legacy.rs:94` renders as **"email already in use",
+409** — a missing tenant reported as a duplicate email. Narrow in practice
+(`legacy.rs:69` passes `DEFAULT_TENANT_ID`, which migration 0003 seeds), but it
+is the defect this RFC is named for, and the helper that fixes it now exists.
+**Fixed in cycle 2.**
+
+**The other three are not defects and are deliberately left alone:**
+`anonymous.rs:94` **already distinguishes `FOREIGN KEY` explicitly** — the one
+place that got this right before this RFC existed; `deletions.rs:91` and
+`invitations.rs:84` test `UNIQUE` only, so a foreign-key failure falls through
+to a 500 rather than to a wrong message, and their callers pass tenants that
+exist, so routing them through the helper would change nothing observable.
+
+### 4.9 The fallthrough is the regression guard, and it has no witness
+
+The cycle correctly flagged that the third classifier test cannot be built:
+asserting the fallthrough runs `run_err`, which calls
+`worker::console_error!`, which **aborts the host binary**. **But the
+requirement was constructible — the structure is what made it impossible.**
+Splitting the decision from the logging (a pure `msg -> Option<PortError>`,
+with `classify_insert_err` the thin wrapper that logs on `None`) makes all
+three branches host-testable, the same extraction used for
+`tenant_created_detail`, `accept_invite_page`, and every `worker::Response`
+case since RFC 146 §2.
+
+It matters more than a missing test usually would: **nothing currently pins
+that an unrecognized constraint message does not become `Conflict`** — which is
+exactly this RFC's bug, and exactly what a future re-broadening of the match
+would reintroduce, with both existing tests staying green. **Fixed in cycle 2.**
+
 ## 5. The lesson worth keeping in the record
 
 This was found in a cycle's **unrequested** evidence. The dev team ran
