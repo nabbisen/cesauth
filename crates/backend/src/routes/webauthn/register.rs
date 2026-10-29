@@ -7,7 +7,6 @@ use cesauth_core::ports::store::{AuthChallengeStore, AuthMethod, Challenge};
 use cesauth_core::webauthn::registration;
 use serde::Deserialize;
 use time::OffsetDateTime;
-use uuid::Uuid;
 use worker::{Request, Response, Result, RouteContext};
 
 use crate::audit::{self, EventKind};

@@ -7,11 +7,9 @@
 //! `last_verified_at`/`last_verified_by` without touching the attested
 //! values. The console audits the stamp.
 
-use cesauth_cf::admin::{CloudflareBucketSafetyRepository, CloudflareThresholdRepository};
-use cesauth_cf::ports::audit::CloudflareAuditEventRepository;
-use cesauth_core::admin::service::{build_safety_report, compute_safety_controls, verify_bucket_safety};
+use cesauth_cf::admin::CloudflareBucketSafetyRepository;
+use cesauth_core::admin::service::verify_bucket_safety;
 use cesauth_core::admin::types::AdminAction;
-use cesauth_frontend as ui;
 use time::OffsetDateTime;
 use worker::{Request, Response, Result, RouteContext};
 

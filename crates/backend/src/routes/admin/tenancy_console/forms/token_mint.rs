@@ -83,10 +83,6 @@ pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     }))
 }
 
-pub async fn form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::csrf_json()
-}
-
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let principal = match require_token_mint(&req, &ctx.env).await? {
         Ok(p)     => p,

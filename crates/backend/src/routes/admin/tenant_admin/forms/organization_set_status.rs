@@ -68,15 +68,6 @@ pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     render::html_response(|| form_page(&ctx_ta.principal, &ctx_ta.tenant, &org, None, "", None))
 }
 
-/// `GET .json` — CSRF token for the form form.
-pub async fn form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let _ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
-        Ok(c)  => c,
-        Err(_) => return Response::error("Unauthorized", 401),
-    };
-    super::super::json_api::csrf_json()
-}
-
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let (ctx_ta, org) = match gate_and_load(&req, &ctx).await? {
         Ok(pair)  => pair,

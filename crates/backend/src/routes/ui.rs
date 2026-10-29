@@ -16,10 +16,6 @@
 
 use worker::{Request, Response, Result, RouteContext};
 
-use crate::config::Config;
-use crate::csrf;
-use crate::log::{self, Category, Level};
-use crate::routes::me::auth as me_auth;
 
 /// `GET /` and `GET /login` — Leptos shell for the login page.
 ///

@@ -71,9 +71,8 @@
 //! calling `leptos_html_shell` receive it, and RFC 132's E3 asserts no
 //! `server`-declared route does.
 
-use worker::{Request, Response, Result, RouteContext};
+use worker::{Request, Response, Result};
 
-use crate::config::Config;
 
 /// Asset filenames produced by `trunk build --release --filehash false`
 /// (RFC 130 S2) — deterministic, hyphenated to match the Cargo package
@@ -92,7 +91,7 @@ const LEPTOS_WASM: &str = "cesauth-frontend_bg.wasm";
 /// handlers once screens are migrated in Phase C.
 pub async fn leptos_html_shell(
     _req: &Request,
-    env: &worker::Env,
+    _env: &worker::Env,
     title: &str,
     lang: &str,
 ) -> Result<Response> {

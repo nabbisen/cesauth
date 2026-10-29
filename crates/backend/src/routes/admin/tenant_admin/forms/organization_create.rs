@@ -16,7 +16,7 @@ use crate::routes::admin::tenant_admin::gate;
 use crate::routes::api_v1::quota;
 
 pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
+    let _ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
         Ok(c)  => c,
         Err(r) => return Ok(r),
     };

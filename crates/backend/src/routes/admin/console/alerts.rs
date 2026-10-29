@@ -4,19 +4,8 @@
 //! public buckets) plus cost-threshold breaches across all services.
 //! Newest first.
 
-use cesauth_cf::admin::{
-    CloudflareBucketSafetyRepository, CloudflareCostSnapshotRepository,
-    CloudflareThresholdRepository, CloudflareUsageMetricsSource,
-};
-use cesauth_core::admin::service::generate_alerts;
-use cesauth_core::admin::types::AdminAction;
-use cesauth_frontend as ui;
-use time::OffsetDateTime;
 use worker::{Request, Response, Result, RouteContext};
 
-use crate::audit::{self, EventKind};
-use crate::routes::admin::auth;
-use crate::routes::admin::console::render;
 
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     crate::routes::admin::operator_json_api::shell(&req, &ctx, "アラート — cesauth").await

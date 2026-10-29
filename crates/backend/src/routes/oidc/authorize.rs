@@ -28,11 +28,9 @@ use cesauth_core::ports::store::{
 };
 use cesauth_core::session::{self, SessionCookie};
 use time::OffsetDateTime;
-use uuid::Uuid;
 use worker::{Request, Response, Result, RouteContext};
 
 use crate::config::{Config, load_session_cookie_key};
-use crate::csrf;
 use crate::error::oauth_error_response;
 use crate::log::{self, Category, Level};
 use crate::post_auth;

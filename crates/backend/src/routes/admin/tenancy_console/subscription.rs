@@ -5,7 +5,6 @@ use cesauth_cf::billing::{
     CloudflareSubscriptionHistoryRepository, CloudflareSubscriptionRepository,
 };
 use cesauth_cf::tenancy::CloudflareTenantRepository;
-use cesauth_core::admin::types::AdminAction;
 use cesauth_core::billing::ports::{SubscriptionHistoryRepository, SubscriptionRepository};
 use cesauth_core::tenancy::ports::TenantRepository;
 use cesauth_frontend::tenancy_console::subscription_history_page;

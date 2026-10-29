@@ -7,22 +7,8 @@
 //! whole page renders well under a hundred milliseconds at typical
 //! sizes.
 
-use cesauth_cf::billing::{CloudflarePlanRepository, CloudflareSubscriptionRepository};
-use cesauth_cf::tenancy::{
-    CloudflareMembershipRepository, CloudflareOrganizationRepository,
-    CloudflareTenantRepository,
-};
-use cesauth_core::admin::types::AdminAction;
-use cesauth_core::billing::ports::{PlanRepository, SubscriptionRepository};
-use cesauth_core::tenancy::ports::{
-    MembershipRepository, OrganizationRepository, TenantRepository,
-};
-use cesauth_frontend::tenancy_console::tenant_detail::TenantDetailInput;
-use cesauth_frontend::tenancy_console::tenant_detail_page;
 use worker::{Request, Response, Result, RouteContext};
 
-use crate::routes::admin::auth;
-use crate::routes::admin::console::render;
 
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     crate::routes::admin::operator_json_api::shell(&req, &ctx, "テナント詳細 — cesauth").await

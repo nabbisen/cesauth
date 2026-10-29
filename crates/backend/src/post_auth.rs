@@ -31,7 +31,6 @@ use cesauth_core::session::{self, SessionCookie};
 use cesauth_core::totp::storage::TotpAuthenticatorRepository;
 use cesauth_core::types::Scopes;
 use time::OffsetDateTime;
-use uuid::Uuid;
 use worker::{Env, Response, Result};
 
 use crate::config::{Config, load_session_cookie_key};

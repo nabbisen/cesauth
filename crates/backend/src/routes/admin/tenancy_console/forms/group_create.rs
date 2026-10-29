@@ -38,10 +38,6 @@ pub async fn form_tenant<D>(req: Request, ctx: RouteContext<D>) -> Result<Respon
     render::html_response(|| ui::for_tenant(&principal, &tenant.id, &tenant.slug, "", "", None))
 }
 
-pub async fn form_tenant_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::csrf_json()
-}
-
 pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let principal = match require_manage(&req, &ctx.env).await? {
         Ok(p) => p, Err(r) => return Ok(r),
@@ -89,10 +85,6 @@ pub async fn form_org<D>(req: Request, ctx: RouteContext<D>) -> Result<Response>
         Ok(Some(o)) => o, _ => return Response::error("not found", 404),
     };
     render::html_response(|| ui::for_organization(&principal, &org.id, &org.slug, "", "", None))
-}
-
-pub async fn form_org_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::csrf_json()
 }
 
 pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {

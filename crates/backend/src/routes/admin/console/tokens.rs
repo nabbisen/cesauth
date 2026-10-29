@@ -104,14 +104,6 @@ pub async fn new_form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response>
     render::html_response(|| ui::admin::token_new_form(&principal, None))
 }
 
-pub async fn new_form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let _admin = match crate::routes::admin::operator_json_api::resolve_admin(&req, &ctx).await? {
-        Ok(a)  => a,
-        Err(_) => return Response::error("Unauthorized", 401),
-    };
-    crate::routes::admin::operator_json_api::csrf_json()
-}
-
 // -------------------------------------------------------------------------
 // POST /admin/console/tokens
 // -------------------------------------------------------------------------

@@ -2,10 +2,7 @@
 
 use worker::{Request, Response, Result, RouteContext};
 
-use cesauth_core::admin::types::AdminAction;
-use cesauth_frontend::admin::operations::{operations_page, CronPassDisplay};
 
-use crate::require_system_admin;
 
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     crate::routes::admin::operator_json_api::shell(&req, &ctx, "オペレーション — cesauth").await

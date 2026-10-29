@@ -34,10 +34,6 @@ pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     render::html_response(|| form_page(&principal, &tenant, None, "", None))
 }
 
-pub async fn form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::csrf_json()
-}
-
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let principal = match require_manage(&req, &ctx.env).await? {
         Ok(p) => p, Err(r) => return Ok(r),

@@ -41,7 +41,7 @@ use crate::routes::admin::tenant_admin::gate;
 // ---------------------------------------------------------------------
 
 pub async fn form_tenant<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
+    let _ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
         Ok(c)  => c,
         Err(r) => return Ok(r),
     };
@@ -169,15 +169,6 @@ pub async fn form_org<D>(req: Request, ctx: RouteContext<D>) -> Result<Response>
     ))
 }
 
-/// `GET .json` — CSRF token for the form_org form.
-pub async fn form_org_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let _ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
-        Ok(c)  => c,
-        Err(_) => return Response::error("Unauthorized", 401),
-    };
-    super::super::json_api::csrf_json()
-}
-
 pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let (ctx_ta, org) = match gate_for_org(&req, &ctx).await? {
         Ok(p) => p, Err(r) => return Ok(r),
@@ -286,15 +277,6 @@ pub async fn form_group<D>(req: Request, ctx: RouteContext<D>) -> Result<Respons
     render::html_response(|| ui::for_group(
         &ctx_ta.principal, &ctx_ta.tenant, &group.id, &group.slug, &org_id, "", None,
     ))
-}
-
-/// `GET .json` — CSRF token for the form_group form.
-pub async fn form_group_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let _ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
-        Ok(c)  => c,
-        Err(_) => return Response::error("Unauthorized", 401),
-    };
-    super::super::json_api::csrf_json()
 }
 
 pub async fn submit_group<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {

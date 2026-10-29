@@ -2,7 +2,6 @@
 //! assignment held by one user.
 
 use cesauth_cf::authz::{CloudflareRoleAssignmentRepository, CloudflareRoleRepository};
-use cesauth_core::admin::types::AdminAction;
 use cesauth_core::authz::ports::{RoleAssignmentRepository, RoleRepository};
 use cesauth_frontend::tenancy_console::role_assignments::UserRoleAssignmentsInput;
 use cesauth_frontend::tenancy_console::user_role_assignments_page;

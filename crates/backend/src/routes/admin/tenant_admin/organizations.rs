@@ -1,13 +1,8 @@
 //! `GET /admin/t/:slug/organizations` — list organizations within
 //! the current tenant.
 
-use cesauth_cf::tenancy::CloudflareOrganizationRepository;
-use cesauth_core::tenancy::ports::OrganizationRepository;
-use cesauth_frontend::tenant_admin::organizations_page;
 use worker::{Request, Response, Result, RouteContext};
 
-use crate::routes::admin::auth;
-use crate::routes::admin::console::render;
 use crate::routes::admin::tenant_admin::{gate, json_api};
 
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {

@@ -11,7 +11,6 @@ use super::*;
 use cesauth_adapter_test::repo::InMemoryTotpAuthenticatorRepository;
 use cesauth_core::ports::PortError;
 use cesauth_core::totp::Secret;
-use cesauth_core::totp::storage::TotpAuthenticatorRepository as _;
 
 const USER_ID:    &str = "usr_test_alice";
 const USER_EMAIL: &str = "alice@example.com";
@@ -180,7 +179,7 @@ async fn enroll_get_decryption_with_wrong_row_id_aad_fails() {
 use cesauth_adapter_test::repo::InMemoryTotpRecoveryCodeRepository;
 use cesauth_core::totp::{
     aad_for_id, compute_code, encrypt_secret, step_for_unix,
-    storage::{TotpRecoveryCodeRepository as _, TotpRecoveryCodeRow},
+    storage::TotpRecoveryCodeRow,
 };
 
 const NOW_UNIX: i64 = 1_700_000_000;

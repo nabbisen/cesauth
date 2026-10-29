@@ -43,10 +43,6 @@ pub async fn confirm_tenant<D>(req: Request, ctx: RouteContext<D>) -> Result<Res
     render::html_response(|| ui::for_tenant(&principal, &tenant.id, &tenant.slug, &uid, "(unknown)"))
 }
 
-pub async fn confirm_tenant_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::csrf_json()
-}
-
 pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let principal = match require_manage(&req, &ctx.env).await? {
         Ok(p) => p, Err(r) => return Ok(r),
@@ -105,10 +101,6 @@ pub async fn confirm_org<D>(req: Request, ctx: RouteContext<D>) -> Result<Respon
     render::html_response(|| ui::for_organization(&principal, &org.id, &org.slug, &uid, "(unknown)"))
 }
 
-pub async fn confirm_org_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::csrf_json()
-}
-
 pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let principal = match require_manage(&req, &ctx.env).await? {
         Ok(p) => p, Err(r) => return Ok(r),
@@ -164,10 +156,6 @@ pub async fn confirm_group<D>(req: Request, ctx: RouteContext<D>) -> Result<Resp
         Ok(Some(g)) => g, _ => return Response::error("not found", 404),
     };
     render::html_response(|| ui::for_group(&principal, &group.id, &group.slug, &group.tenant_id, &uid))
-}
-
-pub async fn confirm_group_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::csrf_json()
 }
 
 pub async fn submit_group<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {

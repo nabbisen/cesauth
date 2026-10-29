@@ -1,13 +1,9 @@
 //! `GET /admin/tenancy` — landing page with deployment-wide counters.
 
-use cesauth_core::admin::types::AdminAction;
 use cesauth_frontend::tenancy_console::overview::{OverviewCounts, PlanBreakdownRow};
-use cesauth_frontend::tenancy_console::tenancy_console_overview_page;
 use serde::Deserialize;
 use worker::{Request, Response, Result, RouteContext};
 
-use crate::routes::admin::auth;
-use crate::routes::admin::console::render;
 
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     crate::routes::admin::operator_json_api::shell(&req, &ctx, "テナント管理 — cesauth").await

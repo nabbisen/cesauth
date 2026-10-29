@@ -1,15 +1,8 @@
 //! `GET /admin/t/:slug/subscription` — append-only subscription
 //! change log for the current tenant.
 
-use cesauth_cf::billing::{
-    CloudflareSubscriptionHistoryRepository, CloudflareSubscriptionRepository,
-};
-use cesauth_core::billing::ports::{SubscriptionHistoryRepository, SubscriptionRepository};
-use cesauth_frontend::tenant_admin::subscription_page;
 use worker::{Request, Response, Result, RouteContext};
 
-use crate::routes::admin::auth;
-use crate::routes::admin::console::render;
 use crate::routes::admin::tenant_admin::{gate, json_api};
 
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {

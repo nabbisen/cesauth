@@ -23,9 +23,9 @@
 //!     redirects to the review page. All writes go through the same
 //!     service functions as the JSON API.
 
-use cesauth_cf::admin::{CloudflareBucketSafetyRepository, CloudflareThresholdRepository};
+use cesauth_cf::admin::CloudflareBucketSafetyRepository;
 use cesauth_core::admin::service::{
-    apply_bucket_safety_change, build_safety_report, preview_bucket_safety_change,
+    apply_bucket_safety_change, preview_bucket_safety_change,
 };
 use cesauth_core::admin::types::{AdminAction, BucketSafetyChange};
 use cesauth_frontend as ui;
@@ -211,14 +211,6 @@ pub async fn edit_form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
     // RFC 146: `html_response` owns the nonce now — the helper mints and
     // publishes it; this handler must not do that itself.
     render::html_response(|| ui::admin::config_edit_form(&principal, &state, None))
-}
-
-pub async fn edit_form_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let _admin = match crate::routes::admin::operator_json_api::resolve_admin(&req, &ctx).await? {
-        Ok(a)  => a,
-        Err(_) => return Response::error("Unauthorized", 401),
-    };
-    crate::routes::admin::operator_json_api::csrf_json()
 }
 
 // -------------------------------------------------------------------------

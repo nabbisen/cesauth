@@ -12,18 +12,8 @@
 //! `CostSnapshotRepository` dedupes by hour bucket so repeated views
 //! do not create repeated rows.
 
-use cesauth_cf::admin::{
-    CloudflareCostSnapshotRepository, CloudflareThresholdRepository, CloudflareUsageMetricsSource,
-};
-use cesauth_core::admin::service::build_cost_dashboard;
-use cesauth_core::admin::types::{AdminAction, ServiceId};
-use cesauth_frontend as ui;
-use time::OffsetDateTime;
 use worker::{Request, Response, Result, RouteContext};
 
-use crate::audit::{self, EventKind};
-use crate::routes::admin::auth;
-use crate::routes::admin::console::render;
 
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     crate::routes::admin::operator_json_api::shell(&req, &ctx, "コスト — cesauth").await

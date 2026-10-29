@@ -43,7 +43,6 @@ use cesauth_cf::ports::repo::{
 use cesauth_core::totp::storage::{
     TotpAuthenticatorRepository, TotpRecoveryCodeRepository,
 };
-use cesauth_frontend::templates;
 use worker::{Request, Response, Result};
 
 use crate::audit::{self, EventKind};

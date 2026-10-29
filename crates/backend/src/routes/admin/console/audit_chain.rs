@@ -21,7 +21,6 @@ use cesauth_core::admin::types::{AdminAction, AuditChainStatus};
 use cesauth_core::audit::verifier::verify_chain_full;
 use cesauth_core::ports::audit::AuditEventRepository;
 use cesauth_core::ports::audit_chain::AuditChainCheckpointStore;
-use cesauth_frontend as ui;
 use time::OffsetDateTime;
 use worker::{Request, Response, Result, RouteContext};
 

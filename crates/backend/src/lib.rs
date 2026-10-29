@@ -19,6 +19,15 @@
 
 #![forbid(unsafe_code)]
 #![warn(missing_debug_implementations, rust_2018_idioms)]
+// RFC 157: crate-scoped, not a `cargo clippy -- -D` flag — the workspace's
+// clippy.yml lints every host crate in one shared `cargo clippy` invocation,
+// and a command-line `-D` there denies these lints in every crate rustc
+// touches while building this one, including `cesauth-core` as a dependency
+// (confirmed: it turns a pre-existing, untriaged `cesauth-core` warning into
+// a hard compile error). A crate attribute has no such reach — it only
+// raises the lint level for this crate's own source, which is what RFC 157
+// actually asks for ("the backend crate").
+#![deny(unused_imports, unused_variables)]
 
 pub mod adapter;
 pub mod audit;

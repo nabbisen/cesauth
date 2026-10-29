@@ -11,7 +11,7 @@ use cesauth_core::authz::types::{PermissionCatalog, ScopeRef};
 use cesauth_core::tenancy::ports::{
     GroupRepository, MembershipRepository, OrganizationRepository,
 };
-use cesauth_core::tenancy::types::{GroupParent, TenantMembershipRole, OrganizationRole};
+use cesauth_core::tenancy::types::GroupParent;
 use cesauth_frontend::tenant_admin::forms::membership_remove as ui;
 use worker::{Request, Response, Result, RouteContext};
 
@@ -47,15 +47,6 @@ pub async fn confirm_tenant<D>(req: Request, ctx: RouteContext<D>) -> Result<Res
         None    => return Response::error("missing user id", 400),
     };
     render::html_response(|| ui::for_tenant(&ctx_ta.principal, &ctx_ta.tenant, &uid, "(unknown)"))
-}
-
-/// `GET .json` — CSRF token for the confirm_tenant form.
-pub async fn confirm_tenant_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let _ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
-        Ok(c)  => c,
-        Err(_) => return Response::error("Unauthorized", 401),
-    };
-    super::super::json_api::csrf_json()
 }
 
 pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -149,15 +140,6 @@ pub async fn confirm_org<D>(req: Request, ctx: RouteContext<D>) -> Result<Respon
     ))
 }
 
-/// `GET .json` — CSRF token for the confirm_org form.
-pub async fn confirm_org_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let _ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
-        Ok(c)  => c,
-        Err(_) => return Response::error("Unauthorized", 401),
-    };
-    super::super::json_api::csrf_json()
-}
-
 pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let (ctx_ta, org, uid) = match gate_for_org(&req, &ctx).await? {
         Ok(t) => t, Err(r) => return Ok(r),
@@ -239,15 +221,6 @@ pub async fn confirm_group<D>(req: Request, ctx: RouteContext<D>) -> Result<Resp
     render::html_response(|| ui::for_group(
         &ctx_ta.principal, &ctx_ta.tenant, &group.id, &group.slug, &org_id, &uid,
     ))
-}
-
-/// `GET .json` — CSRF token for the confirm_group form.
-pub async fn confirm_group_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let _ctx_ta = match super::super::json_api::resolve_ctx(&req, &ctx).await? {
-        Ok(c)  => c,
-        Err(_) => return Response::error("Unauthorized", 401),
-    };
-    super::super::json_api::csrf_json()
 }
 
 pub async fn submit_group<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {

@@ -25,16 +25,8 @@
 //! - `cursor` is passed through verbatim; the adapter calls
 //!   `decode_cursor` itself.
 
-use cesauth_cf::admin::CloudflareAuditQuerySource;
-use cesauth_core::admin::service::audit_pagination;
-use cesauth_core::admin::service::search_audit;
-use cesauth_core::admin::types::{AdminAction, AuditQuery};
-use cesauth_frontend as ui;
 use worker::{Request, Response, Result, RouteContext};
 
-use crate::audit::{self, EventKind};
-use crate::routes::admin::auth;
-use crate::routes::admin::console::render;
 
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     crate::routes::admin::operator_json_api::shell(&req, &ctx, "監査ログ — cesauth").await
