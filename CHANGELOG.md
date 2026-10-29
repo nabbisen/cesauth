@@ -14,6 +14,43 @@ changes will always be called out here.
 
 ---
 
+## [0.88.1] - 2026-10-29
+
+### Twenty-nine unreachable handlers removed, and a guard against more — RFC 157
+
+### Removed
+
+- **Twenty-nine request handlers that no route pointed at.** Each was a `.json`
+  companion sitting beside a registered form handler, with no registration of
+  its own, reachable by nothing, fetched by nothing, and — for all but a few —
+  not even exercised by a test. They had accumulated because nothing failed
+  when one was added: the router does not notice a handler it was never told
+  about.
+
+  Deleting them was a decision, not a default. Every client-rendered admin page
+  was read first to establish whether any of them fetches the endpoint in
+  question; two such pages do fetch a form companion, and both of those
+  companions are registered and were left alone.
+
+### Added
+
+- **`unused_imports` and `unused_variables` are now build errors in the Worker
+  crate**, as a crate-level attribute rather than a CI flag — so a local build
+  enforces exactly what CI does, and the setting travels with the source rather
+  than living in a workflow file. A deliberately narrow pair: the wider
+  "deny all warnings" remains rejected, because it would make every future
+  toolchain's new lint a release-blocking failure.
+
+### Fixed
+
+- The import leftovers the previous cycles' work had made redundant. These had
+  been kept on purpose: while the pages they belonged to were still broken,
+  the compiler's complaints about them were the clearest evidence of what was
+  wrong. That evidence stopped being needed when the pages were fixed in
+  v0.86.1 and v0.86.2, and the reason for keeping them had outlived the rule.
+
+---
+
 ## [0.88.0] - 2026-10-29
 
 ### An invitation now grants what it offers — RFC 153
