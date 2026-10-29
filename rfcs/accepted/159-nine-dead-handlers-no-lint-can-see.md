@@ -1,6 +1,13 @@
 # RFC 159 — Nine dead handlers no lint can see
 
-**Status.** **Proposed** — awaiting owner authorization.
+**Status.** **Accepted** 2026-10-29. **Queued behind RFC 158's decision
+stage** — RFC 158 is P1 (a 35-route administrative surface one tenant can open)
+and this is P2 (nine functions nothing reaches). **Release unassigned**, for
+the same reason RFC 158's is: §4's two deliverables are different sizes and the
+per-page question in step 1 is answered by looking, not by scheduling.
+
+**Not dispatched**: RFC 157 is in flight on the adjacent fifteen. Dispatching
+this concurrently would put two cycles in the same nine modules' neighbours.
 **Tier.** P2. Nothing is broken and nothing is reachable. The value is the
 check, not the deletions.
 **Size.** Small for the nine; the check is the lasting part.
