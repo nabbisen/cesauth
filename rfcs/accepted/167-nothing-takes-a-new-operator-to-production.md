@@ -1,6 +1,10 @@
 # RFC 167 — Nothing takes a new operator from zero to production
 
-**Status.** **Proposed** 2026-10-30. Awaiting nabbisen's acceptance.
+**Status.** **Accepted** 2026-10-30 — *"Understood. Should be improved and
+enhanced with actual schedule and plans."* The schedule is §8, and it puts this
+**ahead of the three accepted gate RFCs**, which is a deliberate re-sequencing
+and not an oversight: 164, 165 §3 and 163 are each a verified **latent** finding,
+and this is a surface every prospective operator meets first.
 **Tier.** **P2.** Nothing is broken and nothing is exposed. A reader who wants
 to run cesauth in production has 15 deployment chapters available and no path
 into them, and the first page they see contains two claims that are not true.
@@ -135,3 +139,62 @@ would rather say so here than have two cycles each believe they own them.
 - Not a verdict on the integrator path (`docs/src/integrating.md`). One page for
   the audience that matters most commercially may well be thin, but this RFC
   did not assess it and does not assert it.
+
+## 8. Schedule and plan
+
+Two slices. The first is almost free and rides with work already queued; the
+second is the one that writes new prose and needs something only the owner can
+provide.
+
+### Slice 1 — the README, merged into RFC 161 §9(a)'s cycle · **patch** · **second in the queue**, after RFC 162
+
+Merged rather than sequenced separately because both edit `README.md` and
+`docs/src/deployment/observability.md`, and two cycles each believing they own
+the same two sentences is how a correction gets applied twice or not at all
+(§6). Deliverables, all of them edits to files that exist:
+
+1. **Quick start split by reader.** *"Run it locally"* keeps today's four
+   commands and says plainly that it is the contributor/evaluation loop.
+   *"Deploy it"* is a numbered list, one line per step, each pointing at the
+   chapter that owns it: pre-flight → `wrangler deploy` → secrets → migrations
+   `--remote` → first admin → first OIDC client → Observability → day-2 runbook.
+2. **§2.1 — the SIEM sentence** corrected to what `observability.md` says.
+3. **§2.2 — the badge line** the 2026-09-10 reservation review asked for and
+   never got, next to the three badges.
+4. **The two entry chapters linked by name** in the documentation bullets —
+   `deployment/preflight.md` and `deployment/production.md`.
+
+**Acceptance:** a reader who wants to deploy finds the deploy path without
+opening `docs/src/SUMMARY.md`, and no sentence on the front page contradicts a
+chapter.
+
+### Slice 2 — `docs/src/deployment/first-production-deploy.md` · **patch** · **third in the queue**
+
+One ordered pass from an empty Cloudflare account to a tenant completing an OIDC
+flow, linking out rather than restating — what `beginner/first-oidc-flow.md` is
+to local. The content exists across the 15 chapters; **the sequence does not**,
+and that is the whole deliverable.
+
+**This slice needs an owner action and cannot be faked without one.** Its
+acceptance test is literal: *a reader who has never deployed cesauth follows it
+start to finish without opening a chapter out of order and without discovering a
+step the page did not mention.* That requires **walking it against a real
+Cloudflare account and a real `wrangler deploy`** — which the dev team cannot do
+on the owner's account and I will not simulate.
+
+So, explicitly: **the owner either walks it (or authorises an account for the
+walk), or the page ships marked `reviewed`, not `exercised`** (RFC 000 §22),
+with a visible line saying it has not been walked end to end. I would rather ask
+for the account than ship a production guide whose evidence term is "someone
+read it."
+
+### What this displaces, and why that is the right call
+
+The queue becomes **RFC 162 → (RFC 161 §9(a) + slice 1) → slice 2 →
+RFC 131 slice 1 (audit, minor) → RFC 164 → RFC 165 §3 → RFC 163**.
+
+The three gate RFCs slip by three positions. Each is a finding I verified as
+**latent** — 164's nine rotted links are repaired and only the gate is missing,
+165's three live exempt entries all still match, 163's duplicate-route test
+covers 105 of 193 with no duplicate present. None of them is currently
+mis-reporting anything. A front page that contradicts itself is.

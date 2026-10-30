@@ -5,10 +5,19 @@ request, against the fundamental philosophy — see §6-§9, which overturn §2'
 premise, §3's cost estimate and this RFC's own tier.** Full review:
 `.git-exclude/reviewed/161-architect-review.md`.
 
-**Release: §9(a), the record correction, goes next after RFC 162** — a
-docs-only patch, ahead of the restoration and ahead of the three accepted gate
-RFCs, because it needs no product decision and it is the half that misleads
-today. Patch number assigned at dispatch, not here. **The restoration is slices of
+**§9's recommendation is APPROVED by the owner, 2026-10-30.** All three parts:
+(a) the record correction first, as a docs-only patch; (b) restoration as
+[RFC 131](./131-mockup-adoption-strategy.md) slices, **audit first**, by
+**finishing the CSR migration** rather than re-pointing at the server views;
+(c) the two dropped controls restored with the first slice.
+
+**Release.** §9(a) goes **next after RFC 162**, merged with
+[RFC 167](./167-nothing-takes-a-new-operator-to-production.md) slice 1 — both
+edit `README.md` and `observability.md`, so one cycle touches them once
+(RFC 167 §6). **Patch.** §9(b)'s first slice is a **minor**: restoring the audit
+browser adds a JSON route surface, which `ROADMAP.md`'s versioning policy makes
+a minor regardless of the capability having existed before. Numbers assigned at
+dispatch. **The restoration is slices of
 [RFC 131](./131-mockup-adoption-strategy.md), not a release of its own**, and
 carries the two controls §6.3 found dropped.
 

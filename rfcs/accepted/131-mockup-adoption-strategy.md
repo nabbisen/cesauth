@@ -14,6 +14,50 @@ template call sites), `e2e/` (new), `docs/src/`.
 verified before the frontend's contents are rewritten.
 **Target release.** Programme; first slice no earlier than 0.81.3.
 
+## 0. Slices added 2026-10-30 — the operator console's six disconnected read surfaces
+
+**Added after the owner approved [RFC 161](./161-six-operator-pages-promise-data-and-render-none.md)
+§9 on 2026-10-30.** RFC 161's re-review found that §1's *"collapse the two
+rendering paths production currently runs into one"* is unfinished in a specific,
+measured way: `580eeba` replaced six `/admin/console/*` handler bodies with a
+bare shell, and **6 of 10 `cesauth-core` admin services and 9 of 12
+`cesauth-frontend` admin views have had no caller since**. Both halves exist and
+are tested; only the call between them was removed.
+
+**These are slices of this RFC, not a parallel track.** Order, by what an
+operator loses without it:
+
+| # | Surface | Core service, uncalled | View, uncalled | Action route, already live |
+|---|---|---|---|---|
+| 1 | **audit browser + export** | `search_audit` | `audit_page` (546 lines) | `POST …/audit/export` (CSRF hardened by RFC 141 C1-141, no form renders it) |
+| 2 | chain status | — | `audit_chain_status_page` | `POST …/audit/chain/verify` |
+| 3 | safety | `build_safety_report` | `safety_page` | `POST …/safety/:bucket/verify` |
+| 4 | alerts | `generate_alerts` | `alerts_page` | — |
+| 5 | cost | `build_cost_dashboard`, `build_cost_trend` | `cost_page` | — |
+| 6 | config | — | `config_page` | `POST …/config/:bucket/{preview,apply}` |
+
+(`build_overview` and `operations_page` are the same condition on
+`/admin/console` and `/admin/console/operations`, which RFC 161 §1 did not count
+because their copy differs; they belong to slice 5 and 2's cycles respectively.)
+
+**Owner's chosen path: finish the CSR migration** — build each component plus the
+JSON endpoint it needs. The six have **no JSON endpoint at all**, and
+`overview`/`operations`/`tokens` JSON serve only a CSRF token, so each slice adds
+a route surface and is therefore a **minor**. Re-pointing the handlers at the
+existing server views was the alternative and was declined: it would re-create
+the two rendering paths this RFC exists to collapse.
+
+**Slice 1 also carries RFC 161 §6.3's two dropped controls** —
+`ensure_role_allows(AdminAction::ViewConsole)` on each page, and the
+`AdminConsoleViewed` audit write, which currently has no emitter anywhere in the
+workspace. They are not a later cleanup: a restored page without them ships a
+surface weaker than the one it replaces.
+
+**Not gated on [RFC 166](../proposed/166-reachability-stops-at-the-crate-boundary.md)**,
+which would have caught this and is proposed separately. Each slice's own
+acceptance is that its service and its view acquire a production caller, which
+is checkable per slice without the gate existing.
+
 ## 1. Summary
 
 Adopt the mockup's presentation layer — components, view-model contracts,

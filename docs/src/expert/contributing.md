@@ -346,6 +346,46 @@ yanks it. The guard makes publishing an explicit act rather than an accident.
 If a crate is ever genuinely to be published, flip `publish` for **that crate
 only**, deliberately, as part of the change that publishes it — never by
 leaving it unset.
+
+### The reserved name is `cesauth-core`'s future home — owner ruling, 2026-10-30
+
+**`cesauth-core` may be renamed to `cesauth` — but only when that is
+reasonable.** The owner's ruling, 2026-10-30, in answer to *"publish on
+crates.io if necessary?"*. So the `0.0.0` reservation is not only brand
+assurance: it holds the name the domain layer is expected to take eventually.
+That resolves the question the 2026-09-10 review left open — whether
+`cesauth-core` should be published under its own name — in favour of the shorter
+one.
+
+**Nothing changes today.** `publish = false` stays on all seven crates, and the
+rename is not scheduled. What "reasonable" has to mean before it is, so a future
+reader is not left guessing:
+
+1. **A consumer that is not this repository.** `cargo add` is a compatibility
+   promise, and `README.md` currently says the public surface — including
+   `core::ports` traits — may change between minor versions. Publishing a
+   library while that sentence is true invites a dependency the project has
+   declined to support. Either the sentence stops being true for `cesauth-core`,
+   or there is no reason to publish it.
+2. **A name that does not mislead.** `cesauth` published as the *domain layer*
+   means `cargo add cesauth` gets a pure-Rust library, not the deployable
+   IDaaS — which is the product the name denotes everywhere else, including this
+   book. The crate's `description` and its docs.rs landing page have to make
+   that distinction on first read, or the rename trades one confusion for
+   another.
+3. **A rename is a workspace-wide, mechanical change**: six dependent
+   `Cargo.toml` entries, every `use cesauth_core::` path, and this book's
+   crate-layout and architecture chapters. Cheap, but not invisible, and it
+   wants its own change rather than riding along with a release.
+4. **The first real version is not `0.0.0`.** crates.io never deletes a
+   version, so the placeholder stays published and the library starts at
+   whatever the workspace version is at the time.
+
+Until all of that holds, the honest state is the one in place now: the name is
+held, the crates are unpublished, and **`README.md` must say so next to its
+crates.io/docs.rs/deps.rs badges** — which it does not yet
+([RFC 167](https://github.com/nabbisen/cesauth/blob/main/rfcs/accepted/167-nothing-takes-a-new-operator-to-production.md)
+§2.2, slice 1).
 - **The dev team runs the gate set for readiness; the architect re-runs the
   release-critical ones and any gate where a claim could hide.** Not the whole
   set twice. Owner's correction, 2026-09-12: the architect had run all fifteen
