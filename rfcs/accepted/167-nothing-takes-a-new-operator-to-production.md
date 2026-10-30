@@ -181,9 +181,21 @@ migrations applied. Seven chapter steps were unrepresented, including
 handoff, and implemented faithfully. An ordering was written for a procedure
 without reading the ordering of the chapter it was being ordered against — the
 same failure as the four miscounts of that week, applied to a sequence instead
-of a population. Corrected in a second cycle
-(`handoffs/161-six-operator-pages-promise-data-and-render-none/cycle-2-handoff.md`),
-which derives the spine from the chapter instead of from a list.
+of a population. **Corrected in a second cycle** (`298e203`), which derived the spine from the
+chapter instead of from a list: nine lines, pre-flight/provision → migrations
+`--remote` → secrets → `WRANGLER_LOCAL` → cron → deploy → first OIDC client →
+observability → day-2, every anchor re-verified against the built HTML, and the
+two chapter steps left off (Magic Link mail, local `cargo audit`) named in a
+closing line rather than dropped.
+
+**And cycle 2 amended the architect's acceptance test, which was also wrong.**
+It read *"the list's order must not contradict the chapter's order"* — a test
+no correct list can pass when the chapter contradicts itself, as this one does
+(§5's Step 5/Step 9 finding). The list departs once and says so **in the list,
+where a reader meets it**: *"comes after deploy here, even though the chapter
+numbers it Step 5."* Silently reordering would have been the philosophy
+failure; the departure is not. Both of this slice's defects were the
+architect's specification rather than the implementation.
 
 ### Slice 2 — `docs/src/deployment/first-production-deploy.md` · **patch** · **third in the queue**
 
