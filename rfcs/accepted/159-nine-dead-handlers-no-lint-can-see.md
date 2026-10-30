@@ -41,7 +41,7 @@ four cycles.
 
 **One finding deliberately not held for:** §4.5's property is unchecked on the
 script's four sibling exemption lists, two of which carry entries —
-[RFC 165](../proposed/165-the-gates-exemption-lists-are-unvalidated.md), against
+[RFC 165](../accepted/165-the-gates-exemption-lists-are-unvalidated.md), against
 the shipped gate, per the cycle-4 handoff's own statement that a further finding
 which is not a false certification would not hold the tag a fourth time.
 **Tier.** P2. Nothing is broken and nothing is reachable. The value is the

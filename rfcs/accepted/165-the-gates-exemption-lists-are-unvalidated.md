@@ -1,6 +1,11 @@
 # RFC 165 — The gate's exemption lists are unvalidated, and the longest one need not exist
 
-**Status.** **Proposed** 2026-10-30. Awaiting nabbisen's acceptance.
+**Status.** **Accepted** 2026-10-30. **§3 — release 0.89.5, patch**: staleness
+checks for the four unchecked lists, additive, no behaviour change to any
+passing gate. **Queued behind RFC 162 (0.89.3) and RFC 164 (0.89.4)**; not
+dispatched. **§4's reduction is release-unassigned** — it is a separate
+decision about how much the gate should infer about code not yet written, and
+it rides in on nothing. The §4 question is settled at that dispatch, not here.
 **Tier.** **P2.** Nothing is wrong today — all three live entries check out.
 The lists are what `route-contracts-check.sh` takes on trust, and four of its
 five are trusted without being checked.
