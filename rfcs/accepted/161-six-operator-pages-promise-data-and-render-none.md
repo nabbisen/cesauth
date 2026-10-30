@@ -248,14 +248,42 @@ Worker log lines; audit events are D1 rows.
 
 ## 9. Recommendation
 
-**(a) Correct the record now, as its own docs-only patch, next after RFC 162
-and ahead of the three accepted gate RFCs.** No product decision gates it and it is the half that misleads
-today: the `route-contracts.md` rows renamed to what they render, the three
-handler doc comments cut to the truth with a pointer here,
-`observability.md`'s audit-browser entry replaced by the `wrangler d1 execute`
-path it already documents, and the README's SIEM sentence corrected. Each
-placeholder page says *"not built yet — use `wrangler d1 execute`, see
-Observability §Querying"*, which is kinder than a promise and costs a sentence.
+**(a) Correct the record now, as its own patch — 0.89.4, authorized
+2026-10-30.** No product decision gates it and it is the half that misleads
+today.
+
+**Two counts in the first draft of this section were wrong, and both
+understated** (re-derived 2026-10-30 before dispatch):
+
+- **Not "four" `route-contracts.md` rows — eight name a view that does not
+  render.** The six here, plus `/admin/console/tokens` (*"token list"*, which
+  lists nothing) and `/admin/console/clients` (*"client list"*, which renders
+  `NotFound`; see [RFC 141](./141-oidc-client-registration.md)). A ninth,
+  `/admin/console` (*"overview page"*), shows a navigation list and a ✓/⚠ line
+  derived from a CSRF-only endpoint — it overstates without being false.
+- **Not "three" handler doc comments — all six do it**, and three
+  (`audit_chain.rs`, `safety.rs`, `config.rs`) mix a false claim about the page
+  with **accurate** claims about their `POST` handlers: *"This handler renders
+  that outcome plus a button for an immediate full re-walk"*, *"renders the
+  per-bucket safety report"*, *"renders the attested bucket-safety rows and the
+  current threshold values"*. The correction is surgical, not wholesale
+  deletion.
+
+**That is the fourth figure of mine this week not to survive re-derivation**,
+which is why the handoff makes the implementer derive the population rather than
+work from the list above.
+
+The work: those rows renamed to what they render, the six handler doc comments
+cut to the truth with a pointer here, `observability.md`'s audit-browser entry
+replaced by the `wrangler d1 execute` path it already documents, and the
+README's SIEM sentence corrected.
+
+**The page copy is per-page, not one sentence repeated.** Only audit has a real
+alternative to name (`wrangler d1 execute`, which `observability.md` already
+documents). **Cost, safety, alerts and config have no read path at all**, so
+their copy says the feature is not built and points at nothing — pointing at a
+workaround that does not exist is the same defect in a new costume. All copy is
+Japanese, per ADR-013.
 
 **(b) Restore as named slices of RFC 131**, in the order an operator misses
 them: **audit (browser + the export form that exists) → chain status → safety →

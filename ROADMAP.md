@@ -114,6 +114,28 @@ started.
 
 ### Next minor releases
 
+**Sequence authorized by the owner 2026-10-30** (proposal:
+`.git-exclude/release/0.90-scope.md`). Levels follow the policy above; patch
+numbers are assigned at each cut, not reserved here.
+
+| Release | Level | Content |
+|---|---|---|
+| **0.89.4** | patch | **RFC 161 §9(a) + RFC 167 slice 1** — the console's record corrected (the rows, the handler doc comments, the operator incident-response chapter) and the README split by reader with its two false front-page claims fixed |
+| **0.89.5** | patch | **RFC 167 slice 2** — `docs/src/deployment/first-production-deploy.md`, one ordered pass from an empty Cloudflare account to a tenant completing an OIDC flow. **Blocked on an owner decision**: walked against a real account, or shipped marked `reviewed` rather than `exercised` |
+| **0.90.0** | **minor** | **RFC 152 half B** — the admin `POST` endpoints that document a CSRF control they do not call (**34 of 36**, re-derived 2026-10-30; the RFC's own 33-of-35 predates `POST /admin/t/:slug/invitations/:id/revoke`, added in v0.88.0), their form tokens, §6.3's login endpoint that sets a cookie from an unvalidated token, and a gate so a 37th cannot land without one. **A minor because 34 endpoints begin requiring a token — operators must act** |
+| 0.90.x | patch | **RFC 164** (the link gate RFC 000 mandates), then **RFC 165 §3** (exemption-list staleness) |
+| **0.91.0** | minor | **RFC 141 cycle 2** — the OIDC clients screen. The backend has been complete since v0.85.0; `GET /admin/console/clients` currently answers **200** and renders *"Page not found"*, because no CSR route exists for it |
+| 0.91.x | patch | **RFC 163** — the duplicate-route test's needle, plus a non-zero-count assertion |
+| **0.92.0** | minor | **RFC 131 §0 slices 1–2** — the audit browser with the export form that already exists, and chain status. The two incident-response surfaces |
+| **0.93.0** | minor | **RFC 131 §0 slices 3–6** — safety, alerts, cost, config |
+
+**Not in this sequence, and said rather than omitted:** RFC 133 half B and
+RFC 151 remain accepted, above the queue, and unsequenced against it — awaiting
+an explicit decision either way. RFC 158 §5.5's two items, RFC 166's census
+stage, the `/admin/tenancy/*` half of RFC 161's condition, and RFCs 110a, 112,
+119–124 and 144 are likewise unscheduled.
+
+
 - ✅ **v0.81.1 — RFC 125 (+ condition C1), RFC 127, RFC 126. Shipped
   2026-09-03, one patch release.** Originally planned as three releases
   (0.81.1/0.81.2/0.81.3); reconciled to one because no intermediate commit

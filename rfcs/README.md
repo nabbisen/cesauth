@@ -110,10 +110,17 @@ Security-critical assurance track, continued.
 
 Owner-approved; implementation may start. Rows are in **sequencing** order.
 
-**The active queue begins at RFC 161 §9(a) + RFC 167 slice 1** — one docs-only
-cycle, since both edit `README.md` and `observability.md` — and runs
-161 §9(a) + 167 slice 1 → 167 slice 2 → 131 §0 slice 1 → 141 cycle 2 → 164 →
-165 §3 → 163. (RFC 162 shipped in **v0.89.3**.) **RFC 133, 151 and 152 sit above it and are not sequenced
+**Sequence authorized by the owner 2026-10-30** and recorded in
+[`ROADMAP.md`](../ROADMAP.md) §Next minor releases:
+**0.89.4** RFC 161 §9(a) + RFC 167 slice 1 (**dispatched**) → **0.89.5**
+RFC 167 slice 2 → **0.90.0** RFC 152 half B (minor) → RFC 164, RFC 165 §3 →
+**0.91.0** RFC 141 cycle 2 (minor) → RFC 163 → **0.92.0** RFC 131 §0 slices 1-2
+(minor) → **0.93.0** slices 3-6 (minor).
+
+**RFC 133 half B and RFC 151 sit above this queue and are not sequenced against
+it** — long-standing accepted items, out-prioritised release after release,
+awaiting an explicit decision either way rather than a table that implies they
+are next. **RFC 133, 151 and 152 sit above it and are not sequenced
 against it** — they are long-standing accepted items that have been
 out-prioritised release after release, and saying so is better than a table that
 implies they are next. Re-sequencing or re-scoping them is its own decision and
