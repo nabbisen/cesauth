@@ -120,8 +120,17 @@ fetches a **variable**, and is covered only because the literals feeding it
 appear as `format!` arguments elsewhere in the crate — a linkage E5 does not
 verify.
 
-**Requirement:** every `gloo_net::http::Request::<method>` call site must have a
-URL E5 actually scanned; one whose URL cannot be resolved to a scanned literal
+**A live instance, found 2026-10-31, not a probe.** The operator console's
+token page renders a `<form>` with `action="/admin/console/tokens/disable"` —
+**a path no route serves** (`grep -c` → 0; the registered one is
+`…/tokens/:id/disable`). E5 cannot see it, because a form `action` is not a
+`.json` fetch. The broken action is itself latent — the form has no submit
+control — but it is a URL the frontend submits to, served by nothing, invisible
+to the gate that exists to catch exactly that.
+
+**So the requirement widens to form `action` attributes, not only fetch call
+sites:** every `gloo_net::http::Request::<method>` call site and every form
+`action` in `crates/frontend/src` must have a URL E5 actually scanned; one whose URL cannot be resolved to a scanned literal
 is a hard failure or a named entry with a reason. **And until the population is
 asserted, the coverage line must say what it scanned** — `.json` literals in
 `crates/frontend/src` — rather than what it would like to have scanned.

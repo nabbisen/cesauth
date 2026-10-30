@@ -168,12 +168,39 @@ the same two sentences is how a correction gets applied twice or not at all
 opening `docs/src/SUMMARY.md`, and no sentence on the front page contradicts a
 chapter.
 
+**Slice 1 shipped three of its four items in `a09f39f` and failed the fourth,
+on the acceptance test above** (review 2026-10-31). The SIEM correction, the
+badge note and the named chapter links are right. **The "Deploy it" list was
+not**: it placed `wrangler deploy` second — before migrations and secrets —
+while every line linked into a chapter whose own order puts deploy at **Step
+9**. Followed literally it deploys a Worker against a database with no
+migrations applied. Seven chapter steps were unrepresented, including
+*Provision real resources* and *Confirm `WRANGLER_LOCAL` is off*.
+
+**The order was the architect's**, specified in item 1 above and again in the
+handoff, and implemented faithfully. An ordering was written for a procedure
+without reading the ordering of the chapter it was being ordered against — the
+same failure as the four miscounts of that week, applied to a sequence instead
+of a population. Corrected in a second cycle
+(`handoffs/161-six-operator-pages-promise-data-and-render-none/cycle-2-handoff.md`),
+which derives the spine from the chapter instead of from a list.
+
 ### Slice 2 — `docs/src/deployment/first-production-deploy.md` · **patch** · **third in the queue**
 
 One ordered pass from an empty Cloudflare account to a tenant completing an OIDC
 flow, linking out rather than restating — what `beginner/first-oidc-flow.md` is
 to local. The content exists across the 15 chapters; **the sequence does not**,
 and that is the whole deliverable.
+
+**A known defect to fix, not just a gap to fill** (found 2026-10-31, writing
+slice 1's spine): **`production.md` Step 5 registers OIDC clients by curling
+`https://your-cesauth-domain.example/admin/console/clients` — and Deploy is Step
+9.** An operator following the chapter in order reaches Step 5 with nothing
+deployed to curl. The chapter is self-consistent about the *dependency*
+(Step 3: clients are registered after `ADMIN_API_KEY` exists) and wrong about
+the *deploy order*. This is the sharpest evidence for §5 existing at all: the
+content is spread across fifteen chapters and the sequence is what is missing,
+which only became visible when someone tried to write the sequence down.
 
 **This slice needs an owner action and cannot be faked without one.** Its
 acceptance test is literal: *a reader who has never deployed cesauth follows it
