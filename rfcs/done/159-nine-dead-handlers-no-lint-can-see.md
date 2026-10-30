@@ -308,7 +308,7 @@ which a naive `/* … */` stripper eats the file from.
 **Not in scope here:** the third implementation of this same extraction,
 `no_duplicate_route_registrations` in `lib.rs`'s own test module, which is blind
 to whitespace as well as comments and so covers 105 of 193 routes. That is
-[RFC 163](../proposed/163-two-route-extractors-two-blind-spots.md) — RFC 011's
+[RFC 163](../accepted/163-two-route-extractors-two-blind-spots.md) — RFC 011's
 deliverable, and a fork (two extractors or one) rather than a repair.
 
 ### 4.5 The list carrying the remainder can rot, and the figure that would have shown it was removed

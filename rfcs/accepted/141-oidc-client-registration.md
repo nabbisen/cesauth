@@ -3,8 +3,20 @@
 **Status.** Accepted — approved by the owner 2026-09-24. **Cycle 1 (+ C1-141)
 shipped v0.85.0**, 2026-10-25: the API, `token_auth_method` enforcement and the
 integrator chapter. **Stays in `accepted/` — cycle 2 is outstanding**: the
-console screen (§4.1) and §13's six unregistered `page_json` handlers. Moving
-it to `done/` would assert a completion the tree does not have.
+console screen (§4.1). Moving it to `done/` would assert a completion the tree
+does not have.
+
+**§13 discharged 2026-10-30 by RFC 159 (v0.89.2)** — its six unregistered
+`page_json` handlers (`alerts`, `audit`, `audit_chain`, `config`, `cost`,
+`safety`) are **deleted**, and the gate §13 said could not see them now exists
+(`route-contracts-check.sh` **E4**, matching on qualified paths). Cycle 2 no
+longer owns them. Noted here because an accepted RFC carrying scope that another
+release already did is how a queue stops being trustworthy.
+
+**§4.1's console screen is also where [RFC 161](./161-six-operator-pages-promise-data-and-render-none.md)
+§9 lands** — that re-review found the console's six read surfaces were built,
+shipped and disconnected, so cycle 2's screen should be sequenced with
+RFC 131's slices rather than on its own.
 **Tier.** P1 · Category A — the product's primary integration action.
 **Size.** Medium–large.
 **Touches.** `crates/backend/src/routes/admin/`, `crates/core/src/service/`,

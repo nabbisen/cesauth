@@ -1,6 +1,13 @@
 # RFC 163 — Two route extractors, two blind spots: the duplicate-route guard covers 105 of 193
 
-**Status.** **Proposed** 2026-10-30. Awaiting nabbisen's acceptance.
+**Status.** **Accepted** 2026-10-30. **Release 0.89.6, patch** — a test that
+covers 105 of 193 and a non-zero assertion, no capability added. **Queued
+behind RFC 162 (0.89.3), RFC 164 (0.89.4) and RFC 165 §3 (0.89.5)**; not
+dispatched. **§4's fork is decided at dispatch**: the recommendation is **1 now,
+3 recorded** — the needle fix plus a non-zero-count assertion ships
+immediately, the single-extractor end state is its own cycle, and **2 is
+declined**, since reformatting 193 router lines to serve a grep is the tail
+wagging the dog.
 **Tier.** **P1** — not because anything is broken today (it is not), but because
 the guard that is supposed to catch the failure cannot see the route it was
 written for, and the failure it guards against is silent in production.

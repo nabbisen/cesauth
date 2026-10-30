@@ -135,7 +135,7 @@ actively dangerous.
    including missing `/me/security/sessions`, the route it was written to
    protect. **Do not touch it.** It is RFC 011's deliverable and the question it
    raises (three private extractors, or one) is a fork for the owner:
-   `rfcs/proposed/163-two-route-extractors-two-blind-spots.md`. Mentioned here
+   `rfcs/accepted/163-two-route-extractors-two-blind-spots.md`. Mentioned here
    only so you do not "fix" it in passing and so you know why §3 says *one
    shared step* rather than *one shared extractor*.
 2. **Block comments, `patch_async`, `or_else_any_method_async`, re-export chains
