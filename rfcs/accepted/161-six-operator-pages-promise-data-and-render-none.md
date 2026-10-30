@@ -317,7 +317,7 @@ deletable instead of kept alive to pin dead code.
 migration, which §4 excluded and I did not re-derive. The method is three greps
 per surface if the owner wants it checked.
 
-**The gate that would have caught this is [RFC 166](../proposed/166-reachability-stops-at-the-crate-boundary.md).**
+**The gate that would have caught this is [RFC 166](../accepted/166-reachability-stops-at-the-crate-boundary.md).**
 RFC 157, 159 and 162 all stop at the `cesauth-backend` boundary; nothing asks
 whether a `core` service or a `frontend` view has a caller. Six services and
 nine views have had none since May, through eleven releases and two dead-code

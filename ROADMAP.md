@@ -20,6 +20,17 @@ public surface continues to evolve. Within `0.x.y`:
   or a renamed/removed URL. Anything an integrator or operator could
   observe by reading the release notes and going "I need to do
   something" earns a minor bump.
+
+  **The catch-all's test is caller obligation, not observable
+  difference** (clarified 2026-10-31, after it was misapplied in both
+  directions). A bug fix changes behaviour and obliges nobody: v0.89.1
+  turned an undocumented `409` into the `400` the published error table
+  had always allowed, so no integrator had a documented behaviour to
+  lose — correctly a patch. RFC 152 half B is the mirror image: the
+  CSRF column already reads `required`, so the *document* does not
+  change, but every scripted caller of those 34 `POST` endpoints must
+  start sending a token or break — correctly a minor. Ask who must
+  change their code, not what changed.
 - **Bump the patch (`0.x.y → 0.x.y+1`) when** the change is
   internal-only: bug fixes that preserve existing behavior, doc
   updates, dependency upgrades that don't shift any visible

@@ -384,6 +384,17 @@ reader is not left guessing:
 4. **The first real version is not `0.0.0`.** crates.io never deletes a
    version, so the placeholder stays published and the library starts at
    whatever the workspace version is at the time.
+5. **Publishing hands the version rubric over to Cargo.** Today
+   `ROADMAP.md`'s versioning policy is self-governing: SemVer 2.0.0 §4 says
+   *"Major version zero (0.y.z) is for initial development. Anything MAY change
+   at any time"*, and its PATCH/MINOR/MAJOR requirements are each scoped
+   `x > 0`, so at `0.x` the spec imposes no rule about which digit a breaking
+   change bumps. **Cargo does.** A caret requirement on a `0.x` crate resolves
+   to `>=0.x.y, <0.(x+1).0`, which makes `0.x` the compatibility unit — so from
+   the first publish onward a breaking change **must** bump the minor whether
+   our own rubric says so or not. Worth knowing before the rename, not after:
+   it is the one condition here that takes a decision away from us rather than
+   giving us one.
 
 Until all of that holds, the honest state is the one in place now: the name is
 held, the crates are unpublished, and **`README.md` must say so next to its

@@ -62,7 +62,7 @@ RFC 161 §4 excluded the `/admin/tenancy/*` half and did not re-derive it. Befor
 a slice is written for it, **count it the way RFC 161 §6.2 counted the console**
 — three greps per surface — rather than assuming it is the same six-page story.
 
-**Not gated on [RFC 166](../proposed/166-reachability-stops-at-the-crate-boundary.md)**,
+**Not gated on [RFC 166](../accepted/166-reachability-stops-at-the-crate-boundary.md)**,
 which would have caught this and is proposed separately. Each slice's own
 acceptance is that its service and its view acquire a production caller, which
 is checkable per slice without the gate existing.

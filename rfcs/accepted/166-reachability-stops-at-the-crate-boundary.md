@@ -1,6 +1,9 @@
 # RFC 166 — Reachability stops at the crate boundary
 
-**Status.** **Proposed** 2026-10-30. Awaiting nabbisen's acceptance.
+**Status.** **Accepted** 2026-10-31. **§3's census is a stage, not a release**,
+and its number decides the check's shape, so it runs first and on its own.
+**Queued after RFC 165 §3**, which lands the staleness discipline the census's
+own allowlist will need. The check itself is a **patch**.
 **Tier.** **P1.** Not because anything is exposed, but because the thing it
 measures went unmeasured for eleven releases while two dead-code sweeps ran past
 it, and the cost was a shipped operator capability (RFC 161 §6).
