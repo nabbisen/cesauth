@@ -111,8 +111,9 @@ Owner-approved; implementation may start. Rows are in **sequencing** order.
 
 **Sequence authorized by the owner 2026-10-30** and recorded in
 [`ROADMAP.md`](../ROADMAP.md) §Next minor releases:
-**0.89.4 shipped.** Next: **RFC 167 slice 2** (patch) — **blocked on an owner
-decision**, see its row. Then **0.90.0** RFC 152 half B (minor) → RFC 164 →
+**0.89.4 shipped.** Next: **RFC 167 slice 2** (patch) — **dispatched
+2026-10-31**, unblocked: the architect's "needs a real Cloudflare account"
+framing was over-specified, and only six commands are remote-only. Then **0.90.0** RFC 152 half B (minor) → RFC 164 →
 RFC 168 → RFC 165 §3 → RFC 166 §3's census → RFC 163 → **0.91.0** RFC 141
 cycle 2 (minor) → **0.92.0** RFC 131 §0 slices 1-2 (minor) → **0.93.0**
 slices 3-6 (minor). Patch numbers are assigned at each cut, not reserved here.

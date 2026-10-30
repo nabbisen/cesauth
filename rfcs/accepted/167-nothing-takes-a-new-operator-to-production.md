@@ -220,18 +220,29 @@ the *deploy order*. This is the sharpest evidence for §5 existing at all: the
 content is spread across fifteen chapters and the sequence is what is missing,
 which only became visible when someone tried to write the sequence down.
 
-**This slice needs an owner action and cannot be faked without one.** Its
-acceptance test is literal: *a reader who has never deployed cesauth follows it
-start to finish without opening a chapter out of order and without discovering a
-step the page did not mention.* That requires **walking it against a real
-Cloudflare account and a real `wrangler deploy`** — which the dev team cannot do
-on the owner's account and I will not simulate.
+**~~This slice needs an owner action~~ — corrected 2026-10-31. It does not.**
+The architect's framing treated the page as a single all-or-nothing walk
+requiring a real Cloudflare account. **Checked: a real account is needed for six
+commands, not for the page** — `d1/kv/r2 create`, `--remote` migrations,
+`wrangler secret put`, `wrangler deploy`, cron triggers firing, and
+`wrangler tail`/DNS. Everything else is locally rehearsable: the ordering of all
+ten steps, the seed rows, the client-registration `curl` (which works against
+`wrangler dev`), the dependency check, and the entire post-deploy OIDC flow.
+`wrangler dev` auto-provisions D1, KV, the four Durable Objects and R2 from the
+`wrangler.toml` bindings, and `runtime-smoke-check.sh` already boots that
+runtime in CI. The one thing a local walk could never discover — account-level
+prerequisites, the **Workers Paid plan** and billing — is already written in
+`deployment/preflight.md` §A, which the spine's first line points at.
 
-So, explicitly: **the owner either walks it (or authorises an account for the
-walk), or the page ships marked `reviewed`, not `exercised`** (RFC 000 §22),
-with a visible line saying it has not been walked end to end. I would rather ask
-for the account than ship a production guide whose evidence term is "someone
-read it."
+**So the evidence term splits per step instead of hedging the page:** the
+sequence is `exercised` from a local rehearsal, and the six remote-only commands
+are `reviewed`, **named individually**, each with what would exercise it. One
+unwalkable step then costs one line rather than the page's credibility.
+
+**Dispatched 2026-10-31**, unblocked:
+`handoffs/167-nothing-takes-a-new-operator-to-production/slice-2-handoff.md`.
+Third correction this week in which the architect's specification, not the work,
+was the obstacle — the deploy order, the acceptance test, and this.
 
 ### What this displaces, and why that is the right call
 
