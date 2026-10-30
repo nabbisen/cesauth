@@ -57,6 +57,7 @@ sat here across 61 releases, correctly filed, with both deliverables dead.
 
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
+| [168](./proposed/168-the-release-record-does-not-reconcile.md) | **The release record does not reconcile with the tags.** **Four versions are documented and were never tagged** — 0.50.3, 0.64.0 (**a minor**), 0.78.13, 0.79.7 — and they are cited in **55 files**, including `drift-scan.sh`'s own reason string and RFC 011's test comment, so **a release gate's justification names a version that was never cut**. 0.79.7 is the release note RFC 161 §7 quotes as evidence. **Two tags have no release notes** (0.50.2, 0.79.6). And **17 HTTP routes shipped across five patch releases** (0.79.1–0.79.6) against the policy's first minor trigger — the only violations in 115 tags; no patch ever added a migration or moved the MSRV. **Nothing checks any of it.** The first version of the audit was itself vacuous — it reported zero violations because its loop never updated `prev`, so the comparison never ran | **P1** | unassigned |
 | [144](./proposed/144-introspection-reveals-family-existence.md) | **Introspection reveals that a family exists** to an authenticated caller presenting a forged jti: `expired`/`revoked` are classified before the jti comparison, which the mismatch path conflates to `unknown` precisely to avoid this. **Recorded as an RFC because it was lost once** as "recorded for RFC 118" | P3 | filler |
 
 ### Other proposed
