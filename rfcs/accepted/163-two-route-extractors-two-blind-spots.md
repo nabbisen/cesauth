@@ -1,9 +1,9 @@
 # RFC 163 — Two route extractors, two blind spots: the duplicate-route guard covers 105 of 193
 
-**Status.** **Accepted** 2026-10-30. **Release 0.89.6, patch** — a test that
-covers 105 of 193 and a non-zero assertion, no capability added. **Queued
-behind RFC 162 (0.89.3), RFC 164 (0.89.4) and RFC 165 §3 (0.89.5)**; not
-dispatched. **§4's fork is decided at dispatch**: the recommendation is **1 now,
+**Status.** **Accepted** 2026-10-30. **Patch** — a test that covers 105 of 193
+and a non-zero assertion, no capability added. **Fifth in the queue**, behind
+RFC 162, RFC 161 §9(a), RFC 164 and RFC 165 §3; not dispatched. Patch number
+assigned at dispatch. **§4's fork is decided at dispatch**: the recommendation is **1 now,
 3 recorded** — the needle fix plus a non-zero-count assertion ships
 immediately, the single-extractor end state is its own cycle, and **2 is
 declined**, since reformatting 193 router lines to serve a grep is the tail

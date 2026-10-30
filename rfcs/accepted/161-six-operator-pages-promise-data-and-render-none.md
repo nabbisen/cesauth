@@ -5,9 +5,10 @@ request, against the fundamental philosophy — see §6-§9, which overturn §2'
 premise, §3's cost estimate and this RFC's own tier.** Full review:
 `.git-exclude/reviewed/161-architect-review.md`.
 
-**Release: §6.4(a), the record correction, is 0.90.1 — patch — and should go
-ahead of the restoration** (it needs no product decision and it is the half that
-misleads today). **The restoration is slices of
+**Release: §9(a), the record correction, goes next after RFC 162** — a
+docs-only patch, ahead of the restoration and ahead of the three accepted gate
+RFCs, because it needs no product decision and it is the half that misleads
+today. Patch number assigned at dispatch, not here. **The restoration is slices of
 [RFC 131](./131-mockup-adoption-strategy.md), not a release of its own**, and
 carries the two controls §6.3 found dropped.
 
@@ -238,8 +239,8 @@ Worker log lines; audit events are D1 rows.
 
 ## 9. Recommendation
 
-**(a) Correct the record now, as its own patch (0.90.1), ahead of the
-restoration.** No product decision gates it and it is the half that misleads
+**(a) Correct the record now, as its own docs-only patch, next after RFC 162
+and ahead of the three accepted gate RFCs.** No product decision gates it and it is the half that misleads
 today: the `route-contracts.md` rows renamed to what they render, the three
 handler doc comments cut to the truth with a pointer here,
 `observability.md`'s audit-browser entry replaced by the `wrangler d1 execute`

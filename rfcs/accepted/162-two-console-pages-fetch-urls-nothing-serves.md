@@ -1,9 +1,10 @@
 # RFC 162 — Two console pages fetch URLs nothing serves
 
-**Status.** **Accepted** 2026-10-30. **Release 0.89.3 — patch**: two wrong URLs
+**Status.** **Accepted** 2026-10-30. **Next to dispatch — patch**: two wrong URLs
 and a check, the same shape that made RFC 159's deletions-plus-a-gate a patch.
-**Queued behind RFC 159's cycle 3** — 0.89.2 is uncut, and dispatching this
-onto `main` first would put its code under a tag that is not meant to carry it.
+**0.89.2 is cut, so this is unblocked.** Patch number assigned at dispatch,
+not here — pinning one to an undispatched RFC only creates churn when the order
+changes, which it has once already.
 **Deliverable (0) in §3 is a report-and-stop**: if `curl` shows either URL is
 somehow served, this RFC's premise is wrong and nothing gets fixed until that
 is explained.

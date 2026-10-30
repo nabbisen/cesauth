@@ -1,9 +1,9 @@
 # RFC 165 — The gate's exemption lists are unvalidated, and the longest one need not exist
 
-**Status.** **Accepted** 2026-10-30. **§3 — release 0.89.5, patch**: staleness
-checks for the four unchecked lists, additive, no behaviour change to any
-passing gate. **Queued behind RFC 162 (0.89.3) and RFC 164 (0.89.4)**; not
-dispatched. **§4's reduction is release-unassigned** — it is a separate
+**Status.** **Accepted** 2026-10-30. **§3 — patch**: staleness checks for the
+four unchecked lists, additive, no behaviour change to any passing gate.
+**Fourth in the queue**, behind RFC 162, RFC 161 §9(a) and RFC 164; not
+dispatched. Patch number assigned at dispatch. **§4's reduction is release-unassigned** — it is a separate
 decision about how much the gate should infer about code not yet written, and
 it rides in on nothing. The §4 question is settled at that dispatch, not here.
 **Tier.** **P2.** Nothing is wrong today — all three live entries check out.
