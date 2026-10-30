@@ -120,7 +120,7 @@ numbers are assigned at each cut, not reserved here.
 
 | Release | Level | Content |
 |---|---|---|
-| **0.89.4** | patch | **RFC 161 §9(a) + RFC 167 slice 1** — the console's record corrected (the rows, the handler doc comments, the operator incident-response chapter) and the README split by reader with its two false front-page claims fixed |
+| ~~0.89.4~~ | patch | ✅ **shipped 2026-10-31** — RFC 161 §9(a) + RFC 167 slice 1. Took two cycles: the first "Deploy it" list followed an order the architect specified that told readers to `wrangler deploy` before migrations |
 | **0.89.5** | patch | **RFC 167 slice 2** — `docs/src/deployment/first-production-deploy.md`, one ordered pass from an empty Cloudflare account to a tenant completing an OIDC flow. **Blocked on an owner decision**: walked against a real account, or shipped marked `reviewed` rather than `exercised` |
 | **0.90.0** | **minor** | **RFC 152 half B** — the admin `POST` endpoints that document a CSRF control they do not call (**34 of 36**, re-derived 2026-10-30; the RFC's own 33-of-35 predates `POST /admin/t/:slug/invitations/:id/revoke`, added in v0.88.0), their form tokens, §6.3's login endpoint that sets a cookie from an unvalidated token, and a gate so a 37th cannot land without one. **A minor because 34 endpoints begin requiring a token — operators must act** |
 | 0.90.x | patch | **RFC 164** (the link gate RFC 000 mandates), then **RFC 165 §3** (exemption-list staleness) |
@@ -398,6 +398,7 @@ stage, the `/admin/tenancy/*` half of RFC 161's condition, and RFCs 110a, 112,
   any CI gate is enforced (`main` still has no branch protection), or that
   it works on Cloudflare — **nobody has deployed this tree**.
 
+- ✅ **v0.89.4 — RFC 161 §9(a) + RFC 167 slice 1: the operator console's documents stop claiming features it does not have — eight contract rows, eight handler docs, the incident-response chapter, six pages' own copy — and the README gains a deploy path and loses two false claims. Shipped 2026-10-31.**
 - ✅ **v0.89.3 — RFC 162: a tenant owner's first console page asked for a URL one segment short of the route that serves it, and the system-admin tenant detail page swallowed the same mistake silently; both fixed, and a check added for every URL the frontend fetches. Shipped 2026-10-30.**
 - ✅ **v0.89.2 — RFC 159: ten unroutable handlers deleted, and a check that fails the build when a handler is registered nowhere — asserting its own coverage, not just the code's. Shipped 2026-10-30.**
 - ✅ **v0.89.1 — RFC 160: a missing reference is classified apart from a duplicate one, so a mistyped owner id no longer reports a taken slug. Shipped 2026-10-29.**

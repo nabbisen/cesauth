@@ -5,6 +5,17 @@ request, against the fundamental philosophy — see §6-§9, which overturn §2'
 premise, §3's cost estimate and this RFC's own tier.** Full review:
 `.git-exclude/reviewed/161-architect-review.md`.
 
+**§9(a) SHIPPED in v0.89.4**, 2026-10-31, in two cycles — the second corrected
+a "Deploy it" list whose order was the architect's own and told readers to
+deploy before migrating. **Evidence: `reviewed`** (RFC 000 §22) — a
+documentation correction has no behaviour to exercise. Eight route-contract
+rows, **eight** handler doc comments (two beyond the six the architect named,
+found by the implementing cycle), the incident-response chapter including four
+false `Console: <filter>` recipes nobody had itemised, and the six pages' own
+copy. **Stays in `accepted/`: §9(b) and §9(c) are outstanding** as
+[RFC 131](./131-mockup-adoption-strategy.md) §0's slices, and moving this to
+`done/` would assert a completion the tree does not have.
+
 **§9's recommendation is APPROVED by the owner, 2026-10-30.** All three parts:
 (a) the record correction first, as a docs-only patch; (b) restoration as
 [RFC 131](./131-mockup-adoption-strategy.md) slices, **audit first**, by

@@ -14,6 +14,85 @@ changes will always be called out here.
 
 ---
 
+## [0.89.4] - 2026-10-31
+
+### The operator console stops claiming features it does not have — RFC 161 §9(a), RFC 167 slice 1
+
+No behaviour changes in this release. It corrects documents and on-screen copy
+that described a working operator console where there is none, and a front page
+that contradicted its own chapters.
+
+### Fixed
+
+- **Eight rows of the route contract named views that do not render.**
+  `/admin/console/{cost,safety,audit,audit/chain,config,alerts}` were documented
+  as *"cost page"*, *"audit search page"*, *"chain status page"* and so on;
+  `/admin/console/tokens` as *"token list"* (it lists nothing) and
+  `/admin/console/clients` as *"client list"* (it renders a 404 page over a
+  `200`, because no client-side route exists for it). All eight now say what
+  they actually serve. A ninth, `/admin/console`, was overstated rather than
+  false and got a corrective note.
+
+- **Eight handler doc comments described rendering that never happens.** The
+  worst specified a feature in full: `audit.rs` documented **nine query
+  parameters** — `prefix`, `limit`, `kind`, `subject`, `actor`, `event`, `from`,
+  `to`, `cursor` — with per-field matching semantics and parsing rules, and the
+  handler reads none of them. `overview.rs` claimed to roll up alert counts, the
+  last five safety alerts, the last ten audit events and three recently-verified
+  buckets, *and* said who could see them. Those claims are gone; every accurate
+  sentence about the real `POST` handlers behind the same modules survives
+  untouched.
+
+- **The operator incident-response chapter sent readers to a page that does not
+  exist.** `docs/src/deployment/observability.md` presented
+  `/admin/console/audit` as *"the admin console's audit browser"*, with
+  per-filter behaviour and an edge case about invalid timestamp bounds, then
+  said the console *"covers most needs"* for day-to-day incident response. It
+  also listed four `Console: <filter>=…` recipes alongside working SQL, under an
+  introduction claiming *"the two syntaxes that actually exist."* There is one.
+  The chapter now names `wrangler d1 execute --remote` as the production read
+  path, which it already documented, and says the console surfaces are not
+  built.
+
+- **The six placeholder pages promised data too.** Each said the information
+  *"will be displayed here"*. They now say the feature is not built, and only
+  the audit page names an alternative — because only the audit page has one. The
+  chain page distinguishes what works (the daily verification cron, and the
+  re-verify action) from what does not (any way to see or trigger either from
+  that page).
+
+- **Two false claims on the front page.** `README.md` said operators forward
+  audit events to an external SIEM via Cloudflare Logpush; Logpush carries
+  Worker log lines, and audit events are D1 rows — the deployment chapter says
+  in as many words that cesauth does not push them anywhere today. And three
+  badges advertised a `cesauth` crate on crates.io and docs.rs: what is
+  published there is a **`0.0.0` name reservation**, every workspace crate
+  carries `publish = false`, and the README now says so next to the badges.
+
+### Changed
+
+- **The README's Quick start is split by reader.** *"Run it locally"* is the
+  contributor and evaluation loop it always was. *"Deploy it"* is new: the spine
+  of a real deployment in the order you actually do it — pre-flight and
+  provisioning, migrations `--remote`, secrets, confirming `WRANGLER_LOCAL` is
+  off, cron triggers, `wrangler deploy`, your first OIDC client, observability,
+  day-2 — each line linking the chapter that owns the procedure. The two chapter
+  steps it leaves out are named, so the spine does not become its own
+  incomplete list.
+
+  One line departs from the chapter's numbering and says so where you read it:
+  registering your first OIDC client comes *after* deploy, because the chapter's
+  own Step 5 curls a URL that Step 9 is what deploys.
+
+### Notes
+
+- **Nothing shipped here restores a console feature.** The six surfaces were
+  built, shipped, and disconnected by one commit in May; restoring them is
+  scheduled, and this release only stops four kinds of document from claiming
+  the work is already done.
+
+---
+
 ## [0.89.3] - 2026-10-30
 
 ### A tenant owner's first page asked for a URL nothing serves — RFC 162

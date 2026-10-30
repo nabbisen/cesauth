@@ -1,6 +1,12 @@
 # RFC 167 — Nothing takes a new operator from zero to production
 
-**Status.** **Accepted** 2026-10-30 — *"Understood. Should be improved and
+**Status.** **Slice 1 SHIPPED in v0.89.4**, 2026-10-31, in two cycles (§8).
+**Evidence: `reviewed`.** **Slice 2 outstanding and blocked on an owner
+decision** — walking `first-production-deploy.md` against a real Cloudflare
+account, or shipping it marked `reviewed` rather than `exercised`. Stays in
+`accepted/` until then.
+
+**Accepted** 2026-10-30 — *"Understood. Should be improved and
 enhanced with actual schedule and plans."* The schedule is §8, and it puts this
 **ahead of the three accepted gate RFCs**, which is a deliberate re-sequencing
 and not an oversight: 164, 165 §3 and 163 are each a verified **latent** finding,
