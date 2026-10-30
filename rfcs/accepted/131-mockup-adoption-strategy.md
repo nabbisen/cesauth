@@ -53,6 +53,15 @@ the two rendering paths this RFC exists to collapse.
 workspace. They are not a later cleanup: a restored page without them ships a
 surface weaker than the one it replaces.
 
+**The operator *tenancy* console has the same shape, found 2026-10-30 reviewing
+RFC 162 and not yet scoped.** `/admin/tenancy/tenants/:tid` is titled
+*"テナント詳細"* — tenant **detail** — and renders a heading, a back-link, four
+action links and the CSRF token in an `sr-only` paragraph, with **no tenant
+field on it**; its `detail.json` serves `{"csrf_token": …}` and nothing else.
+RFC 161 §4 excluded the `/admin/tenancy/*` half and did not re-derive it. Before
+a slice is written for it, **count it the way RFC 161 §6.2 counted the console**
+— three greps per surface — rather than assuming it is the same six-page story.
+
 **Not gated on [RFC 166](../proposed/166-reachability-stops-at-the-crate-boundary.md)**,
 which would have caught this and is proposed separately. Each slice's own
 acceptance is that its service and its view acquire a production caller, which

@@ -5,9 +5,16 @@ and a check, the same shape that made RFC 159's deletions-plus-a-gate a patch.
 **0.89.2 is cut, so this is unblocked.** Patch number assigned at dispatch,
 not here — pinning one to an undispatched RFC only creates churn when the order
 changes, which it has once already.
-**Deliverable (0) in §3 is a report-and-stop**: if `curl` shows either URL is
-somehow served, this RFC's premise is wrong and nothing gets fixed until that
-is explained.
+**Complete 2026-10-30** (`c895e1b`): both URLs fixed and proven live against
+fresh owner/tenant data, `E5` built with its mandatory fires/does-not-fire
+shape and the false-positive trap demonstrably avoided, all sixteen `.json`
+fetches re-checked by the check itself, and `TenancyFormPlaceholder` deleted.
+Review: `.git-exclude/reviewed/162-implementation-review.md`.
+**Evidence: `exercised`**, except the client-side-navigation sub-claim of §3
+step 2, which is **`observed`** — the browser was not reachable, and the
+Playwright suite could not substitute because it deliberately does not
+authenticate (`e2e/specs/support.ts`; the console screens arrive with RFC 131
+R3). **Patch. Ready to cut.**
 **Tier.** **P1.** One of the two is the **tenant-admin overview** — the first
 page a tenant's owner lands on, on the console RFC 158 spent four cycles making
 reachable for the first time in the project's history. It asks for a URL no
@@ -52,10 +59,28 @@ exactly.
   resolves `:slug` to the literal `"acme.json"`. **This is RFC 145 cycle 3's
   mechanism exactly**, where `path!("/admin/tenancy/tenants/:tid")` captured
   the literal `new`, and it is recorded in that cycle's own handler comment.
-- **The failure is swallowed.** `overview.rs` does
-  `r.json::<OverviewData>().await.ok()`; `tenancy.rs` the same. A parse failure
-  becomes `None` — no error, no log, no status code the operator sees. **The
-  page renders its empty branch.**
+- **The failure is swallowed — ~~in both~~ in ONE of the two.** Corrected
+  2026-10-30 by the implementation cycle, which checked the history instead of
+  taking this sentence: `.ok()` appears **0** times in `overview.rs` and **4**
+  in `tenancy.rs` (verified at `c895e1b^`). `overview.rs`'s `fetch` returned
+  `Result<OverviewData, String>` and the component matched `Ok`/`Err`, rendering
+  `<AdminError/>`.
+  - **`operator/tenancy.rs`** (system-admin tenant detail) is the swallowed
+    one: the capture resolves to a **real page handler** that answers
+    `200` HTML, `r.json::<TenantDetailData>()` fails to parse it, `.ok()` makes
+    that `None`, and **the page renders its empty branch with no error.**
+  - **`tenant_admin/overview.rs`** is not: the capture makes the request a
+    **404** (`UnknownTenant.status_code() == 404`, pinned by
+    `crates/core/src/tenant_admin/tests.rs:284`), `fetch` turns it into
+    `Err("http 404")`, and **the tenant owner saw a generic error message**, not
+    a blank page.
+  - **§Tier still holds, for the other page's reason.** This RFC justified P1 on
+    the tenant-admin overview rendering *"without its data and without an
+    error"*. It rendered an error. P1 stands because the first page a tenant
+    owner reaches on the console RFC 158 spent four cycles making reachable
+    showed an error instead of their tenant — **and this correction is the third
+    time in three RFCs that a property I stated did not survive re-derivation,
+    which is §6's own subject appearing inside §2.**
 - **When it is visible.** Both paths are *also* server-rendered, so a hard load
   of `/admin/t/acme` returns the real HTML page. The broken fetch only runs on
   **client-side navigation** into the page, which is how the console's own

@@ -101,6 +101,35 @@ changes what RFC 131 is scheduled against.
    allowlisted — with the four reconciling, which is RFC 159 §4.3's rule now
    that the project has one.
 
+## 4b. E5's own population, added 2026-10-30
+
+RFC 162 shipped **E5** — *every `.json` URL the frontend fetches has a route* —
+and its population has the same gap this RFC is about, one layer in. The
+extraction is `grep -rhoE '"[^"]*\.json"' crates/frontend/src`, and the coverage
+line calls the result *"`.json` URL(s) **fetched by the frontend**"*. Those are
+different sets.
+
+**Probed at review:** an unwired
+`gloo_net::http::Request::get("/admin/this/has/no/route")` — a fetch to a path
+no route serves — left the figure at `16 scanned, 16 exact, 0 capture, 0
+unresolved` and the gate at **exit 0**.
+
+**Latent today, enumerated:** all **15** `gloo_net::http::Request::` call sites
+in the frontend target a `.json` URL. One, `pages/tenant_admin/forms.rs:31`,
+fetches a **variable**, and is covered only because the literals feeding it
+appear as `format!` arguments elsewhere in the crate — a linkage E5 does not
+verify.
+
+**Requirement:** every `gloo_net::http::Request::<method>` call site must have a
+URL E5 actually scanned; one whose URL cannot be resolved to a scanned literal
+is a hard failure or a named entry with a reason. **And until the population is
+asserted, the coverage line must say what it scanned** — `.json` literals in
+`crates/frontend/src` — rather than what it would like to have scanned.
+
+**This did not hold RFC 162's release**, deliberately: the gap is a gate's label
+and population, not a certification that anything is correct, and RFC 162 fixed
+a page a tenant owner reaches today. Recorded here instead.
+
 ## 5. What this does not claim
 
 - Not that uncalled means deletable. Six of these services are wanted back
