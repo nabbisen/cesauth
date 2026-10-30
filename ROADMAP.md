@@ -376,6 +376,7 @@ started.
   any CI gate is enforced (`main` still has no branch protection), or that
   it works on Cloudflare — **nobody has deployed this tree**.
 
+- ✅ **v0.89.2 — RFC 159: ten unroutable handlers deleted, and a check that fails the build when a handler is registered nowhere — asserting its own coverage, not just the code's. Shipped 2026-10-30.**
 - ✅ **v0.89.1 — RFC 160: a missing reference is classified apart from a duplicate one, so a mistyped owner id no longer reports a taken slug. Shipped 2026-10-29.**
 - ✅ **v0.89.0 — RFC 158: a new tenant's owner is assigned that tenant as their home, so `/admin/t/<slug>/*` is reachable by its own administrator for the first time. Shipped 2026-10-29.**
 - ✅ **v0.88.1 — RFC 157: 29 unrouted handlers deleted; unused imports/variables now deny in the Worker crate. Shipped 2026-10-29.**

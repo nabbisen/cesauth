@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 159, continuation
 
-**Governing RFC.** `rfcs/accepted/159-nine-dead-handlers-no-lint-can-see.md`
+**Governing RFC.** `rfcs/done/159-nine-dead-handlers-no-lint-can-see.md`
 — **§4.1** (the tenth, decided) and **§4.2** (what the check cannot see), both
 new.
 **Review.** `.git-exclude/reviewed/159-implementation-review.md`

@@ -1,49 +1,53 @@
 # RFC 159 — Nine dead handlers no lint can see
 
-**Status.** **Accepted** 2026-10-29. **Queued behind RFC 158's decision
-stage** — RFC 158 is P1 (a 35-route administrative surface one tenant can open)
-and this is P2 (nine functions nothing reaches). **Release unassigned**, for
-the same reason RFC 158's is: §4's two deliverables are different sizes and the
-per-page question in step 1 is answered by looking, not by scheduling.
+**Status.** **Done** — **shipped v0.89.2**. Ten handler-shaped `pub async fn`
+under `routes/` were registered by nothing, referenced by nothing and fetched
+by nothing, and no lint could see them: each used its parameters before doing
+nothing useful. All ten are deleted, and `route-contracts-check.sh` gained an
+**E4** section that fails the build when a handler-shaped function has no
+qualified path reachable from `lib.rs`, directly or through one level of
+re-export. The check asserts its **own** coverage as well as the code's: every
+`pub async fn` in `routes/` must match a known handler shape or be named with a
+reason, its coverage arithmetic must close on every run, all four extractors
+that read `lib.rs` read one comment-stripped view of it, and an entry in its
+remainder list that matches nothing is a hard failure.
+**Evidence**: **`exercised`** (RFC 000 §22) — the census RFC 157 left at
+fourteen, re-run with the finished check, is **zero**. 215 `pub async fn`
+scanned = 193 handlers (182 `RouteContext`-shaped, 11 `Env`-shaped) + 22 named
+non-handlers + 0 unclassified, the identity asserted on every run as a failure
+distinct from any finding about `routes/`. Five fires/does-not-fire probes, each
+re-run independently at review and each restoring the tree byte-identical: the
+brace re-export form (`admin::legacy::create_user`), the renaming form
+(`oidc::introspect::handler`), the **name-collision** case that defeated
+RFC 157's bare-name test (an unwired `page<D>` reported by qualified path and
+distinguished from the live `page` handlers), an unrecognised signature shape
+reported as unclassified rather than silently skipped, and a stale remainder-list
+entry — which fires both when its file is gone and when the file remains and the
+function was renamed. Commenting out one registration in `lib.rs` now fires
+**both** halves from the single edit: E4's dead-handler finding and E1's
+stale-documentation warning, where before it left the handler certified
+reachable and the contract table credited with documenting a route the Worker
+no longer served. `"/*catchall"` confirmed intact under comment stripping
+(`lib.rs` 676 lines → 468, 208 stripped, tail unchanged). The four
+operator-console JSON endpoints answer **401** against a fresh `wrangler dev`
+where a dead path answers **404**, which is the live proof RFC 157's own cycle
+substituted for. Host tests **1,630** passed / 0 failed over 12 `test result`
+lines (unchanged — none of the ten had a test of its own), `migration_chain`
+**35**, manifest **13** workflows with no new one, Playwright **20/20**, bundle
+**882,908 B** gzip at **33.7%** of budget. Four implementation cycles
+(`132c3a0`, `8761f3a`, `233283d`), each one's claims re-derived at review rather
+than quoted.
 
-**Implementation dispatched 2026-10-29**, after 0.89.1 was cut:
-`handoffs/159-nine-dead-handlers-no-lint-can-see/implementation-handoff.md`.
-**0.89.2, patch** — deleting dead code and adding a check, the same shape that
-made RFC 157's twenty-nine deletions a patch.
+**The lesson worth more than the gate:** four times inside this one RFC, a
+classifier was sound and its *coverage* was unmeasured — RFC 157's bare-name
+test could not see nine handlers; E4's first shape regex could not see eleven
+live `me::` handlers; the remainder list could rot unobserved; and the remedy
+for that covered one of the script's five exemption lists
+([RFC 165](../accepted/165-the-gates-exemption-lists-are-unvalidated.md)).
+**A classifier is only as good as the measurement of what it declines to
+classify** — and each of those four was a correct fix in the place its defect
+was found, with the siblings left unswept.
 
-**No decision stage, and §3's premise is why** — see §2.1. The per-page
-archaeology §4 step 1 asks for was three greps, and doing it before paying for
-a stage turned one design fork into zero.
-
-**Continuation complete 2026-10-30** (`132c3a0`): the tenth deleted, E4's
-coverage asserted structurally, census **zero**. **Third cycle dispatched
-2026-10-30** for §4.3 and §4.4, both found in review of that commit:
-`handoffs/159-nine-dead-handlers-no-lint-can-see/cycle-3-handoff.md`.
-**Cycle 3 complete 2026-10-30** (`8761f3a`): both met. **Cycle 4 complete
-2026-10-30** (`233283d`): §4.5 met —
-`handoffs/159-nine-dead-handlers-no-lint-can-see/cycle-4-handoff.md`.
-
-**Complete. 0.89.2 ready to cut**, pending authorization. Evidence term for all
-five sub-findings: **`exercised`** (RFC 000 §22) — ten dead handlers deleted and
-the census re-run at **zero** with the finished check; the gate asserts
-reachability by qualified path (both re-export shapes and the name-collision
-case demonstrated), classification of **every** `pub async fn` in `routes/`
-(215 scanned = 193 handlers + 22 named + 0 unclassified, the identity asserted
-on every run as a failure distinct from a finding about `routes/`), one shared
-comment-stripped view of `lib.rs` behind all four extractors that scan it (one
-commented-out registration now fires both the dead-handler finding and the
-stale-documentation warning), and its own remainder list (a
-`NAMED_NON_HANDLERS` entry matching nothing is a named hard failure; fires on
-both a deleted file and a renamed function). Host tests **1,630**/1,630
-baseline, `migration_chain` **35**, manifest **13**, Playwright **20**, bundle
-**882,908 B** gzip at 33.7% of budget. Re-run independently at review in all
-four cycles.
-
-**One finding deliberately not held for:** §4.5's property is unchecked on the
-script's four sibling exemption lists, two of which carry entries —
-[RFC 165](../accepted/165-the-gates-exemption-lists-are-unvalidated.md), against
-the shipped gate, per the cycle-4 handoff's own statement that a further finding
-which is not a false certification would not hold the tag a fourth time.
 **Tier.** P2. Nothing is broken and nothing is reachable. The value is the
 check, not the deletions.
 **Size.** Small for the nine; the check is the lasting part.

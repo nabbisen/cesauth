@@ -14,6 +14,81 @@ changes will always be called out here.
 
 ---
 
+## [0.89.2] - 2026-10-30
+
+### Ten handlers no lint could see, and a check that would have seen them — RFC 159
+
+### Removed
+
+- **Ten request handlers that no route pointed at, invisible to every lint the
+  project runs.** RFC 157 had deleted twenty-nine of the same kind one release
+  earlier, on the premise that the compiler reports the rest through unused
+  imports and unused variables. For these ten it cannot: each one *uses* its
+  `req` and `ctx` — passing them to a helper, or into a response it builds —
+  before doing nothing anyone can reach. Nothing was unused, so nothing warned,
+  and the gate added by that release shipped green over all ten.
+
+  Nine were `page_json` companions beside operator- and tenancy-console pages.
+  The tenth, `admin::console::preview::handler`, was found by the new check on
+  its own first run: a leftover `501` stub superseded by `config::preview`,
+  whose **doc comment claimed "the route itself is registered"** when the live
+  route at that path resolves to the other function entirely. A reader who
+  opened the file to check was told it was fine.
+
+### Added
+
+- **A routing check that asks the question no previous gate asked: is this
+  handler registered at all?** `scripts/route-contracts-check.sh` gained an
+  `E4` section — inside the existing script and workflow, so the gate count is
+  unchanged at 13 — which fails the build when a handler-shaped `pub async fn`
+  under `crates/backend/src/routes/` has no qualified path reachable from
+  `lib.rs`, directly or through one level of `pub use` re-export (brace or
+  renaming form, both of which this codebase uses).
+
+  It works off each handler's **full qualified path**, never its bare name.
+  That distinction is the whole point: RFC 157's census missed these ten
+  because a bare-name test clears every function that shares a name with a
+  routed one, and `page`, `page_json` and `handler` are shared many times over.
+
+- **The check measures its own coverage, and fails when it cannot.** Four
+  properties, each with a fires/does-not-fire probe behind it: every
+  `pub async fn` in `routes/` must be classified as a handler or named as a
+  non-handler with a reason, and an unrecognised signature shape is a hard
+  failure rather than a silent skip; the coverage figures must sum to the number
+  scanned on every run, reported as a bug in the check rather than a finding
+  about the code; and an entry in the named-non-handler list that matches
+  nothing is a hard failure, because such an entry is a pre-authorised
+  exemption for whatever is written at that path next.
+
+  Handlers are recognised structurally, not enumerated: a handler **owns** its
+  request, being the entry point, and a helper **borrows** it, being called by
+  one. So adding a route costs no edit to the gate, and only the by-reference
+  helpers need naming.
+
+### Fixed
+
+- **A route disabled by commenting out its registration no longer reads as
+  live — or as documented.** Every extractor in the check that reads `lib.rs`
+  now reads one shared comment-stripped view of it. Before, commenting out a
+  single registration left the handler certified reachable *and* left
+  `route-contracts.md` still required to document, and still credited with
+  documenting, a route the Worker no longer serves. One edit now produces both
+  the dead-handler finding and the stale-documentation warning.
+
+  Whole comment lines only, deliberately: `lib.rs` registers the literal path
+  `"/*catchall"`, which a block-comment stripper would read as an opening fence
+  and consume the rest of the file from.
+
+### Notes
+
+- **No behaviour change.** Nothing registered, served, rendered or stored moves:
+  the ten deleted functions were unreachable, and the rest of the release is a
+  CI check. Host tests stay at 1,630 passed over 12 `test result` lines —
+  unchanged, because not one of the ten had a test of its own, which is part of
+  how they survived. The Worker bundle is byte-identical.
+
+---
+
 ## [0.89.1] - 2026-10-29
 
 ### A missing reference is no longer reported as a duplicate one — RFC 160

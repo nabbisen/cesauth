@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 159, cycle 4 (the last one for 0.89.2)
 
-**Governing RFC.** `rfcs/accepted/159-nine-dead-handlers-no-lint-can-see.md` — **§4.5**, new.
+**Governing RFC.** `rfcs/done/159-nine-dead-handlers-no-lint-can-see.md` — **§4.5**, new.
 **Review.** `.git-exclude/reviewed/159-cycle-3-review.md`
 **Builds on.** `8761f3a` on `main`. Nothing to revert.
 
