@@ -38,12 +38,28 @@ if [ ! -f "$CONTRACTS_MD" ]; then
   exit 2
 fi
 
+# RFC 159 cycle 3 (§4.4): every extractor below that scans lib.rs for a
+# registration or a `routes::` call reads THIS, not the raw file --
+# "a line whose first non-whitespace is `//` is not a registration" made
+# true once, from one shared step, rather than patched separately into
+# each grep/awk that looks at lib.rs (which is how E1's registered-route
+# extraction and E4's liveness check ended up with two DIFFERENT blind
+# spots to the same commented-out-registration case in the first place).
+# Whole comment LINES only, matched after trimming leading whitespace --
+# `//` also occurs inside path/URL string literals this file registers
+# (`"/*catchall"`, line 523, among others), so this deliberately does
+# NOT attempt block comments: a naive `/* ... */` stripper would read
+# that literal as an opening fence and eat the rest of the file. There
+# are no block comments in lib.rs to miss by skipping that case.
+LIB_RS_LIVE=$(grep -v '^[[:space:]]*//' "$LIB_RS")
+
 # ── extract registered routes from lib.rs ────────────────────────────
 # Pattern: .(get|post|put|delete)_async("/path/...",
 # We normalise to uppercase METHOD + PATH, strip trailing spaces.
 
 registered=$(
-  grep -E '\.(get|post|put|delete)_async\s*\("' "$LIB_RS" |
+  printf '%s\n' "$LIB_RS_LIVE" |
+  grep -E '\.(get|post|put|delete)_async\s*\("' |
   sed -E 's/.*\.(get|post|put|delete)_async\s*\("([^"]+)".*/\U\1\E \2/' |
   sort -u
 )
@@ -301,7 +317,7 @@ route_handlers=$(
     }
     started && /\.run\(req/ { print method "\t" path "\t" chunk; started=0; next }
     started { chunk = chunk " " $0 }
-  ' "$LIB_RS" | while IFS=$'\t' read -r m p c; do
+  ' <<< "$LIB_RS_LIVE" | while IFS=$'\t' read -r m p c; do
     if [[ "$c" =~ (routes::[a-zA-Z0-9_:]+) ]]; then
       printf '%s\t%s\t%s\n' "$m" "$p" "${BASH_REMATCH[1]}"
     fi
@@ -861,6 +877,8 @@ e4_shapeB_re='fn [a-zA-Z0-9_]+\( ?(mut )?_?req: Request, *_?env: worker::Env,? ?
 e4_total=0
 e4_countA=0
 e4_countB=0
+e4_named_count=0
+e4_unclassified_count=0
 e4_unclassified=""
 e4_handlers=""  # file \t name, one per classified handler (A or B)
 
@@ -875,7 +893,10 @@ while IFS=$'\t' read -r file line name buf; do
     rel="${file#"$REPO_ROOT"/}"
     key="${rel}::${name}"
     named=$(printf '%s\n' "$NAMED_NON_HANDLERS" | grep -Fx "$key" || true)
-    if [ -z "$named" ]; then
+    if [ -n "$named" ]; then
+      e4_named_count=$((e4_named_count + 1))
+    else
+      e4_unclassified_count=$((e4_unclassified_count + 1))
       e4_unclassified="${e4_unclassified}${rel}:${line} (fn ${name})\n"
     fi
   fi
@@ -901,7 +922,7 @@ while IFS=$'\t' read -r file name; do
   if [ -n "$modpath" ]; then natural="${modpath}::${name}"; else natural="$name"; fi
 
   live=0
-  if grep -qF "routes::${natural}(" "$LIB_RS"; then
+  if grep -qF "routes::${natural}(" <<< "$LIB_RS_LIVE"; then
     live=1
   fi
 
@@ -912,7 +933,7 @@ while IFS=$'\t' read -r file name; do
     while IFS= read -r alias; do
       [ -z "$alias" ] && continue
       if [ -n "$parent_modpath" ]; then flat="${parent_modpath}::${alias}"; else flat="$alias"; fi
-      if grep -qF "routes::${flat}(" "$LIB_RS"; then
+      if grep -qF "routes::${flat}(" <<< "$LIB_RS_LIVE"; then
         live=1
         break
       fi
@@ -940,10 +961,27 @@ if [ -n "$e4_dead" ]; then
 fi
 
 e4_handler_count=$((e4_countA + e4_countB))
-e4_named_count=$(printf '%s\n' "$NAMED_NON_HANDLERS" | grep -c . || true)
+
+# RFC 159 cycle 3 (§4.3): the coverage line's own arithmetic must hold in
+# every run, passing or failing -- not just happen to add up in the ones
+# anyone checked by hand. A coverage figure that can misstate itself in
+# precisely the run where it is load-gating (a failing one) is the same
+# "reconcile a derived figure against its parts" defect this project
+# already has a standing rule against, found here inside the gate that
+# reports the figure. Asserted, not just printed: a mismatch is a hard
+# failure in its own right, distinct from (and in addition to) an actual
+# unclassified fn.
+if [ "$e4_total" -ne "$((e4_handler_count + e4_named_count + e4_unclassified_count))" ]; then
+  echo "❌  E4 coverage arithmetic does not close: ${e4_total} scanned !=" \
+       "${e4_handler_count} handlers + ${e4_named_count} named +" \
+       "${e4_unclassified_count} unclassified -- this is a bug in the check" \
+       "itself, not a finding about routes/." >&2
+  exit_code=1
+fi
+
 echo "ℹ️   E4 coverage: scanned ${e4_total} pub async fn under routes/ -- ${e4_handler_count}" \
      "classified as handlers (${e4_countA} RouteContext-shaped, ${e4_countB} Env-shaped)," \
-     "${e4_named_count} named non-handlers, 0 unclassified"
+     "${e4_named_count} named non-handlers, ${e4_unclassified_count} unclassified"
 
 if [ "$exit_code" -eq 0 ]; then
   echo "✅  All ${registered_count} routes are documented in route-contracts.md, and every" \
