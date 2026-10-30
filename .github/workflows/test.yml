@@ -48,11 +48,19 @@ jobs:
           # undetected for the same reason its unit test was: nothing ran
           # them. --lib excluded that whole class repo-wide, which is the
           # kind of quiet exclusion RFC 136 exists to remove.
+          # RFC 162: cesauth-frontend's `pages`/`app`/`components`/`icons`/
+          # `view_models` modules are gated behind the `csr` feature (see
+          # lib.rs), so without this flag the module holding the two pages
+          # this RFC fixed -- and the host tests added for them -- never
+          # compiled here at all. `--features cesauth-frontend/csr` is
+          # package-qualified so it does not reach the other four crates,
+          # none of which declare a feature by that name.
           cargo test -p cesauth-core \
                      -p cesauth-adapter-test \
                      -p cesauth-frontend \
                      -p cesauth-backend \
-                     -p cesauth-adapter-cloudflare
+                     -p cesauth-adapter-cloudflare \
+                     --features cesauth-frontend/csr
 
       - name: Run migration integration tests
         run: |

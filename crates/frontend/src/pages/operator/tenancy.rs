@@ -126,7 +126,7 @@ pub fn TenancyTenantDetail() -> impl IntoView {
         LocalResource::new(move || {
             let tid = tid();
             async move {
-                match gloo_net::http::Request::get(&format!("/admin/tenancy/tenants/{tid}.json"))
+                match gloo_net::http::Request::get(&format!("/admin/tenancy/tenants/{tid}/detail.json"))
                     .header("Accept", "application/json")
                     .send().await
                 {
@@ -175,7 +175,7 @@ pub fn TenancyTenantDetail() -> impl IntoView {
                                 <p class="sr-only">"csrf: "{d.csrf_token}</p>
                             </div>
                         }.into_any(),
-                        None => view! { <p role="alert">"データを取得できませんでした。"</p> }.into_any(),
+                        None => view! { <p role="alert">{tenant_detail_fetch_failure_message()}</p> }.into_any(),
                     })
                 }}
             </Suspense>
@@ -183,34 +183,24 @@ pub fn TenancyTenantDetail() -> impl IntoView {
     }
 }
 
-// ─── Generic placeholder for form pages ─────────────────────────────────────
+/// Fixed text `TenancyTenantDetail` shows when its fetch does not
+/// succeed -- a network error, a non-200 status, or (what the broken
+/// `/admin/tenancy/tenants/{tid}.json` URL this RFC fixes actually
+/// produced) a 200 whose body isn't `TenantDetailData`-shaped all
+/// collapse into `None` via `.ok()`, undistinguished. RFC 162 §2
+/// leaves that collapse exactly as it was rather than fixing it in
+/// passing; this pins the one thing that IS a decision -- the message
+/// itself -- as the witness for what the caller sees when it fails.
+fn tenant_detail_fetch_failure_message() -> &'static str {
+    "データを取得できませんでした。"
+}
 
-/// 汎用フォームコンポーネント (テナント管理フォーム)
-#[component]
-pub fn TenancyFormPlaceholder(
-    title:       String,
-    back_href:   String,
-    form_action: String,
-) -> impl IntoView {
-    let json_url = format!("{}.json", form_action);
-    let data = LocalResource::new(move || {
-        let url = json_url.clone();
-        async move {
-            gloo_net::http::Request::get(&url)
-                .header("Accept", "application/json")
-                .send().await.ok()
-                .and_then(|r| if r.status() == 200 {
-                    // synchronous parse not straightforward here; use a workaround
-                    Some(r)
-                } else { None })
-        }
-    });
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    view! {
-        <main lang="ja">
-            <h1>{title}</h1>
-            <p><a href=back_href>"← 戻る"</a></p>
-            <p>"フォームの読み込み中..."</p>
-        </main>
+    #[test]
+    fn fetch_failure_message_is_the_pinned_text() {
+        assert_eq!(tenant_detail_fetch_failure_message(), "データを取得できませんでした。");
     }
 }

@@ -39,11 +39,15 @@ hand-alignment. If your editor format-on-saves a file you touch, check
 ```bash
 # Every host crate — this is the command CI runs (.github/workflows/test.yml).
 # No --lib: unit tests, integration targets and doc-tests all count.
+# --features cesauth-frontend/csr (RFC 162): cesauth-frontend's `pages` module
+# (and `app`/`components`/`icons`/`view_models`) is gated behind the `csr`
+# feature; without it, none of that code — or its tests — compiles here.
 cargo test -p cesauth-core \
                 -p cesauth-adapter-test \
                 -p cesauth-frontend \
                 -p cesauth-backend \
-                -p cesauth-adapter-cloudflare
+                -p cesauth-adapter-cloudflare \
+                --features cesauth-frontend/csr
 
 # Migration chain integration tests
 cargo test -p cesauth-migrate-test --test migration_chain

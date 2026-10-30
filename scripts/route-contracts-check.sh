@@ -1015,6 +1015,187 @@ echo "ℹ️   E4 coverage: scanned ${e4_total} pub async fn under routes/ -- ${
      "classified as handlers (${e4_countA} RouteContext-shaped, ${e4_countB} Env-shaped)," \
      "${e4_named_count} named non-handlers, ${e4_unclassified_count} unclassified"
 
+# ── E5 (RFC 162): every .json URL the frontend fetches must have a
+#    route -- the inverse of E4 ──────────────────────────────────────
+#
+# E4 asks "is this handler reachable from lib.rs". This asks the other
+# direction: a `.json` literal or `format!`-built URL in
+# crates/frontend/src, with `{name}` segments treated as captures, must
+# match a registered GET route, or the build fails. RFC 162 found two
+# that didn't: `/admin/t/{slug}.json` and
+# `/admin/tenancy/tenants/{tid}.json` each have the SAME segment count
+# as a real, shorter route (`/admin/t/:slug`,
+# `/admin/tenancy/tenants/:tid`) because the `{slug}`/`{tid}` placeholder
+# is glued directly to the literal `.json` suffix with no `/` between
+# them -- one path segment, not two. A segment-count-only check would
+# call that an exact match; it is not, because nothing at that position
+# is a bare placeholder. At runtime the capture swallows the whole
+# segment including the literal suffix, and the real route the frontend
+# meant to call (`.../detail.json`, one segment longer) never gets hit.
+#
+# A `format!`-built URL is not special-cased: `format!("/a/{x}/b.json")`
+# is still the plain string literal `"/a/{x}/b.json"` as `format!`'s
+# first argument, so the same literal-string grep that finds
+# `"/a/fixed.json"` finds it too. What's special is the MATCHING, not
+# the extraction.
+#
+# Candidate routes of the same segment length are tried fewest-captures
+# first, not first-registered-first: the first E5 prototype took the
+# first same-length match and reported
+# `/admin/t/:slug/organizations/new.json` (itself a real, literally
+# fully-registered route) as a THIRD defect, swallowed by the unrelated
+# `/admin/t/:slug/organizations/:oid` -- a false positive, caught before
+# it ever reached a report. Ranking by capture count means the more
+# literal, already-correct route is tried first and matches cleanly.
+#
+# Three outcomes, not two:
+#   EXACT              -- a same-length route whose every literal
+#                          segment matches textually, and whose every
+#                          capture segment the candidate ALSO spells as
+#                          a bare `{name}` (nothing else in that
+#                          segment). Pass.
+#   CAPTURE-SWALLOWED   -- a same-length route whose every literal
+#                          segment matches, but at least one of its
+#                          capture positions is a candidate segment
+#                          that is NOT a bare placeholder (a plain
+#                          literal, or a placeholder glued to more
+#                          text) -- this is the shape that makes it
+#                          match a capture instead of 404ing. Fail.
+#   UNRESOLVED          -- no live GET route of the same segment count
+#                          has all its literal positions match at all.
+#                          Fail.
+e5_capture_count() {
+  local path="$1"
+  local -a segs
+  read -ra segs <<< "$(path_segments "$path")"
+  local n=0 seg
+  for seg in "${segs[@]}"; do
+    [[ "$seg" == :* ]] && n=$((n + 1))
+  done
+  echo "$n"
+}
+
+e5_is_bare_placeholder() {
+  [[ "$1" =~ ^\{[A-Za-z_][A-Za-z0-9_]*\}$ ]]
+}
+
+# Resolve one candidate .json URL ($1) against the live GET routes
+# ($2, newline-separated, `:name` captures). Echoes the chosen route.
+# Returns 0 EXACT, 1 CAPTURE-SWALLOWED, 2 UNRESOLVED.
+e5_resolve() {
+  local candidate="$1" routes="$2"
+  local -a cseg
+  read -ra cseg <<< "$(path_segments "$candidate")"
+  local clen=${#cseg[@]}
+
+  local live ranked=""
+  while IFS= read -r live; do
+    [ -z "$live" ] && continue
+    local -a lseg
+    read -ra lseg <<< "$(path_segments "$live")"
+    if [ "${#lseg[@]}" -eq "$clen" ]; then
+      ranked="${ranked}$(e5_capture_count "$live")\t${live}\n"
+    fi
+  done <<< "$routes"
+  [ -z "$ranked" ] && return 2
+
+  local sorted
+  sorted=$(printf '%b' "$ranked" | sort -n -t $'\t' -k1,1)
+
+  while IFS=$'\t' read -r _ live; do
+    [ -z "$live" ] && continue
+    local -a lseg
+    read -ra lseg <<< "$(path_segments "$live")"
+    local i all_literal_match=1
+    for ((i = 0; i < clen; i++)); do
+      if [[ "${lseg[$i]}" != :* ]] && [ "${lseg[$i]}" != "${cseg[$i]}" ]; then
+        all_literal_match=0; break
+      fi
+    done
+    if [ "$all_literal_match" -eq 1 ]; then
+      local exact=1
+      for ((i = 0; i < clen; i++)); do
+        if [[ "${lseg[$i]}" == :* ]] && ! e5_is_bare_placeholder "${cseg[$i]}"; then
+          exact=0; break
+        fi
+      done
+      echo "$live"
+      if [ "$exact" -eq 1 ]; then return 0; else return 1; fi
+    fi
+  done <<< "$sorted"
+
+  return 2
+}
+
+e5_candidates=$(
+  grep -rhoE '"[^"]*\.json"' "$REPO_ROOT/crates/frontend/src" --include='*.rs' |
+  grep -v '/tests\?\.rs:\|/tests/' |
+  sed -E 's/^"(.*)"$/\1/' |
+  sort -u
+)
+
+e5_get_routes=$(
+  printf '%s\n' "$LIB_RS_LIVE" |
+  grep -E '\.get_async\s*\("' |
+  sed -E 's/.*\.get_async\s*\("([^"]+)".*/\1/' |
+  sort -u
+)
+
+e5_total=0
+e5_exact=0
+e5_capture=0
+e5_unresolved=0
+e5_capture_report=""
+e5_unresolved_report=""
+
+while IFS= read -r candidate; do
+  [ -z "$candidate" ] && continue
+  e5_total=$((e5_total + 1))
+  matched=$(e5_resolve "$candidate" "$e5_get_routes") && status=0 || status=$?
+  case "$status" in
+    0) e5_exact=$((e5_exact + 1)) ;;
+    1)
+      e5_capture=$((e5_capture + 1))
+      e5_capture_report="${e5_capture_report}${candidate} -- swallowed by ${matched}\n"
+      ;;
+    2)
+      e5_unresolved=$((e5_unresolved + 1))
+      e5_unresolved_report="${e5_unresolved_report}${candidate} -- no live GET route of the same segment count\n"
+      ;;
+  esac
+done <<< "$e5_candidates"
+
+if [ "$e5_total" -ne "$((e5_exact + e5_capture + e5_unresolved))" ]; then
+  echo "❌  E5 coverage arithmetic does not close: ${e5_total} scanned !=" \
+       "${e5_exact} exact + ${e5_capture} capture-swallowed + ${e5_unresolved}" \
+       "unresolved -- this is a bug in the check itself, not a finding" \
+       "about crates/frontend/src." >&2
+  exit_code=1
+fi
+
+if [ -n "$e5_capture_report" ]; then
+  echo "❌  .json URL(s) the frontend fetches that match no route EXACTLY, but" \
+       "are swallowed by a shorter route's capture segment (match at runtime," \
+       "with the wrong handler, not a 404):" >&2
+  printf '%b' "$e5_capture_report" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line" >&2; done
+  echo "" >&2
+  echo "    Point the fetch at the route that actually serves this data." >&2
+  exit_code=1
+fi
+
+if [ -n "$e5_unresolved_report" ]; then
+  echo "❌  .json URL(s) the frontend fetches with NO live GET route of the same" \
+       "segment count at all:" >&2
+  printf '%b' "$e5_unresolved_report" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line" >&2; done
+  echo "" >&2
+  echo "    Register the route in crates/backend/src/lib.rs, or fix the fetch URL." >&2
+  exit_code=1
+fi
+
+echo "ℹ️   E5 coverage: scanned ${e5_total} .json URL(s) fetched by the frontend --" \
+     "${e5_exact} resolved exactly, ${e5_capture} resolved via capture (defect)," \
+     "${e5_unresolved} unresolved"
+
 if [ "$exit_code" -eq 0 ]; then
   echo "✅  All ${registered_count} routes are documented in route-contracts.md, and every" \
        "handler-shaped fn in routes/ is reachable from lib.rs"
