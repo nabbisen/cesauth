@@ -18,8 +18,10 @@ a stage turned one design fork into zero.
 **Continuation complete 2026-10-30** (`132c3a0`): the tenth deleted, E4's
 coverage asserted structurally, census **zero**. **Third cycle dispatched
 2026-10-30** for §4.3 and §4.4, both found in review of that commit:
-`handoffs/159-nine-dead-handlers-no-lint-can-see/cycle-3-handoff.md`. The cut
-waits on it.
+`handoffs/159-nine-dead-handlers-no-lint-can-see/cycle-3-handoff.md`.
+**Cycle 3 complete 2026-10-30** (`8761f3a`, CI 13/13): both met. **Cycle 4
+dispatched 2026-10-30** for §4.5 — `handoffs/159-nine-dead-handlers-no-lint-can-see/cycle-4-handoff.md`
+— and it is **the last cycle before the cut**.
 **Tier.** P2. Nothing is broken and nothing is reachable. The value is the
 check, not the deletions.
 **Size.** Small for the nine; the check is the lasting part.
@@ -282,6 +284,55 @@ which a naive `/* … */` stripper eats the file from.
 to whitespace as well as comments and so covers 105 of 193 routes. That is
 [RFC 163](../proposed/163-two-route-extractors-two-blind-spots.md) — RFC 011's
 deliverable, and a fork (two extractors or one) rather than a repair.
+
+### 4.5 The list carrying the remainder can rot, and the figure that would have shown it was removed
+
+§4.3 and §4.4 are met (`8761f3a`, CI 13/13, both probes re-run in review). One
+regression arrived with them.
+
+`e4_named_count` changed from the static length of `NAMED_NON_HANDLERS` to a
+counter incremented when an entry is **matched during the scan**, on the stated
+grounds that the matched count makes a stale entry "show up as the identity
+failing to close". **It is the inverse.** With a matched count,
+`scanned == handlers + named + unclassified` is a **tautology** — every scanned
+function takes exactly one of the three branches — so a stale entry matches
+nothing, increments nothing and moves no figure.
+
+Verified in review by adding one stale entry,
+`…/routes/admin/console/preview.rs::handler` — the file §4.1 deleted:
+
+```
+ℹ️   E4 coverage: scanned 215 … 22 named non-handlers, 0 unclassified
+✅  All 193 routes are documented … and every handler-shaped fn in routes/ is reachable from lib.rs
+exit 0
+```
+
+**The list holds 23 entries; the gate reports 22.** The counterfactual, with the
+pre-cycle-3 static count restored in the identity, exits **1** with
+`215 scanned != 193 handlers + 23 named(static) + 0 unclassified`. The static
+figure was the detector; the matched figure cannot fail.
+
+**A stale entry is a pre-authorised exemption**, not dead weight: delete or
+rename a helper, leave its line, and the next `pub async fn` at that `file::fn`
+is classified as a reviewed non-handler with nobody reviewing it. `handler` in a
+`console/` file is the most re-creatable name in this codebase, and that exact
+one existed until `132c3a0`.
+
+**This is the RFC's own defect class for the third time.** RFC 157's bare-name
+test could not see nine handlers; E4's first shape regex could not see eleven;
+now the irreducible remainder can rot unobserved. Each time the mechanism was
+sound and nobody was measuring its coverage. **That is the finding worth keeping
+from this RFC, beyond the gate itself: a classifier is only as good as the
+measurement of what it declines to classify.**
+
+**Requirement: an entry matching nothing during a scan is a hard failure, named
+as its own cause** — distinct from an unclassified function and from a dead
+handler. Mechanism is the implementer's; restoring the static count is *not*
+assumed to be the answer, since a sum that fails to close is the uninformative
+version of the signal.
+
+Latent at the time of review, checked: 22 static entries, 22 matched, every
+entry's file present.
 
 ## 5. The lesson worth keeping in the record
 
