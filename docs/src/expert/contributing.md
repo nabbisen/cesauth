@@ -284,6 +284,13 @@ touched:
 | **Minor** `X.Y+1.0` | Backwards-compatible **added functionality**. Something is now possible that was not | 0.81.0 (new public `core` types), 0.80.0 (Leptos components replacing the template layer), 0.79.0 (workspace restructuring) |
 | **Major** | An incompatible change | Not yet reached; `1.0.0` needs owner confirmation *and* sufficient coverage |
 
+**An MSRV bump is a minor** (ruling, 2026-10-31). `rust-version` has never
+moved from `1.85`, so this is settled before it arises rather than during a
+cut. An operator on the old toolchain cannot build at all until they act,
+which is the clearest case of the test `ROADMAP.md` §Versioning policy
+states — *who must change their code*. Cargo does not enforce it and the
+ecosystem is split; this is our rubric, consistent with our own test.
+
 cesauth is `0.y.z`, where SemVer formally permits anything to change at any
 time. The distinction above is therefore a **project convention** rather than a
 SemVer obligation — but the words keep their ordinary meaning, and a release
@@ -320,6 +327,20 @@ A release that mixes fixes and new capability takes the **higher** level.
   produced.
 - Version bumps require explicit owner confirmation; `1.0.0` requires
   confirmation *and* sufficient test coverage.
+- **The dispatch handoff states the target level and the trigger it hits**
+  (ruling, 2026-10-31). The level is decided at dispatch, not at the cut; what
+  this adds is that the *reason* is written where the implementer and the
+  reviewer both see it. **"No trigger, therefore a patch" is an argument to be
+  made, not a default** — the level table's own test is a judgement, and a
+  judgement written down at dispatch can be challenged by review, while the
+  same one made silently at the cut cannot.
+- **None of the above is checked yet.** No workflow reads `CHANGELOG.md`, none
+  compares tags to entries, and none compares a release's level to what it
+  changed — so every rule in this section is honoured by hand. Across tags from
+  0.18.0, five patch releases added seventeen registered routes
+  (`0.79.1`–`0.79.6`, during RFC 115 Phase C); no patch has ever added a
+  migration, and the MSRV has never moved. [RFC 168](https://github.com/nabbisen/cesauth/blob/main/rfcs/proposed/168-the-release-record-does-not-reconcile.md)
+  proposes the three checks.
 
 ## Publishing to crates.io
 
