@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 162, implementation
 
-**Governing RFC.** `rfcs/accepted/162-two-console-pages-fetch-urls-nothing-serves.md`
+**Governing RFC.** `rfcs/done/162-two-console-pages-fetch-urls-nothing-serves.md`
 **Builds on.** `main` at the 0.89.2 tag or later. Nothing to revert.
 
 **Target release.** **Patch.** Number assigned at the cut, not here.

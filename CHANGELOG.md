@@ -14,6 +14,74 @@ changes will always be called out here.
 
 ---
 
+## [0.89.3] - 2026-10-30
+
+### A tenant owner's first page asked for a URL nothing serves — RFC 162
+
+### Fixed
+
+- **The tenant-admin overview showed an error instead of the tenant.**
+  `/admin/t/<slug>` fetched `/admin/t/<slug>.json` for its data — one segment
+  short of `/admin/t/<slug>/detail.json`, the route that actually serves it.
+  Because `:slug` is a path-segment capture, it swallowed the whole segment
+  *including* the literal `.json`, so the request matched the shorter HTML route
+  and asked it for a tenant named `"<slug>.json"`, which does not exist: **404**,
+  surfaced to the page as a generic error. This was the first page a tenant's
+  owner reached on the console v0.89.0 had just made reachable for the first
+  time.
+
+- **The system-admin tenant detail page rendered empty, with no error at all.**
+  `/admin/tenancy/tenants/<tid>` fetched `/admin/tenancy/tenants/<tid>.json`,
+  the same mistake — but here the capture resolves to a **registered page
+  route**, which answered `200` with the Leptos bootstrap HTML. Parsing HTML as
+  JSON failed, and `.ok()` turned the failure into "no data", so the page
+  rendered its empty branch silently.
+
+  Both fetches now point at the `…/detail.json` routes that exist. Each page
+  also gained a host test witnessing what its *existing* failure path shows the
+  caller — neither page's error handling was changed.
+
+- **Visible only on client-side navigation**, which is how the console's own
+  links work: a hard load is served the shell by the correct HTML route, so
+  the broken fetch ran only after the app had mounted.
+
+### Added
+
+- **A check for the opposite direction of v0.89.2's.** RFC 159's `E4` asks
+  whether a registered handler is reachable; the new `E5` asks whether a URL the
+  frontend *fetches* is. A `.json` URL in `crates/frontend/src` — literal or
+  `format!`-built — must resolve to a registered `GET` route, and the build
+  fails if it resolves to none or resolves **only by being swallowed by a
+  capture**, which is the defect above and is invisible to a check that compares
+  segment counts alone.
+
+  Candidate routes of the same length are tried **fewest captures first**, not
+  in registration order. Without that, an already-correct, fully-literal route
+  is reported as swallowed by an unrelated capture — a false positive that
+  appeared in two independent prototypes of this check before the ranking was
+  added.
+
+  Inside the existing script and workflow, so the release-gate count is
+  unchanged at 13.
+
+### Removed
+
+- **`TenancyFormPlaceholder`**, a third component building a broken `.json` URL
+  (against form routes whose `.json` companions v0.88.1 deleted) and checking
+  only `status() == 200` without parsing the response. It had no caller
+  anywhere. Deleted rather than exempted from the new check.
+
+### Changed
+
+- **`cargo test` now needs `--features cesauth-frontend/csr`** to run the whole
+  suite, and CI and the contributing guide were updated together. The
+  frontend's `pages` module — which holds both pages fixed above — is gated
+  behind that feature, so without the flag neither it nor its tests compiled
+  during testing at all. The feature is purely additive: no test that ran
+  before stops running, and the suite goes from 1,630 to 1,636.
+
+---
+
 ## [0.89.2] - 2026-10-30
 
 ### Ten handlers no lint could see, and a check that would have seen them — RFC 159

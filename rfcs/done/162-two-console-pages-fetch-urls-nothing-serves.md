@@ -1,20 +1,52 @@
 # RFC 162 — Two console pages fetch URLs nothing serves
 
-**Status.** **Accepted** 2026-10-30. **Next to dispatch — patch**: two wrong URLs
-and a check, the same shape that made RFC 159's deletions-plus-a-gate a patch.
-**0.89.2 is cut, so this is unblocked.** Patch number assigned at dispatch,
-not here — pinning one to an undispatched RFC only creates churn when the order
-changes, which it has once already.
-**Complete 2026-10-30** (`c895e1b`): both URLs fixed and proven live against
-fresh owner/tenant data, `E5` built with its mandatory fires/does-not-fire
-shape and the false-positive trap demonstrably avoided, all sixteen `.json`
-fetches re-checked by the check itself, and `TenancyFormPlaceholder` deleted.
-Review: `.git-exclude/reviewed/162-implementation-review.md`.
-**Evidence: `exercised`**, except the client-side-navigation sub-claim of §3
-step 2, which is **`observed`** — the browser was not reachable, and the
-Playwright suite could not substitute because it deliberately does not
+**Status.** **Done** — **shipped v0.89.3**. Two client-rendered console pages
+built a JSON fetch URL one segment short of the route that serves it, so
+`:slug`/`:tid` captured the whole segment including the literal `.json` suffix
+and the request matched the wrong, shorter route instead of 404ing. Both now
+point at the `…/detail.json` routes that exist. `route-contracts-check.sh`
+gained an **E5** section — the inverse of RFC 159's E4 — which fails the build
+when a `.json` URL the frontend fetches resolves to no route, or resolves only
+by being swallowed by a capture.
+**Evidence**: **`exercised`** — live against `wrangler dev` + local D1 with a
+real owner (magic-link signup), a tenant created through
+`POST /api/v1/tenants`, a minted user-bound admin token and a granted
+`role-tenant-admin` assignment: before, `/admin/t/<slug>.json` answered **404**
+(`tenant not found`) and `/admin/tenancy/tenants/<tid>.json` answered **200**
+with the Leptos bootstrap shell, which failed to parse as JSON; after, both
+answer **200** with the shape each page expects. **E5: 16 `.json` fetches
+scanned, 16 resolved exactly, 0 swallowed, 0 unresolved**, with the identity
+asserted on every run. Three fires/does-not-fire probes re-run independently at
+review: the mandatory capture-swallowed shape (`/admin/t/{slug}.json` reported
+as swallowed by `/admin/t/:slug`, coverage moving 16 → 15 + 1), an unresolved
+`.json` (17 = 16 + 1), and the false-positive trap — an already-correct literal
+route is never misreported as swallowed by an unrelated capture, because
+same-length candidates are ranked fewest-captures-first. One host witness per
+page for what each failure path shows the caller, the asymmetry between them
+reported rather than smoothed over. `TenancyFormPlaceholder`, a third
+broken-URL component with no caller, deleted rather than exempted. Host tests
+**1,636** passed / 0 failed over 12 `test result` lines (**+6**, the new
+witnesses) after `--features cesauth-frontend/csr` was added to the canonical
+command so they compile at all — verified at review to trade nothing: `csr` is
+purely additive and the 61 `admin::` view tests run identically with and
+without it. `migration_chain` **35**, manifest **13** workflows, Playwright
+**20/20**, bundle **882,900 B** gzip at 33.7% of budget.
+**`observed`, not `exercised`, for one sub-claim**: the client-side-navigation
+step of §3 could not be performed — the browser was not reachable, and the
+Playwright suite cannot substitute because it deliberately does not
 authenticate (`e2e/specs/support.ts`; the console screens arrive with RFC 131
-R3). **Patch. Ready to cut.**
+R3). A direct `curl` of the exact URL plus a code read stood in, and the
+implementation cycle proposed the weaker term itself rather than claiming the
+browser step had run.
+
+**Two claims in this RFC were corrected by the cycle that implemented it**, and
+both corrections are in §1/§2 above: only `operator/tenancy.rs` swallows its
+failure with `.ok()` — `tenant_admin/overview.rs` surfaced `Err("http 404")`
+and rendered an error — and the architect's predicted status codes were wrong.
+The tier stood on the other page's reason. **Third RFC in a row in which a
+property the architect stated did not survive re-derivation**, which is §6's own
+subject arriving inside §2.
+
 **Tier.** **P1.** One of the two is the **tenant-admin overview** — the first
 page a tenant's owner lands on, on the console RFC 158 spent four cycles making
 reachable for the first time in the project's history. It asks for a URL no
