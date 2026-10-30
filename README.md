@@ -66,17 +66,26 @@ lives in the book:
 
 ### Deploy it
 
-Each step owns its own chapter — read this list for the order, then
-follow the link for the procedure:
+This is the spine, in the order you actually do it — not every step
+in [Migrating from local to production](docs/src/deployment/production.md),
+just what you cannot safely skip. Follow each link for the procedure:
 
-1. **Pre-flight** — [Pre-flight checklist](docs/src/deployment/preflight.md)
-2. **`wrangler deploy`** — [Migrating from local to production, Step 9](docs/src/deployment/production.md#step-9--deploy)
-3. **Secrets** — [Secrets & environment variables](docs/src/deployment/secrets.md)
-4. **Migrations `--remote`** — [Migrating from local to production, Step 2](docs/src/deployment/production.md#step-2--apply-migrations-remotely)
-5. **First admin** — [Migrating from local to production, Step 4](docs/src/deployment/production.md#step-4--set-production-secrets) (`ADMIN_API_KEY`)
-6. **First OIDC client** — [Migrating from local to production, Step 5](docs/src/deployment/production.md#step-5--register-your-oidc-clients)
-7. **Observability** — [Observability](docs/src/deployment/observability.md)
-8. **Day-2** — [Day-2 operations runbook](docs/src/deployment/runbook.md)
+1. **Pre-flight, then provision resources** — [Pre-flight checklist](docs/src/deployment/preflight.md),
+   then [provision D1 / KV / R2 / Durable Objects](docs/src/deployment/production.md#step-1--provision-real-resources)
+2. **Migrations `--remote`** — [production.md, Step 2](docs/src/deployment/production.md#step-2--apply-migrations-remotely)
+3. **Secrets**, including the first admin's `ADMIN_API_KEY` — [Secrets & environment variables](docs/src/deployment/secrets.md) ([production.md, Step 4](docs/src/deployment/production.md#step-4--set-production-secrets))
+4. **Confirm `WRANGLER_LOCAL` is off** — [production.md, Step 6](docs/src/deployment/production.md#step-6--confirm-wrangler_local-is-off) — a classic footgun if skipped, not optional
+5. **Configure Cron Triggers** — [Cron Triggers](docs/src/deployment/cron-triggers.md)
+6. **`wrangler deploy`** — [production.md, Step 9](docs/src/deployment/production.md#step-9--deploy)
+7. **Register your first OIDC client** — [production.md, Step 5](docs/src/deployment/production.md#step-5--register-your-oidc-clients) — comes *after* deploy here, even though the chapter numbers it Step 5; the chapter's own Step 5 curls a URL that isn't live until Step 9, a pre-existing inconsistency this list does not repeat (tracked for a future documentation-sequencing pass)
+8. **Observability** — [Observability](docs/src/deployment/observability.md)
+9. **Day-2** — [Day-2 operations runbook](docs/src/deployment/runbook.md)
+
+Not on this list but in the chapter: configuring Magic Link mail
+delivery (Step 7 — only matters if you rely on the Magic Link
+fallback rather than passkeys) and a local `cargo audit` dependency
+check (Step 8 — already run on every push by CI). Real steps, just
+not ones a first deploy breaks without.
 
 ---
 
