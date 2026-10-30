@@ -6030,7 +6030,7 @@ design surface to deserve its own release:
 
 The version numbers shown in those entries were retroactively
 re-aligned with cesauth's
-[versioning policy](../ROADMAP.md#versioning-policy)
+[versioning policy](../../ROADMAP.md#versioning-policy)
 (introduced at 0.18.0 / formerly 0.18.0).
 
 Each "minor-shaped" change — new HTTP route surface, new schema
@@ -6122,7 +6122,7 @@ following the policy without further re-alignment.
   a fresh deployment with only that secret set still has console
   access at the Super tier. Additional principals live in the new
   `admin_tokens` D1 table (SHA-256-hashed, never plaintext). See
-  [Admin Console — Expert chapter](docs/src/expert/admin-console.md).
+  [Admin Console — Expert chapter](../src/expert/admin-console.md).
 
 - **Honest edge-native metrics.** The dashboard is deliberately
   truthful about what a Worker can and cannot see at runtime. D1 row
@@ -6382,7 +6382,7 @@ Before cesauth's first production deploy:
    `ADMIN_API_KEY` per environment; do not reuse local-dev values.
 
 See
-[Deployment → Migrating from local to production](docs/src/deployment/production.md)
+[Deployment → Migrating from local to production](../src/deployment/production.md)
 for the full release-gate walkthrough.
 
 ---
@@ -6398,7 +6398,7 @@ Each future release will have sections in this order:
 - **Removed** — gone this release.
 - **Fixed** — bugs fixed.
 - **Security** — vulnerability fixes or security-relevant posture
-  changes. See also [.github/SECURITY.md](.github/SECURITY.md).
+  changes. See also [.github/SECURITY.md](../../.github/SECURITY.md).
 
 [Unreleased]: https://github.com/cesauth/cesauth/compare/v0.2.1...HEAD
 [0.2.1]:      https://github.com/cesauth/cesauth/releases/tag/v0.2.1

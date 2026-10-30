@@ -46,6 +46,20 @@ SCAN_PATHS=("${REPO_ROOT}/crates" "${REPO_ROOT}/docs" "${REPO_ROOT}/README.md" "
 # A future change that adds one of these to SCAN_PATHS should move it out of
 # this list and into the line above.
 #
+# RFC 028 archive expansion, 2026-10-31: six patterns gained
+# `docs/changelog-archive/` in their exclude_regex when the CHANGELOG archive
+# grew from v0.49 to v0.84. The root CHANGELOG.md is out of SCAN_PATHS by
+# omission (see below), so archiving moves historical text from a file this
+# script never reads into a directory it does — and the six entries that fired
+# were all *records of removing* the very phrase they matched. The archive is
+# immutable history by RFC 028's own policy, so a present-tense claim check over
+# it could only ever be satisfied by editing history. That is the same
+# reasoning already carried by the patterns at the RFC 114 rename block, now
+# applied to six more. **It is a coverage reduction and it is stated here**:
+# those six no longer examine the archive, and this registry prints no
+# per-pattern coverage figure — a gap recorded for RFC 164's cycle, which is
+# already adding checks to this script.
+#
 # Within docs/, individual PATTERNS entries additionally exclude specific
 # historical-record subpaths (ADRs, the changelog archive) via their
 # exclude_regex field — see the PATTERNS comment block below. That is a
@@ -74,14 +88,14 @@ SCAN_PATHS=("${REPO_ROOT}/crates" "${REPO_ROOT}/docs" "${REPO_ROOT}/README.md" "
 # ---------------------------------------------------------------------------
 declare -a PATTERNS=(
     # README/intro claim: "all land in R2" — false since v0.32.0.
-    "all land in R2	present-tense audit-to-R2 claim (v0.32.0 moved to D1, ADR-010)"
+    "all land in R2	present-tense audit-to-R2 claim (v0.32.0 moved to D1, ADR-010)	docs/changelog-archive/"
     # Binding name removed in v0.32.0.
-    "R2_AUDIT	R2_AUDIT binding removed in v0.32.0"
+    "R2_AUDIT	R2_AUDIT binding removed in v0.32.0	docs/changelog-archive/"
     # OTP field naming: v0.50.3 renamed code_plaintext → delivery_payload (RFC 008).
     # Note: the audit/tests.rs denylist file itself references "code_plaintext" as a
     # string to detect — that's intentional and excluded below via grep's -l vs -n.
     # Pattern is specific enough: `code_plaintext:` (field declaration) not a string literal.
-    "pub code_plaintext	renamed to delivery_payload in v0.50.3 (RFC 008); field should not re-appear"
+    "pub code_plaintext	renamed to delivery_payload in v0.50.3 (RFC 008); field should not re-appear	docs/changelog-archive/"
     # README claim corrected in v0.52.1 (RFC 012).
     #
     # RFC 129 C1-129: excluded on ROADMAP.md. RFC 129 D4 added ROADMAP.md to
@@ -97,9 +111,9 @@ declare -a PATTERNS=(
     # historical entries from the planning ones. Every *other* pattern in
     # this file still scans ROADMAP.md in full; only these five are
     # exempted (see the crates/worker block below for the other four).
-    "No management GUI	README claim corrected in v0.52.1 (RFC 012)	ROADMAP\.md"
+    "No management GUI	README claim corrected in v0.52.1 (RFC 012)	ROADMAP\.md|docs/changelog-archive/"
     # RFC 039: OTP must never appear in audit reason (fixed in v0.50.3 / v0.54.1).
-    "dev-delivery handle=	OTP dev-delivery format must not appear in non-runbook docs (RFC 030/039)"
+    "dev-delivery handle=	OTP dev-delivery format must not appear in non-runbook docs (RFC 030/039)	docs/changelog-archive/"
     # RFC 039: nodejs_compat removed in RFC 038 — catch if it re-appears in wrangler.toml
     # (docs/investigations that reference it by name are exempt)
     # Handled by checking wrangler.toml directly rather than pattern scan
@@ -176,7 +190,7 @@ declare -a PATTERNS=(
     # installs its latest release. Anchored at end of line, so it misses both
     # pinned orderings (`--version ... --locked`, `--locked --version ...`) and
     # prose quoting the old command mid-sentence (RFC 138 §11.5, verified).
-    "install trunk( --locked)?\s*$	Trunk install without --version; pin it (RFC 131 C1-R5, DEPENDENCIES.md)"
+    "install trunk( --locked)?\s*$	Trunk install without --version; pin it (RFC 131 C1-R5, DEPENDENCIES.md)	docs/changelog-archive/"
     # wrangler (RFC 138 D2): the root package.json must pin wrangler exactly. A
     # range (^, ~, >) lets `npm install` move it and the lockfile moves with it.
     # `npx wrangler` itself is rejected in workflows by the next rule (RFC 138

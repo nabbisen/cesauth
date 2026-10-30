@@ -85,7 +85,7 @@ full narrative is in the [archive](docs/changelog-archive/README.md).
 | i18n-2 continuation | v0.47.0 | [archive](docs/changelog-archive/CHANGELOG-0.41-to-0.49.md) |
 | Audit retention policy (ADR-014 §Q3) | v0.48.0 | [archive](docs/changelog-archive/CHANGELOG-0.41-to-0.49.md) |
 | D1 session-index repair (ADR-012 §Q1.5) | v0.49.0 | [archive](docs/changelog-archive/CHANGELOG-0.41-to-0.49.md) |
-| Per-client introspection audience (ADR-014 §Q1) | v0.50.0 | [#v0500](CHANGELOG.md#0500) |
+| Per-client introspection audience (ADR-014 §Q1) | v0.50.0 | [archive](docs/changelog-archive/CHANGELOG-0.50-to-0.59.md) |
 | OTP audit fix + introspect aud correctness (RFC 008/009) | v0.50.3 | [CHANGELOG](CHANGELOG.md) |
 | MagicLinkMailer port + provider adapters (RFC 010) | v0.51.0 | [CHANGELOG](CHANGELOG.md) |
 | WebAuthn typed errors + proptest (RFC 003/004) | v0.51.1 | [CHANGELOG](CHANGELOG.md) |

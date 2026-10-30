@@ -1,6 +1,9 @@
 # RFC 028: CHANGELOG / ROADMAP volume policy — historical archive split, summary-style maintenance
 
-**Status**: Implemented
+**Status**: Implemented — **partially, and the gap is recorded in §Enforcement
+(2026-10-31) at the end of this file.** Step 5's CI budget check, which this
+RFC specifies in full as runnable bash, was **never built**, and the archive
+went un-run for **forty minor versions**.
 **ROADMAP**: Internal repository hygiene — `CHANGELOG.md` (511 KB) and `ROADMAP.md` (211 KB) bloat
 **ADR**: N/A — repository convention; small enough to live inline
 **Severity**: **P2 — both files are large enough to slow editor open, search, and human reading; the recent-history portion most readers want is buried under hundreds of historical lines**
@@ -136,7 +139,7 @@ The root file keeps:
   ```markdown
   | Area | Shipped at | Detail |
   |---|---|---|
-  | Five-crate workspace + ports/adapters | v0.1.0 | [archive](./docs/changelog-archive/CHANGELOG-0.1-to-0.30.md#010) |
+  | Five-crate workspace + ports/adapters | v0.1.0 | [archive](../../docs/changelog-archive/CHANGELOG-0.1-to-0.30.md#010) |
   | OIDC discovery + JWKS | v0.1.0 | [archive](.../CHANGELOG-0.1-to-0.30.md#010) |
   | TOTP MFA (full track) | v0.26-v0.30 | [archive](.../CHANGELOG-0.1-to-0.30.md#totp-track) |
   | RFC 7662 introspection | v0.38.0 | [archive](.../CHANGELOG-0.31-to-0.40.md#0380) |
@@ -327,3 +330,78 @@ many full project READMEs.
 - The "Planned" section of ROADMAP and "Out of
   scope" stay inline. Only the "Shipped" table
   is touched.
+
+---
+
+## Enforcement — recorded 2026-10-31
+
+**This RFC was right. Its gate was never built, and nobody noticed for forty
+minor versions.** Measured before any change was made:
+
+| | RFC 028's rule | Actual, 2026-10-31 |
+|---|---|---|
+| Root `CHANGELOG.md` | ~5 minor versions, ≤ **80 KB** | **40** minors, 83 entries, **318 KB** |
+| Root `ROADMAP.md` | ≤ **40 KB** | **134 KB**, 61 shipped rows inline |
+| CHANGELOG archive | rolling | stopped at **v0.49** |
+| ROADMAP archive | rolling | stopped at **v0.52** |
+| §Step 5's CI budget check | specified here, in full, as runnable bash | **does not exist** in `scripts/` or `.github/` |
+
+**The last row is the finding.** This document contains a working
+`CHANGELOG_BUDGET_BYTES` / `ROADMAP_BUDGET_BYTES` check that exits 1, and
+`Status: Implemented` was recorded anyway. The policy, the tool
+(`scripts/changelog-archive-split.sh`, which is idempotent and refuses to split
+a file already under budget) and the specification of the gate were all
+delivered; only the thing that would have failed when the policy stopped being
+true was not. **That is [RFC 151](../accepted/151-done-cannot-distinguish-shipped-from-working.md)'s
+subject with a measured instance**, and it is the fifth member of a pattern —
+[RFC 163](../accepted/163-two-route-extractors-two-blind-spots.md),
+[RFC 164](../accepted/164-the-link-sweep-rfc-000-mandates-is-unenforced.md),
+[RFC 165](../accepted/165-the-gates-exemption-lists-are-unvalidated.md),
+[RFC 166](../accepted/166-reachability-stops-at-the-crate-boundary.md) — in
+which a rule was written, the mechanism sometimes built, and nothing failed when
+it stopped holding.
+
+### What was done, 2026-10-31
+
+**The CHANGELOG half, in one pass.** `changelog-archive-split.sh` run four
+times to match the existing ~10-minors-per-bucket convention, creating
+`CHANGELOG-0.50-to-0.59`, `-0.60-to-0.69`, `-0.70-to-0.79` and
+`-0.80-to-0.84`. **Root: 318 KB → 42 KB**, the most recent five minors
+(v0.85–v0.89), inside budget. Verified no history was lost or duplicated: the
+set of `## [version]` entries across root plus archives is **byte-identical to
+the 83 before the split**.
+
+**Three defects in the tool, found by running it and fixed by hand:**
+
+1. **The archive README index is not updated.** Its `sed` uses `|` as both
+   delimiter and replacement text, so the substitution is invalid and the
+   failure is swallowed by `|| true`. The index still said *"Current releases
+   (v0.50.0 and newer) are in the root"* after four splits.
+2. **Successive runs append a duplicate `## Older releases` section.** Four runs
+   left four, each naming a different version.
+3. **Relocated content keeps repo-root-relative links.** Moving a block from
+   `CHANGELOG.md` into `docs/changelog-archive/` silently breaks every
+   `](docs/…)`, `](rfcs/…)` and `](.github/…)` link inside it. **The original
+   2026 migration had the same defect** — four such links had been broken in
+   `CHANGELOG-0.1-to-0.30.md` ever since. All five newly broken and all four
+   pre-existing were rewritten relative to the archive directory.
+
+**On "archive files are never edited after creation":** rewriting a relocated
+file's path prefixes is **completing the move, not editing history**. The prose
+is byte-identical; only link targets changed. A policy of immutability that
+requires a broken path to stay broken is not what that rule is for.
+
+### Outstanding
+
+- **The ROADMAP half is not done.** 134 KB against its own 40 KB budget, 61
+  shipped rows inline, archive stopped at v0.52. There is **no script** for it,
+  and the convention is *summary + link* rather than a verbatim move — so each
+  row has to be condensed, which is judgement rather than a shell loop. Not
+  improvised at 134 KB; scoped separately.
+- **The gate specified in §Step 5 still does not exist.** Folded into
+  [RFC 164](../accepted/164-the-link-sweep-rfc-000-mandates-is-unenforced.md)'s
+  cycle, which is already adding a check to `scripts/drift-scan.sh` for the same
+  reason: a documented rule with no enforcement. **Gate the byte budget, not the
+  version count** — bytes are what caused the pain, the constant already exists
+  in both the RFC and the script, and §Background's second complaint ("recent
+  history is buried") is largely answered by reverse-chronological order alone.

@@ -35,7 +35,7 @@ were unambiguous and are repaired in the commit that proposes this RFC**:
 |---|---|---|
 | Folder-move rot | **9** | RFC **142**, **153**, **154**, **155** all moved to `done/`; nine inbound links still point at `../proposed/` or `../accepted/` |
 | Wrong relative depth | **2** | `done/001`'s ADR-008 link and `done/028`'s changelog-archive link are each one `../` short, so both resolve inside `rfcs/` |
-| Illustrative example links | **14** | all inside `rfcs/done/000-rfc-lifecycle-policy.md` (7) and `rfcs/archive/019-rfc-lifecycle-policy.md` (7) — §4's fork |
+| Illustrative example links | **14** → **17** | `rfcs/done/000-rfc-lifecycle-policy.md` (7), `rfcs/archive/019-rfc-lifecycle-policy.md` (7), and — found 2026-10-31 — **`rfcs/done/028-...` (3)**, which writes path elisions as `.../CHANGELOG-X.md` inside worked examples. **Three documents, not two** — §4's fork covers all of them |
 
 **The nine did not merely break navigation; they misreported status.** A link
 reading `../proposed/153-an-invitation-grants-nothing.md` after RFC 153 shipped
@@ -102,6 +102,33 @@ arriving through the links rather than through a Status field.
    scope**: they fail for reasons that are not the repository's, and a gate that
    goes red because someone else's site is down is a gate people learn to
    ignore.
+
+## 3b. Also in this cycle: RFC 028's root-file byte budgets
+
+Added 2026-10-31. Same script, same workflow, same thesis — a documented rule
+with no enforcement — so it rides here rather than earning a sixth RFC.
+
+[RFC 028](../done/028-changelog-roadmap-volume-policy.md) sets root-file budgets
+of **80 KB** for `CHANGELOG.md` and **40 KB** for `ROADMAP.md`, and **specifies
+the CI check in full, as runnable bash, in its own §Step 5.** That check was
+never built. By 2026-10-31 the CHANGELOG had reached **318 KB** — forty minor
+versions inline against a five-version rule — and the ROADMAP **134 KB**. The
+CHANGELOG half was repaired that day; see RFC 028's §Enforcement.
+
+**Requirement:** a section in `scripts/drift-scan.sh` that fails when either
+root file exceeds its budget, naming the file, the size, the budget and the
+remedy (`scripts/changelog-archive-split.sh` for the CHANGELOG). **Gate the
+bytes, not the version count** — bytes are the measurable harm, and the
+constants already exist in both RFC 028 §Step 5 and the script's `BUDGET_KB`.
+
+**One honesty constraint:** `ROADMAP.md` is **over budget today** and its repair
+is not scheduled (RFC 028 §Outstanding — there is no script, and the convention
+is summary-plus-link rather than a verbatim move). So a ROADMAP check added now
+fails the build immediately. **Add the CHANGELOG check live, and the ROADMAP
+check behind a named, dated entry that says it is waiting on that repair** — and
+after [RFC 165](./165-the-gates-exemption-lists-are-unvalidated.md) §3, that
+entry is itself subject to staleness checking, which is the right outcome: it
+cannot be forgotten.
 
 ## 4. The fork: what to do about the two lifecycle documents' 14 example links
 
