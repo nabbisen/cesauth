@@ -1,6 +1,13 @@
 # RFC 168 — The release rules are written and unenforced
 
-**Status.** **Proposed** 2026-10-31. Awaiting nabbisen's acceptance.
+**Status.** **Accepted** 2026-10-31. **Patch.** **Sequenced immediately after
+RFC 164** — both add sections to `scripts/drift-scan.sh`, and these two checks
+guard **every remaining cut** in the authorized sequence, so catching a mistake
+on 0.90.0 is worth more than catching one on 0.93.0. Its §4 rulings are already
+in effect and recorded in `docs/src/expert/contributing.md` §Cutting a release;
+only the three checks remain to build. **Soft dependency, not blocking:**
+RFC 165 §3 brings §3.1's historical exemption under staleness checking, after
+which the exemption cannot quietly grow.
 **Tier.** P2. Nothing is broken. Three rules the project has already written
 down have nothing that fails when they stop being true.
 **Size.** Small — three checks in one existing script, plus two rubric

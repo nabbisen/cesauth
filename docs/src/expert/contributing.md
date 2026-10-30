@@ -339,7 +339,7 @@ A release that mixes fixes and new capability takes the **higher** level.
   changed — so every rule in this section is honoured by hand. Across tags from
   0.18.0, five patch releases added seventeen registered routes
   (`0.79.1`–`0.79.6`, during RFC 115 Phase C); no patch has ever added a
-  migration, and the MSRV has never moved. [RFC 168](https://github.com/nabbisen/cesauth/blob/main/rfcs/proposed/168-the-release-record-does-not-reconcile.md)
+  migration, and the MSRV has never moved. [RFC 168](https://github.com/nabbisen/cesauth/blob/main/rfcs/accepted/168-the-release-record-does-not-reconcile.md)
   proposes the three checks.
 
 ## Publishing to crates.io
