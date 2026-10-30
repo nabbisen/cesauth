@@ -13,6 +13,27 @@ does not have.
 longer owns them. Noted here because an accepted RFC carrying scope that another
 release already did is how a queue stops being trustworthy.
 
+**§4.1's screen does not exist, and the route answers 200 with a 404 page**
+(found 2026-10-30 while scoping 0.90). `GET /admin/console/clients` is
+registered and `clients::list` returns the bare Leptos shell — but the CSR
+router has **no route for that path at all** (`grep -c 'console/clients'
+crates/frontend/src/app.rs` → **0**), and `app.rs:57`'s
+`<Routes fallback=|| view! { <NotFound/> }>` renders *"Page not found"* with a
+*"Return to sign-in"* link. **So the product's primary integration action
+answers `200` and shows a 404 page to an operator who is already signed in**,
+and nothing in the frontend links to it — the console overview's navigation does
+not list it either.
+
+Two things in its favour, both checked before this was written: `clients.rs`'s
+module doc is **honest** (*"the Leptos shell (console screen: cycle 2)"*), so
+unlike [RFC 161](./161-six-operator-pages-promise-data-and-render-none.md)'s six
+this file claims nothing it lacks; and the six backend routes are complete,
+gated on `ViewClients`/`ManageClients`, with `clients.json` serving real data
+since v0.85.0. **Cycle 2 is a screen on a finished backend**, not a programme —
+which is why it is one minor on its own. It is worse than RFC 161's six in one
+respect: a placeholder promising data is a promise, and a `200` rendering
+*"Page not found"* is a contradiction.
+
 **§4.1's console screen is also where [RFC 161](./161-six-operator-pages-promise-data-and-render-none.md)
 §9 lands** — that re-review found the console's six read surfaces were built,
 shipped and disconnected, so cycle 2's screen should be sequenced with
