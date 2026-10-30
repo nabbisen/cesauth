@@ -1,16 +1,8 @@
 //! `GET /admin/console/cost` — Cost Dashboard (§4.2).
 //!
-//! Snapshots every tracked service and renders a per-service trend
-//! table. Partial failure is tolerated: if one service's metrics read
-//! fails, the others still render with an `error` note in their slot
-//! rather than bringing the whole page down (§11).
-//!
-//! Why snapshot on every view: the dashboard is a low-traffic surface
-//! (admin-only), so the cost of sampling D1 `COUNT(*)` + R2 `list()`
-//! on each view is trivial compared to running a separate cron. It
-//! also gives operators a live number instead of a cached one.
-//! `CostSnapshotRepository` dedupes by hour bucket so repeated views
-//! do not create repeated rows.
+//! Serves the Leptos shell only. The per-service snapshot/trend table
+//! this doc used to describe was never built into this handler — no
+//! `CostSnapshotRepository` read happens here. See RFC 161.
 
 use worker::{Request, Response, Result, RouteContext};
 

@@ -4,7 +4,7 @@
 //!
 //! | Route                                    | What it does                                       |
 //! |------------------------------------------|----------------------------------------------------|
-//! | `GET  /admin/console/tokens`             | HTML list of non-disabled rows in `admin_tokens`.  |
+//! | `GET  /admin/console/tokens`             | Leptos shell only — no list renders. See RFC 161.  |
 //! | `GET  /admin/console/tokens/new`         | HTML form for creating a new token.                |
 //! | `POST /admin/console/tokens`             | Mint plaintext, hash, insert, show plaintext once. |
 //! | `POST /admin/console/tokens/:id/disable` | Flip `disabled_at` on a row.                       |

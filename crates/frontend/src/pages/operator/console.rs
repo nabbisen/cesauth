@@ -73,7 +73,8 @@ pub fn ConsoleAudit() -> impl IntoView {
         <main lang="ja">
             <h1>"監査ログ"</h1>
             <p><a href="/admin/console">"← コンソール"</a></p>
-            <p>"監査ログの検索・表示機能はここに表示されます。"</p>
+            <p>"検索・表示機能は未実装です(RFC 161)。本番環境でのログ照会には"
+               <code>"wrangler d1 execute --remote"</code>" を使用してください。"</p>
         </main>
     }
 }
@@ -125,7 +126,7 @@ pub fn ConsoleSafety() -> impl IntoView {
     view! { <main lang="ja">
         <h1>"安全性チェック"</h1>
         <p><a href="/admin/console">"← コンソール"</a></p>
-        <p>"バケット検証の結果がここに表示されます。"</p>
+        <p>"検証結果の一覧表示は未実装です(RFC 161)。"</p>
     </main> }
 }
 
@@ -135,7 +136,7 @@ pub fn ConsoleCost() -> impl IntoView {
     view! { <main lang="ja">
         <h1>"コスト"</h1>
         <p><a href="/admin/console">"← コンソール"</a></p>
-        <p>"テナントごとのコストスナップショットがここに表示されます。"</p>
+        <p>"テナント別コストスナップショットの表示は未実装です(RFC 161)。"</p>
     </main> }
 }
 
@@ -145,7 +146,7 @@ pub fn ConsoleAlerts() -> impl IntoView {
     view! { <main lang="ja">
         <h1>"アラート"</h1>
         <p><a href="/admin/console">"← コンソール"</a></p>
-        <p>"オペレーターアラートがここに表示されます。"</p>
+        <p>"アラート一覧は未実装です(RFC 161)。"</p>
     </main> }
 }
 
@@ -155,7 +156,7 @@ pub fn ConsoleConfig() -> impl IntoView {
     view! { <main lang="ja">
         <h1>"設定"</h1>
         <p><a href="/admin/console">"← コンソール"</a></p>
-        <p>"ライブ設定の確認・適用はここから行います。"</p>
+        <p>"ライブ設定の確認・適用画面は未実装です(RFC 161)。"</p>
     </main> }
 }
 
@@ -165,6 +166,7 @@ pub fn ConsoleAuditChain() -> impl IntoView {
     view! { <main lang="ja">
         <h1>"監査チェーン検証"</h1>
         <p><a href="/admin/console/audit">"← 監査ログ"</a></p>
-        <p>"チェーンの整合性検証をここから実行できます。"</p>
+        <p>"検証状況の表示画面は未実装です(RFC 161)。日次cronによる検証と"
+           "再検証自体は動作していますが、このページから実行する手段はありません。"</p>
     </main> }
 }

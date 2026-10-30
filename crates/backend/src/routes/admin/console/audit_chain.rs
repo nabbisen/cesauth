@@ -4,8 +4,13 @@
 //!
 //! Phase 2 of ADR-010 (v0.33.0). The cron at 04:00 UTC runs an
 //! incremental verification daily and writes the outcome to the
-//! KV checkpoint store. This handler renders that outcome plus
-//! a button for an immediate full re-walk.
+//! KV checkpoint store. **`GET /admin/console/audit/chain` serves the
+//! Leptos shell only** — rendering that outcome and a button for an
+//! immediate full re-walk is the part this doc used to claim and the
+//! handler doesn't do. See RFC 161.
+//!
+//! `POST /admin/console/audit/chain/verify` is real and unaffected by
+//! the above, and the rest of this comment describes it:
 //!
 //! The chain status is read-only so any role with
 //! `AdminAction::ViewConsole` is allowed. The verify-now button

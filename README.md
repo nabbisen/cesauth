@@ -12,6 +12,11 @@
 [![Dependency Status](https://deps.rs/crate/cesauth/latest/status.svg)](https://deps.rs/crate/cesauth)
 [![License](https://img.shields.io/github/license/nabbisen/cesauth)](https://github.com/nabbisen/cesauth/blob/main/LICENSE)
 
+> The three badges above point at a **`0.0.0` name reservation**, not a
+> published library — none of this workspace's seven crates are published
+> (`publish = false`). See [Publishing to
+> crates.io](docs/src/expert/contributing.md#publishing-to-cratesio).
+
 ---
 
 ## Design principles
@@ -29,15 +34,18 @@
 - **Accessibility baked in.** Semantic HTML, `aria-live`, keyboard-navigable
   forms.
 - **Audit everything sensitive.** Authentication, admin, failures, revocations —
-  all land in D1's hash-chained `audit_events` table (ADR-010). Operators forward
-  to external SIEM via Cloudflare Logpush.
+  all land in D1's hash-chained `audit_events` table (ADR-010). cesauth does not
+  push these rows to an external SIEM today — see
+  [Observability](docs/src/deployment/observability.md).
 
 ---
 
 ## Quick start
 
-cesauth runs against a local Cloudflare simulation (Miniflare) with
-no network-side setup. In short:
+### Run it locally
+
+This is the contributor / evaluation loop — a local Cloudflare
+simulation (Miniflare), no network-side setup:
 
 ```sh
 # Host-only domain tests — no Cloudflare needed:
@@ -55,6 +63,20 @@ OIDC Authorization Code + PKCE → refresh rotation → revocation —
 lives in the book:
 
 **→ [docs/src/beginner/first-oidc-flow.md](docs/src/beginner/first-oidc-flow.md)**
+
+### Deploy it
+
+Each step owns its own chapter — read this list for the order, then
+follow the link for the procedure:
+
+1. **Pre-flight** — [Pre-flight checklist](docs/src/deployment/preflight.md)
+2. **`wrangler deploy`** — [Migrating from local to production, Step 9](docs/src/deployment/production.md#step-9--deploy)
+3. **Secrets** — [Secrets & environment variables](docs/src/deployment/secrets.md)
+4. **Migrations `--remote`** — [Migrating from local to production, Step 2](docs/src/deployment/production.md#step-2--apply-migrations-remotely)
+5. **First admin** — [Migrating from local to production, Step 4](docs/src/deployment/production.md#step-4--set-production-secrets) (`ADMIN_API_KEY`)
+6. **First OIDC client** — [Migrating from local to production, Step 5](docs/src/deployment/production.md#step-5--register-your-oidc-clients)
+7. **Observability** — [Observability](docs/src/deployment/observability.md)
+8. **Day-2** — [Day-2 operations runbook](docs/src/deployment/runbook.md)
 
 ---
 
@@ -93,8 +115,9 @@ split by audience:
   CSRF model, operational logging, Turnstile integration, security
   considerations.
 - **[Deployment](docs/src/deployment/wrangler.md)** — Wrangler
-  configuration, secrets handling, migrating from local to
-  production.
+  configuration, secrets handling, and
+  [migrating from local to production](docs/src/deployment/production.md)
+  (with its own [pre-flight checklist](docs/src/deployment/preflight.md)).
 - **[Appendix](docs/src/appendix/endpoints.md)** — endpoint
   reference, error codes, glossary.
 

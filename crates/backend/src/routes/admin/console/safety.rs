@@ -1,8 +1,12 @@
 //! Data Safety Dashboard (§4.3).
 //!
-//! `GET /admin/console/safety` renders the per-bucket safety report.
-//! `POST /admin/console/safety/:bucket/verify` is the one cheap write
-//! operation — a Security+ operator clicks "re-verified" after checking
+//! `GET /admin/console/safety` serves the Leptos shell only — the
+//! per-bucket safety report this doc used to describe was never built
+//! into this handler. See RFC 161.
+//!
+//! `POST /admin/console/safety/:bucket/verify` is real and unaffected
+//! by the above: it is the one cheap write operation — a Security+
+//! operator clicks "re-verified" after checking
 //! the bucket's config in the Cloudflare dashboard, stamping
 //! `last_verified_at`/`last_verified_by` without touching the attested
 //! values. The console audits the stamp.

@@ -1,14 +1,11 @@
 //! `GET /admin/console` — Overview page (§4.1).
 //!
-//! Rolls up:
-//!   * alert counts
-//!   * recent (last 5) safety alerts
-//!   * last 10 audit events
-//!   * the three most-recently-verified buckets
-//!
-//! All visible to any authenticated role. Cost alerts are NOT computed
-//! here (they'd require a snapshot per service — see the Alert Center
-//! for the full cross-service roll-up).
+//! Serves the Leptos shell. `GET /admin/console.json` (`page_json`
+//! below) returns only a CSRF token — the rollup this doc used to
+//! describe (alert counts, recent safety alerts, recent audit events,
+//! recently-verified buckets) was never built into either handler. The
+//! frontend component renders a nav menu and a bare "is the JSON
+//! endpoint reachable" check, not any of the above. See RFC 161.
 
 use worker::{Request, Response, Result, RouteContext};
 

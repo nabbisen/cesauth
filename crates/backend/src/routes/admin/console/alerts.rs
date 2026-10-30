@@ -1,8 +1,8 @@
 //! `GET /admin/console/alerts` — Alert Center (§4.6).
 //!
-//! Combines every alert source: bucket safety (stale attestations,
-//! public buckets) plus cost-threshold breaches across all services.
-//! Newest first.
+//! Serves the Leptos shell only. The read surface this doc used to
+//! describe (combining bucket-safety and cost-threshold alerts) was
+//! never built into this handler — see RFC 161.
 
 use worker::{Request, Response, Result, RouteContext};
 

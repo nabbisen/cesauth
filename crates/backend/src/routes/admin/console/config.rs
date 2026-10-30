@@ -1,8 +1,10 @@
 //! Configuration Review (§4.5).
 //!
-//! `GET /admin/console/config` renders the attested bucket-safety rows
-//! and the current threshold values — the settings every operator
-//! should periodically eyeball.
+//! `GET /admin/console/config` serves the Leptos shell only — the
+//! attested bucket-safety rows and threshold values this doc used to
+//! describe were never built into this handler. See RFC 161.
+//!
+//! Every POST/form handler below is real and unaffected by the above:
 //!
 //! `POST /admin/console/config/:bucket/preview` takes a proposed
 //! `BucketSafetyChange` as JSON and returns a diff without committing

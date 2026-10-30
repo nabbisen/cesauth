@@ -1,29 +1,11 @@
-//! `GET /admin/console/audit` — Audit Log viewer (RFC 109, v0.71.0).
+//! `GET /admin/console/audit` — Audit Log viewer.
 //!
-//! Query parameters (all optional):
-//!
-//! | Param      | Meaning                                                |
-//! |------------|--------------------------------------------------------|
-//! | `prefix`   | Legacy R2 key prefix (v0.31.x compat — D1 ignores it). |
-//! | `limit`    | Max number of matches. Hard-capped in adapter.         |
-//! | `kind`     | Substring match on `kind` (legacy field).              |
-//! | `subject`  | Substring match on `subject` (user / session id).      |
-//! | `actor`    | Alias for `subject` — RFC 109 form-field name.         |
-//! | `event`    | Exact match on `kind` (RFC 109 dropdown).              |
-//! | `from`     | RFC 3339 UTC lower bound (inclusive). Maps to `since`. |
-//! | `to`       | RFC 3339 UTC upper bound (inclusive). Maps to `until`. |
-//! | `cursor`   | Opaque base64url pagination cursor (server-issued).    |
-//!
-//! Parsing notes (RFC 109):
-//!
-//! - `actor` and `subject` are accepted both. The form posts `actor`;
-//!   the legacy URL still works.
-//! - `from` and `to` are parsed via
-//!   [`audit_pagination::parse_rfc3339_to_unix`]. Invalid timestamps
-//!   are dropped silently rather than rejected with 400 — the operator
-//!   sees the filter not applied; the rest of the page still renders.
-//! - `cursor` is passed through verbatim; the adapter calls
-//!   `decode_cursor` itself.
+//! Serves the Leptos shell only. No query-parameter parsing, filtering,
+//! or pagination happens in this handler — a prior version of this doc
+//! specified one (`prefix`/`limit`/`kind`/`subject`/`actor`/`event`/
+//! `from`/`to`/`cursor`) in detail, describing a search feature that
+//! was never built. See RFC 161. For the production audit read path
+//! today, see `docs/src/deployment/observability.md`.
 
 use worker::{Request, Response, Result, RouteContext};
 

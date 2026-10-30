@@ -151,16 +151,10 @@ below, fast rather than a full table scan.
 
 Four routes surface the table:
 
-1. **`/admin/console/audit`** — the admin console's audit
-   browser. Filters, per `crates/backend/src/routes/admin/console/audit.rs`:
-   `kind` (**substring** match — legacy field), `subject` (**substring**
-   match; `actor` is an alias), `event` (**exact** match on kind — the
-   RFC 109 dropdown), `from`/`to` (RFC 3339 UTC bounds, inclusive),
-   `limit`. `kind`/`subject` being substring rather than exact matters
-   during an incident — "subject contains" is a materially broader query
-   than "subject is." **An invalid `from`/`to` value is dropped
-   silently, not rejected** — the page still renders, unfiltered by that
-   bound, with no error shown.
+1. **`/admin/console/audit`** — serves the Leptos shell only. No
+   filtering, search, or pagination UI is built behind it; the page
+   this doc used to describe in filter-by-filter detail does not exist.
+   See RFC 161.
 2. **`/admin/console/audit/export`** (`POST`) — exports filtered
    rows as CSV or JSONL for offline analysis. **The export
    itself writes an audit event** — exporting the log is itself
@@ -176,8 +170,7 @@ Four routes surface the table:
    or tamper alarm means investigate the affected range before
    trusting it. Full detail, including what to do when an alarm
    fires: [Audit log hash chain](../expert/audit-log-hash-chain.md).
-4. **`wrangler d1 execute`** against `audit_events` directly,
-   for anything the console's fixed filters can't express —
+4. **`wrangler d1 execute`** against `audit_events` directly —
    arbitrary `WHERE` clauses, joins against other tables,
    ad-hoc aggregation:
 
@@ -192,17 +185,17 @@ Four routes surface the table:
 (Local dev also exposes `/__dev/audit`; it does not exist in
 production.)
 
-For day-to-day incident response, the admin console covers most
-needs. For historical or compliance queries spanning months of
-data or requiring joins the console can't express, `wrangler d1
-execute` against `audit_events` is the current answer — cesauth
-does not push audit events to an external destination (SIEM)
-today.
+`wrangler d1 execute --remote` is the production read path today,
+for day-to-day incident response and for historical or compliance
+queries alike. The console surfaces described above as serving the
+shell only are not built yet — see RFC 161. `audit/chain/verify` and
+`audit/export` are real, implemented, role-gated endpoints; they
+simply have no UI beyond what they return directly. cesauth does
+not push audit events to an external destination (SIEM) today.
 
 ### Useful audit queries
 
-In the two syntaxes that actually exist — `wrangler d1 execute` SQL, and
-the console's filter fields (§Querying the audit trail above):
+In the one syntax that actually exists today — `wrangler d1 execute` SQL:
 
 **Who promoted recently?**
 ```sh
@@ -212,8 +205,6 @@ wrangler d1 execute cesauth-prod --remote \
                AND ts > strftime('%s', 'now', '-7 days')
              ORDER BY seq DESC"
 ```
-Console: `event=anonymous_promoted` (exact-match field) with `from` set
-to a timestamp 7 days back.
 
 **Failed magic-link verification spike:**
 ```sh
@@ -223,7 +214,6 @@ wrangler d1 execute cesauth-prod --remote \
                AND ts > strftime('%s', 'now', '-1 hours')
              ORDER BY seq DESC"
 ```
-Console: `event=magic_link_failed` with `from` set to an hour back.
 
 **A specific user's activity:**
 ```sh
@@ -232,9 +222,6 @@ wrangler d1 execute cesauth-prod --remote \
              WHERE subject = 'u-7K9F2L'
              ORDER BY seq DESC"
 ```
-Console: `subject=u-7K9F2L` — remember this field is a **substring**
-match, so it can also return other subjects whose id happens to contain
-that string.
 
 **Admin token use (always worth review):**
 ```sh
@@ -249,9 +236,7 @@ all ten `admin_`-prefixed kinds: `admin_bucket_safety_changed`,
 `admin_console_viewed`, `admin_login_failed`, `admin_session_revoked`,
 `admin_threshold_updated`, `admin_token_created`, `admin_token_disabled`,
 `admin_user_created`. For the question in this heading, start with
-`admin_token_created` and `admin_token_disabled`. Console equivalent:
-`kind=admin_` — the substring match (§Querying the audit trail) does the
-same thing without needing a glob.
+`admin_token_created` and `admin_token_disabled`.
 
 The Day-2 operations runbook has more application-specific
 queries.
