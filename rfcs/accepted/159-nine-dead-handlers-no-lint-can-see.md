@@ -19,9 +19,31 @@ a stage turned one design fork into zero.
 coverage asserted structurally, census **zero**. **Third cycle dispatched
 2026-10-30** for §4.3 and §4.4, both found in review of that commit:
 `handoffs/159-nine-dead-handlers-no-lint-can-see/cycle-3-handoff.md`.
-**Cycle 3 complete 2026-10-30** (`8761f3a`, CI 13/13): both met. **Cycle 4
-dispatched 2026-10-30** for §4.5 — `handoffs/159-nine-dead-handlers-no-lint-can-see/cycle-4-handoff.md`
-— and it is **the last cycle before the cut**.
+**Cycle 3 complete 2026-10-30** (`8761f3a`): both met. **Cycle 4 complete
+2026-10-30** (`233283d`): §4.5 met —
+`handoffs/159-nine-dead-handlers-no-lint-can-see/cycle-4-handoff.md`.
+
+**Complete. 0.89.2 ready to cut**, pending authorization. Evidence term for all
+five sub-findings: **`exercised`** (RFC 000 §22) — ten dead handlers deleted and
+the census re-run at **zero** with the finished check; the gate asserts
+reachability by qualified path (both re-export shapes and the name-collision
+case demonstrated), classification of **every** `pub async fn` in `routes/`
+(215 scanned = 193 handlers + 22 named + 0 unclassified, the identity asserted
+on every run as a failure distinct from a finding about `routes/`), one shared
+comment-stripped view of `lib.rs` behind all four extractors that scan it (one
+commented-out registration now fires both the dead-handler finding and the
+stale-documentation warning), and its own remainder list (a
+`NAMED_NON_HANDLERS` entry matching nothing is a named hard failure; fires on
+both a deleted file and a renamed function). Host tests **1,630**/1,630
+baseline, `migration_chain` **35**, manifest **13**, Playwright **20**, bundle
+**882,908 B** gzip at 33.7% of budget. Re-run independently at review in all
+four cycles.
+
+**One finding deliberately not held for:** §4.5's property is unchecked on the
+script's four sibling exemption lists, two of which carry entries —
+[RFC 165](../proposed/165-the-gates-exemption-lists-are-unvalidated.md), against
+the shipped gate, per the cycle-4 handoff's own statement that a further finding
+which is not a false certification would not hold the tag a fourth time.
 **Tier.** P2. Nothing is broken and nothing is reachable. The value is the
 check, not the deletions.
 **Size.** Small for the nine; the check is the lasting part.
