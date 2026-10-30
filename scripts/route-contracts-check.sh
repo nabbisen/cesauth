@@ -881,6 +881,7 @@ e4_named_count=0
 e4_unclassified_count=0
 e4_unclassified=""
 e4_handlers=""  # file \t name, one per classified handler (A or B)
+e4_named_matched=""  # NAMED_NON_HANDLERS keys actually matched this run
 
 while IFS=$'\t' read -r file line name buf; do
   [ -z "$file" ] && continue
@@ -895,12 +896,43 @@ while IFS=$'\t' read -r file line name buf; do
     named=$(printf '%s\n' "$NAMED_NON_HANDLERS" | grep -Fx "$key" || true)
     if [ -n "$named" ]; then
       e4_named_count=$((e4_named_count + 1))
+      e4_named_matched="${e4_named_matched}${key}\n"
     else
       e4_unclassified_count=$((e4_unclassified_count + 1))
       e4_unclassified="${e4_unclassified}${rel}:${line} (fn ${name})\n"
     fi
   fi
 done < <(e4_all_defs)
+
+# RFC 159 cycle 4 (§4.5): a NAMED_NON_HANDLERS entry that matched nothing
+# during THIS scan is stale -- the function behind it was deleted,
+# renamed, or its signature changed to match shape (A)/(B) -- and is left
+# sitting as a pre-authorised exemption for whatever gets written at that
+# same `file::fn` next, reviewed by nobody. This is a distinct, named
+# failure from an unclassified fn (too many classifications) and from a
+# dead handler (a real handler, unreachable): it is the list itself
+# claiming more than the scan can back up. Checked directly against what
+# was actually matched this run, not against the static list length --
+# the matched count existing at all does not make a stale entry visible;
+# only checking for one by name does.
+e4_named_stale=""
+while IFS= read -r entry; do
+  [ -z "$entry" ] && continue
+  if ! printf '%b' "$e4_named_matched" | grep -Fxq "$entry"; then
+    e4_named_stale="${e4_named_stale}${entry}\n"
+  fi
+done <<< "$NAMED_NON_HANDLERS"
+
+if [ -n "$e4_named_stale" ]; then
+  echo "❌  NAMED_NON_HANDLERS entr(y|ies) matching NO scanned fn this run (stale):" >&2
+  printf '%b' "$e4_named_stale" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line" >&2; done
+  echo "" >&2
+  echo "    The function behind this entry was deleted, renamed, or its signature" >&2
+  echo "    changed to match a handler shape -- the entry is now a pre-authorised" >&2
+  echo "    exemption for whatever gets written at that path next, reviewed by" >&2
+  echo "    nobody. Remove it from NAMED_NON_HANDLERS above." >&2
+  exit_code=1
+fi
 
 if [ -n "$e4_unclassified" ]; then
   echo "❌  pub async fn(s) under routes/ matching NEITHER known handler signature" \
