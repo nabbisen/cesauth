@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 169: the book omits eleven of its own pages
 
-**Governing RFC.** `rfcs/accepted/169-the-book-does-not-contain-eleven-of-its-own-pages.md`
+**Governing RFC.** `rfcs/done/169-the-book-does-not-contain-eleven-of-its-own-pages.md`
 **Builds on.** `7e00c7e` on `main` — tag `0.91.0`, 13/13 CI green.
 
 **Target release.** **0.91.1 — patch.** **Trigger: none hit**, and here is the

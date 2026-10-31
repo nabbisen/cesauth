@@ -2,8 +2,8 @@
 
 **Status.** **Accepted** 2026-10-31 by the owner (*"RFC 169 is accepted."*).
 Proposed the same day by the architect, while reviewing v0.89.5.
-**IMPLEMENTED on `main` in `ae8e2a2`** (not yet released; the 0.91.1 cut
-follows). **Evidence: `exercised`** — two checks in `scripts/drift-scan.sh`,
+**DONE — shipped in v0.91.1**, 2026-11-01 (`ae8e2a2`, plus the architect's
+link-census correction in review). **Evidence: `exercised`** — two checks in `scripts/drift-scan.sh`,
 run by its own workflow on every push, failing the build when a page leaves the
 book or an in-book link stops resolving. Both report their own census and both
 were negative-tested, by the implementer and again by the architect.

@@ -22,6 +22,74 @@ under budget.
 
 ---
 
+## [0.91.1] - 2026-11-01
+
+### The book now contains its own pages — RFC 169
+
+**Patch.** Nothing gains capability. Pages that were always part of this book
+become reachable in it, two links start resolving, and a check starts failing
+when either stops being true.
+
+`mdbook` builds exactly what `SUMMARY.md` lists. **Eleven of the eighty `.md`
+files under `docs/src` were not listed**, so the published book did not contain
+them — and `mdbook build` was clean about it, because there is no symmetric
+option to `create-missing = false` for a file with no entry.
+
+### Fixed
+
+- **Nine pages are in the book.** Among them: `expert/route-contracts.md`, the
+  route-contract table every route gate reads; `expert/contributing.md`, where
+  every ruling this project makes is written down; `deployment/email-delivery.md`,
+  a deployment chapter; and **ADR-016, ADR-017 and ADR-018 — the three most
+  recent decision records**, so a reader of the ADR index no longer concludes
+  ADR-015 is the latest.
+
+- **Two links in the published book were already 404s.**
+  `expert/view-rendering-policy.md` links to `./route-contracts.md` twice — once
+  under the words *"Enforced by"* — and that page was not in the book. Adding
+  the target to `SUMMARY.md` was the entire fix; the page itself was not edited.
+
+- **`expert/data-model.md` pointed at a directory that does not exist.** Its
+  ADR-010 link read `adrs/010-audit-chain.md` — plural `adrs`, and a filename
+  that never existed. Found by the new link check on its first run, unrelated to
+  the eleven, corrected to `adr/010-audit-log-hash-chain.md`.
+
+### Added
+
+- **Two checks in `scripts/drift-scan.sh`**, which already walks `docs/`, so no
+  workflow was added and the release-gate manifest stays at **14**:
+  - **coverage** — every `docs/src/**/*.md` is reachable from `SUMMARY.md` or on
+    a named, reasoned, stale-checked declared-out list;
+  - **link integrity** — no page the book builds links to a `.md` the book does
+    not build.
+
+  Both report their own census and both fail loudly rather than quietly: a
+  stale declared entry is an error, a zero scan count is an error, and the
+  link check **asserts its own arithmetic closes** — it counts only the links it
+  validates, and names each class it skips (absolute/`http`, and targets
+  resolving outside `docs/src`) rather than folding them into a denominator that
+  would overstate what was checked.
+
+- **Two pages are declared out of the book, with reasons**:
+  `expert/rfc-110-baseline.md` (an audit of the v0.71.0 codebase, taken for
+  RFC 110) and `expert/nodejs-compat-investigation.md` (RFC 025 Step 2's
+  investigation). Both are records of a moment rather than pages a reader
+  navigates to. The test that separates them from the nine: those two are
+  artifacts of doing gated work, addressed to nobody, while a page that names an
+  ongoing reader role belongs in the book.
+
+### Known and unfixed
+
+Unchanged from 0.91.0 and restated because none of it moved: **29 mutating
+rows document a CSRF control that is not the one protecting them** (RFC 152
+half D); **no automated gate observes the admin cookie's attributes on a live
+response**, and **RFC 147's deletion sweep has no `exercised` gate** — both
+blocked on the same missing capability, a CI job with migrated D1 state and a
+seeded credential (**RFC 170**, accepted); and **nothing rate-limits
+unauthenticated audit appends**.
+
+---
+
 ## [0.91.0] - 2026-10-31
 
 ### The operator console's turn — RFC 152 half C
