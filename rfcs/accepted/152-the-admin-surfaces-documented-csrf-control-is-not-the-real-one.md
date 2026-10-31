@@ -10,6 +10,35 @@ release. See §5.
 **Half B SHIPPED in v0.90.0**, 2026-10-31, both stages. **Half A shipped in
 v0.86.3.** **Half C is outstanding**, so this RFC stays in `accepted/`.
 
+**Half C SHIPPED to `main` in `8162b51`** (not yet released; 0.91.0's cut waits
+on one cycle-2 gate fix). Verified live by the architect through the real
+two-step `/admin/login` flow: class A gives **400** with no token and **400**
+with a wrong one, and a validation-error re-render carries a **fresh** token
+whose cookie matches it; class B gives **401** to the admin session cookie alone
+— the fix — and **200** to `Authorization: Bearer` with no cookie.
+
+**The cycle moved one route against the handoff, and was right.**
+`safety.rs::verify` was classed A on the strength of its content negotiation;
+the HTML form it would redirect to **exists in no live path** —
+`cesauth_frontend::admin::safety_page` is referenced only by its own module,
+its own tests and a `pub use`, and `GET /admin/console/safety` serves a CSR
+placeholder that says *"未実装 (RFC 161)"*. Reclassified as B. The architect's
+classification rested on the handler and never asked whether the form existed,
+which is the question the handoff itself told the team to ask about class B.
+
+**Half D, found while generalising E6 (2026-10-31).** **18 mutating rows claim
+`N/A (bearer)` and accept a cookie**: `POST /admin/users`,
+`DELETE /admin/sessions/:id`, and all 16 `/api/v1/*` mutating routes, which
+funnel through `api_v1::auth::require` → `auth::resolve_or_respond`, the
+cookie-accepting resolver. Not exploitable — no `Access-Control-Allow-Origin`
+is set anywhere in the repo (the only two mentions are comments confirming it),
+so `SameSite=Strict` holds — and **not fixed**: flipping the legacy admin API
+and the whole tenant-management REST surface is a caller-obligation change of
+its own size. Exempted by name in `E6_BEARER_LEGACY_EXEMPT` with a stale-entry
+check, and recommended as **half D, opening with its own measurement stage**:
+is there a real cookie-borne caller for any of the 18, the same question that
+decided class A from class B here.
+
 ### Half C, measured — seven, not nine, in three classes (2026-10-31)
 
 **Correction first: the count I reported was wrong, and it was mine.** The
