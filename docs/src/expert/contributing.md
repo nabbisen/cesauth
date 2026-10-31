@@ -334,6 +334,19 @@ A release that mixes fixes and new capability takes the **higher** level.
   made, not a default** — the level table's own test is a judgement, and a
   judgement written down at dispatch can be challenged by review, while the
   same one made silently at the cut cannot.
+- **The Worker bundle is measured at the release commit, after the version
+  bump** (ruling, 2026-10-31). It belongs to the cut, not to the cycle. The
+  workspace version reaches the compiled wasm through crate metadata in symbol
+  mangling, so a bundle measured before the bump describes a different tree
+  than the one tagged: 0.89.4's figure was taken at version `0.89.3` and was
+  **882,900 B** gzip, while the tagged artifact is **882,830 B**. Established by
+  experiment, not inference — reverting the version and rebuilding reproduced
+  the earlier figure with both sha256 digests byte-exact, which also confirms
+  RFC 133 half A's reproducibility guarantee still holds.
+- **A handoff's baseline figures cite the commit they were measured at**
+  (ruling, 2026-10-31), not just the version. A baseline whose provenance is
+  stated turns a mismatch into a one-line known offset instead of an
+  unexplained delta in someone else's report — which is how the above was found.
 - **None of the above is checked yet.** No workflow reads `CHANGELOG.md`, none
   compares tags to entries, and none compares a release's level to what it
   changed — so every rule in this section is honoured by hand. Across tags from
