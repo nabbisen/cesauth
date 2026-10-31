@@ -39,14 +39,17 @@ pub const ADMIN_TOKEN_COOKIE: &str = "__Host-cesauth_admin";
 /// The cookie path is restricted to `/admin/*`; the `__Host-` prefix
 /// requires `Secure`, `Path=/`, no `Domain`.  httpOnly prevents JS
 /// from reading it.
+fn bearer_header(req: &Request) -> Option<String> {
+    let header = req.headers().get("authorization").ok().flatten()?;
+    let stripped = header.strip_prefix("Bearer ")?;
+    if stripped.is_empty() { return None; }
+    Some(stripped.to_owned())
+}
+
 fn bearer(req: &Request) -> Option<String> {
     // 1. Try the Authorization header first (API callers).
-    if let Ok(Some(header)) = req.headers().get("authorization") {
-        if let Some(stripped) = header.strip_prefix("Bearer ") {
-            if !stripped.is_empty() {
-                return Some(stripped.to_owned());
-            }
-        }
+    if let Some(tok) = bearer_header(req) {
+        return Some(tok);
     }
     // 2. Fall back to the admin cookie (browser Leptos clients).
     let cookie_header = req.headers().get("cookie").ok().flatten()?;
@@ -63,15 +66,30 @@ fn bearer(req: &Request) -> Option<String> {
     None
 }
 
-/// Try to resolve the request's bearer to an [`AdminPrincipal`].
-///
-/// Logs a `AdminLoginFailed` audit event on any non-success path so
-/// operators can spot bearer-guessing from the audit log (§13).
-pub async fn resolve_from_request(
-    req: &Request,
+/// `AuthFailure` reason string for the `AdminLoginFailed` audit event.
+/// `pub(crate)` because `admin_login.rs` needs the identical mapping for
+/// its own two direct `resolve()` calls (it bypasses `resolve_from_request`
+/// entirely, since it is validating a bearer that is not yet attached to
+/// the request the normal way).
+pub(crate) fn failure_reason(f: AuthFailure) -> &'static str {
+    match f {
+        AuthFailure::MissingBearer    => "missing_bearer",
+        AuthFailure::UnknownToken     => "unknown_token",
+        AuthFailure::DisabledToken    => "disabled_token",
+        AuthFailure::InsufficientRole => "insufficient_role",
+    }
+}
+
+/// Resolve an already-extracted bearer (or its absence) to an
+/// [`AdminPrincipal`], auditing `AdminLoginFailed` on every non-success
+/// path — shared by [`resolve_from_request`] (header-or-cookie) and
+/// [`resolve_from_request_header_only`] (header-only, RFC 152 half C),
+/// which differ only in how they extract `tok` before calling this.
+async fn resolve_bearer(
+    tok: Option<String>,
     env: &Env,
 ) -> std::result::Result<AdminPrincipal, AuthFailure> {
-    let Some(tok) = bearer(req) else {
+    let Some(tok) = tok else {
         audit::write_owned(
             env, EventKind::AdminLoginFailed, None, None,
             Some("missing_bearer".into()),
@@ -92,16 +110,39 @@ pub async fn resolve_from_request(
             let f: AuthFailure = e.into();
             audit::write_owned(
                 env, EventKind::AdminLoginFailed, None, None,
-                Some(match f {
-                    AuthFailure::MissingBearer    => "missing_bearer",
-                    AuthFailure::UnknownToken     => "unknown_token",
-                    AuthFailure::DisabledToken    => "disabled_token",
-                    AuthFailure::InsufficientRole => "insufficient_role",
-                }.into()),
+                Some(failure_reason(f).into()),
             ).await.ok();
             Err(f)
         }
     }
+}
+
+/// Try to resolve the request's bearer to an [`AdminPrincipal`],
+/// reading `Authorization` first and falling back to the
+/// `__Host-cesauth_admin` cookie for browser clients.
+///
+/// Logs a `AdminLoginFailed` audit event on any non-success path so
+/// operators can spot bearer-guessing from the audit log (§13).
+pub async fn resolve_from_request(
+    req: &Request,
+    env: &Env,
+) -> std::result::Result<AdminPrincipal, AuthFailure> {
+    resolve_bearer(bearer(req), env).await
+}
+
+/// **RFC 152 half C.** Same resolution as [`resolve_from_request`], but
+/// reads ONLY the `Authorization: Bearer ...` header — no cookie
+/// fallback. For routes whose only documented caller is a bearer-header
+/// API client (`curl`, not a browser): the admin cookie is what makes
+/// CSRF possible in the first place, so removing it as an accepted
+/// credential on these routes removes the need for a double-submit
+/// token, rather than adding one as ceremony around a caller that has
+/// no cookie jar to carry it in.
+pub async fn resolve_from_request_header_only(
+    req: &Request,
+    env: &Env,
+) -> std::result::Result<AdminPrincipal, AuthFailure> {
+    resolve_bearer(bearer_header(req), env).await
 }
 
 /// Returns `Ok(())` iff `principal` may perform `action`. Emits a
@@ -141,6 +182,15 @@ pub fn forbidden_response(f: AuthFailure) -> Response {
 /// Convenience: caller pattern is "resolve or return the error response".
 pub async fn resolve_or_respond(req: &Request, env: &Env) -> Result<std::result::Result<AdminPrincipal, Response>> {
     match resolve_from_request(req, env).await {
+        Ok(p)  => Ok(Ok(p)),
+        Err(f) => Ok(Err(forbidden_response(f))),
+    }
+}
+
+/// **RFC 152 half C.** Header-only counterpart of [`resolve_or_respond`] —
+/// see [`resolve_from_request_header_only`].
+pub async fn resolve_or_respond_header_only(req: &Request, env: &Env) -> Result<std::result::Result<AdminPrincipal, Response>> {
+    match resolve_from_request_header_only(req, env).await {
         Ok(p)  => Ok(Ok(p)),
         Err(f) => Ok(Err(forbidden_response(f))),
     }

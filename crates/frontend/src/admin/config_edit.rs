@@ -38,11 +38,13 @@ pub fn edit_form(
     principal: &AdminPrincipal,
     state:     &BucketSafetyState,
     error:     Option<&str>,
+    csrf:      &str,
 ) -> String {
     let body = format!(
         "{error}\n{form}\n{back}",
         error  = render_error(error),
-        form   = render_form(&state.bucket, state, ""),
+        form   = render_form(&state.bucket, state,
+            &format!(r#"<input type="hidden" name="csrf" value="{}">"#, escape(csrf))),
         back   = format!(
             r#"<p><a href="{url}">← Back to configuration review</a></p>"#,
             url = routes::CONFIG,
@@ -66,6 +68,7 @@ pub fn edit_form(
 pub fn confirm_page(
     principal: &AdminPrincipal,
     diff:      &BucketSafetyDiff,
+    csrf:      &str,
 ) -> String {
     let body = if diff.changed_fields.is_empty() {
         render_no_changes(&diff.current.bucket)
@@ -73,7 +76,7 @@ pub fn confirm_page(
         format!(
             "{diff_section}\n{apply_form}",
             diff_section = render_diff(diff),
-            apply_form   = render_apply_form(diff),
+            apply_form   = render_apply_form(diff, csrf),
         )
     };
     admin_frame(
@@ -219,7 +222,7 @@ fn render_diff(diff: &BucketSafetyDiff) -> String {
     )
 }
 
-fn render_apply_form(diff: &BucketSafetyDiff) -> String {
+fn render_apply_form(diff: &BucketSafetyDiff, csrf: &str) -> String {
     let bucket_esc = escape(&diff.current.bucket);
     let p = &diff.proposed;
     let hidden = hidden_fields(p);
@@ -231,6 +234,7 @@ fn render_apply_form(diff: &BucketSafetyDiff) -> String {
   <form class="danger" method="post" action="{edit_url}">
     {hidden}
     <input type="hidden" name="confirm" value="yes">
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><strong>This will write the new attestation to D1 and emit an audit event.</strong>
        If this doesn't look right, click &quot;Start over&quot; instead.</p>
     <button type="submit" aria-label="Apply this change to bucket {bucket_esc}">Apply the change</button>
@@ -241,6 +245,7 @@ fn render_apply_form(diff: &BucketSafetyDiff) -> String {
         bucket_esc = bucket_esc,
         hidden     = hidden,
         edit_url   = edit_url,
+        csrf       = escape(csrf),
     )
 }
 

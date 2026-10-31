@@ -37,6 +37,7 @@ use time::OffsetDateTime;
 use worker::{Request, Response, Result, RouteContext};
 
 use crate::audit::{self, EventKind};
+use crate::csrf::{attach_csrf_cookie, mint_csrf, verify_csrf};
 use crate::routes::admin::auth;
 use crate::routes::admin::console::render;
 
@@ -77,7 +78,9 @@ impl ChangeBody {
 }
 
 pub async fn preview<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
+    // RFC 152 half C, class B: JSON-only, bearer-header-only — see
+    // `auth::resolve_from_request_header_only`'s doc for why.
+    let principal = match auth::resolve_or_respond_header_only(&req, &ctx.env).await? {
         Ok(p)  => p,
         Err(r) => return Ok(r),
     };
@@ -124,7 +127,9 @@ struct ApplyBody {
 }
 
 pub async fn apply<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
+    // RFC 152 half C, class B: JSON-only, bearer-header-only — see
+    // `auth::resolve_from_request_header_only`'s doc for why.
+    let principal = match auth::resolve_or_respond_header_only(&req, &ctx.env).await? {
         Ok(p)  => p,
         Err(r) => return Ok(r),
     };
@@ -202,9 +207,13 @@ pub async fn edit_form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
         Ok(None)    => return Response::error("unknown bucket", 404),
         Err(e)      => return Response::error(format!("bucket lookup failed: {e}"), 500),
     };
+    // RFC 152 half C, class A: mint a token here, attach it below.
+    let (csrf_token, csrf_cookie) = mint_csrf()?;
     // RFC 146: `html_response` owns the nonce now — the helper mints and
     // publishes it; this handler must not do that itself.
-    render::html_response(|| ui::admin::config_edit_form(&principal, &state, None))
+    let mut resp = render::html_response(|| ui::admin::config_edit_form(&principal, &state, None, &csrf_token))?;
+    attach_csrf_cookie(&mut resp, &csrf_cookie);
+    Ok(resp)
 }
 
 // -------------------------------------------------------------------------
@@ -239,7 +248,11 @@ pub async fn edit_submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Re
         None    => return Response::error("missing bucket", 400),
     };
 
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
     let confirmed = matches!(form.get("confirm").map(String::as_str), Some("yes"));
 
     let change = BucketSafetyChange {
@@ -258,17 +271,27 @@ pub async fn edit_submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Re
     let safety = CloudflareBucketSafetyRepository::new(&ctx.env);
 
     if !confirmed {
-        // First POST: render the confirmation page.
+        // First POST: render the confirmation page. Both re-render
+        // branches below need a FRESH token -- the one just submitted
+        // is spent.
         match preview_bucket_safety_change(&safety, &change).await {
-            Ok(diff) => render::html_response(|| ui::admin::config_confirm_page(&principal, &diff)),
+            Ok(diff) => {
+                let (csrf_token, csrf_cookie) = mint_csrf()?;
+                let mut resp = render::html_response(|| ui::admin::config_confirm_page(&principal, &diff, &csrf_token))?;
+                attach_csrf_cookie(&mut resp, &csrf_cookie);
+                Ok(resp)
+            }
             Err(cesauth_core::ports::PortError::NotFound) => {
                 let state = match cesauth_core::admin::ports::BucketSafetyRepository::get(&safety, &bucket).await {
                     Ok(Some(s)) => s,
                     _           => return Response::error("unknown bucket", 404),
                 };
-                render::html_response(|| ui::admin::config_edit_form(
-                    &principal, &state, Some("unknown bucket"),
-                ))
+                let (csrf_token, csrf_cookie) = mint_csrf()?;
+                let mut resp = render::html_response(|| ui::admin::config_edit_form(
+                    &principal, &state, Some("unknown bucket"), &csrf_token,
+                ))?;
+                attach_csrf_cookie(&mut resp, &csrf_cookie);
+                Ok(resp)
             }
             Err(e) => Response::error(format!("preview failed: {e}"), 500),
         }

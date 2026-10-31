@@ -35,6 +35,7 @@ use uuid::Uuid;
 use worker::{Request, Response, Result, RouteContext};
 
 use crate::audit::{self, EventKind};
+use crate::csrf::{attach_csrf_cookie, mint_csrf, verify_csrf};
 use crate::routes::admin::auth;
 use crate::routes::admin::console::render;
 
@@ -99,9 +100,13 @@ pub async fn new_form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response>
         Ok(p)  => p,
         Err(r) => return Ok(r),
     };
+    // RFC 152 half C, class A: mint a token here, attach it below.
+    let (csrf_token, csrf_cookie) = mint_csrf()?;
     // RFC 146: `html_response` owns the nonce now — the helper mints and
     // publishes it; this handler must not do that itself.
-    render::html_response(|| ui::admin::token_new_form(&principal, None))
+    let mut resp = render::html_response(|| ui::admin::token_new_form(&principal, None, &csrf_token))?;
+    attach_csrf_cookie(&mut resp, &csrf_cookie);
+    Ok(resp)
 }
 
 // -------------------------------------------------------------------------
@@ -117,20 +122,33 @@ pub async fn create<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         return Ok(r);
     }
 
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
 
+    // RFC 152 half C §2's own note: every one of the three validation
+    // re-renders below must mint a FRESH token, same trap stage 1 named —
+    // the one just submitted is spent.
     let role_str = match form.get("role").map(String::as_str) {
         Some(s) => s,
         None    => {
-            return render::html_response(|| ui::admin::token_new_form(&principal, Some("role is required")));
+            let (csrf_token, csrf_cookie) = mint_csrf()?;
+            let mut resp = render::html_response(|| ui::admin::token_new_form(&principal, Some("role is required"), &csrf_token))?;
+            attach_csrf_cookie(&mut resp, &csrf_cookie);
+            return Ok(resp);
         }
     };
     let role = match Role::from_str(role_str) {
         Some(r) => r,
         None    => {
-            return render::html_response(|| ui::admin::token_new_form(
-                &principal, Some("role must be one of: read_only, security, operations, super"),
-            ));
+            let (csrf_token, csrf_cookie) = mint_csrf()?;
+            let mut resp = render::html_response(|| ui::admin::token_new_form(
+                &principal, Some("role must be one of: read_only, security, operations, super"), &csrf_token,
+            ))?;
+            attach_csrf_cookie(&mut resp, &csrf_cookie);
+            return Ok(resp);
         }
     };
 
@@ -141,9 +159,12 @@ pub async fn create<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         .map(str::to_owned);
     if let Some(n) = name.as_deref() {
         if n.len() > 128 {
-            return render::html_response(|| ui::admin::token_new_form(
-                &principal, Some("label too long (max 128 chars)"),
-            ));
+            let (csrf_token, csrf_cookie) = mint_csrf()?;
+            let mut resp = render::html_response(|| ui::admin::token_new_form(
+                &principal, Some("label too long (max 128 chars)"), &csrf_token,
+            ))?;
+            attach_csrf_cookie(&mut resp, &csrf_cookie);
+            return Ok(resp);
         }
     }
 
@@ -156,10 +177,15 @@ pub async fn create<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         Ok(p)  => p,
         Err(cesauth_core::ports::PortError::Conflict) => {
             // Astronomically unlikely with 256-bit plaintext, but
-            // handle it cleanly rather than panic.
-            return render::html_response(|| ui::admin::token_new_form(
-                &principal, Some("token hash collision — please try again"),
-            ));
+            // handle it cleanly rather than panic. A fourth re-render
+            // path the handoff's own enumeration of three did not name;
+            // it needs the same fresh token the other three do.
+            let (csrf_token, csrf_cookie) = mint_csrf()?;
+            let mut resp = render::html_response(|| ui::admin::token_new_form(
+                &principal, Some("token hash collision — please try again"), &csrf_token,
+            ))?;
+            attach_csrf_cookie(&mut resp, &csrf_cookie);
+            return Ok(resp);
         }
         Err(e) => {
             return Response::error(format!("create failed: {e}"), 500);
@@ -183,7 +209,16 @@ pub async fn create<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
 // -------------------------------------------------------------------------
 
 pub async fn disable<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
+    // RFC 152 half C, class B: JSON-only, bearer-header-only — see
+    // `auth::resolve_from_request_header_only`'s doc for why. The
+    // HTML-redirect branch below is unreachable from a browser as of
+    // this change (browsers never attach an Authorization header on
+    // their own); it was already unreachable in practice before this —
+    // the only frontend view posting here (`pages/operator/console.rs`'s
+    // `ConsoleTokens`) sends to a path with no `:id` and has no submit
+    // button, which RFC 152 half C's own measurement names as a
+    // placeholder, not a real caller.
+    let principal = match auth::resolve_or_respond_header_only(&req, &ctx.env).await? {
         Ok(p)  => p,
         Err(r) => return Ok(r),
     };

@@ -95,21 +95,6 @@ fn admin_cookie_header(token: &str, ttl_secs: u64) -> String {
     )
 }
 
-/// `routes::admin::auth::AuthFailure` reason string for the
-/// `AdminLoginFailed` audit event — the same mapping
-/// `auth::resolve_from_request` uses, duplicated here because this
-/// handler calls the resolver directly rather than going through that
-/// request-shaped wrapper (it has no `Authorization`/cookie bearer to
-/// read yet; the bearer is the `?token=`/form value it is validating).
-fn login_failure_reason(f: AuthFailure) -> &'static str {
-    match f {
-        AuthFailure::MissingBearer    => "missing_bearer",
-        AuthFailure::UnknownToken     => "unknown_token",
-        AuthFailure::DisabledToken    => "disabled_token",
-        AuthFailure::InsufficientRole => "insufficient_role",
-    }
-}
-
 pub async fn get_handler<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     // Extract ?token= from the query string.
     let token = req.url()
@@ -139,7 +124,7 @@ pub async fn get_handler<D>(req: Request, ctx: RouteContext<D>) -> Result<Respon
             let f: AuthFailure = e.into();
             audit::write_owned(
                 &ctx.env, EventKind::AdminLoginFailed, None, None,
-                Some(login_failure_reason(f).into()),
+                Some(auth::failure_reason(f).into()),
             ).await.ok();
             return Ok(auth::forbidden_response(f));
         }
@@ -196,7 +181,7 @@ pub async fn post_handler<D>(mut req: Request, ctx: RouteContext<D>) -> Result<R
             let f: AuthFailure = e.into();
             audit::write_owned(
                 &ctx.env, EventKind::AdminLoginFailed, None, None,
-                Some(login_failure_reason(f).into()),
+                Some(auth::failure_reason(f).into()),
             ).await.ok();
             return Ok(auth::forbidden_response(f));
         }

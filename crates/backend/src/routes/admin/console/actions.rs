@@ -25,7 +25,9 @@ struct ThresholdBody {
 }
 
 pub async fn threshold<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
+    // RFC 152 half C, class B: JSON-only, bearer-header-only — see
+    // `auth::resolve_from_request_header_only`'s doc for why.
+    let principal = match auth::resolve_or_respond_header_only(&req, &ctx.env).await? {
         Ok(p)  => p,
         Err(r) => return Ok(r),
     };

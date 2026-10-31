@@ -738,8 +738,11 @@ E4_EXEMPT=""
 # req/env by reference" is the mechanical tell in every case, which is
 # exactly what keeps it out of (A)/(B):
 #
-#   admin/auth.rs::{resolve_from_request,resolve_or_respond} -- principal
-#     resolution called BY admin handlers, not registered itself.
+#   admin/auth.rs::{resolve_from_request,resolve_or_respond,
+#     resolve_from_request_header_only,resolve_or_respond_header_only}
+#     -- principal resolution called BY admin handlers, not registered
+#     itself (the header-only pair, RFC 152 half C, is the class-B
+#     counterpart of the first two: same shape, no cookie fallback).
 #   admin/operator_json_api.rs::{resolve_admin,shell} -- the operator-
 #     console shell/resolve pair E3's own wrapper resolution already
 #     names one level down from this list.
@@ -766,6 +769,8 @@ E4_EXEMPT=""
 #     one-level wrapper target.
 NAMED_NON_HANDLERS="crates/backend/src/routes/admin/auth.rs::resolve_from_request
 crates/backend/src/routes/admin/auth.rs::resolve_or_respond
+crates/backend/src/routes/admin/auth.rs::resolve_from_request_header_only
+crates/backend/src/routes/admin/auth.rs::resolve_or_respond_header_only
 crates/backend/src/routes/admin/operator_json_api.rs::resolve_admin
 crates/backend/src/routes/admin/operator_json_api.rs::shell
 crates/backend/src/routes/admin/tenancy_console/forms/common.rs::require_manage
@@ -1196,46 +1201,177 @@ echo "ℹ️   E5 coverage: scanned ${e5_total} .json URL(s) fetched by the fron
      "${e5_exact} resolved exactly, ${e5_capture} resolved via capture (defect)," \
      "${e5_unresolved} unresolved"
 
-# ── E6 (RFC 152 half B stage 1): every route-contracts.md row whose CSRF
-#    cell reads `required`, on the admin tenancy-console/tenant-admin
-#    surfaces, must resolve through its exact `.post_async` registration
-#    in lib.rs to a handler file that actually calls `csrf::verify` --
-#    directly, or via the shared `verify_csrf` helper in
-#    tenancy_console/forms/common.rs that every form handler below it
-#    delegates to. Half A (v0.86.3) made the table honest: all 34 cells
-#    read `N/A (SameSite=Strict)`, truthfully, because nothing else was
-#    there. This stage adds the control and flips the cells to mean
-#    `required`. A flipped cell with no real `csrf::verify` call behind
-#    it would be the same kind of lie half A fixed, just inverted -- so
-#    this re-derives the check from the registration, not from the
-#    table's own say-so.
+# ── E6 (RFC 152 half B, generalised by half C): every mutating
+#    route-contracts.md row whose CSRF cell makes a claim -- `required`,
+#    `required (<mechanism>)`, or `N/A (bearer)` -- must resolve through
+#    its registration in lib.rs to a handler whose body backs that exact
+#    claim. Half A (v0.86.3) made the table honest for 34 cells
+#    (`N/A (SameSite=Strict)`, truthfully, because nothing else was
+#    there); half B stage 1 added the real control and flipped those
+#    cells to `required`; half C found the identical defect on the
+#    operator-console surface (RFC 152 §Half C) AND its mirror image --
+#    `N/A (bearer)` cells claiming NO cookie-derived credential works,
+#    on handlers that accept one anyway. A flipped cell with nothing
+#    behind it is the same lie half A fixed, just inverted; an `N/A`
+#    cell that is not actually true is the SAME lie pointed the other
+#    way -- a claim that a weaker check suffices when it does not. This
+#    re-derives every one of those three claims from the registration,
+#    never from the table's own say-so.
+#
+# Scoped to POST/PUT/DELETE rows only, not GET: CSRF and credential-
+# acceptance are concerns about state-changing requests. (A handful of
+# GET rows in the table carry a stray `required` in the CSRF column --
+# a pre-existing labelling slip, not this cycle's, see the half C
+# report -- which is exactly why this scoping is stated and not
+# incidental: including GET would make E6 fail on that slip, a finding
+# unrelated to what E6 exists to check.)
 COMMON_RS="$REPO_ROOT/crates/backend/src/routes/admin/tenancy_console/forms/common.rs"
 
-# Echoes the `routes::a::b::fn` call inside the exact `.post_async("$2",
-# ...)` registration for method $1 (lowercase) -- every such registration
-# on these two surfaces is a single physical line (confirmed before
-# writing this: `grep -n '\.post_async\s*("/admin/t\(enancy\)\?/'
-# crates/backend/src/lib.rs | grep -v routes::` returns nothing), so a
-# literal two-grep narrow is enough; no multi-line closure body to walk,
-# unlike E4's handler-side resolution.
+# `required (<mechanism>)` cells name a control other than the
+# double-submit `csrf::verify`/`verify_csrf` pair. Named, dated table --
+# same discipline as NAMED_NON_HANDLERS/E4_EXEMPT above -- of the
+# mechanism text (as it appears in the cell, inside the parens) to a
+# substring E6 requires somewhere in the resolved handler's body.
+# Two entries as of RFC 152 half C (2026-10-31): `/logout`'s pre-existing
+# `required (Origin check)`, and the two `config/log_level/{preview,apply}`
+# routes' `required (preview-token binding)`, found by half C's own
+# measurement to carry a *different* real control
+# (`cesauth_core::admin::preview::verify_preview_token`) that the
+# original 36-row population scan did not know to look for.
+#
+# Two kinds of entry: an ERE pattern to search the resolved body for
+# (grep -E), or the sentinel `STANDARD` meaning "this parenthetical is
+# scope commentary on the ordinary double-submit check, not a different
+# mechanism" -- `required (form path)` on `/magic-link/verify` is
+# exactly that: the handler genuinely calls `csrf::verify(`, the
+# "(form path)" clause says WHEN the check applies (not on the JSON
+# path), and treating it as an unknown mechanism would be a false
+# failure on a row that is already correct. Empty means truly unknown:
+# add a case, or the row is misdocumented.
+e6_mechanism_check() {
+  case "$1" in
+    "Origin check")          echo "check_origin_or_referer\\(" ;;
+    "preview-token binding") echo "mint_preview_token\\(|verify_preview_token\\(" ;;
+    "form path")             echo "STANDARD" ;;
+    *)                       echo "" ;;
+  esac
+}
+
+# **RFC 152 half C's own finding, exempted rather than fixed here.**
+# `N/A (bearer)` on these 18 rows is NOT true today: `legacy.rs`'s two
+# handlers and every `/api/v1/*` route (all 16, through the single
+# `api_v1::auth::require` they share) resolve via `auth::resolve_or_respond`
+# -- header OR the `__Host-cesauth_admin` cookie -- not the header-only
+# resolver the cell's claim requires. Measured while generalising E6
+# (2026-10-31); not fixed here. Flipping 17 routes from accepting a
+# cookie to rejecting one is a caller-obligation change of its own size
+# and was never asked for by this cycle's handoff, which scoped itself to
+# 7 operator-console routes. Reported in the half C report as a finding
+# for its own sizing decision, the same way half C itself was found
+# inside stage 2's review rather than folded into stage 2's fix. Named,
+# dated, and must shrink as each is actually fixed -- an entry that
+# stops matching (because the route was fixed, renamed, or removed)
+# is caught by the same "scanned-but-never-matched" discipline as
+# NAMED_NON_HANDLERS's own stale-entry check below, not silently kept.
+E6_BEARER_LEGACY_EXEMPT="POST /admin/users
+DELETE /admin/sessions/:id
+POST /api/v1/tenants
+POST /api/v1/tenants/:tid/status
+POST /api/v1/tenants/:tid/organizations
+POST /api/v1/tenants/:tid/organizations/:oid/status
+POST /api/v1/tenants/:tid/groups
+POST /api/v1/tenants/:tid/memberships
+POST /api/v1/organizations/:oid/memberships
+POST /api/v1/groups/:gid/memberships
+POST /api/v1/role_assignments
+POST /api/v1/tenants/:tid/subscription/plan
+POST /api/v1/tenants/:tid/subscription/status
+DELETE /api/v1/tenants/:tid/memberships/:uid
+DELETE /api/v1/organizations/:oid/memberships/:uid
+DELETE /api/v1/groups/:gid
+DELETE /api/v1/groups/:gid/memberships/:uid
+DELETE /api/v1/role_assignments/:id"
+
+# Echoes the `routes::a::b::fn` call inside the `.{method}_async("$2", ...)`
+# registration for method $1 (lowercase). Half B's version of this
+# required the literal path AND the handler call on the SAME line --
+# true for both admin surfaces (confirmed before writing it) but false
+# for 10+ rows elsewhere in lib.rs, registered as multi-line closures
+# (`.post_async("/webauthn/register/start", |req, ctx| async move {`
+# on one line, `routes::webauthn::register_start(req, ctx).await` on the
+# next) -- found while generalising E6 to the whole table, exactly the
+# blind spot half C's own handoff predicted. E4 solves a DIFFERENT
+# question (is this handler reachable from ANYWHERE in lib.rs, via a
+# whole-file substring search) and its answer carries no route identity,
+# so it cannot name which handler serves a given path; reusing it
+# directly is not available here. Rather than writing a third,
+# independently-regexed extractor over lib.rs (RFC 163's concern), this
+# is a bounded WIDENING of E6's own existing literal-substring technique
+# -- same `routes::[A-Za-z0-9_:]+\(` pattern it always matched on, same
+# shared `LIB_RS_LIVE`, now searched across the window from the matching
+# registration line up to (not including) the next `.{get,post,put,
+# delete}_async(` line, instead of requiring both on one line.
 e6_qualified_handler_for() {
   local method="$1" path="$2"
-  printf '%s\n' "$LIB_RS_LIVE" |
-    grep -F ".${method}_async" |
-    grep -F "\"${path}\"" |
-    grep -oE 'routes::[A-Za-z0-9_:]+\(' |
-    sed -E 's/\($//' |
-    head -1
+  awk -v n1=".${method}_async(" -v n2="\"${path}\"" '
+    BEGIN { collecting = 0 }
+    function emit() {
+      if (match($0, /routes::[A-Za-z0-9_:]+\(/)) {
+        s = substr($0, RSTART, RLENGTH)
+        sub(/\($/, "", s)
+        print s
+        return 1
+      }
+      return 0
+    }
+    {
+      if (collecting) {
+        if (index($0, ".get_async(") > 0 || index($0, ".post_async(") > 0 ||
+            index($0, ".put_async(") > 0 || index($0, ".delete_async(") > 0) { exit }
+        if (emit()) exit
+        next
+      }
+      if (index($0, n1) > 0 && index($0, n2) > 0) {
+        if (emit()) exit
+        collecting = 1
+      }
+    }
+  ' <<< "$LIB_RS_LIVE"
 }
 
 # routes::a::b::fn -> crates/backend/src/routes/a/b.rs. One level only --
 # every one of these 36 registrations names its handler's natural
 # qualified path directly (confirmed by inspection), so there is no
 # re-export chain to chase here the way E4 chases one for dead handlers.
+#
+# RFC 152 half C's generalisation found the one case this assumption
+# does not hold: `routes::magic_link::verify` is `magic_link.rs`'s own
+# `pub use verify::verify;` -- a same-name, one-level re-export (E4's
+# own "Shape 2", `mod.rs`-per-handler, the doc comment at the top of
+# `magic_link.rs` names the convention: "One submodule per handler").
+# The direct guess (routes/magic_link.rs) exists but does not define
+# `fn verify` at its top level; the fallback
+# (routes/magic_link/verify.rs, same fn name) does. Tries the direct
+# path first -- true for every one of the two admin surfaces this
+# started on -- and only falls back to the one-level submodule guess
+# when the direct file does not actually define the function, rather
+# than chasing a general re-export graph (E4's own job, for a
+# different question).
 e6_file_for_qualified() {
   local q="${1#routes::}"
   local modpath="${q%::*}"
-  echo "$REPO_ROOT/crates/backend/src/routes/${modpath//::/\/}.rs"
+  local fn="${q##*::}"
+  local direct="$REPO_ROOT/crates/backend/src/routes/${modpath//::/\/}.rs"
+  if [ -f "$direct" ] && grep -qE "fn ${fn}[<(]" "$direct"; then
+    echo "$direct"
+    return
+  fi
+  local submodule="$REPO_ROOT/crates/backend/src/routes/${modpath//::/\/}/${fn}.rs"
+  if [ -f "$submodule" ] && grep -qE "fn ${fn}[<(]" "$submodule"; then
+    echo "$submodule"
+    return
+  fi
+  echo "$direct"
 }
 
 # The CSRF form-field name the resolved HANDLER FUNCTION checks --
@@ -1288,6 +1424,31 @@ e6_fn_body() {
   ' "$file"
 }
 
+# Generalising E6 past the tenancy-console/tenant-admin surfaces hit
+# the `me/totp/*` family's own established pattern (RFC 150): the
+# registered handler extracts the request-shaped values and calls a
+# sibling `decide_<name>_post` function -- itself plain, pure, and
+# independently host-tested -- which is where `csrf::verify(` actually
+# appears as literal text. The handler's own body never contains it,
+# so e6_fn_body alone reports a false "unresolved" for all four totp
+# routes (confirmed: all four follow this shape, same file, same
+# `let decision = decide_..._post(` call). One bounded hop -- look for
+# a `decide_[A-Za-z0-9_]+(` call in the resolved handler's body, and if
+# found, OR in that function's own body from the SAME file (this
+# pattern is always file-local) -- same "modest widening of an
+# existing check" discipline as e6_qualified_handler_for's own
+# multi-line extension above, not a new traversal strategy.
+e6_resolve_body() {
+  local file="$1" fn="$2" body decide_fn
+  body=$(e6_fn_body "$file" "$fn")
+  decide_fn=$(printf '%s\n' "$body" | grep -oE 'decide_[A-Za-z0-9_]+\(' | head -1 | sed -E 's/\($//')
+  if [ -n "$decide_fn" ]; then
+    body="${body}
+$(e6_fn_body "$file" "$decide_fn")"
+  fi
+  echo "$body"
+}
+
 e6_field_name_for() {
   local file="$1" fn="$2" name body
   body=$(e6_fn_body "$file" "$fn")
@@ -1298,73 +1459,156 @@ e6_field_name_for() {
   echo "$name"
 }
 
-e6_rows=$(grep -E '^\|\s*POST\s+\|\s*`(/admin/t/|/admin/tenancy/)' "$CONTRACTS_MD")
+e6_rows=$(awk -F'|' '
+  /^\|/ {
+    method = $2; gsub(/^[ \t]+|[ \t]+$/, "", method)
+    if (method != "POST" && method != "PUT" && method != "DELETE") next
+    path = $3; gsub(/^[ \t]+|[ \t]+$/, "", path); gsub(/`/, "", path)
+    csrf = $9; gsub(/^[ \t]+|[ \t]+$/, "", csrf)
+    print method "\t" path "\t" csrf
+  }
+' "$CONTRACTS_MD")
 
-e6_scanned=0
-e6_required=0
+e6_scanned=0        # every mutating row, regardless of CSRF cell
+e6_claims=0         # rows whose cell is one of the three E6 checks
 e6_resolved=0
 e6_unresolved=0
+e6_exempted=0
 e6_unresolved_report=""
 e6_fields=""
+e6_exempt_matched=""
 
-while IFS= read -r row; do
-  [ -z "$row" ] && continue
+while IFS=$'\t' read -r method path csrf_cell; do
+  [ -z "$method" ] && continue
   e6_scanned=$((e6_scanned + 1))
-  path=$(echo "$row" | sed -E 's/^\|\s*POST\s+\|\s*`([^`]+)`.*/\1/')
-  csrf_cell=$(echo "$row" | awk -F'|' '{gsub(/^ +| +$/,"",$9); print $9}')
-  [ "$csrf_cell" != "required" ] && continue
-  e6_required=$((e6_required + 1))
 
-  qualified=$(e6_qualified_handler_for "post" "$path")
+  mech=""
+  case "$csrf_cell" in
+    "required") kind="plain" ;;
+    "required ("*")")
+      kind="mechanism"
+      mech="${csrf_cell#required \(}"
+      mech="${mech%\)}"
+      ;;
+    "N/A (bearer)") kind="bearer" ;;
+    *) continue ;;
+  esac
+  e6_claims=$((e6_claims + 1))
+
+  lc_method=$(printf '%s' "$method" | tr '[:upper:]' '[:lower:]')
+  qualified=$(e6_qualified_handler_for "$lc_method" "$path")
   file="" fn_name="" body=""
   if [ -n "$qualified" ]; then
     file=$(e6_file_for_qualified "$qualified")
     fn_name="${qualified##*::}"
-    [ -f "$file" ] && body=$(e6_fn_body "$file" "$fn_name")
+    [ -f "$file" ] && body=$(e6_resolve_body "$file" "$fn_name")
   fi
 
-  if [ -z "$qualified" ] || [ ! -f "$file" ] || ! printf '%s\n' "$body" | grep -qE 'csrf::verify\(|verify_csrf\('; then
-    e6_unresolved=$((e6_unresolved + 1))
-    e6_unresolved_report="${e6_unresolved_report}POST ${path} -- ${qualified:-no .post_async registration found} does not call csrf::verify\n"
+  if [ "$kind" = "bearer" ]; then
+    exempt_key="${method} ${path}"
+    if printf '%s\n' "$E6_BEARER_LEGACY_EXEMPT" | grep -Fxq "$exempt_key"; then
+      e6_exempted=$((e6_exempted + 1))
+      e6_exempt_matched="${e6_exempt_matched}${exempt_key}\n"
+      continue
+    fi
+  fi
+
+  ok=0
+  reason=""
+  if [ -z "$qualified" ] || [ ! -f "$file" ]; then
+    reason="no ${method} registration resolved to a handler file"
   else
+    case "$kind" in
+      plain)
+        printf '%s\n' "$body" | grep -qE 'csrf::verify\(|verify_csrf\(' && ok=1 || reason="does not call csrf::verify"
+        ;;
+      mechanism)
+        needle=$(e6_mechanism_check "$mech")
+        if [ -z "$needle" ]; then
+          reason="unknown mechanism name \"${mech}\" -- add it to e6_mechanism_check"
+        elif [ "$needle" = "STANDARD" ]; then
+          printf '%s\n' "$body" | grep -qE 'csrf::verify\(|verify_csrf\(' && ok=1 || reason="does not call csrf::verify"
+        elif printf '%s\n' "$body" | grep -qE "$needle"; then
+          ok=1
+        else
+          reason="does not call the control named \"${mech}\""
+        fi
+        ;;
+      bearer)
+        printf '%s\n' "$body" | grep -qE 'resolve_from_request_header_only\(|resolve_or_respond_header_only\(' \
+          && ok=1 || reason="resolves via a cookie-accepting path, not the header-only resolver its N/A (bearer) cell claims"
+        ;;
+    esac
+  fi
+
+  if [ "$ok" -eq 1 ]; then
     e6_resolved=$((e6_resolved + 1))
-    field=$(e6_field_name_for "$file" "$fn_name")
-    [ -n "$field" ] && e6_fields="${e6_fields}${field}\n"
+    if [ "$kind" = "plain" ]; then
+      field=$(e6_field_name_for "$file" "$fn_name")
+      [ -n "$field" ] && e6_fields="${e6_fields}${field}\n"
+    fi
+  else
+    e6_unresolved=$((e6_unresolved + 1))
+    e6_unresolved_report="${e6_unresolved_report}${method} ${path} -- ${qualified:-?} ${reason}\n"
   fi
 done <<< "$e6_rows"
 
-if [ "$e6_required" -ne "$((e6_resolved + e6_unresolved))" ]; then
-  echo "❌  E6 coverage arithmetic does not close: ${e6_required} required !=" \
-       "${e6_resolved} resolved + ${e6_unresolved} unresolved -- this is a bug in" \
-       "the check itself, not a finding about the backend." >&2
+if [ "$e6_claims" -ne "$((e6_resolved + e6_unresolved + e6_exempted))" ]; then
+  echo "❌  E6 coverage arithmetic does not close: ${e6_claims} claims !=" \
+       "${e6_resolved} resolved + ${e6_unresolved} unresolved + ${e6_exempted}" \
+       "exempted -- this is a bug in the check itself, not a finding about the" \
+       "backend." >&2
   exit_code=1
 fi
 
-if [ "$e6_required" -eq 0 ]; then
-  echo "❌  E6 found ZERO rows marked \`required\` (CSRF) on the admin" \
-       "tenancy-console/tenant-admin surfaces -- the check would pass vacuously." \
-       "Either the control was never added, or route-contracts.md's cells were" \
-       "never flipped from \`N/A (SameSite=Strict)\`." >&2
+if [ "$e6_claims" -eq 0 ]; then
+  echo "❌  E6 found ZERO mutating rows making a CSRF/bearer claim it checks --" \
+       "the check would pass vacuously." >&2
   exit_code=1
 fi
 
 if [ -n "$e6_unresolved_report" ]; then
-  echo "❌  route-contracts.md row(s) marked \`required\` (CSRF) whose handler does" \
-       "NOT call csrf::verify:" >&2
+  echo "❌  route-contracts.md row(s) whose CSRF cell's claim the resolved handler" \
+       "does not back:" >&2
   printf '%b' "$e6_unresolved_report" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line" >&2; done
   echo "" >&2
-  echo "    Either add the csrf::verify call, or the row is claiming a control the" >&2
-  echo "    code does not have -- fix the cell back to N/A if that's actually true." >&2
+  echo "    Either make the handler back the claim, or the cell is claiming a" >&2
+  echo "    control the code does not have -- correct the cell if that's actually" >&2
+  echo "    true." >&2
+  exit_code=1
+fi
+
+# Stale-exemption check -- same discipline as NAMED_NON_HANDLERS's own,
+# applied to E6_BEARER_LEGACY_EXEMPT: an entry that matched no row this
+# run (the route was fixed, renamed, or removed) is a pre-authorised
+# exemption nobody is reviewing any more, sitting over whatever lands at
+# that method+path next.
+e6_exempt_stale=""
+while IFS= read -r entry; do
+  [ -z "$entry" ] && continue
+  if ! printf '%b' "$e6_exempt_matched" | grep -Fxq "$entry"; then
+    e6_exempt_stale="${e6_exempt_stale}${entry}\n"
+  fi
+done <<< "$E6_BEARER_LEGACY_EXEMPT"
+
+if [ -n "$e6_exempt_stale" ]; then
+  echo "❌  E6_BEARER_LEGACY_EXEMPT entr(y|ies) matching NO scanned row this run" \
+       "(stale):" >&2
+  printf '%b' "$e6_exempt_stale" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line" >&2; done
+  echo "" >&2
+  echo "    The route behind this entry was fixed, renamed, or removed -- remove" >&2
+  echo "    it from E6_BEARER_LEGACY_EXEMPT above, rather than leaving a" >&2
+  echo "    pre-authorised exemption nobody is reviewing." >&2
   exit_code=1
 fi
 
 e6_distinct_fields=$(printf '%b' "$e6_fields" | grep -v '^$' | sort -u)
 e6_distinct_field_count=$(printf '%s\n' "$e6_distinct_fields" | grep -c . || true)
 
-echo "ℹ️   E6 coverage: scanned ${e6_scanned} POST row(s) on the admin" \
-     "tenancy-console/tenant-admin surfaces -- ${e6_required} required," \
-     "${e6_resolved} resolved to a verifying handler, ${e6_unresolved} unresolved." \
-     "Distinct CSRF field name(s) in use: ${e6_distinct_field_count}" \
+echo "ℹ️   E6 coverage: scanned ${e6_scanned} mutating row(s) repo-wide -- ${e6_claims}" \
+     "make a CSRF/bearer claim E6 checks, ${e6_resolved} resolved, ${e6_unresolved}" \
+     "unresolved, ${e6_exempted} exempted (RFC 152 half C finding, not this cycle's" \
+     "fix). Distinct CSRF field name(s) in use: ${e6_distinct_field_count}" \
      "($(printf '%s' "$e6_distinct_fields" | tr '\n' ',' | sed 's/,$//'))"
 
 if [ "$exit_code" -eq 0 ]; then

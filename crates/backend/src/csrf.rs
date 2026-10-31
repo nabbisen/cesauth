@@ -29,8 +29,11 @@
 //! therefore exempt. This is the standard mitigation pattern
 //! (OWASP CSRF Cheat Sheet, "Use of Custom Request Headers").
 
+use std::collections::HashMap;
+
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use getrandom::getrandom;
+use worker::Response;
 
 /// Cookie name. The `__Host-` prefix guarantees Path=/; Secure; and no
 /// Domain attribute, which is what we set below.
@@ -178,6 +181,43 @@ pub fn check_origin_or_referer(
     // Neither header present — fail closed. A real browser will
     // include at least one on a POST.
     false
+}
+
+/// RFC 152 half B stage 1 standardised this mint/attach/verify triple for
+/// the tenancy-console and tenant-admin form handlers, living in
+/// `tenancy_console/forms/common.rs`. RFC 152 half C needed the identical
+/// triple from the operator-console surface (`console/tokens.rs`,
+/// `console/config.rs`) — a module named `tenancy_console` is not a
+/// neutral home for code the operator console also depends on, so the
+/// three functions live here instead, next to the primitives they
+/// already wrap, with `tenancy_console/forms/common.rs` re-exporting
+/// them so its 21 existing call sites need no change.
+
+/// Mint a CSRF token and the `set-cookie` header value that must be
+/// attached to whatever response renders the form that carries it —
+/// [`attach_csrf_cookie`] does that attaching.
+pub fn mint_csrf() -> Result<(String, String), worker::Error> {
+    let token = mint().map_err(|_| worker::Error::RustError("csrf rng failed".into()))?;
+    let cookie = set_cookie_header(&token);
+    Ok((token, cookie))
+}
+
+/// Attach a `set-cookie` header (from [`mint_csrf`]) to a response that
+/// renders a form carrying the matching token. Every GET/preview/
+/// error-re-render path that renders a form must call this with a
+/// freshly minted cookie — a stale or missing cookie here is what makes
+/// a corrected resubmission fail for a reason the page never explains.
+pub fn attach_csrf_cookie(resp: &mut Response, cookie: &str) {
+    resp.headers_mut().append("set-cookie", cookie).ok();
+}
+
+/// Verify a submitted `csrf` form field against the request's CSRF
+/// cookie. `cookie_header` is the raw `cookie` request header value,
+/// read by the caller before the form body is consumed.
+pub fn verify_csrf(form: &HashMap<String, String>, cookie_header: &str) -> bool {
+    let submitted = form.get("csrf").map(String::as_str).unwrap_or("");
+    let from_cookie = extract_from_cookie_header(cookie_header).unwrap_or("");
+    verify(submitted, from_cookie)
 }
 
 #[cfg(test)]

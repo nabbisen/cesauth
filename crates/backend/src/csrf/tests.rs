@@ -167,3 +167,68 @@ fn mint_result_is_ok_under_normal_conditions() {
     // Cloudflare Workers and standard Linux both provide a working CSPRNG.
     assert!(mint().is_ok());
 }
+
+// =====================================================================
+// mint_csrf / verify_csrf — RFC 152 half B stage 1, relocated here from
+// `tenancy_console/forms/common.rs` by half C: both the tenancy-console/
+// tenant-admin surfaces and the operator console now depend on this
+// triple, so it lives next to the primitives it wraps rather than under
+// a name (`tenancy_console`) that is not a neutral home for either.
+// `attach_csrf_cookie` is not tested here for the same reason it never
+// was in its old home: `worker::Response`/`Headers` are wasm-bindgen
+// imports that panic on a non-wasm host target.
+// =====================================================================
+
+use std::collections::HashMap;
+
+fn form_with(csrf: &str) -> HashMap<String, String> {
+    let mut m = HashMap::new();
+    m.insert("csrf".to_owned(), csrf.to_owned());
+    m
+}
+
+#[test]
+fn verify_csrf_rejects_a_form_with_no_token_at_all() {
+    let (_, cookie) = mint_csrf().expect("getrandom must succeed in tests");
+    assert!(!verify_csrf(&HashMap::new(), &cookie),
+        "a form with no csrf field at all must not verify");
+}
+
+#[test]
+fn verify_csrf_rejects_a_wrong_token() {
+    let (_, cookie) = mint_csrf().expect("getrandom must succeed in tests");
+    let form = form_with("attacker-supplied-value");
+    assert!(!verify_csrf(&form, &cookie),
+        "a submitted token that does not match the cookie must not verify");
+}
+
+#[test]
+fn verify_csrf_accepts_a_matching_token() {
+    let (token, cookie) = mint_csrf().expect("getrandom must succeed in tests");
+    let form = form_with(&token);
+    assert!(verify_csrf(&form, &cookie),
+        "a submitted token matching the cookie must verify");
+}
+
+#[test]
+fn verify_csrf_rejects_an_empty_cookie_header_even_with_a_submitted_token() {
+    // A request with no Cookie header at all (first-ever visit, or a
+    // cookie-stripping proxy) -- extract_from_cookie_header returns
+    // None, and the empty fallback must not compare equal to an empty
+    // submitted field either.
+    let form = form_with("");
+    assert!(!verify_csrf(&form, ""));
+}
+
+/// RFC 152 half B §3's trap: every re-render that carries a form must
+/// mint a FRESH token, not reuse the one that was just spent.
+#[test]
+fn mint_csrf_mints_a_fresh_token_and_a_distinct_set_cookie_string_each_call() {
+    let (token_a, cookie_a) = mint_csrf().expect("getrandom must succeed in tests");
+    let (token_b, cookie_b) = mint_csrf().expect("getrandom must succeed in tests");
+    assert_ne!(token_a, token_b,
+        "two mints in a row must not produce the same token");
+    assert_ne!(cookie_a, cookie_b);
+    assert!(cookie_b.contains(&token_b),
+        "the set-cookie string attach_csrf_cookie would append must carry the freshly minted token");
+}

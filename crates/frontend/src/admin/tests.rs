@@ -68,7 +68,7 @@ fn config_edit_form_escapes_untrusted_notes() {
         last_verified_by:     Some("alice".to_owned()),
         updated_at:           1_000_000,
     };
-    let out = config_edit::edit_form(&principal(Role::Operations), &state, None);
+    let out = config_edit::edit_form(&principal(Role::Operations), &state, None, "tok-1");
     assert!(!out.contains("<script>alert(1)"),
         "notes field must be HTML-escaped");
     assert!(out.contains("&lt;script&gt;"), "expected escaped form of payload");
@@ -98,7 +98,7 @@ fn config_confirm_page_marks_only_changed_fields() {
         proposed,
         changed_fields: vec!["cors_configured", "lifecycle_configured"],
     };
-    let out = config_edit::confirm_page(&principal(Role::Operations), &diff);
+    let out = config_edit::confirm_page(&principal(Role::Operations), &diff, "tok-1");
     assert!(out.contains("2 fields will change"));
     assert!(out.contains(r#"name="confirm" value="yes""#),
         "confirm hidden field must be present so submit applies");
@@ -128,10 +128,53 @@ fn config_confirm_page_with_no_changes_omits_apply_button() {
         proposed: same_as_current,
         changed_fields: vec![],
     };
-    let out = config_edit::confirm_page(&principal(Role::Operations), &diff);
+    let out = config_edit::confirm_page(&principal(Role::Operations), &diff, "tok-1");
     assert!(out.contains("no change"));
     assert!(!out.contains(r#"name="confirm""#),
         "no-change page must not render the apply button");
+}
+
+/// RFC 152 half C, class A. `config_edit::edit_form`'s hidden `csrf`
+/// field is threaded through `render_form`'s pre-existing `hidden`
+/// parameter (previously always `""`); pin it actually carries the
+/// value a caller passes, not an empty string left over from before.
+#[test]
+fn config_edit_form_carries_csrf_token() {
+    let state = BucketSafetyState {
+        bucket: "AUDIT".into(),
+        public: false, cors_configured: false, bucket_lock: false,
+        lifecycle_configured: false, event_notifications: false,
+        notes: None, last_verified_at: None, last_verified_by: None,
+        updated_at: 0,
+    };
+    let out = config_edit::edit_form(&principal(Role::Operations), &state, None, "the-csrf-token");
+    assert!(out.contains(r#"name="csrf" value="the-csrf-token""#));
+}
+
+/// RFC 152 half C, class A. The apply form (rendered when there ARE
+/// changes) must carry the fresh token the handler minted for this
+/// re-render.
+#[test]
+fn config_confirm_page_apply_form_carries_csrf_token() {
+    let current = BucketSafetyState {
+        bucket: "AUDIT".into(),
+        public: false, cors_configured: false, bucket_lock: false,
+        lifecycle_configured: false, event_notifications: false,
+        notes: None, last_verified_at: None, last_verified_by: None,
+        updated_at: 0,
+    };
+    let proposed = BucketSafetyChange {
+        bucket: "AUDIT".into(),
+        public: false, cors_configured: true, bucket_lock: false,
+        lifecycle_configured: false, event_notifications: false,
+        notes: None,
+    };
+    let diff = BucketSafetyDiff {
+        bucket: "AUDIT".into(), current, proposed,
+        changed_fields: vec!["cors_configured"],
+    };
+    let out = config_edit::confirm_page(&principal(Role::Operations), &diff, "the-csrf-token");
+    assert!(out.contains(r#"name="csrf" value="the-csrf-token""#));
 }
 
 #[test]
@@ -151,6 +194,29 @@ fn token_list_empty_explains_bootstrap_fallback() {
     let out = tokens::list_page(&principal(Role::Super), &[]);
     assert!(out.contains("ADMIN_API_KEY"),
         "empty-list state must explain the bootstrap bearer");
+}
+
+/// RFC 152 half C, class A. `tokens::new_form`'s hidden `csrf` field —
+/// this is the route that mints an admin token, the handoff's own
+/// "the one to get right".
+#[test]
+fn token_new_form_carries_csrf_token() {
+    let out = tokens::new_form(&principal(Role::Super), None, "the-csrf-token");
+    assert!(out.contains(r#"name="csrf" value="the-csrf-token""#));
+}
+
+/// Every one of `tokens.rs::create`'s re-render paths (missing role,
+/// bad role, over-long label, hash collision) must mint a fresh token —
+/// this pins the view carries whatever it is handed, so a handler-side
+/// regression that passes a stale/empty token has somewhere to be
+/// caught at the template boundary too.
+#[test]
+fn token_new_form_carries_a_distinct_token_per_render() {
+    let out_a = tokens::new_form(&principal(Role::Super), Some("role is required"), "tok-a");
+    let out_b = tokens::new_form(&principal(Role::Super), Some("role is required"), "tok-b");
+    assert!(out_a.contains(r#"value="tok-a""#));
+    assert!(out_b.contains(r#"value="tok-b""#));
+    assert!(!out_a.contains("tok-b") && !out_b.contains("tok-a"));
 }
 
 // =====================================================================

@@ -184,7 +184,7 @@ mod tests {
                 &cesauth_core::admin::types::AdminPrincipal {
                     id: "tok_test".to_owned(), role: cesauth_core::admin::types::Role::Super, name: None, user_id: None,
                 },
-                Some("role is required"),
+                Some("role is required"), "tok-1",
             )
         }).unwrap();
         assert_eq!(nonce_from_style_tag(&html), nonce_from_csp(&csp));

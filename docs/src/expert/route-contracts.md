@@ -90,7 +90,7 @@ code-review responsibility.
 | GET | `/admin/console.json` | System admin | none | JSON (`csrf_token`) | n/a | n/a | N/A (GET) |
 | GET | `/admin/console/cost` | System admin | none | placeholder — RFC 161 | client | n/a | N/A (GET) |
 | GET | `/admin/console/safety` | System admin | none | placeholder — RFC 161 | client | n/a | N/A (GET) |
-| POST | `/admin/console/safety/:bucket/verify` | System admin | `bucket_verified` | redirect | client | n/a | required |
+| POST | `/admin/console/safety/:bucket/verify` | System admin (bearer) | `bucket_verified` | redirect | client | n/a | N/A (bearer) |
 | GET  | `/admin/console/operations` | System admin | none | HTML | client | n/a | required |
 | GET  | `/admin/console/operations.json` | System admin | none | JSON (`csrf_token`) | n/a | n/a | required |
 | POST | `/admin/console/audit/export` | System admin | `audit_exported` | CSV/JSONL download | n/a | CSRF | required |
@@ -98,8 +98,8 @@ code-review responsibility.
 | GET | `/admin/console/audit/chain` | System admin | none | placeholder — RFC 161 | client | n/a | N/A (GET) |
 | POST | `/admin/console/audit/chain/verify` | System admin | `audit_chain_verified` | redirect | client | n/a | required |
 | GET | `/admin/console/config` | System admin | none | placeholder — RFC 161 | client | n/a | N/A (GET) |
-| POST | `/admin/console/config/:bucket/preview` | System admin | none | config preview | client | n/a | required |
-| POST | `/admin/console/config/:bucket/apply` | System admin | `config_applied` | redirect | client | n/a | required |
+| POST | `/admin/console/config/:bucket/preview` | System admin (bearer) | none | config preview | client | n/a | N/A (bearer) |
+| POST | `/admin/console/config/:bucket/apply` | System admin (bearer) | `config_applied` | redirect | client | n/a | N/A (bearer) |
 | POST | `/admin/t/:slug/invitations` | Tenant admin | `invitation_issued` | redirect | client | CSRF | required |
 | GET  | `/admin/t/:slug/invitations` | Tenant admin | none | HTML | client | n/a | required |
 | GET  | `/admin/t/:slug/invitations.json` | Tenant admin | none | JSON (`csrf_token`, `invitations`) | n/a | n/a | required |
@@ -112,17 +112,17 @@ code-review responsibility.
 | GET  | `/admin/t/:slug/deletion-requests` | Tenant admin | none | HTML | server | `tenant_admin::tests::deletion_requests_page_renders_the_real_csrf_token` | required |
 | POST | `/admin/t/:slug/deletion-requests/:id/cancel` | Tenant admin | `deletion_cancelled` | redirect | client | n/a | required |
 | POST | `/admin/t/:slug/deletion-requests/:id/execute` | Tenant admin | `deletion_executed` | redirect | client | n/a | required |
-| POST | `/admin/console/config/log_level/preview` | System admin | `operation_previewed` | preview page | client | n/a | required |
-| POST | `/admin/console/config/log_level/apply` | System admin | `operation_applied` | redirect | client | n/a | required |
+| POST | `/admin/console/config/log_level/preview` | System admin | `operation_previewed` | preview page | client | n/a | required (preview-token binding) |
+| POST | `/admin/console/config/log_level/apply` | System admin | `operation_applied` | redirect | client | n/a | required (preview-token binding) |
 | GET | `/admin/console/alerts` | System admin | none | placeholder — RFC 161 | client | n/a | N/A (GET) |
-| POST | `/admin/console/thresholds/:name` | System admin | `threshold_set` | redirect | client | n/a | required |
+| POST | `/admin/console/thresholds/:name` | System admin (bearer) | `threshold_set` | redirect | client | n/a | N/A (bearer) |
 | GET | `/admin/console/config/:bucket/edit` | System admin | none | edit form | server | n/a | N/A (GET) |
 | POST | `/admin/console/config/:bucket/edit` | System admin | `config_edited` | redirect | client | n/a | required |
 | GET | `/admin/console/tokens` | System admin | none | placeholder — no list renders; RFC 161 | client | n/a | N/A (GET) |
 | GET | `/admin/console/tokens.json` | System admin | none | JSON (`csrf_token`) | n/a | n/a | N/A (GET) |
 | GET | `/admin/console/tokens/new` | System admin | none | new-token form | server | n/a | N/A (GET) |
 | POST | `/admin/console/tokens` | System admin | `admin_token_created` | redirect | client | n/a | required |
-| POST | `/admin/console/tokens/:id/disable` | System admin | `admin_token_disabled` | redirect | client | n/a | required |
+| POST | `/admin/console/tokens/:id/disable` | System admin (bearer) | `admin_token_disabled` | redirect | client | n/a | N/A (bearer) |
 | GET | `/admin/console/clients` | System admin | none | no `app.rs` route — renders `<NotFound/>`; RFC 161 | client | n/a | N/A (GET) |
 | GET | `/admin/console/clients.json` | System admin | none | JSON (`clients`) | n/a | n/a | N/A (GET) |
 | POST | `/admin/console/clients` | System admin | `admin_client_created` | JSON | n/a | n/a | N/A (JSON) |

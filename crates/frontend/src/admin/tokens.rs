@@ -97,7 +97,7 @@ pub fn list_page(principal: &AdminPrincipal, tokens: &[AdminPrincipal]) -> Strin
 // New form
 // -------------------------------------------------------------------------
 
-pub fn new_form(principal: &AdminPrincipal, error: Option<&str>) -> String {
+pub fn new_form(principal: &AdminPrincipal, error: Option<&str>, csrf: &str) -> String {
     let error_section = match error {
         None      => String::new(),
         Some(msg) => format!(
@@ -139,11 +139,13 @@ pub fn new_form(principal: &AdminPrincipal, error: Option<&str>) -> String {
         </td>
       </tr>
     </table>
+    <input type="hidden" name="csrf" value="{csrf}">
   </form>
 </section>"##,
         error_section = error_section,
         tokens_url    = routes::TOKENS,
         cancel_url    = routes::TOKENS,
+        csrf          = escape(csrf),
     );
 
     admin_frame(

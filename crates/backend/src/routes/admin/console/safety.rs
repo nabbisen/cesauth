@@ -28,8 +28,31 @@ pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
 /// `POST /admin/console/safety/:bucket/verify`
 ///
 /// Stamp the attestation's `last_verified_at`. Requires Security+.
+///
+/// **RFC 152 half C — departure from the handoff's class A, stated
+/// here rather than guessed past.** The handoff lists this route as
+/// class A (a real browser form needing the double-submit token) on the
+/// strength of its content-negotiation: "the HTML branch redirects back
+/// to its form." That form does not exist on any LIVE route. The only
+/// template that renders one — `cesauth_frontend::admin::safety_page`'s
+/// `render_row`, with a real `<form method="post" action="...">` — is
+/// called from nowhere but its own tests (`grep -rn "safety_page\b"`
+/// outside `admin/safety.rs`/`admin/tests.rs`: zero call sites). The
+/// LIVE `GET /admin/console/safety` serves the Leptos CSR shell, whose
+/// actual component, `ConsoleSafety` in
+/// `pages/operator/console.rs`, is a bare placeholder that says so
+/// itself: *"検証結果の一覧表示は未実装です(RFC 161)"* ("the result
+/// listing is not implemented"). So there is no live GET anywhere that
+/// could mint a token and hand it to a form a browser could submit —
+/// the premise behind class A's "real browser form" does not hold for
+/// this one route, the same way class B's premise would not have held
+/// had any of its four turned out to have a real caller (§1 of the
+/// handoff). Treated as class B instead: bearer-header-only, no
+/// double-submit token, `N/A (bearer)`. If a browser form for this
+/// route is ever built (closing RFC 161's gap here), it needs the
+/// stage-1 pattern at that point, not before.
 pub async fn verify<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
+    let principal = match auth::resolve_or_respond_header_only(&req, &ctx.env).await? {
         Ok(p)  => p,
         Err(r) => return Ok(r),
     };
