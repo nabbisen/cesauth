@@ -7,6 +7,9 @@ the document made true, the real control pinned). **Half B dispatched
 stage 2, §6's `GET /admin/login` cookie fixation, its own cycle in the same
 release. See §5.
 
+**Half B SHIPPED in v0.90.0**, 2026-10-31, both stages. **Half A shipped in
+v0.86.3.** **Half C is outstanding**, so this RFC stays in `accepted/`.
+
 **Half C PROPOSED 2026-10-31 — a third surface makes the same claim.** RFC 152
 scoped itself to `/admin/t/*` and `/admin/tenancy/*` and never asked whether any
 other surface documented the same control; the stage-1 handoff inherited that

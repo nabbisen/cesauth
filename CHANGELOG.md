@@ -22,6 +22,140 @@ under budget.
 
 ---
 
+## [0.90.0] - 2026-10-31
+
+### The admin surfaces now have the CSRF control their documentation claimed — RFC 152 half B
+
+**Minor, because 34 endpoints begin requiring something no caller sent before.**
+A `POST` to any of them that omits the token, or sends one that does not match
+the cookie, now gets **400 Bad Request** where it previously succeeded. Nothing
+in this release was broken; a second layer was added on purpose.
+
+RFC 152 (2026-10-27) found that all 35 — now **36** — `POST` routes under
+`/admin/t/*` and `/admin/tenancy/*` documented their CSRF column as `required`
+while **34 of them never called `csrf::verify`**. Half A (v0.86.3) made the
+document true by writing `N/A (SameSite=Strict)` where nothing checked a token,
+and pinned the cookie attribute that was in fact carrying the whole defence.
+This release adds the control and makes the cells say `required` and mean it.
+
+### Added
+
+- **34 admin `POST` routes verify a double-submit CSRF token**, across 23
+  handler files. Two of those files sit **outside** both surface directories —
+  `routes/deletions.rs` (already verifying, the RFC 147 pattern the rest now
+  copy) and `routes/invitations.rs` — so the population was derived by
+  resolving each documented row through its `.post_async` registration rather
+  than by walking a directory tree.
+
+- **Every server-rendered admin form carries a token, and every re-render mints
+  a fresh one.** The 21 form views gained a `csrf` parameter and the handlers a
+  shared `mint_csrf` / `attach_csrf_cookie` / `verify_csrf` boundary. The
+  re-render case is the one an operator would have met: a form rejected for a
+  validation error and re-displayed with a spent token would fail the corrected
+  resubmission for a reason the page never explains. Verified end to end —
+  validation error, fresh token, corrected resubmission accepted.
+
+- **`E6`, in `scripts/route-contracts-check.sh`.** Every `POST` row whose CSRF
+  cell reads `required` on these surfaces must resolve, through its exact
+  registration in `lib.rs`, to a handler that actually calls the check. It
+  reports its own coverage, fails on an unresolved row, asserts a non-zero
+  count so a matcher that stops matching fails loudly, and prints how many
+  distinct CSRF field names it finds — which is how the `csrf` / `csrf_token`
+  split stays visible instead of becoming folklore. The workflow count stays at
+  **14**; E6 runs inside the existing route-contracts job.
+
+- **`POST /admin/login`.** See below.
+
+### Fixed
+
+- **`GET /admin/login?token=…` set a session cookie for a token it had not
+  validated** (RFC 152 §6). It screened the length and set
+  `__Host-cesauth_admin`; validation happened on the *next* `/admin/*` fetch.
+  Two consequences followed: a crafted link with a garbage token locked a
+  working operator out of the console, and — worse — a link carrying an
+  **attacker's valid** token made the victim operate the console as the
+  attacker's principal, so every action they took was attributed to the attacker
+  in the tamper-evident audit chain. **Correct entries against the wrong
+  principal** is the failure a hash-linked log cannot help with.
+
+  `GET` now validates the token against the admin-token store and **sets
+  nothing**. It renders a confirmation page naming the identity and role the
+  operator is about to assume — *"you are about to sign in as X (role: Y);
+  continue only if you opened this link yourself"* — carrying a freshly minted
+  CSRF token. The new **`POST /admin/login`** verifies that token, re-validates
+  the bearer, and only then sets the cookie and redirects.
+
+  **This changes the operator login flow**: a bookmarked or scripted `GET` to
+  that URL no longer signs anyone in by itself. One deliberate click does.
+
+  Why the confirmation step rather than validation alone: validating removes the
+  lockout consequence and **does nothing** about the first, because the
+  attacker's token is valid — that is the premise of the attack. Only requiring
+  the operator's own submission closes it, and `SameSite=Strict` then means no
+  attacker page can make that submission. (RFC 152 §6.4 records the correction;
+  §6.3 had recommended validation alone.)
+
+- **An unknown or disabled token at `/admin/login` now writes
+  `admin_login_failed`**, as every other `/admin/*` path already did. The old
+  length pre-screen silently skipped the audit write for exactly the malformed
+  input most worth recording.
+
+- **Two now-false security claims in `admin_login.rs`.** Half A extracted
+  `admin_cookie_header` so that one place would state the real control; after
+  half B stage 1 that place still said `SameSite=Strict` was *"the entire
+  defense for 33 of 35"*. It is defence in depth on top of a check 34 of 36
+  routes now run. The cookie test's assertions are unchanged — the attribute is
+  still worth failing loudly on — only its account of why.
+
+### Documentation
+
+- **`route-contracts.md`**: 32 cells flipped back to `required`, rows added for
+  `POST /admin/login` and the changed `GET`, and a note recording that
+  `POST /admin/tenancy/tenants/:id/{suspend,restore}` have **no caller** — no
+  view posts to either, neither reads a form body, and both are superseded by
+  `tenant_set_status.rs`'s preview/confirm flow. Their `N/A (SameSite=Strict)`
+  cells are true, not unexamined.
+
+- **Four rulings in `contributing.md`**: which handler serves a route is
+  answered by its registration, not by the directory a file sits in; **which
+  form posts to a route is answered by the form's `action`**, not by the file's
+  name; a bundle figure names the command that produced it, and **sha256 plus
+  raw bytes are the portable identity — gzip size is a property of the
+  compressor too**; and a live probe's evidence is its captured status lines,
+  not prose about them.
+
+### Known and unfixed
+
+- **Nine `POST` rows on the operator console claim CSRF `required` and no
+  handler among them calls any CSRF check** —
+  `/admin/console/tokens` (which **mints an admin token**),
+  `…/tokens/:id/disable`, `…/config/:bucket/{preview,apply,edit}`,
+  `…/config/log_level/{preview,apply}`, `…/thresholds/:name` and
+  `…/safety/:bucket/verify`. RFC 152 scoped itself to two surfaces and never
+  asked whether a third made the same claim; E6's path filter inherited that
+  scope and cannot see these. **Not a live vulnerability**, for the same single
+  reason the original finding was not: the admin cookie is `SameSite=Strict`, so
+  a forged cross-site `POST` arrives with no credential. Found while reviewing
+  this release, proposed as **RFC 152 half C**, which opens by measuring which
+  of the nine have a reachable caller at all.
+
+- **No automated gate observes the admin cookie's attributes on a live
+  response** any more. `runtime-smoke-check.sh` could assert them only because
+  the old handler set the cookie from an unvalidated placeholder token; that is
+  now impossible, and the gate runs with no secrets and no migrations by design.
+  The host test still pins the exact string the builder produces. Restoring a
+  live witness needs a CI job with D1 state, which no job has today.
+
+- **Nothing rate-limits unauthenticated audit appends.** Any unauthenticated
+  `/admin/*` request writes an `admin_login_failed` row into the hash-linked
+  chain; `/admin/login` is now one more such path rather than a new property.
+
+- **Eleven of the book's eighty pages remain absent from `SUMMARY.md`**, and
+  `expert/view-rendering-policy.md` still links twice to one of them. Carried
+  from 0.89.5; awaiting a decision on its own RFC.
+
+---
+
 ## [0.89.5] - 2026-10-31
 
 ### A reader who wants to deploy now has one ordered path — RFC 167 slice 2, RFC 028
