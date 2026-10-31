@@ -7,6 +7,17 @@ the document made true, the real control pinned). **Half B dispatched
 stage 2, §6's `GET /admin/login` cookie fixation, its own cycle in the same
 release. See §5.
 
+**Stage 1 SHIPPED to `main` in `c9ae019`** (not yet released; 0.90.0's cut
+waits on stage 2). **32 handlers gained `csrf::verify`**, the two
+`routes/invitations.rs` routes among them; 34 of the 36 contract cells now read
+`required` and **E6** fails the build if any of them stops being true. Verified
+live by the architect, not read: no token and wrong token both **400**, matching
+token **303**, and a validation-error re-render carries a **fresh** token whose
+corrected resubmission succeeds. **Two routes were left honest rather than
+flipped** — `tenant_detail::{suspend,restore}` read no form body and have no
+caller anywhere, which is a finding for RFC 166's census (a registered route no
+caller invokes) rather than an exemption.
+
 **Half B's population re-derived route-scoped at dispatch** (2026-10-31): **36
 `POST` rows, 34 without a `csrf::verify`, across 23 files** — not 33 of 35. The
 RFC's figure predates `POST /admin/t/:slug/invitations/:id/revoke` (v0.88.0).
@@ -275,3 +286,30 @@ header-or-cookie path this handler is about to populate. Three candidates:
 **(1) is cheap and (2) is better.** Half B's cycle should cost both before
 choosing; the token-in-URL exposure is already accepted in writing, so (2) is
 a larger change than the defect strictly requires.
+
+### 6.4 Correction — (1) does not remove both consequences (architect, 2026-10-31)
+
+**The sentence above claiming option (1) "removes both consequences" is wrong,
+and it was mine.** It removes the **denial-of-access** consequence: nothing is
+set before validation, so a garbage token can no longer overwrite a working
+operator's cookie. It does **nothing** about **login CSRF**, because the
+attacker's token is *valid* — that is the premise of §6.2's attack. Option (2)
+narrows the window and does not close it either: an attacker can mint their own
+one-time handle and induce the victim to consume that one.
+
+**What fixes login CSRF is requiring the operator's intent.** The cookie must be
+set by a request the operator deliberately submitted, not by a navigation they
+were induced to make. **Stage 2 therefore does validation *and* a confirmation
+step**: `GET /admin/login?token=…` validates against the store and renders a
+page carrying a CSRF token and **the identity the operator is about to assume**
+(the admin token's name and role); a new `POST /admin/login` verifies the CSRF
+token and sets the cookie. `SameSite=Strict` means no attacker page can submit
+that form, and an operator who followed an unexpected link sees whose console
+they are about to hold.
+
+The token-in-URL exposure is unchanged and still accepted in writing; option
+(2) stays the recorded end state for its own RFC rather than riding on a defect
+fix.
+
+**Dispatched 2026-10-31** as stage 2:
+`handoffs/152-the-admin-surfaces-documented-csrf-control-is-not-the-real-one/half-b-stage-2-handoff.md`.

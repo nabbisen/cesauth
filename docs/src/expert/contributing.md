@@ -234,6 +234,32 @@ two known handler signature shapes, and isn't named on
 being silently skipped — adding a genuinely new helper there means adding
 it to that list, not just making the function compile.
 
+The same script's **E6** check (RFC 152 half B) runs over the admin
+tenancy-console and tenant-admin surfaces: every `POST` row whose CSRF cell
+reads `required` must resolve, through its exact `.post_async` registration in
+`lib.rs`, to a handler that calls `csrf::verify` — directly or via
+`tenancy_console/forms/common.rs`'s shared `verify_csrf`. Half A made the table
+honest by writing `N/A (SameSite=Strict)` where nothing checked a token; a cell
+flipped back to `required` with no verify behind it would be the same lie
+inverted, so E6 re-derives the answer from the registration rather than from the
+table's say-so. It also prints how many distinct CSRF form-field names it finds,
+which is how the `csrf` / `csrf_token` split stays visible instead of becoming
+folklore.
+
+**Two route-resolution rules, both learned by getting them wrong** (2026-10-31):
+
+- **Which handler serves a route is answered by its registration in `lib.rs`,
+  not by the directory a file sits in.** `/admin/t/:slug/deletion-requests/*`
+  and `/admin/t/:slug/invitations*` are both served from outside the admin
+  surface directories, so a directory-scoped grep reports the wrong population —
+  it once put the figure at 33 of 35 when it is 34 of 36.
+- **Which form posts to a route is answered by the form's `action` and the
+  router entry that serves the page, not by the file's name.** A handoff once
+  told the team to keep a CSRF field name because a file called
+  `invitations.rs` used it — but that form posts to `/accept-invite`, and the
+  live admin form, served by `app.rs`'s own route, posts a different field name.
+  Following the instruction literally would have broken every real submission.
+
 ## RFC lifecycle
 
 New design decisions go in `rfcs/proposed/NNN-title.md`. The lifecycle is
@@ -352,6 +378,24 @@ A release that mixes fixes and new capability takes the **higher** level.
   (ruling, 2026-10-31), not just the version. A baseline whose provenance is
   stated turns a mismatch into a one-line known offset instead of an
   unexplained delta in someone else's report — which is how the above was found.
+- **A bundle figure names the command that produced it, and a gzip size is
+  only comparable within one compressor** (ruling, 2026-10-31). The gate
+  measures what `wrangler deploy --dry-run --outdir bundled/` writes; a figure
+  taken from any other path is a different artifact and must not be diffed
+  against the baseline. Found when a cycle reported a `shim.js` of **8,569 B**
+  gzip against the release tree's **10,700 B** for the same raw 61,887 bytes,
+  and reported a `*_bg.wasm` gzip 41 bytes from the architect's own measurement
+  of a file with **the same sha256** — identical bytes, two compressors.
+  **sha256 plus raw bytes are the portable identity; gzip size is a property of
+  the compressor too.**
+
+- **A live probe's evidence is its captured status lines** (ruling,
+  2026-10-31), not prose describing them. A CSRF token or a session cookie is
+  rightly redacted from a transcript, but
+  `curl -s -o /dev/null -w "%{http_code}"` leaks nothing and is the difference
+  between a claim and a capture — the same distinction the `cargo-fmt.log`
+  entry above records.
+
 - **None of the above is checked yet.** No workflow reads `CHANGELOG.md`, none
   compares tags to entries, and none compares a release's level to what it
   changed — so every rule in this section is honoured by hand. Across tags from
