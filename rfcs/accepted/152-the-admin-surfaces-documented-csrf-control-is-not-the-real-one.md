@@ -26,6 +26,36 @@ placeholder that says *"未実装 (RFC 161)"*. Reclassified as B. The architect'
 classification rested on the handler and never asked whether the form existed,
 which is the question the handoff itself told the team to ask about class B.
 
+**Half D — now 29 rows across two cell values.** The second value was found in
+cycle 2's review (2026-10-31): **11 mutating rows claim `N/A (JSON)`, and the
+control that cell names does not exist.** The stated reasoning is that a JSON
+`Content-Type` forces a CORS preflight the server never grants — but
+`worker::Request::json()` calls the Fetch `Request.json()`, which parses the
+body **regardless of `Content-Type`**, and no handler checks the header.
+Verified live: `POST /admin/console/clients` with `content-type: text/plain` and
+with `application/json`, same `{}` body, returned the same `id is required` —
+the body was parsed both times. `text/plain` is CORS-safelisted, so no preflight
+occurs. The real protection is `SameSite=Strict` again. The eleven include
+`POST /admin/console/clients/{create,update,rotate_secret,delete}`.
+
+**So half D's measurement stage has two questions**, not one: for the 18
+`N/A (bearer)` rows, is there a real cookie-borne caller; and for the 11
+`N/A (JSON)` rows, is the honest cell `N/A (SameSite=Strict)` — naming the layer
+that actually holds — or do they want the control the cell currently claims.
+
+**Half C cycle 2 SHIPPED to `main` in `5f011fc`.** E6 now has E4's census
+property: every scanned mutating row is checked or **declared with a reason**,
+an unrecognised cell is a hard failure, declared values carry the stale-entry
+rule, and both arithmetics are asserted —
+`94 = 76 claims + 18 declared + 0 unclassified` and
+`76 = 58 resolved + 0 unresolved + 18 exempted`. The two cells it caught:
+`POST /accept-invite` (no ambient credential and no state change — nothing for a
+forged request to ride on) and `POST /userinfo`, whose `N/A (Bearer)` had been
+skipped on a capital letter and whose claim is **true** — a renaming re-export
+to a handler reading `Authorization` through its own `extract_bearer`, with no
+cookie path, recognised now through a table keyed by handler name rather than a
+widened regex.
+
 **Half D, found while generalising E6 (2026-10-31).** **18 mutating rows claim
 `N/A (bearer)` and accept a cookie**: `POST /admin/users`,
 `DELETE /admin/sessions/:id`, and all 16 `/api/v1/*` mutating routes, which
