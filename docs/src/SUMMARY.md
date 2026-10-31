@@ -70,6 +70,7 @@
 
 # Deployment
 
+- [Your first production deployment](./deployment/first-production-deploy.md)
 - [Pre-flight checklist](./deployment/preflight.md)
 - [Wrangler configuration](./deployment/wrangler.md)
 - [Secrets & environment variables](./deployment/secrets.md)
