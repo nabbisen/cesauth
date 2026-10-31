@@ -1,6 +1,7 @@
 # RFC 117 — Authorization code lifecycle assurance
 
 **Status.** Implemented (v0.84.1)
+**Evidence: `exercised`** (back-filled 2026-10-31). 21 tests over `core/src/service/token/exchange_pipeline` plus `adapter-test`'s `auth_challenge_proptests`, both crates in the canonical gate command, failing if the typestate pipeline stops rejecting a reused or expired code. **Additionally observed end to end against a live Worker** during RFC 167 slice 2's rehearsal (2026-10-31): a real authorization code exchanged for access, id and refresh tokens.
 **Tier.** P0 · Category A
 **Size.** Medium
 **Tracks.** Strategy §5.1, §8 (RFC theme 2); audit G4.

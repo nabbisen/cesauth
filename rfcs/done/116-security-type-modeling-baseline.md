@@ -4,6 +4,7 @@
 adoption at `service::client_auth` and `Challenge::MagicLink.code_hash`
 (handoff RISK-001), and `ports::repo` conversion, which remains entirely
 `&str` and is folded into RFC 119.
+**Evidence: `exercised`** (back-filled 2026-10-31, RFC 151 §22.3). The deliverable is a type constraint, and the type checker is its gate: every CI build of `cesauth-core` fails to compile if a newtype is reverted to its primitive. The deferred items named above are outside the term.
 **Tier.** P0 · Category A (strategy §6: must implement now)
 **Size.** Large (mechanical, wide)
 **Tracks.** Security-Critical Assurance Strategy §5.6, §8 (RFC theme 1);

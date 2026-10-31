@@ -352,7 +352,7 @@ minor versions.** Measured before any change was made:
 (`scripts/changelog-archive-split.sh`, which is idempotent and refuses to split
 a file already under budget) and the specification of the gate were all
 delivered; only the thing that would have failed when the policy stopped being
-true was not. **That is [RFC 151](../accepted/151-done-cannot-distinguish-shipped-from-working.md)'s
+true was not. **That is [RFC 151](../done/151-done-cannot-distinguish-shipped-from-working.md)'s
 subject with a measured instance**, and it is the fifth member of a pattern —
 [RFC 163](../accepted/163-two-route-extractors-two-blind-spots.md),
 [RFC 164](../accepted/164-the-link-sweep-rfc-000-mandates-is-unenforced.md),

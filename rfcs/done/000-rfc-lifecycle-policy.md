@@ -1,7 +1,7 @@
 # RFC 000 — RFC lifecycle policy
 
 **Status.** Implemented. **Amended 2026-10-27 by
-[RFC 151](../accepted/151-done-cannot-distinguish-shipped-from-working.md)**,
+[RFC 151](../done/151-done-cannot-distinguish-shipped-from-working.md)**,
 which adds the evidence term to the Status field and §22's rule. The amendment
 is the follow-up this RFC's own "Open questions" section anticipated.
 **Tracks.** Cross-cutting documentation policy. Not tied to any

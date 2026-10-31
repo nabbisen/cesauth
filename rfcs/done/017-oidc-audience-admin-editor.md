@@ -14,7 +14,7 @@
 >
 > **Kept here because this RFC is a second [RFC 047](./047-deletion-worker-layer.md):**
 > `done/`, **Status: Implemented**, shipped v0.53.0, and non-functional
-> throughout. One such case made [RFC 151](../accepted/151-done-cannot-distinguish-shipped-from-working.md)
+> throughout. One such case made [RFC 151](../done/151-done-cannot-distinguish-shipped-from-working.md)
 > arguable; two make it evidential. Under RFC 000 §22 this RFC's evidence term
 > is **`unknown`** at best, and it is exactly what the back-fill must catch.
 

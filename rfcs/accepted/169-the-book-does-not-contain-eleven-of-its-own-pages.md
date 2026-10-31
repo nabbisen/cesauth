@@ -1,6 +1,10 @@
 # RFC 169 — The book does not contain eleven of its own pages, and one in-book link already 404s
 
-**Status.** **Proposed** 2026-10-31 by the architect, while reviewing v0.89.5.
+**Status.** **Accepted** 2026-10-31 by the owner (*"RFC 169 is accepted."*).
+Proposed the same day by the architect, while reviewing v0.89.5.
+**Scheduled 0.91.x — patch**, after RFC 152 half C and ahead of RFC 164, with
+which it shares `drift-scan.sh`. **Not dispatched**: 0.91.0's cut is pending, and
+its code must not land on `main` before that tag can be cut honestly.
 **Tier.** **P2.** Nothing is broken and nothing is exposed. Current, maintained
 documentation is unreachable from the published book, and one page that *is*
 published links twice to one of the missing ones.

@@ -1,6 +1,7 @@
 # RFC 132 — View rendering policy
 
 **Status.** Implemented (v0.82.0)
+**Evidence: `exercised`** (back-filled 2026-10-31). **E2** and **E3** are blocking sections of `scripts/route-contracts-check.sh`, run by the `route-contracts` workflow on every push, and fail the build when a route's rendering declaration stops matching what it serves.
 **Tier.** P1 · Category A — a policy RFC. It establishes the rule; conformance
 work is scoped by it.
 **Size.** Small to write, Medium to enforce, and it re-scopes part of RFC 131.

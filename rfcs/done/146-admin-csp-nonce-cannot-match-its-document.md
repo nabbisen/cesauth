@@ -1,6 +1,7 @@
 # RFC 146 — The admin surface's CSP nonce cannot match its own document
 
 **Status.** **Done** — landed at `3013ff3`, accepted 2026-10-25. **Shipped v0.85.1.**
+**Evidence: `exercised`** (back-filled 2026-10-31). `admin_frame_render_nonce_matches_its_own_csp_header` and its tenancy-console twin in `routes/admin/console/render.rs` assert the document's nonce against the header the same response carries, and `runtime-smoke-check.sh` asserts the CSP on live responses.
 **Tier.** P1 — it is structural: on this path a matching nonce is not possible,
 not merely absent.
 **Size.** Small in design, mechanical in breadth: one signature, 78 call sites.

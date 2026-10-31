@@ -2,6 +2,22 @@
 
 **Status.** **Done** — cycle 1 `c23dbf9` (shipped v0.85.1), cycle 2 `2099df3`,
 accepted 2026-10-27. **Cycle 1 shipped v0.85.1; cycle 2 shipped v0.86.0.**
+**Evidence: `observed`** (back-filled 2026-10-31; **this is the back-fill's first real finding, and it was closed the same day**). The term was `reviewed` for an afternoon, which §22.2 does not admit for a P1 — so it was driven instead of scheduled.
+
+**What was found first.** `core::deletion::execute_deletion` is well covered (15 unit tests against stub repositories), **its caller `backend/src/sweep.rs::sweep_pending_deletions` has no tests and no test module**, and nothing in CI or `runtime-smoke-check.sh` drives the `#[event(scheduled)]` entry point. RFC 151 §4 named `sweep_pending_deletions_executes_due_requests` and `e2e/deletion.spec.ts` as what `exercised` would require here; **neither exists.** The cause is structural, not forgetfulness: `sweep_pending_deletions` takes `&worker::Env`, which no host test can construct. **The caller chain itself is intact** — `lib.rs:152` calls it inside the 04:00 cron arm — so this is not RFC 047's defect, which was checked before it was claimed.
+
+**Observed, at `b0208ab`, against `wrangler dev --test-scheduled` with local D1.** A user row and a *due* `pending` deletion request were inserted, `GET /__scheduled?cron=0+4+*+*+*` was triggered (200), and afterwards:
+
+| | |
+|---|---|
+| `users` row for the subject | **gone** (count 0) |
+| `deletion_requests.status` | **`executed`** |
+| `executed_by` / `executed_at` | **`sweep`** / set |
+| audit event | **`deletion_executed`**, `subject` = **the deleted user** — RFC 147 cycle 2 D5's own claim, confirmed rather than read — with `reason: "request:… sweep scrub:scrubbed"`, which also witnesses RFC 148's email scrub |
+
+The fixture rows were removed afterwards; the `deletion_executed` audit row was **left in place on purpose**, because deleting from a hash-linked chain to tidy a local database is the one cleanup that would do real damage.
+
+**`observed` decays and says so.** The durable fix is still owed: lift the sweep's decision core into a pure function over the repository port — the shape `execute_deletion` already has — and gate that, or drive `/__scheduled` from a CI job with D1 state. Recorded in RFC 151 §7; the same missing capability (a CI job with D1 state) is what also costs the admin cookie its live witness, so the two should be priced together.
 **Tier.** **P1 · Category A** — a user's request to delete their own account is
 silently discarded, a documented irreversible operation does nothing, and the
 audit log records a deletion that did not happen.

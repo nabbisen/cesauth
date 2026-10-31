@@ -1,6 +1,7 @@
 # RFC 118 — Refresh token rotation and reuse-detection assurance
 
 **Status.** Implemented (v0.84.2)
+**Evidence: `exercised`** (back-filled 2026-10-31). `adapter-test`'s `refresh_family_proptests` drive generated operation sequences against the reference model in `core/src/ports/store/family_model.rs`, in the gate. **Additionally observed live** in the same rehearsal: a refresh token rotated successfully against a running Worker.
 **Tier.** P0 · Category A
 **Size.** Medium
 **Tracks.** Strategy §5.2, §8 (RFC theme 3); audit G6 (refresh half).

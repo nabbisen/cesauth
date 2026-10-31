@@ -1,6 +1,7 @@
 # RFC 127 — CSR bundle buildability and its missing gate
 
 **Status.** Implemented (v0.81.1). R1–R5 landed.
+**Evidence: `exercised` — by RFC 130's gates, not by this RFC's own criterion** (back-filled 2026-10-31). `csr-bundle-check` and `trunk-release-build` are both release-path workflows and both fail if the bundle stops building. The term describes the outcome those gates now protect; **acceptance criterion 3 was never met here**, as the Status above records, and RFC 130 is what closed it.
 **Acceptance criterion 3 was NOT met**: `trunk build --release` still fails and
 the backend cannot locate the artifacts. Continued by RFC 130 — the frontend
 screens remain non-functional until that ships.

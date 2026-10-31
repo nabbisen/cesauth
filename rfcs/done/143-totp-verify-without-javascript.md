@@ -1,6 +1,7 @@
 # RFC 143 — A no-JavaScript user is stranded at the second factor
 
 **Status.** **Done** — cycle 1 + C1-143, accepted 2026-10-25. **Shipped v0.85.0.**
+**Evidence: `exercised`** (back-filled 2026-10-31). `backend/src/routes/me/totp/verify/tests.rs` carries 21 tests, including `verify_get_with_live_pending_totp_renders` — the exact claim this RFC is about, that a user without JavaScript reaches the server-rendered page rather than a dead end — plus the template's own i18n render tests in `cesauth-frontend`.
 **Tier.** P1 · Category A — it locks a user out of their own account.
 **Size.** Small.
 **Touches.** `crates/backend/src/routes/me/totp/verify.rs`, a template,

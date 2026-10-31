@@ -1,6 +1,10 @@
 # RFC 151 — `done/` cannot distinguish "shipped" from "works"
 
-**Status.** **Accepted** 2026-10-27. **Amends RFC 000.** **Not release-bound** —
+**Status.** **DONE** 2026-10-31 — the definition, the field and the P0/P1
+back-fill are all complete (§7). **Evidence: `reviewed`** — the rule is applied
+by hand and nothing checks it, which §7 records as this project's tenth
+instance of a documented thing with no gate; the check rides with
+RFC 164/168/169 in 0.91.x. **Amends RFC 000** (§22). **Not release-bound** —
 it is a policy change, implemented by the architect, and it is scheduled
 **before the 0.86.1 dispatch** so that RFC 145 is the first RFC filed under the
 new rule rather than the last under the old one.
@@ -293,6 +297,64 @@ why it is the architect's work and not a sweep anyone can run. **RFC 151 stays
 in `accepted/` until those eight are done**, because filing it as Implemented
 with its own recommended work outstanding would be precisely the defect it was
 written about.
+
+## 7. The back-fill, done — and what it found (2026-10-31)
+
+All **eight** are filed. Seven came out `exercised`, each naming the gate that
+fails if the deliverable stops working:
+
+| RFC | Term | The gate |
+|---|---|---|
+| 116 (P0) | `exercised` | the type checker — a newtype reverted to its primitive fails every CI build |
+| 117 (P0) | `exercised` | 21 tests over `exchange_pipeline` + `auth_challenge_proptests`; **also observed live** in RFC 167 slice 2's rehearsal |
+| 118 (P0) | `exercised` | `refresh_family_proptests` against the `family_model` reference model; **also observed live** |
+| 127 (P0) | `exercised` | `csr-bundle-check` + `trunk-release-build` — **RFC 130's gates, not this RFC's own criterion**, which was never met |
+| 132 (P1) | `exercised` | E2/E3, blocking sections of `route-contracts-check.sh` |
+| 143 (P1) | `exercised` | `verify_get_with_live_pending_totp_renders` — the exact no-JS claim |
+| 146 (P1) | `exercised` | the two `..._nonce_matches_its_own_csp_header` tests |
+| **147 (P1)** | **`observed`** | **nothing. See below.** |
+
+**The eighth is why the field exists.** RFC 147 — *"deletion requests are
+audited but never performed"* — had **no gate over the thing it fixed**.
+`core::deletion::execute_deletion` carries 15 unit tests; its only caller,
+`backend/src/sweep.rs::sweep_pending_deletions`, has **no tests and no test
+module**, and nothing in CI or the smoke check drives the
+`#[event(scheduled)]` entry point. §4 of this RFC named
+`sweep_pending_deletions_executes_due_requests` and `e2e/deletion.spec.ts` as
+what `exercised` would require there. **Neither exists.** The cause is
+structural — the sweep takes `&worker::Env`, which no host test can construct —
+which is why it was never written rather than merely forgotten.
+
+**§22.2 does not admit `reviewed` for a P1 in `done/`, so it was driven rather
+than scheduled.** At `b0208ab`, against `wrangler dev --test-scheduled`: a due
+pending request was inserted, the 04:00 cron pass triggered, and afterwards the
+user row was gone, the request read `executed` / `sweep`, and the audit chain
+carried `deletion_executed` with `subject` set to **the deleted user** —
+RFC 147 cycle 2 D5's own claim, confirmed rather than read — and
+`scrub:scrubbed`, which witnesses RFC 148's email scrub too. RFC 147 now says
+`observed`, with the commit, which is a decaying term and says so.
+
+**Three things this establishes about the rule itself:**
+
+1. **The field found what reading did not.** Eight RFCs were read when they
+   were closed, and seven reviews of the eighth did not notice that its central
+   deliverable had no witness. One field, filled honestly, surfaced it in an
+   afternoon.
+2. **`unknown` was never needed.** §22.2 feared a field filled in carelessly;
+   the discipline that prevented it was having to name the *gate*, not the
+   term. A term with no gate behind it has nowhere to hide.
+3. **The rule has no gate of its own**, which is the tenth instance of this
+   project's recurring shape. A check that every `done/` RFC carries a term,
+   and that no P0/P1 carries `reviewed` or `unknown`, is a few lines over
+   `rfcs/`. **It rides with RFC 164/168/169** in the 0.91.x patch — they all
+   live in or beside `drift-scan.sh`, so the workflow count stays at 14.
+
+**The durable fix for RFC 147 is still owed** and is not this RFC's: lift the
+sweep's decision core into a pure function over the repository port — the shape
+`execute_deletion` already has — and gate that. Note that **the same missing
+capability** (a CI job with D1 state and a seeded credential) is what costs the
+admin cookie its live witness after RFC 152 half B stage 2. The two should be
+priced together rather than solved twice.
 
 ## 5. Open question for the owner
 
