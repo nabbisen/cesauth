@@ -15,7 +15,9 @@ use worker::{Request, Response, Result, RouteContext};
 
 use crate::audit::{self, EventKind};
 use crate::routes::admin::console::render;
-use crate::routes::admin::tenancy_console::forms::common::{parse_form, redirect_303, require_manage};
+use crate::routes::admin::tenancy_console::forms::common::{
+    attach_csrf_cookie, mint_csrf, parse_form, redirect_303, require_manage, verify_csrf,
+};
 use crate::routes::api_v1::quota;
 
 // -----------------------------------------------------------------
@@ -35,7 +37,10 @@ pub async fn form_tenant<D>(req: Request, ctx: RouteContext<D>) -> Result<Respon
     let tenant = match tenants.get(&tid).await {
         Ok(Some(t)) => t, _ => return Response::error("not found", 404),
     };
-    render::html_response(|| ui::for_tenant(&principal, &tenant.id, &tenant.slug, "", "", None))
+    let (csrf_token, csrf_cookie) = mint_csrf()?;
+    let mut resp = render::html_response(|| ui::for_tenant(&principal, &tenant.id, &tenant.slug, "", "", None, &csrf_token))?;
+    attach_csrf_cookie(&mut resp, &csrf_cookie);
+    Ok(resp)
 }
 
 pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -45,7 +50,11 @@ pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<
     let Some(tid) = ctx.param("tid").map(|s| s.to_owned()) else {
         return Response::error("not found", 404);
     };
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
     let slug         = form.get("slug").cloned().unwrap_or_default();
     let display_name = form.get("display_name").cloned().unwrap_or_default();
 
@@ -55,15 +64,18 @@ pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<
     };
 
     if slug.trim().is_empty() || display_name.trim().is_empty() {
-        return render::html_response(|| ui::for_tenant(
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| ui::for_tenant(
             &principal, &tenant.id, &tenant.slug, &slug, &display_name,
-            Some("Slug and display name are required"),
-        ));
+            Some("Slug and display name are required"), &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     let parent = GroupParent::Tenant;
     create_and_redirect(&ctx.env, &principal, &tid, parent, &slug, &display_name,
-        |err| ui::for_tenant(&principal, &tenant.id, &tenant.slug, &slug, &display_name, Some(err)),
+        |err, csrf| ui::for_tenant(&principal, &tenant.id, &tenant.slug, &slug, &display_name, Some(err), csrf),
     ).await
 }
 
@@ -84,7 +96,10 @@ pub async fn form_org<D>(req: Request, ctx: RouteContext<D>) -> Result<Response>
     let org = match orgs.get(&oid).await {
         Ok(Some(o)) => o, _ => return Response::error("not found", 404),
     };
-    render::html_response(|| ui::for_organization(&principal, &org.id, &org.slug, "", "", None))
+    let (csrf_token, csrf_cookie) = mint_csrf()?;
+    let mut resp = render::html_response(|| ui::for_organization(&principal, &org.id, &org.slug, "", "", None, &csrf_token))?;
+    attach_csrf_cookie(&mut resp, &csrf_cookie);
+    Ok(resp)
 }
 
 pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -94,7 +109,11 @@ pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Res
     let Some(oid) = ctx.param("oid").map(|s| s.to_owned()) else {
         return Response::error("not found", 404);
     };
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
     let slug         = form.get("slug").cloned().unwrap_or_default();
     let display_name = form.get("display_name").cloned().unwrap_or_default();
 
@@ -104,21 +123,27 @@ pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Res
     };
 
     if slug.trim().is_empty() || display_name.trim().is_empty() {
-        return render::html_response(|| ui::for_organization(
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| ui::for_organization(
             &principal, &org.id, &org.slug, &slug, &display_name,
-            Some("Slug and display name are required"),
-        ));
+            Some("Slug and display name are required"), &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     let parent = GroupParent::Organization { organization_id: org.id.clone() };
     create_and_redirect(&ctx.env, &principal, &org.tenant_id, parent, &slug, &display_name,
-        |err| ui::for_organization(&principal, &org.id, &org.slug, &slug, &display_name, Some(err)),
+        |err, csrf| ui::for_organization(&principal, &org.id, &org.slug, &slug, &display_name, Some(err), csrf),
     ).await
 }
 
 // -----------------------------------------------------------------
 
-async fn create_and_redirect<F: FnOnce(&str) -> String>(
+/// `rerender` takes `(error, csrf)` — a fresh token is minted here,
+/// right before each re-render, because the one the caller already
+/// verified is spent.
+async fn create_and_redirect<F: Fn(&str, &str) -> String>(
     env:           &worker::Env,
     principal:     &cesauth_core::admin::types::AdminPrincipal,
     tenant_id:     &str,
@@ -133,9 +158,12 @@ async fn create_and_redirect<F: FnOnce(&str) -> String>(
         Ok(o) => o, Err(_) => return Response::error("storage error", 500),
     };
     if let Some(_) = quota::into_response_if_exceeded(outcome) {
-        return render::html_response(|| rerender(
-            "Quota exceeded — this tenant's plan does not allow more groups",
-        ));
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| rerender(
+            "Quota exceeded — this tenant's plan does not allow more groups", &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     let now = OffsetDateTime::now_utc().unix_timestamp();
@@ -153,7 +181,10 @@ async fn create_and_redirect<F: FnOnce(&str) -> String>(
                     => m.to_owned(),
                 _ => "Storage error".to_owned(),
             };
-            return render::html_response(|| rerender(&msg));
+            let (csrf_token, csrf_cookie) = mint_csrf()?;
+            let mut resp = render::html_response(|| rerender(&msg, &csrf_token))?;
+            attach_csrf_cookie(&mut resp, &csrf_cookie);
+            return Ok(resp);
         }
     };
 

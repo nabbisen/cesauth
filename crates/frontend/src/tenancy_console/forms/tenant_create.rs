@@ -24,6 +24,7 @@ pub fn tenant_create_form(
     display_name:  &str,
     owner_user_id: &str,
     error:         Option<&str>,
+    csrf:          &str,
 ) -> String {
     let body = format!(
         "{back}\n{error}\n{form}\n{help}",
@@ -32,7 +33,7 @@ pub fn tenant_create_form(
             url = routes::TENANTS,
         ),
         error = render_error(error),
-        form  = render_form(slug, display_name, owner_user_id),
+        form  = render_form(slug, display_name, owner_user_id, csrf),
         help  = render_help(),
     );
     tenancy_console_frame("New tenant", principal.role, principal.name.as_deref(), TenancyConsoleTab::Tenants, &body)
@@ -101,7 +102,7 @@ fn render_error(error: Option<&str>) -> String {
     }
 }
 
-fn render_form(slug: &str, display_name: &str, owner_user_id: &str) -> String {
+fn render_form(slug: &str, display_name: &str, owner_user_id: &str, csrf: &str) -> String {
     format!(
         r##"<section aria-label="New tenant form">
   <form method="post" action="{action_url}">
@@ -121,6 +122,7 @@ fn render_form(slug: &str, display_name: &str, owner_user_id: &str) -> String {
         </tr>
       </tbody>
     </table>
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Create tenant</button></p>
   </form>
 </section>"##,
@@ -128,6 +130,7 @@ fn render_form(slug: &str, display_name: &str, owner_user_id: &str) -> String {
         name  = escape(display_name),
         owner = escape(owner_user_id),
         action_url = routes::TENANTS_NEW,
+        csrf  = escape(csrf),
     )
 }
 
@@ -158,14 +161,14 @@ mod tests {
 
     #[test]
     fn form_is_post_to_new_endpoint() {
-        let html = tenant_create_form(&p(), "", "", "", None);
+        let html = tenant_create_form(&p(), "", "", "", None, "tok-1");
         assert!(html.contains(r#"action="/admin/tenancy/tenants/new""#));
         assert!(html.contains(r#"method="post""#));
     }
 
     #[test]
     fn form_preserves_sticky_values_on_rerender() {
-        let html = tenant_create_form(&p(), "acme", "Acme Corp", "u-alice", None);
+        let html = tenant_create_form(&p(), "acme", "Acme Corp", "u-alice", None, "tok-1");
         assert!(html.contains(r#"value="acme""#));
         assert!(html.contains(r#"value="Acme Corp""#));
         assert!(html.contains(r#"value="u-alice""#));
@@ -173,7 +176,7 @@ mod tests {
 
     #[test]
     fn error_renders_above_form_when_present() {
-        let html = tenant_create_form(&p(), "x", "", "", Some("slug already taken"));
+        let html = tenant_create_form(&p(), "x", "", "", Some("slug already taken"), "tok-1");
         // Error section appears before the form section.
         let pos_error = html.find("slug already taken").expect("error message visible");
         let pos_form  = html.find(r#"<form method="post""#).expect("form rendered");
@@ -184,7 +187,7 @@ mod tests {
     fn untrusted_input_is_html_escaped() {
         // Display name is operator-supplied; a hostile re-render
         // payload must not break out into HTML.
-        let html = tenant_create_form(&p(), "x", "<script>alert(1)</script>", "u", None);
+        let html = tenant_create_form(&p(), "x", "<script>alert(1)</script>", "u", None, "tok-1");
         assert!(!html.contains("<script>"), "display_name must be escaped");
         assert!(html.contains("&lt;script&gt;"));
     }

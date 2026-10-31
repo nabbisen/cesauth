@@ -198,7 +198,7 @@ mod tests {
                     id: "tok_test".to_owned(), role: cesauth_core::admin::types::Role::Super, name: None, user_id: None,
                 },
                 "t-1", "test-tenant", "", "",
-                Some("Slug and display name are required"),
+                Some("Slug and display name are required"), "tok-1",
             )
         }).unwrap();
         assert_eq!(nonce_from_style_tag(&html), nonce_from_csp(&csp));

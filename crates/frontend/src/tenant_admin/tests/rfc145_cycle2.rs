@@ -52,7 +52,7 @@ fn organization_set_status_form_renders_the_real_page() {
     let p = principal();
     let t = tenant();
     let org = sample_org();
-    let html = form_page(&p, &t, &org, None, "", None);
+    let html = form_page(&p, &t, &org, None, "", None, "tok-1");
     assert!(html.contains("Organization status: engineering"),
         "must render the real status-change form title, not the shell");
     assert!(html.contains("Preview change"));
@@ -65,7 +65,7 @@ fn group_create_form_renders_the_real_page() {
     let p = principal();
     let t = tenant();
     let org = sample_org();
-    let html = group_create_form(&p, &t, &org, "", "", None);
+    let html = group_create_form(&p, &t, &org, "", "", None, "tok-1");
     assert!(html.contains("New group in: engineering"),
         "must render the real group-create form title, not the shell");
 }
@@ -76,7 +76,7 @@ fn membership_add_for_organization_renders_the_real_page() {
     use super::super::forms::membership_add::for_organization;
     let p = principal();
     let t = tenant();
-    let html = for_organization(&p, &t, "o-1", "engineering", "", "", None);
+    let html = for_organization(&p, &t, "o-1", "engineering", "", "", None, "tok-1");
     assert!(html.contains("Add organization member: engineering"),
         "must render the real org-membership-add form title, not the shell");
 }
@@ -87,7 +87,7 @@ fn membership_add_for_group_renders_the_real_page() {
     use super::super::forms::membership_add::for_group;
     let p = principal();
     let t = tenant();
-    let html = for_group(&p, &t, "g-1", "platform", "o-1", "", None);
+    let html = for_group(&p, &t, "g-1", "platform", "o-1", "", None, "tok-1");
     assert!(html.contains("Add group member: platform"),
         "must render the real group-membership-add form title, not the shell");
 }
@@ -98,7 +98,7 @@ fn membership_remove_for_tenant_renders_the_real_page() {
     use super::super::forms::membership_remove::for_tenant;
     let p = principal();
     let t = tenant();
-    let html = for_tenant(&p, &t, "u-alice", "(unknown)");
+    let html = for_tenant(&p, &t, "u-alice", "(unknown)", "tok-1");
     assert!(html.contains("Remove tenant member: u-alice"),
         "must render the real tenant-membership-remove confirm page, not the shell");
 }
@@ -109,7 +109,7 @@ fn membership_remove_for_organization_renders_the_real_page() {
     use super::super::forms::membership_remove::for_organization;
     let p = principal();
     let t = tenant();
-    let html = for_organization(&p, &t, "o-1", "engineering", "u-alice", "(unknown)");
+    let html = for_organization(&p, &t, "o-1", "engineering", "u-alice", "(unknown)", "tok-1");
     assert!(html.contains("Remove org member: u-alice"),
         "must render the real org-membership-remove confirm page, not the shell");
 }
@@ -120,7 +120,7 @@ fn membership_remove_for_group_renders_the_real_page() {
     use super::super::forms::membership_remove::for_group;
     let p = principal();
     let t = tenant();
-    let html = for_group(&p, &t, "g-1", "platform", "o-1", "u-alice");
+    let html = for_group(&p, &t, "g-1", "platform", "o-1", "u-alice", "tok-1");
     assert!(html.contains("Remove group member: u-alice"),
         "must render the real group-membership-remove confirm page, not the shell");
 }
@@ -132,7 +132,7 @@ fn group_delete_form_renders_the_real_page() {
     let p = principal();
     let t = tenant();
     let g = sample_group();
-    let html = form_page(&p, &t, &g, "engineering", "o-1", "", None);
+    let html = form_page(&p, &t, &g, "engineering", "o-1", "", None, "tok-1");
     assert!(html.contains("Delete group: platform"),
         "must render the real group-delete form title, not the shell");
     assert!(html.contains("Preview delete"));
@@ -173,7 +173,7 @@ fn role_assignment_grant_form_renders_the_real_page() {
     let u = user("u-alice", "Alice");
     let html = grant_form(&p, &t, &GrantInput {
         subject_user: &u, available_roles: &[],
-        role_id: "", scope_type: "", scope_id: "", expires_at: "", error: None,
+        role_id: "", scope_type: "", scope_id: "", expires_at: "", error: None, csrf: "tok-1",
     });
     assert!(html.contains("Grant role to user: Alice"),
         "must render the real grant-role form title, not the shell");
@@ -192,7 +192,7 @@ fn role_assignment_revoke_form_renders_the_real_page() {
         granted_by: "tk-sys".into(), granted_at: 0, expires_at: None,
     };
     let html = form_page(&p, &t, &RevokeInput {
-        assignment: &a, subject_user: &u, role_label: "Admin (admin)", error: None,
+        assignment: &a, subject_user: &u, role_label: "Admin (admin)", error: None, csrf: "tok-1",
     });
     assert!(html.contains("Revoke role from: Alice"),
         "must render the real revoke-role form title, not the shell");

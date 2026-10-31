@@ -13,7 +13,9 @@ use crate::audit::{self, EventKind};
 use crate::config::Config;
 use crate::log::{self, Category, Level};
 use crate::routes::admin::console::render;
-use crate::routes::admin::tenancy_console::forms::common::{parse_form, redirect_303, require_manage};
+use crate::routes::admin::tenancy_console::forms::common::{
+    attach_csrf_cookie, mint_csrf, parse_form, redirect_303, require_manage, verify_csrf,
+};
 
 /// **RFC 145 cycle 3 / §2.** Used to return the Leptos shell with no
 /// `app.rs` route of its own — but this one didn't render `<NotFound/>`.
@@ -28,23 +30,33 @@ pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let principal = match require_manage(&req, &ctx.env).await? {
         Ok(p) => p, Err(r) => return Ok(r),
     };
-    render::html_response(|| tenant_create_form(&principal, "", "", "", None))
+    let (csrf_token, csrf_cookie) = mint_csrf()?;
+    let mut resp = render::html_response(|| tenant_create_form(&principal, "", "", "", None, &csrf_token))?;
+    attach_csrf_cookie(&mut resp, &csrf_cookie);
+    Ok(resp)
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let principal = match require_manage(&req, &ctx.env).await? {
         Ok(p) => p, Err(r) => return Ok(r),
     };
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
     let slug          = form.get("slug").cloned().unwrap_or_default();
     let display_name  = form.get("display_name").cloned().unwrap_or_default();
     let owner_user_id = form.get("owner_user_id").cloned().unwrap_or_default();
 
     if slug.trim().is_empty() || display_name.trim().is_empty() || owner_user_id.trim().is_empty() {
-        return render::html_response(|| tenant_create_form(
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| tenant_create_form(
             &principal, &slug, &display_name, &owner_user_id,
-            Some("All fields are required"),
-        ));
+            Some("All fields are required"), &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     let now = OffsetDateTime::now_utc().unix_timestamp();
@@ -72,9 +84,12 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
                     => "Owner user id not found".to_owned(),
                 _ => "Storage error".to_owned(),
             };
-            return render::html_response(|| tenant_create_form(
-                &principal, &slug, &display_name, &owner_user_id, Some(&msg),
-            ));
+            let (csrf_token, csrf_cookie) = mint_csrf()?;
+            let mut resp = render::html_response(|| tenant_create_form(
+                &principal, &slug, &display_name, &owner_user_id, Some(&msg), &csrf_token,
+            ))?;
+            attach_csrf_cookie(&mut resp, &csrf_cookie);
+            return Ok(resp);
         }
     };
     let tenant = outcome.tenant;

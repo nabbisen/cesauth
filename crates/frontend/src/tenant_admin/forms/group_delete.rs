@@ -20,6 +20,7 @@ pub fn form_page(
     org_id:         &str,
     reason_default: &str,
     error:          Option<&str>,
+    csrf:           &str,
 ) -> String {
     let title = format!("Delete group: {}", group.slug);
     let body = format!(
@@ -41,6 +42,7 @@ pub fn form_page(
       <label for="reason">Reason (recorded in audit log)</label><br>
       <input id="reason" name="reason" type="text" required maxlength="200" value="{reason}" style="width: 30em;">
     </p>
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Preview delete</button></p>
   </form>
 </section>"##,
@@ -52,6 +54,7 @@ pub fn form_page(
         org_slug = escape(org_slug),
         reason   = escape(reason_default),
         error    = render_error(error),
+        csrf     = escape(csrf),
     );
     tenant_admin_frame(
         &title,
@@ -72,6 +75,7 @@ pub fn preview_page(
     reason:         &str,
     affected_assignments: usize,
     affected_memberships: usize,
+    csrf:           &str,
 ) -> String {
     let title = format!("Confirm delete: {}", group.slug);
     let body = format!(
@@ -92,6 +96,7 @@ pub fn preview_page(
   <form method="post" action="{action_url}">
     <input type="hidden" name="reason" value="{reason}">
     <input type="hidden" name="confirm" value="yes">
+    <input type="hidden" name="csrf" value="{csrf}">
     <p>
       <button type="submit" class="critical">Apply delete</button>
       <a href="{cancel_url}">Cancel</a>
@@ -107,6 +112,7 @@ pub fn preview_page(
         n_assignments = affected_assignments,
         n_memberships = affected_memberships,
         reason        = escape(reason),
+        csrf          = escape(csrf),
     );
     tenant_admin_frame(
         &title,

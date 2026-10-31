@@ -18,6 +18,7 @@ pub fn for_tenant(
     tenant_slug:  &str,
     user_id:      &str,
     role:         &str,
+    csrf:         &str,
 ) -> String {
     let title = format!("Remove tenant member: {user_id}");
     let body = render_body(
@@ -27,7 +28,7 @@ pub fn for_tenant(
         &format!("Remove user <code>{}</code> from tenant <code>{}</code>?",
             escape(user_id), escape(tenant_slug)),
         Some(("Role being removed", role)),
-        "tenant",
+        "tenant", csrf,
     );
     tenancy_console_frame(&title, principal.role, principal.name.as_deref(), TenancyConsoleTab::Tenants, &body)
 }
@@ -39,6 +40,7 @@ pub fn for_organization(
     org_slug:   &str,
     user_id:    &str,
     role:       &str,
+    csrf:       &str,
 ) -> String {
     let title = format!("Remove org member: {user_id}");
     let body = render_body(
@@ -47,7 +49,7 @@ pub fn for_organization(
         &format!("Remove user <code>{}</code> from organization <code>{}</code>?",
             escape(user_id), escape(org_slug)),
         Some(("Role being removed", role)),
-        "organization",
+        "organization", csrf,
     );
     tenancy_console_frame(&title, principal.role, principal.name.as_deref(), TenancyConsoleTab::Tenants, &body)
 }
@@ -59,6 +61,7 @@ pub fn for_group(
     group_slug: &str,
     tenant_id:  &str,
     user_id:    &str,
+    csrf:       &str,
 ) -> String {
     let title = format!("Remove group member: {user_id}");
     let body = render_body(
@@ -67,7 +70,7 @@ pub fn for_group(
         &format!("Remove user <code>{}</code> from group <code>{}</code>?",
             escape(user_id), escape(group_slug)),
         None,
-        "group",
+        "group", csrf,
     );
     tenancy_console_frame(&title, principal.role, principal.name.as_deref(), TenancyConsoleTab::Tenants, &body)
 }
@@ -78,6 +81,7 @@ fn render_body(
     confirm_q:    &str,
     role_row:     Option<(&str, &str)>,
     scope_label:  &str,
+    csrf:         &str,
 ) -> String {
     let role_html = match role_row {
         None => String::new(),
@@ -102,6 +106,7 @@ fn render_body(
 <section aria-label="Apply">
   <form class="danger" method="post" action="{action}">
     <input type="hidden" name="confirm" value="yes">
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Remove member</button></p>
   </form>
 </section>"##,
@@ -109,6 +114,7 @@ fn render_body(
         action = action_href,
         q      = confirm_q,
         scope  = scope_label,
+        csrf   = escape(csrf),
     )
 }
 
@@ -123,28 +129,28 @@ mod tests {
 
     #[test]
     fn tenant_remove_action_includes_user_id() {
-        let html = for_tenant(&p(), "t-acme", "acme", "u-alice", "owner");
+        let html = for_tenant(&p(), "t-acme", "acme", "u-alice", "owner", "tok-1");
         assert!(html.contains(r#"action="/admin/tenancy/tenants/t-acme/memberships/u-alice/delete""#));
         assert!(html.contains("owner"));
     }
 
     #[test]
     fn group_remove_omits_role_row() {
-        let html = for_group(&p(), "g-1", "all-staff", "t-acme", "u-alice");
+        let html = for_group(&p(), "g-1", "all-staff", "t-acme", "u-alice", "tok-1");
         assert!(!html.contains("Role being removed"),
             "group membership has no role field");
     }
 
     #[test]
     fn untrusted_user_id_is_html_escaped() {
-        let html = for_tenant(&p(), "t", "x", "<script>alert(1)</script>", "member");
+        let html = for_tenant(&p(), "t", "x", "<script>alert(1)</script>", "member", "tok-1");
         assert!(!html.contains("<script>"), "user_id must be escaped");
         assert!(html.contains("&lt;script&gt;"));
     }
 
     #[test]
     fn confirm_form_carries_confirm_yes_hidden_field() {
-        let html = for_tenant(&p(), "t", "x", "u", "member");
+        let html = for_tenant(&p(), "t", "x", "u", "member", "tok-1");
         assert!(html.contains(r#"name="confirm" value="yes""#));
     }
 }

@@ -16,6 +16,7 @@ pub fn for_tenant(
     tenant:    &Tenant,
     user_id:   &str,
     role:      &str,
+    csrf:      &str,
 ) -> String {
     let title = format!("Remove tenant member: {user_id}");
     let body = render_body(
@@ -26,6 +27,7 @@ pub fn for_tenant(
             escape(user_id), escape(&tenant.slug)),
         Some(("Role being removed", role)),
         "tenant",
+        csrf,
     );
     tenant_admin_frame(
         &title, &tenant.slug, &tenant.display_name,
@@ -41,6 +43,7 @@ pub fn for_organization(
     org_slug:  &str,
     user_id:   &str,
     role:      &str,
+    csrf:      &str,
 ) -> String {
     let title = format!("Remove org member: {user_id}");
     let body = render_body(
@@ -50,6 +53,7 @@ pub fn for_organization(
             escape(user_id), escape(org_slug)),
         Some(("Role being removed", role)),
         "organization",
+        csrf,
     );
     tenant_admin_frame(
         &title, &tenant.slug, &tenant.display_name,
@@ -65,6 +69,7 @@ pub fn for_group(
     group_slug: &str,
     org_id:     &str,
     user_id:    &str,
+    csrf:       &str,
 ) -> String {
     let title = format!("Remove group member: {user_id}");
     let back = if org_id.is_empty() {
@@ -79,6 +84,7 @@ pub fn for_group(
             escape(user_id), escape(group_slug)),
         None,
         "group",
+        csrf,
     );
     tenant_admin_frame(
         &title, &tenant.slug, &tenant.display_name,
@@ -93,6 +99,7 @@ fn render_body(
     headline:     &str,
     role_row:     Option<(&str, &str)>,
     parent_kind:  &str,
+    csrf:         &str,
 ) -> String {
     let role_html = match role_row {
         None    => String::new(),
@@ -113,6 +120,7 @@ fn render_body(
 <section aria-label="Apply or cancel">
   <form method="post" action="{action}">
     <input type="hidden" name="confirm" value="yes">
+    <input type="hidden" name="csrf" value="{csrf}">
     <p>
       <button type="submit" class="critical">Remove member</button>
       <a href="{back}">Cancel</a>
@@ -122,5 +130,6 @@ fn render_body(
         back   = back_href,
         action = form_action,
         kind   = escape(parent_kind),
+        csrf   = escape(csrf),
     )
 }

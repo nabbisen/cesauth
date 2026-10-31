@@ -12,7 +12,9 @@ use worker::{Request, Response, Result, RouteContext};
 
 use crate::audit::{self, EventKind};
 use crate::routes::admin::console::render;
-use crate::routes::admin::tenancy_console::forms::common::{parse_form, redirect_303, require_manage};
+use crate::routes::admin::tenancy_console::forms::common::{
+    attach_csrf_cookie, mint_csrf, parse_form, redirect_303, require_manage, verify_csrf,
+};
 
 /// **RFC 145 cycle 3.** Used to return the Leptos shell with no
 /// matching `app.rs` route — HTTP 200 rendering `<NotFound/>`. Reuses
@@ -27,12 +29,15 @@ pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     };
     let roles_repo = CloudflareRoleRepository::new(&ctx.env);
     let available = roles_repo.list_system_roles().await.unwrap_or_default();
-    render::html_response(|| role_assignment_create_form(&principal, &RoleAssignmentCreateInput {
+    let (csrf_token, csrf_cookie) = mint_csrf()?;
+    let mut resp = render::html_response(|| role_assignment_create_form(&principal, &RoleAssignmentCreateInput {
         user_id: &uid,
         available_roles: &available,
         role_id: "", scope_type: "", scope_id: "", expires_at: "",
-        error: None,
-    }))
+        error: None, csrf: &csrf_token,
+    }))?;
+    attach_csrf_cookie(&mut resp, &csrf_cookie);
+    Ok(resp)
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -43,7 +48,11 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         return Response::error("not found", 404);
     };
 
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
     let role_id    = form.get("role_id").cloned().unwrap_or_default();
     let scope_type = form.get("scope_type").cloned().unwrap_or_default();
     let scope_id   = form.get("scope_id").cloned().unwrap_or_default();
@@ -52,12 +61,20 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     let roles_repo = CloudflareRoleRepository::new(&ctx.env);
     let available = roles_repo.list_system_roles().await.unwrap_or_default();
 
-    let render_err = |err: &str| render::html_response(|| role_assignment_create_form(&principal, &RoleAssignmentCreateInput {
-        user_id: &uid,
-        available_roles: &available,
-        role_id: &role_id, scope_type: &scope_type, scope_id: &scope_id, expires_at: &expires_at,
-        error: Some(err),
-    }));
+    // Every re-render below needs a FRESH token: the one just
+    // submitted is spent, and a corrected resubmission with a stale
+    // token must not fail for a reason the page doesn't explain.
+    let render_err = |err: &str| -> Result<Response> {
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| role_assignment_create_form(&principal, &RoleAssignmentCreateInput {
+            user_id: &uid,
+            available_roles: &available,
+            role_id: &role_id, scope_type: &scope_type, scope_id: &scope_id, expires_at: &expires_at,
+            error: Some(err), csrf: &csrf_token,
+        }))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        Ok(resp)
+    };
 
     if role_id.trim().is_empty() {
         return render_err("Pick a role");

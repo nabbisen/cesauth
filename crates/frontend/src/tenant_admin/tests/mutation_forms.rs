@@ -30,7 +30,7 @@ fn organization_create_form_action_is_slug_relative() {
     use super::super::forms::organization_create::organization_create_form;
     let p = principal();
     let t = tenant();
-    let html = organization_create_form(&p, &t, "", "", None);
+    let html = organization_create_form(&p, &t, "", "", None, "tok-1");
     assert!(html.contains(r#"action="/admin/t/acme/organizations/new""#),
         "form action must build off the URL slug, not the tenant id");
     // Critical: must not target the system-admin surface.
@@ -45,7 +45,7 @@ fn organization_create_form_renders_error_message() {
     let t = tenant();
     let html = organization_create_form(
         &p, &t, "bad slug", "name",
-        Some("Slug already taken in this tenant"),
+        Some("Slug already taken in this tenant"), "tok-1",
     );
     assert!(html.contains("Slug already taken in this tenant"));
     // Sticky values on re-render after a failed submit.
@@ -65,7 +65,7 @@ fn organization_set_status_preview_carries_confirm_yes() {
         parent_organization_id: None, created_at: 0, updated_at: 0,
     };
     let html = preview_page(&p, &t, &org, OrganizationStatus::Suspended,
-                            "billing past due");
+                            "billing past due", "tok-1");
     // The hidden confirm=yes is what flips the next POST from
     // "render preview" to "apply". Without it, an Apply button
     // click would just re-render the preview indefinitely.
@@ -92,7 +92,7 @@ fn group_delete_preview_shows_affected_counts() {
         parent_group_id: None,
         created_at: 0, updated_at: 0,
     };
-    let html = preview_page(&p, &t, &g, "o-1", "wind down team", 7, 12);
+    let html = preview_page(&p, &t, &g, "o-1", "wind down team", 7, 12, "tok-1");
     // Counts must be visible — that's the whole point of the
     // diff page for a destructive operation.
     assert!(html.contains(">7<"));
@@ -113,7 +113,7 @@ fn role_assignment_grant_form_omits_system_scope() {
         subject_user: &u,
         available_roles: &[],
         role_id: "", scope_type: "tenant", scope_id: "", expires_at: "",
-        error: None,
+        error: None, csrf: "tok-1",
     });
     // Critical: no `value="system"` radio button.
     assert!(!html.contains(r#"value="system""#),
@@ -137,7 +137,7 @@ fn role_assignment_grant_form_pins_tenant_id_in_help_text() {
         subject_user: &u,
         available_roles: &[],
         role_id: "", scope_type: "tenant", scope_id: "", expires_at: "",
-        error: None,
+        error: None, csrf: "tok-1",
     });
     // The tenant id appears next to the tenant-scope radio so
     // the operator sees what scope_id will be used.
@@ -161,6 +161,7 @@ fn role_assignment_grant_preview_carries_all_form_fields_for_apply() {
             role_label:   "Admin (admin)",
             scope_label:  "tenant t-acme",
             expires_at:   Some("1735689600"),
+            csrf: "tok-1",
         },
     );
     assert!(html.contains(r#"name="role_id" value="r-admin""#));
@@ -187,7 +188,7 @@ fn role_assignment_revoke_preview_round_trips_assignment_id() {
     };
     let html = preview_page(&p, &t, &RevokeInput {
         assignment: &a, subject_user: &u, role_label: "Admin (admin)",
-        error: None,
+        error: None, csrf: "tok-1",
     });
     // Apply path posts to /admin/t/acme/role_assignments/a-1/delete.
     assert!(html.contains(r#"action="/admin/t/acme/role_assignments/a-1/delete""#));

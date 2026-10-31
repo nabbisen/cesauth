@@ -16,6 +16,7 @@ pub fn group_create_form(
     slug:         &str,
     display_name: &str,
     error:        Option<&str>,
+    csrf:         &str,
 ) -> String {
     let title = format!("New group in: {}", org.slug);
     let body = format!(
@@ -36,6 +37,7 @@ pub fn group_create_form(
         </tr>
       </tbody>
     </table>
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Create group</button></p>
   </form>
 </section>
@@ -60,6 +62,7 @@ pub fn group_create_form(
         },
         slug  = escape(slug),
         name  = escape(display_name),
+        csrf  = escape(csrf),
     );
     tenant_admin_frame(
         &title,

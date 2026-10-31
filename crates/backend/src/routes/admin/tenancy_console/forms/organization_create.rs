@@ -9,7 +9,9 @@ use worker::{Request, Response, Result, RouteContext};
 
 use crate::audit::{self, EventKind};
 use crate::routes::admin::console::render;
-use crate::routes::admin::tenancy_console::forms::common::{parse_form, redirect_303, require_manage};
+use crate::routes::admin::tenancy_console::forms::common::{
+    attach_csrf_cookie, mint_csrf, parse_form, redirect_303, require_manage, verify_csrf,
+};
 use crate::routes::api_v1::quota;
 
 /// **RFC 145 cycle 3.** Used to return the Leptos shell with no
@@ -27,7 +29,10 @@ pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
         Ok(None)    => return Response::error("not found", 404),
         Err(_)      => return Response::error("storage error", 500),
     };
-    render::html_response(|| organization_create_form(&principal, &tenant, "", "", None))
+    let (csrf_token, csrf_cookie) = mint_csrf()?;
+    let mut resp = render::html_response(|| organization_create_form(&principal, &tenant, "", "", None, &csrf_token))?;
+    attach_csrf_cookie(&mut resp, &csrf_cookie);
+    Ok(resp)
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -38,7 +43,11 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         return Response::error("not found", 404);
     };
 
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
     let slug         = form.get("slug").cloned().unwrap_or_default();
     let display_name = form.get("display_name").cloned().unwrap_or_default();
 
@@ -50,10 +59,13 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     };
 
     if slug.trim().is_empty() || display_name.trim().is_empty() {
-        return render::html_response(|| organization_create_form(
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| organization_create_form(
             &principal, &tenant, &slug, &display_name,
-            Some("Slug and display name are required"),
-        ));
+            Some("Slug and display name are required"), &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     // Plan-quota: max_organizations.
@@ -63,10 +75,13 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         Err(_) => return Response::error("storage error", 500),
     };
     if let Some(_) = quota::into_response_if_exceeded(outcome) {
-        return render::html_response(|| organization_create_form(
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| organization_create_form(
             &principal, &tenant, &slug, &display_name,
-            Some("Quota exceeded — this tenant's plan does not allow more organizations"),
-        ));
+            Some("Quota exceeded — this tenant's plan does not allow more organizations"), &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     let now = OffsetDateTime::now_utc().unix_timestamp();
@@ -81,9 +96,12 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
                     => m.to_owned(),
                 _ => "Storage error".to_owned(),
             };
-            return render::html_response(|| organization_create_form(
-                &principal, &tenant, &slug, &display_name, Some(&msg),
-            ));
+            let (csrf_token, csrf_cookie) = mint_csrf()?;
+            let mut resp = render::html_response(|| organization_create_form(
+                &principal, &tenant, &slug, &display_name, Some(&msg), &csrf_token,
+            ))?;
+            attach_csrf_cookie(&mut resp, &csrf_cookie);
+            return Ok(resp);
         }
     };
 

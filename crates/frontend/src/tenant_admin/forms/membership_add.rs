@@ -25,6 +25,7 @@ pub fn for_tenant(
     user_id:   &str,
     role:      &str,
     error:     Option<&str>,
+    csrf:      &str,
 ) -> String {
     let title = format!("Add tenant member: {}", tenant.slug);
     render(
@@ -41,6 +42,7 @@ pub fn for_tenant(
             ("member", "Member — basic access to tenant resources"),
         ], role)),
         error,
+        csrf,
     )
 }
 
@@ -53,6 +55,7 @@ pub fn for_organization(
     user_id:   &str,
     role:      &str,
     error:     Option<&str>,
+    csrf:      &str,
 ) -> String {
     let title = format!("Add organization member: {org_slug}");
     render(
@@ -67,6 +70,7 @@ pub fn for_organization(
             ("member", "Member — basic access to org resources"),
         ], role)),
         error,
+        csrf,
     )
 }
 
@@ -80,6 +84,7 @@ pub fn for_group(
     org_id:     &str,
     user_id:    &str,
     error:      Option<&str>,
+    csrf:       &str,
 ) -> String {
     let title = format!("Add group member: {group_slug}");
     let back = if org_id.is_empty() {
@@ -96,6 +101,7 @@ pub fn for_group(
         user_id,
         None,
         error,
+        csrf,
     )
 }
 
@@ -111,6 +117,7 @@ fn render(
     user_id:     &str,
     role_select: Option<(&str, &[(&str, &str)], &str)>,
     error:       Option<&str>,
+    csrf:        &str,
 ) -> String {
     let role_field = match role_select {
         None => String::new(),
@@ -143,6 +150,7 @@ fn render(
       </tr>
       {role_field}
     </tbody></table>
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Add member</button></p>
   </form>
 </section>
@@ -164,6 +172,7 @@ fn render(
                 m = escape(m),
             ),
         },
+        csrf   = escape(csrf),
     );
     tenant_admin_frame(
         title, &tenant.slug, &tenant.display_name,

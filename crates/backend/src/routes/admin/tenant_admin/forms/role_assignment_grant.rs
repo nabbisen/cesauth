@@ -28,7 +28,9 @@ use worker::{Request, Response, Result, RouteContext};
 use crate::audit::{self, EventKind};
 use crate::routes::admin::auth;
 use crate::routes::admin::console::render;
-use crate::routes::admin::tenancy_console::forms::common::{confirmed, parse_form, redirect_303};
+use crate::routes::admin::tenancy_console::forms::common::{
+    attach_csrf_cookie, confirmed, mint_csrf, parse_form, redirect_303, verify_csrf,
+};
 use crate::routes::admin::tenant_admin::gate;
 
 async fn gate_and_load_user<D>(
@@ -86,7 +88,8 @@ pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
         Err(resp) => return Ok(resp),
     };
     let available = list_available_roles(&ctx.env, &ctx_ta.tenant.id).await;
-    render::html_response(|| grant_form(
+    let (csrf_token, csrf_cookie) = mint_csrf()?;
+    let mut resp = render::html_response(|| grant_form(
         &ctx_ta.principal, &ctx_ta.tenant,
         &GrantInput {
             subject_user: &user,
@@ -96,8 +99,11 @@ pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
             scope_id: "",
             expires_at: "",
             error: None,
+            csrf: &csrf_token,
         },
-    ))
+    ))?;
+    attach_csrf_cookie(&mut resp, &csrf_cookie);
+    Ok(resp)
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -106,25 +112,37 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         Err(resp) => return Ok(resp),
     };
 
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
     let role_id        = form.get("role_id").cloned().unwrap_or_default();
     let scope_type     = form.get("scope_type").cloned().unwrap_or_default();
     let scope_id_raw   = form.get("scope_id").cloned().unwrap_or_default();
     let expires_at_raw = form.get("expires_at").cloned().unwrap_or_default();
 
     let available = list_available_roles(&ctx.env, &ctx_ta.tenant.id).await;
-    let render_err = |err: &str, sid: &str| render::html_response(|| grant_form(
-        &ctx_ta.principal, &ctx_ta.tenant,
-        &GrantInput {
-            subject_user: &user,
-            available_roles: &available,
-            role_id: &role_id,
-            scope_type: &scope_type,
-            scope_id: sid,
-            expires_at: &expires_at_raw,
-            error: Some(err),
-        },
-    ));
+    // Every re-render below needs a FRESH token: the one just
+    // submitted is spent.
+    let render_err = |err: &str, sid: &str| -> Result<Response> {
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| grant_form(
+            &ctx_ta.principal, &ctx_ta.tenant,
+            &GrantInput {
+                subject_user: &user,
+                available_roles: &available,
+                role_id: &role_id,
+                scope_type: &scope_type,
+                scope_id: sid,
+                expires_at: &expires_at_raw,
+                error: Some(err),
+                csrf: &csrf_token,
+            },
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        Ok(resp)
+    };
 
     if role_id.trim().is_empty() {
         return render_err("Pick a role", &scope_id_raw);
@@ -181,7 +199,8 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         let role_label = format!("{} ({})", role.display_name, role.slug);
         let scope_label = render_scope_label(&scope);
         let exp_text = expires.map(|e| e.to_string());
-        return render::html_response(|| preview_page(
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| preview_page(
             &ctx_ta.principal, &ctx_ta.tenant,
             &role_id, &scope_type, &scope_id_raw, &expires_at_raw,
             &PreviewInput {
@@ -189,8 +208,11 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
                 role_label:   &role_label,
                 scope_label:  &scope_label,
                 expires_at:   exp_text.as_deref(),
+                csrf:         &csrf_token,
             },
-        ));
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     // Apply.

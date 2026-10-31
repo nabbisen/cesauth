@@ -13,7 +13,9 @@ use worker::{Request, Response, Result, RouteContext};
 use crate::audit::{self, EventKind};
 use crate::routes::admin::auth;
 use crate::routes::admin::console::render;
-use crate::routes::admin::tenancy_console::forms::common::{parse_form, redirect_303};
+use crate::routes::admin::tenancy_console::forms::common::{
+    attach_csrf_cookie, mint_csrf, parse_form, redirect_303, verify_csrf,
+};
 use crate::routes::admin::tenant_admin::gate;
 
 async fn gate_and_load_org<D>(
@@ -61,7 +63,12 @@ pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
         Ok(pair)  => pair,
         Err(resp) => return Ok(resp),
     };
-    render::html_response(|| group_create_form(&ctx_ta.principal, &ctx_ta.tenant, &org, "", "", None))
+    let (csrf_token, csrf_cookie) = mint_csrf()?;
+    let mut resp = render::html_response(|| group_create_form(
+        &ctx_ta.principal, &ctx_ta.tenant, &org, "", "", None, &csrf_token,
+    ))?;
+    attach_csrf_cookie(&mut resp, &csrf_cookie);
+    Ok(resp)
 }
 
 /// `GET .json` — CSRF token for the form form.
@@ -79,15 +86,22 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         Err(resp) => return Ok(resp),
     };
 
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
     let slug         = form.get("slug").cloned().unwrap_or_default();
     let display_name = form.get("display_name").cloned().unwrap_or_default();
 
     if slug.trim().is_empty() || display_name.trim().is_empty() {
-        return render::html_response(|| group_create_form(
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| group_create_form(
             &ctx_ta.principal, &ctx_ta.tenant, &org, &slug, &display_name,
-            Some("Slug and display name are required"),
-        ));
+            Some("Slug and display name are required"), &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     let now = OffsetDateTime::now_utc().unix_timestamp();
@@ -111,9 +125,12 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
                     => m.to_owned(),
                 _ => "Storage error".to_owned(),
             };
-            return render::html_response(|| group_create_form(
-                &ctx_ta.principal, &ctx_ta.tenant, &org, &slug, &display_name, Some(&msg),
-            ));
+            let (csrf_token, csrf_cookie) = mint_csrf()?;
+            let mut resp = render::html_response(|| group_create_form(
+                &ctx_ta.principal, &ctx_ta.tenant, &org, &slug, &display_name, Some(&msg), &csrf_token,
+            ))?;
+            attach_csrf_cookie(&mut resp, &csrf_cookie);
+            return Ok(resp);
         }
     };
 

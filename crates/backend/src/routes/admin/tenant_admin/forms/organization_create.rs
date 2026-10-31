@@ -11,7 +11,9 @@ use worker::{Request, Response, Result, RouteContext};
 use crate::audit::{self, EventKind};
 use crate::routes::admin::auth;
 use crate::routes::admin::console::render;
-use crate::routes::admin::tenancy_console::forms::common::{parse_form, redirect_303};
+use crate::routes::admin::tenancy_console::forms::common::{
+    attach_csrf_cookie, mint_csrf, parse_form, redirect_303, verify_csrf,
+};
 use crate::routes::admin::tenant_admin::gate;
 use crate::routes::api_v1::quota;
 
@@ -48,15 +50,22 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         &ctx,
     ).await? { return Ok(resp); }
 
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
     let slug         = form.get("slug").cloned().unwrap_or_default();
     let display_name = form.get("display_name").cloned().unwrap_or_default();
 
     if slug.trim().is_empty() || display_name.trim().is_empty() {
-        return render::html_response(|| organization_create_form(
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| organization_create_form(
             &ctx_ta.principal, &ctx_ta.tenant, &slug, &display_name,
-            Some("Slug and display name are required"),
-        ));
+            Some("Slug and display name are required"), &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     // Plan-quota: max_organizations. Same enforcement as the
@@ -67,10 +76,13 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         Err(_) => return Response::error("storage error", 500),
     };
     if quota::into_response_if_exceeded(outcome).is_some() {
-        return render::html_response(|| organization_create_form(
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| organization_create_form(
             &ctx_ta.principal, &ctx_ta.tenant, &slug, &display_name,
-            Some("Quota exceeded — this tenant's plan does not allow more organizations"),
-        ));
+            Some("Quota exceeded — this tenant's plan does not allow more organizations"), &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     let now = OffsetDateTime::now_utc().unix_timestamp();
@@ -86,9 +98,12 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
                     => m.to_owned(),
                 _ => "Storage error".to_owned(),
             };
-            return render::html_response(|| organization_create_form(
-                &ctx_ta.principal, &ctx_ta.tenant, &slug, &display_name, Some(&msg),
-            ));
+            let (csrf_token, csrf_cookie) = mint_csrf()?;
+            let mut resp = render::html_response(|| organization_create_form(
+                &ctx_ta.principal, &ctx_ta.tenant, &slug, &display_name, Some(&msg), &csrf_token,
+            ))?;
+            attach_csrf_cookie(&mut resp, &csrf_cookie);
+            return Ok(resp);
         }
     };
 

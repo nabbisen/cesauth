@@ -15,7 +15,8 @@ use worker::{Request, Response, Result, RouteContext};
 use crate::audit::{self, EventKind};
 use crate::routes::admin::console::render;
 use crate::routes::admin::tenancy_console::forms::common::{
-    confirmed, parse_form, redirect_303, require_manage,
+    attach_csrf_cookie, confirmed, mint_csrf, parse_form, redirect_303, require_manage,
+    verify_csrf,
 };
 
 /// **RFC 145 cycle 3.** Used to return the Leptos shell with no
@@ -37,7 +38,10 @@ pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
         Ok(None)    => return Response::error("no subscription on file", 404),
         Err(_)      => return Response::error("storage error", 500),
     };
-    render::html_response(|| form_page(&principal, &tenant.id, &tenant.slug, &current, None, None))
+    let (csrf_token, csrf_cookie) = mint_csrf()?;
+    let mut resp = render::html_response(|| form_page(&principal, &tenant.id, &tenant.slug, &current, None, None, &csrf_token))?;
+    attach_csrf_cookie(&mut resp, &csrf_cookie);
+    Ok(resp)
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -48,7 +52,11 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         return Response::error("not found", 404);
     };
 
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
     let target = match form.get("status").map(String::as_str) {
         Some("active")    => SubscriptionStatus::Active,
         Some("past_due")  => SubscriptionStatus::PastDue,
@@ -64,10 +72,13 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
                 Ok(Some(s)) => s,
                 _ => return Response::error("no subscription on file", 404),
             };
-            return render::html_response(|| form_page(
+            let (csrf_token, csrf_cookie) = mint_csrf()?;
+            let mut resp = render::html_response(|| form_page(
                 &principal, &tenant.id, &tenant.slug, &current, None,
-                Some("Choose a target status"),
-            ));
+                Some("Choose a target status"), &csrf_token,
+            ))?;
+            attach_csrf_cookie(&mut resp, &csrf_cookie);
+            return Ok(resp);
         }
     };
 
@@ -82,9 +93,12 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     };
 
     if !confirmed(&form) {
-        return render::html_response(|| confirm_page(
-            &principal, &tenant.id, &tenant.slug, &current, target,
-        ));
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| confirm_page(
+            &principal, &tenant.id, &tenant.slug, &current, target, &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     let now = OffsetDateTime::now_utc().unix_timestamp();

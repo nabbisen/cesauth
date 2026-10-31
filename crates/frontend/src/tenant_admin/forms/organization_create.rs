@@ -17,6 +17,7 @@ pub fn organization_create_form(
     slug:         &str,
     display_name: &str,
     error:        Option<&str>,
+    csrf:         &str,
 ) -> String {
     let title = format!("New organization in: {}", tenant.slug);
     let body = format!(
@@ -36,6 +37,7 @@ pub fn organization_create_form(
         </tr>
       </tbody>
     </table>
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Create organization</button></p>
   </form>
 </section>
@@ -61,6 +63,7 @@ pub fn organization_create_form(
         },
         slug  = escape(slug),
         name  = escape(display_name),
+        csrf  = escape(csrf),
     );
     tenant_admin_frame(
         &title,

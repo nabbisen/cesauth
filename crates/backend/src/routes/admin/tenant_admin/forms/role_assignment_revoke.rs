@@ -17,7 +17,9 @@ use worker::{Request, Response, Result, RouteContext};
 use crate::audit::{self, EventKind};
 use crate::routes::admin::auth;
 use crate::routes::admin::console::render;
-use crate::routes::admin::tenancy_console::forms::common::{confirmed, parse_form, redirect_303};
+use crate::routes::admin::tenancy_console::forms::common::{
+    attach_csrf_cookie, confirmed, mint_csrf, parse_form, redirect_303, verify_csrf,
+};
 use crate::routes::admin::tenant_admin::gate;
 
 async fn fetch_assignment(env: &worker::Env, user_id: &str, id: &str)
@@ -101,15 +103,19 @@ pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
         Ok(t)     => t,
         Err(resp) => return Ok(resp),
     };
-    render::html_response(|| form_page(
+    let (csrf_token, csrf_cookie) = mint_csrf()?;
+    let mut resp = render::html_response(|| form_page(
         &ctx_ta.principal, &ctx_ta.tenant,
         &RevokeInput {
             assignment: &assignment,
             subject_user: &user,
             role_label: &label,
             error: None,
+            csrf: &csrf_token,
         },
-    ))
+    ))?;
+    attach_csrf_cookie(&mut resp, &csrf_cookie);
+    Ok(resp)
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -118,17 +124,25 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         Err(resp) => return Ok(resp),
     };
 
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
     if !confirmed(&form) {
-        return render::html_response(|| preview_page(
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| preview_page(
             &ctx_ta.principal, &ctx_ta.tenant,
             &RevokeInput {
                 assignment: &assignment,
                 subject_user: &user,
                 role_label: &label,
                 error: None,
+                csrf: &csrf_token,
             },
-        ));
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     let assignments_repo = CloudflareRoleAssignmentRepository::new(&ctx.env);

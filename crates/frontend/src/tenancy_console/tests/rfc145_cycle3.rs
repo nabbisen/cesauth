@@ -89,7 +89,7 @@ fn organization_detail_page_renders_the_real_page() {
 #[test]
 fn organization_set_status_form_renders_the_real_page() {
     use super::super::forms::organization_set_status::form_page;
-    let html = form_page(&p(), &org(), None, "", None);
+    let html = form_page(&p(), &org(), None, "", None, "tok-1");
     assert!(html.contains("Organization status: engineering"),
         "must render the real status-change form title, not the shell");
 }
@@ -98,7 +98,7 @@ fn organization_set_status_form_renders_the_real_page() {
 #[test]
 fn group_create_for_organization_renders_the_real_page() {
     use super::super::forms::group_create::for_organization;
-    let html = for_organization(&p(), "o-1", "engineering", "", "", None);
+    let html = for_organization(&p(), "o-1", "engineering", "", "", None, "tok-1");
     assert!(html.contains("New group in organization: engineering"),
         "must render the real group-create form title, not the shell");
 }
@@ -107,7 +107,7 @@ fn group_create_for_organization_renders_the_real_page() {
 #[test]
 fn membership_add_for_organization_renders_the_real_page() {
     use super::super::forms::membership_add::for_organization;
-    let html = for_organization(&p(), "o-1", "engineering", "", "", None);
+    let html = for_organization(&p(), "o-1", "engineering", "", "", None, "tok-1");
     assert!(html.contains("Add organization member: engineering"),
         "must render the real org-membership-add form title, not the shell");
 }
@@ -116,7 +116,7 @@ fn membership_add_for_organization_renders_the_real_page() {
 #[test]
 fn membership_remove_for_organization_renders_the_real_page() {
     use super::super::forms::membership_remove::for_organization;
-    let html = for_organization(&p(), "o-1", "engineering", "u-alice", "(unknown)");
+    let html = for_organization(&p(), "o-1", "engineering", "u-alice", "(unknown)", "tok-1");
     assert!(html.contains("Remove org member: u-alice"),
         "must render the real org-membership-remove confirm page, not the shell");
 }
@@ -125,7 +125,7 @@ fn membership_remove_for_organization_renders_the_real_page() {
 #[test]
 fn group_delete_confirm_page_renders_the_real_page() {
     use super::super::forms::group_delete::confirm_page;
-    let html = confirm_page(&p(), &group());
+    let html = confirm_page(&p(), &group(), "tok-1");
     assert!(html.contains("Delete group: platform"),
         "must render the real group-delete confirm title, not the shell");
 }
@@ -134,7 +134,7 @@ fn group_delete_confirm_page_renders_the_real_page() {
 #[test]
 fn membership_add_for_group_renders_the_real_page() {
     use super::super::forms::membership_add::for_group;
-    let html = for_group(&p(), "g-1", "platform", "t-acme", "", None);
+    let html = for_group(&p(), "g-1", "platform", "t-acme", "", None, "tok-1");
     assert!(html.contains("Add group member: platform"),
         "must render the real group-membership-add form title, not the shell");
 }
@@ -143,7 +143,7 @@ fn membership_add_for_group_renders_the_real_page() {
 #[test]
 fn membership_remove_for_group_renders_the_real_page() {
     use super::super::forms::membership_remove::for_group;
-    let html = for_group(&p(), "g-1", "platform", "t-acme", "u-alice");
+    let html = for_group(&p(), "g-1", "platform", "t-acme", "u-alice", "tok-1");
     assert!(html.contains("Remove group member: u-alice"),
         "must render the real group-membership-remove confirm page, not the shell");
 }
@@ -158,7 +158,7 @@ fn role_assignment_delete_confirm_page_renders_the_real_page() {
         scope: Scope::Tenant { tenant_id: "t-acme".into() },
         granted_by: "tk-sys".into(), granted_at: 0, expires_at: None,
     };
-    let html = confirm_page(&p(), &u.id, &a, "Admin (admin)");
+    let html = confirm_page(&p(), &u.id, &a, "Admin (admin)", "tok-1");
     assert!(html.contains("Revoke role assignment"),
         "must render the real revoke-assignment confirm title, not the shell");
     assert!(html.contains("u-alice"));
@@ -170,7 +170,7 @@ fn role_assignment_delete_confirm_page_renders_the_real_page() {
 #[test]
 fn tenant_create_form_renders_the_real_page() {
     use super::super::forms::tenant_create::tenant_create_form;
-    let html = tenant_create_form(&p(), "", "", "", None);
+    let html = tenant_create_form(&p(), "", "", "", None, "tok-1");
     assert!(html.contains("New tenant"),
         "must render the real tenant-create form, not the shadowed tenant-detail page");
 }
@@ -179,7 +179,7 @@ fn tenant_create_form_renders_the_real_page() {
 #[test]
 fn tenant_set_status_form_renders_the_real_page() {
     use super::super::forms::tenant_set_status::form_page;
-    let html = form_page(&p(), &tenant(), None, "", None);
+    let html = form_page(&p(), &tenant(), None, "", None, "tok-1");
     assert!(html.contains("Tenant status: acme"),
         "must render the real tenant-status form title, not the shell");
 }
@@ -188,7 +188,7 @@ fn tenant_set_status_form_renders_the_real_page() {
 #[test]
 fn group_create_for_tenant_renders_the_real_page() {
     use super::super::forms::group_create::for_tenant;
-    let html = for_tenant(&p(), "t-acme", "acme", "", "", None);
+    let html = for_tenant(&p(), "t-acme", "acme", "", "", None, "tok-1");
     assert!(html.contains("New group in tenant: acme"),
         "must render the real group-create form title, not the shell");
 }
@@ -197,7 +197,7 @@ fn group_create_for_tenant_renders_the_real_page() {
 #[test]
 fn membership_add_for_tenant_renders_the_real_page() {
     use super::super::forms::membership_add::for_tenant;
-    let html = for_tenant(&p(), "t-acme", "acme", "", "member", None);
+    let html = for_tenant(&p(), "t-acme", "acme", "", "member", None, "tok-1");
     assert!(html.contains("Add tenant member: acme"),
         "must render the real tenant-membership-add form title, not the shell");
     // RFC 145 cycle 3: this template's action used to point at the
@@ -211,7 +211,7 @@ fn membership_add_for_tenant_renders_the_real_page() {
 #[test]
 fn membership_remove_for_tenant_renders_the_real_page() {
     use super::super::forms::membership_remove::for_tenant;
-    let html = for_tenant(&p(), "t-acme", "acme", "u-alice", "(unknown)");
+    let html = for_tenant(&p(), "t-acme", "acme", "u-alice", "(unknown)", "tok-1");
     assert!(html.contains("Remove tenant member: u-alice"),
         "must render the real tenant-membership-remove confirm page, not the shell");
 }
@@ -220,7 +220,7 @@ fn membership_remove_for_tenant_renders_the_real_page() {
 #[test]
 fn organization_create_form_renders_the_real_page() {
     use super::super::forms::organization_create::organization_create_form;
-    let html = organization_create_form(&p(), &tenant(), "", "", None);
+    let html = organization_create_form(&p(), &tenant(), "", "", None, "tok-1");
     assert!(html.contains("New organization in: acme"),
         "must render the real organization-create form title, not the shell");
 }
@@ -245,7 +245,7 @@ fn subscription_history_page_renders_the_real_page() {
 fn subscription_set_plan_form_renders_the_real_page() {
     use super::super::forms::subscription_set_plan::form_page;
     let cur_plan = plan("plan-pro", "pro", "Pro");
-    let html = form_page(&p(), "t-acme", "acme", &subscription(), Some(&cur_plan), &[], "", None);
+    let html = form_page(&p(), "t-acme", "acme", &subscription(), Some(&cur_plan), &[], "", None, "tok-1");
     assert!(html.contains("Change plan: acme"),
         "must render the real plan-change form title, not the shell");
 }
@@ -254,7 +254,7 @@ fn subscription_set_plan_form_renders_the_real_page() {
 #[test]
 fn subscription_set_status_form_renders_the_real_page() {
     use super::super::forms::subscription_set_status::form_page;
-    let html = form_page(&p(), "t-acme", "acme", &subscription(), None, None);
+    let html = form_page(&p(), "t-acme", "acme", &subscription(), None, None, "tok-1");
     assert!(html.contains("Subscription status: acme"),
         "must render the real subscription-status form title, not the shell");
 }
@@ -283,7 +283,7 @@ fn role_assignment_create_form_renders_the_real_page() {
     use super::super::forms::role_assignment_create::{role_assignment_create_form, RoleAssignmentCreateInput};
     let html = role_assignment_create_form(&p(), &RoleAssignmentCreateInput {
         user_id: "u-alice", available_roles: &[],
-        role_id: "", scope_type: "", scope_id: "", expires_at: "", error: None,
+        role_id: "", scope_type: "", scope_id: "", expires_at: "", error: None, csrf: "tok-1",
     });
     assert!(html.contains("Grant role to user: u-alice"),
         "must render the real grant-role form title, not the shell");
@@ -294,7 +294,7 @@ fn role_assignment_create_form_renders_the_real_page() {
 fn token_mint_form_renders_the_real_page() {
     use super::super::forms::token_mint::{form_page, MintInput};
     let u = user("u-alice", "Alice");
-    let html = form_page(&p(), &MintInput { subject_user: &u, role: "", name: "", error: None });
+    let html = form_page(&p(), &MintInput { subject_user: &u, role: "", name: "", error: None, csrf: "tok-1" });
     assert!(html.contains("Mint user-bound admin token: Alice"),
         "must render the real token-mint form title, not the shell");
 }

@@ -9,7 +9,8 @@ use worker::{Request, Response, Result, RouteContext};
 use crate::audit::{self, EventKind};
 use crate::routes::admin::console::render;
 use crate::routes::admin::tenancy_console::forms::common::{
-    confirmed, parse_form, redirect_303, require_manage,
+    attach_csrf_cookie, confirmed, mint_csrf, parse_form, redirect_303, require_manage,
+    verify_csrf,
 };
 use cesauth_core::tenancy::types::GroupParent;
 
@@ -26,7 +27,10 @@ pub async fn confirm<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> 
     let group = match groups.get(&gid).await {
         Ok(Some(g)) => g, _ => return Response::error("not found", 404),
     };
-    render::html_response(|| confirm_page(&principal, &group))
+    let (csrf_token, csrf_cookie) = mint_csrf()?;
+    let mut resp = render::html_response(|| confirm_page(&principal, &group, &csrf_token))?;
+    attach_csrf_cookie(&mut resp, &csrf_cookie);
+    Ok(resp)
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -37,14 +41,22 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         return Response::error("not found", 404);
     };
 
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
     if !confirmed(&form) {
-        // No confirm field; bounce back to the confirm page.
+        // No confirm field; bounce back to the confirm page with a
+        // fresh token -- the one just consumed must not be reused.
         let groups = CloudflareGroupRepository::new(&ctx.env);
         let group = match groups.get(&gid).await {
             Ok(Some(g)) => g, _ => return Response::error("not found", 404),
         };
-        return render::html_response(|| confirm_page(&principal, &group));
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| confirm_page(&principal, &group, &csrf_token))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     let groups = CloudflareGroupRepository::new(&ctx.env);

@@ -1196,6 +1196,148 @@ echo "ℹ️   E5 coverage: scanned ${e5_total} .json URL(s) fetched by the fron
      "${e5_exact} resolved exactly, ${e5_capture} resolved via capture (defect)," \
      "${e5_unresolved} unresolved"
 
+# ── E6 (RFC 152 half B stage 1): every route-contracts.md row whose CSRF
+#    cell reads `required`, on the admin tenancy-console/tenant-admin
+#    surfaces, must resolve through its exact `.post_async` registration
+#    in lib.rs to a handler file that actually calls `csrf::verify` --
+#    directly, or via the shared `verify_csrf` helper in
+#    tenancy_console/forms/common.rs that every form handler below it
+#    delegates to. Half A (v0.86.3) made the table honest: all 34 cells
+#    read `N/A (SameSite=Strict)`, truthfully, because nothing else was
+#    there. This stage adds the control and flips the cells to mean
+#    `required`. A flipped cell with no real `csrf::verify` call behind
+#    it would be the same kind of lie half A fixed, just inverted -- so
+#    this re-derives the check from the registration, not from the
+#    table's own say-so.
+COMMON_RS="$REPO_ROOT/crates/backend/src/routes/admin/tenancy_console/forms/common.rs"
+
+# Echoes the `routes::a::b::fn` call inside the exact `.post_async("$2",
+# ...)` registration for method $1 (lowercase) -- every such registration
+# on these two surfaces is a single physical line (confirmed before
+# writing this: `grep -n '\.post_async\s*("/admin/t\(enancy\)\?/'
+# crates/backend/src/lib.rs | grep -v routes::` returns nothing), so a
+# literal two-grep narrow is enough; no multi-line closure body to walk,
+# unlike E4's handler-side resolution.
+e6_qualified_handler_for() {
+  local method="$1" path="$2"
+  printf '%s\n' "$LIB_RS_LIVE" |
+    grep -F ".${method}_async" |
+    grep -F "\"${path}\"" |
+    grep -oE 'routes::[A-Za-z0-9_:]+\(' |
+    sed -E 's/\($//' |
+    head -1
+}
+
+# routes::a::b::fn -> crates/backend/src/routes/a/b.rs. One level only --
+# every one of these 36 registrations names its handler's natural
+# qualified path directly (confirmed by inspection), so there is no
+# re-export chain to chase here the way E4 chases one for dead handlers.
+e6_file_for_qualified() {
+  local q="${1#routes::}"
+  local modpath="${q%::*}"
+  echo "$REPO_ROOT/crates/backend/src/routes/${modpath//::/\/}.rs"
+}
+
+# The CSRF form-field name the resolved HANDLER FUNCTION checks --
+# scoped to that one function's body, not the whole file: deletions.rs
+# has two field names in one file (`csrf` in `request_self_form`/
+# `cancel_self`, `csrf_token` in `admin_cancel`/`admin_execute`), so a
+# whole-file grep would silently pick whichever occurs first in the file
+# regardless of which function this row actually resolved to. Bounded by
+# the next top-level `pub async fn` (or EOF) -- good enough here because
+# no handler body in this crate declares another top-level `pub async
+# fn` inside it.
+e6_fn_body() {
+  local file="$1" fn="$2"
+  awk -v fn="$fn" '
+    /^pub async fn [A-Za-z0-9_]+/ {
+      if (in_fn) { exit }
+      if ($0 ~ ("fn " fn "[<(]")) { in_fn = 1 }
+      next
+    }
+    in_fn { print }
+  ' "$file"
+}
+
+e6_field_name_for() {
+  local file="$1" fn="$2" name body
+  body=$(e6_fn_body "$file" "$fn")
+  name=$(printf '%s\n' "$body" | grep -oE '\.get\("csrf[A-Za-z0-9_]*"\)' | head -1 | sed -E 's/.*"(.*)".*/\1/')
+  if [ -z "$name" ] && printf '%s\n' "$body" | grep -q 'verify_csrf('; then
+    name=$(grep -oE '\.get\("csrf[A-Za-z0-9_]*"\)' "$COMMON_RS" | head -1 | sed -E 's/.*"(.*)".*/\1/')
+  fi
+  echo "$name"
+}
+
+e6_rows=$(grep -E '^\|\s*POST\s+\|\s*`(/admin/t/|/admin/tenancy/)' "$CONTRACTS_MD")
+
+e6_scanned=0
+e6_required=0
+e6_resolved=0
+e6_unresolved=0
+e6_unresolved_report=""
+e6_fields=""
+
+while IFS= read -r row; do
+  [ -z "$row" ] && continue
+  e6_scanned=$((e6_scanned + 1))
+  path=$(echo "$row" | sed -E 's/^\|\s*POST\s+\|\s*`([^`]+)`.*/\1/')
+  csrf_cell=$(echo "$row" | awk -F'|' '{gsub(/^ +| +$/,"",$9); print $9}')
+  [ "$csrf_cell" != "required" ] && continue
+  e6_required=$((e6_required + 1))
+
+  qualified=$(e6_qualified_handler_for "post" "$path")
+  file="" fn_name="" body=""
+  if [ -n "$qualified" ]; then
+    file=$(e6_file_for_qualified "$qualified")
+    fn_name="${qualified##*::}"
+    [ -f "$file" ] && body=$(e6_fn_body "$file" "$fn_name")
+  fi
+
+  if [ -z "$qualified" ] || [ ! -f "$file" ] || ! printf '%s\n' "$body" | grep -qE 'csrf::verify\(|verify_csrf\('; then
+    e6_unresolved=$((e6_unresolved + 1))
+    e6_unresolved_report="${e6_unresolved_report}POST ${path} -- ${qualified:-no .post_async registration found} does not call csrf::verify\n"
+  else
+    e6_resolved=$((e6_resolved + 1))
+    field=$(e6_field_name_for "$file" "$fn_name")
+    [ -n "$field" ] && e6_fields="${e6_fields}${field}\n"
+  fi
+done <<< "$e6_rows"
+
+if [ "$e6_required" -ne "$((e6_resolved + e6_unresolved))" ]; then
+  echo "❌  E6 coverage arithmetic does not close: ${e6_required} required !=" \
+       "${e6_resolved} resolved + ${e6_unresolved} unresolved -- this is a bug in" \
+       "the check itself, not a finding about the backend." >&2
+  exit_code=1
+fi
+
+if [ "$e6_required" -eq 0 ]; then
+  echo "❌  E6 found ZERO rows marked \`required\` (CSRF) on the admin" \
+       "tenancy-console/tenant-admin surfaces -- the check would pass vacuously." \
+       "Either the control was never added, or route-contracts.md's cells were" \
+       "never flipped from \`N/A (SameSite=Strict)\`." >&2
+  exit_code=1
+fi
+
+if [ -n "$e6_unresolved_report" ]; then
+  echo "❌  route-contracts.md row(s) marked \`required\` (CSRF) whose handler does" \
+       "NOT call csrf::verify:" >&2
+  printf '%b' "$e6_unresolved_report" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line" >&2; done
+  echo "" >&2
+  echo "    Either add the csrf::verify call, or the row is claiming a control the" >&2
+  echo "    code does not have -- fix the cell back to N/A if that's actually true." >&2
+  exit_code=1
+fi
+
+e6_distinct_fields=$(printf '%b' "$e6_fields" | grep -v '^$' | sort -u)
+e6_distinct_field_count=$(printf '%s\n' "$e6_distinct_fields" | grep -c . || true)
+
+echo "ℹ️   E6 coverage: scanned ${e6_scanned} POST row(s) on the admin" \
+     "tenancy-console/tenant-admin surfaces -- ${e6_required} required," \
+     "${e6_resolved} resolved to a verifying handler, ${e6_unresolved} unresolved." \
+     "Distinct CSRF field name(s) in use: ${e6_distinct_field_count}" \
+     "($(printf '%s' "$e6_distinct_fields" | tr '\n' ',' | sed 's/,$//'))"
+
 if [ "$exit_code" -eq 0 ]; then
   echo "✅  All ${registered_count} routes are documented in route-contracts.md, and every" \
        "handler-shaped fn in routes/ is reachable from lib.rs"

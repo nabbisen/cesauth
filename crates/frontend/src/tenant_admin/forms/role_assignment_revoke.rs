@@ -17,6 +17,7 @@ pub struct RevokeInput<'a> {
     pub subject_user: &'a User,
     pub role_label:   &'a str,
     pub error:        Option<&'a str>,
+    pub csrf:         &'a str,
 }
 
 pub fn form_page(
@@ -41,6 +42,7 @@ pub fn form_page(
   <form method="post" action="{action_url}">
     <p class="muted">After revoke, the user immediately loses any access this assignment granted.
        Other assignments at broader scopes may continue to grant access.</p>
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Preview revoke</button></p>
   </form>
 </section>"##,
@@ -52,6 +54,7 @@ pub fn form_page(
         role  = escape(input.role_label),
         scope = render_scope_inline(&input.assignment.scope),
         error = render_error(input.error),
+        csrf  = escape(input.csrf),
     );
     tenant_admin_frame(
         &title,
@@ -85,6 +88,7 @@ pub fn preview_page(
 <section aria-label="Apply or cancel">
   <form method="post" action="{action_url}">
     <input type="hidden" name="confirm" value="yes">
+    <input type="hidden" name="csrf" value="{csrf}">
     <p>
       <button type="submit" class="critical">Apply revoke</button>
       <a href="{cancel_url}">Cancel</a>
@@ -99,6 +103,7 @@ pub fn preview_page(
         uname = escape(user_label),
         role  = escape(input.role_label),
         scope = render_scope_inline(&input.assignment.scope),
+        csrf  = escape(input.csrf),
     );
     tenant_admin_frame(
         &title,

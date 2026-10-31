@@ -32,6 +32,7 @@ pub struct GrantInput<'a> {
     pub scope_id:        &'a str,
     pub expires_at:      &'a str,
     pub error:           Option<&'a str>,
+    pub csrf:            &'a str,
 }
 
 pub fn grant_form(
@@ -84,6 +85,7 @@ pub fn grant_form(
       <input id="expires_at" name="expires_at" type="number" value="{exp}" style="width: 16em;">
     </p>
 
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Preview grant</button></p>
   </form>
 </section>"##,
@@ -101,6 +103,7 @@ pub fn grant_form(
         scope_id = escape(input.scope_id),
         exp      = escape(input.expires_at),
         error    = render_error(input.error),
+        csrf     = escape(input.csrf),
     );
     tenant_admin_frame(
         &title,
@@ -119,6 +122,7 @@ pub struct PreviewInput<'a> {
     pub role_label:   &'a str,    // "name (slug)"
     pub scope_label:  &'a str,    // "tenant t-123" / "organization o-456"
     pub expires_at:   Option<&'a str>,
+    pub csrf:         &'a str,
 }
 
 pub fn preview_page(
@@ -151,6 +155,7 @@ pub fn preview_page(
     <input type="hidden" name="scope_id" value="{scope_id}">
     <input type="hidden" name="expires_at" value="{exp_raw}">
     <input type="hidden" name="confirm" value="yes">
+    <input type="hidden" name="csrf" value="{csrf}">
     <p>
       <button type="submit" class="critical">Apply grant</button>
       <a href="{cancel_url}">Cancel</a>
@@ -173,6 +178,7 @@ pub fn preview_page(
         scope_type = escape(scope_type),
         scope_id   = escape(scope_id),
         exp_raw    = escape(expires_at_raw),
+        csrf       = escape(input.csrf),
     );
     tenant_admin_frame(
         &title,

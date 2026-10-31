@@ -33,6 +33,7 @@ pub fn form_page(
     selected_status: Option<TenantStatus>,
     reason_default: &str,
     error:          Option<&str>,
+    csrf:           &str,
 ) -> String {
     let title = format!("Tenant status: {}", tenant.slug);
     let body = format!(
@@ -40,7 +41,7 @@ pub fn form_page(
         back    = back_link(&tenant.id),
         summary = render_summary(tenant),
         error   = render_error(error),
-        form    = render_form(tenant, selected_status, reason_default),
+        form    = render_form(tenant, selected_status, reason_default, csrf),
     );
     tenancy_console_frame(&title, principal.role, principal.name.as_deref(), TenancyConsoleTab::Tenants, &body)
 }
@@ -51,13 +52,14 @@ pub fn confirm_page(
     tenant:      &Tenant,
     target:      TenantStatus,
     reason:      &str,
+    csrf:        &str,
 ) -> String {
     let title = format!("Confirm tenant status: {}", tenant.slug);
     let body = format!(
         "{back}\n{diff}\n{apply}",
         back  = back_link(&tenant.id),
         diff  = render_diff(tenant, target, reason),
-        apply = render_apply_form(&tenant.id, target, reason),
+        apply = render_apply_form(&tenant.id, target, reason, csrf),
     );
     tenancy_console_frame(&title, principal.role, principal.name.as_deref(), TenancyConsoleTab::Tenants, &body)
 }
@@ -101,7 +103,7 @@ fn render_error(error: Option<&str>) -> String {
     }
 }
 
-fn render_form(t: &Tenant, selected: Option<TenantStatus>, reason: &str) -> String {
+fn render_form(t: &Tenant, selected: Option<TenantStatus>, reason: &str, csrf: &str) -> String {
     let s = selected.unwrap_or(t.status);
     format!(
         r##"<section aria-label="Status change form">
@@ -116,12 +118,14 @@ fn render_form(t: &Tenant, selected: Option<TenantStatus>, reason: &str) -> Stri
       <label for="reason">Reason (recorded in audit log)</label><br>
       <input id="reason" name="reason" type="text" required maxlength="200" value="{reason}" style="width: 30em;">
     </p>
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Preview change</button></p>
   </form>
 </section>"##,
         // RFC 108 escape contract.
         action_url = escape(&routes::tenant_status(&t.id)),
         reason = escape(reason),
+        csrf = escape(csrf),
         ra = radio("status", "active",    s == TenantStatus::Active,    "s_active"),
         rs = radio("status", "suspended", s == TenantStatus::Suspended, "s_suspended"),
         rd = radio("status", "deleted",   s == TenantStatus::Deleted,   "s_deleted"),
@@ -167,7 +171,7 @@ fn render_diff(t: &Tenant, target: TenantStatus, reason: &str) -> String {
     )
 }
 
-fn render_apply_form(tenant_id: &str, target: TenantStatus, reason: &str) -> String {
+fn render_apply_form(tenant_id: &str, target: TenantStatus, reason: &str, csrf: &str) -> String {
     let target_str = match target {
         TenantStatus::Active    => "active",
         TenantStatus::Suspended => "suspended",
@@ -180,6 +184,7 @@ fn render_apply_form(tenant_id: &str, target: TenantStatus, reason: &str) -> Str
     <input type="hidden" name="status" value="{target}">
     <input type="hidden" name="reason" value="{reason}">
     <input type="hidden" name="confirm" value="yes">
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Apply change</button></p>
   </form>
 </section>"##,
@@ -187,6 +192,7 @@ fn render_apply_form(tenant_id: &str, target: TenantStatus, reason: &str) -> Str
         action_url = escape(&routes::tenant_status(tenant_id)),
         target = target_str,
         reason = escape(reason),
+        csrf = escape(csrf),
     )
 }
 
@@ -209,7 +215,7 @@ mod tests {
 
     #[test]
     fn form_renders_three_target_options() {
-        let html = form_page(&p(), &t(), None, "", None);
+        let html = form_page(&p(), &t(), None, "", None, "tok-1");
         assert!(html.contains(r#"value="active""#));
         assert!(html.contains(r#"value="suspended""#));
         assert!(html.contains(r#"value="deleted""#));
@@ -217,7 +223,7 @@ mod tests {
 
     #[test]
     fn confirm_page_warns_on_suspend() {
-        let html = confirm_page(&p(), &t(), TenantStatus::Suspended, "policy violation");
+        let html = confirm_page(&p(), &t(), TenantStatus::Suspended, "policy violation", "tok-1");
         assert!(html.contains("refuses sign-ins"));
         assert!(html.contains("policy violation"));
         assert!(html.contains(r#"value="confirm" value="yes""#) ||
@@ -227,7 +233,7 @@ mod tests {
 
     #[test]
     fn confirm_page_warns_on_delete() {
-        let html = confirm_page(&p(), &t(), TenantStatus::Deleted, "wind-down");
+        let html = confirm_page(&p(), &t(), TenantStatus::Deleted, "wind-down", "tok-1");
         assert!(html.contains("Soft-deleting"));
         assert!(html.contains("Recovery requires manual SQL"));
     }
@@ -237,13 +243,13 @@ mod tests {
         // Operator picks "active" while current is already "active":
         // the page must render a "no change" notice rather than
         // imply something destructive will happen.
-        let html = confirm_page(&p(), &t(), TenantStatus::Active, "x");
+        let html = confirm_page(&p(), &t(), TenantStatus::Active, "x", "tok-1");
         assert!(html.contains("No change"));
     }
 
     #[test]
     fn reason_is_html_escaped_on_confirm_page() {
-        let html = confirm_page(&p(), &t(), TenantStatus::Suspended, "<b>bad</b>");
+        let html = confirm_page(&p(), &t(), TenantStatus::Suspended, "<b>bad</b>", "tok-1");
         assert!(!html.contains("<b>bad</b>"),
             "raw HTML in reason must be escaped");
         assert!(html.contains("&lt;b&gt;bad&lt;/b&gt;"));

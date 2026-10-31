@@ -58,7 +58,16 @@ pub async fn issue<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response
         return Ok(r);
     }
 
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = req.form_data().await?;
+    let csrf_submitted = match form.get("csrf") {
+        Some(worker::FormEntry::Field(v)) => v,
+        _ => String::new(),
+    };
+    let from_cookie = crate::csrf::extract_from_cookie_header(&cookie_header).unwrap_or("");
+    if !crate::csrf::verify(&csrf_submitted, from_cookie) {
+        return Response::error("Bad Request", 400);
+    }
     let email = match form.get("email") {
         Some(worker::FormEntry::Field(v)) if !v.is_empty() => v,
         _ => return form_error("email required"),
@@ -433,10 +442,11 @@ pub async fn list_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
 /// **RFC 153 §3.** `core::invitation::revoke_invitation` has existed since
 /// RFC 046/049 with no route reaching it — `revoked_at`/`revoked_by` have
 /// never held a value in production (RFC 153 §2's own finding). Same gate
-/// and CSRF shape as `issue`: `SameSite=Strict` is the real control
-/// (`route-contracts.md` records `issue`'s row as `N/A (SameSite=Strict)`),
-/// so this needs no double-submit token either.
-pub async fn revoke<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+/// as `issue`. **RFC 152 half B stage 1:** this route and `issue` now also
+/// verify the double-submit `csrf` form field against the cookie minted by
+/// `list_json` — `SameSite=Strict` alone was the documented control, not
+/// the real one.
+pub async fn revoke<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let principal = match auth::resolve_or_respond(&req, &ctx.env).await? {
         Ok(p)  => p,
         Err(r) => return Ok(r),
@@ -458,6 +468,17 @@ pub async fn revoke<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
         Some(s) => s.clone(),
         None    => return Response::error("missing id", 400),
     };
+
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
+    let form = req.form_data().await?;
+    let csrf_submitted = match form.get("csrf") {
+        Some(worker::FormEntry::Field(v)) => v,
+        _ => String::new(),
+    };
+    let from_cookie = crate::csrf::extract_from_cookie_header(&cookie_header).unwrap_or("");
+    if !crate::csrf::verify(&csrf_submitted, from_cookie) {
+        return Response::error("Bad Request", 400);
+    }
 
     let inv_repo = CloudflareInvitationRepository::new(&ctx.env);
 

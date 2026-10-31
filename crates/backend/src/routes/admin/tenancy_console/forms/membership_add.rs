@@ -27,7 +27,9 @@ use worker::{Request, Response, Result, RouteContext};
 
 use crate::audit::{self, EventKind};
 use crate::routes::admin::console::render;
-use crate::routes::admin::tenancy_console::forms::common::{parse_form, redirect_303, require_manage};
+use crate::routes::admin::tenancy_console::forms::common::{
+    attach_csrf_cookie, mint_csrf, parse_form, redirect_303, require_manage, verify_csrf,
+};
 
 // =====================================================================
 // Tenant membership
@@ -46,7 +48,10 @@ pub async fn form_tenant<D>(req: Request, ctx: RouteContext<D>) -> Result<Respon
     let tenant = match tenants.get(&tid).await {
         Ok(Some(t)) => t, _ => return Response::error("not found", 404),
     };
-    render::html_response(|| ui::for_tenant(&principal, &tenant.id, &tenant.slug, "", "", None))
+    let (csrf_token, csrf_cookie) = mint_csrf()?;
+    let mut resp = render::html_response(|| ui::for_tenant(&principal, &tenant.id, &tenant.slug, "", "", None, &csrf_token))?;
+    attach_csrf_cookie(&mut resp, &csrf_cookie);
+    Ok(resp)
 }
 
 pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -56,7 +61,11 @@ pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<
     let Some(tid) = ctx.param("tid").map(|s| s.to_owned()) else {
         return Response::error("not found", 404);
     };
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
     let user_id = form.get("user_id").cloned().unwrap_or_default();
     let role_str = form.get("role").cloned().unwrap_or_default();
 
@@ -69,16 +78,24 @@ pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<
         "owner"  => TenantMembershipRole::Owner,
         "admin"  => TenantMembershipRole::Admin,
         "member" => TenantMembershipRole::Member,
-        _ => return render::html_response(|| ui::for_tenant(
-            &principal, &tenant.id, &tenant.slug, &user_id, &role_str,
-            Some("Choose a role"),
-        )),
+        _ => {
+            let (csrf_token, csrf_cookie) = mint_csrf()?;
+            let mut resp = render::html_response(|| ui::for_tenant(
+                &principal, &tenant.id, &tenant.slug, &user_id, &role_str,
+                Some("Choose a role"), &csrf_token,
+            ))?;
+            attach_csrf_cookie(&mut resp, &csrf_cookie);
+            return Ok(resp);
+        }
     };
     if user_id.trim().is_empty() {
-        return render::html_response(|| ui::for_tenant(
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| ui::for_tenant(
             &principal, &tenant.id, &tenant.slug, &user_id, &role_str,
-            Some("User id is required"),
-        ));
+            Some("User id is required"), &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     let now = OffsetDateTime::now_utc().unix_timestamp();
@@ -95,9 +112,12 @@ pub async fn submit_tenant<D>(mut req: Request, ctx: RouteContext<D>) -> Result<
                 => "User id not found".to_owned(),
             _ => "Storage error".to_owned(),
         };
-        return render::html_response(|| ui::for_tenant(
-            &principal, &tenant.id, &tenant.slug, &user_id, &role_str, Some(&msg),
-        ));
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| ui::for_tenant(
+            &principal, &tenant.id, &tenant.slug, &user_id, &role_str, Some(&msg), &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     audit::write_owned(
@@ -127,7 +147,10 @@ pub async fn form_org<D>(req: Request, ctx: RouteContext<D>) -> Result<Response>
     let org = match orgs.get(&oid).await {
         Ok(Some(o)) => o, _ => return Response::error("not found", 404),
     };
-    render::html_response(|| ui::for_organization(&principal, &org.id, &org.slug, "", "", None))
+    let (csrf_token, csrf_cookie) = mint_csrf()?;
+    let mut resp = render::html_response(|| ui::for_organization(&principal, &org.id, &org.slug, "", "", None, &csrf_token))?;
+    attach_csrf_cookie(&mut resp, &csrf_cookie);
+    Ok(resp)
 }
 
 pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -137,7 +160,11 @@ pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Res
     let Some(oid) = ctx.param("oid").map(|s| s.to_owned()) else {
         return Response::error("not found", 404);
     };
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
     let user_id  = form.get("user_id").cloned().unwrap_or_default();
     let role_str = form.get("role").cloned().unwrap_or_default();
 
@@ -149,16 +176,24 @@ pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Res
     let role = match role_str.as_str() {
         "admin"  => OrganizationRole::Admin,
         "member" => OrganizationRole::Member,
-        _ => return render::html_response(|| ui::for_organization(
-            &principal, &org.id, &org.slug, &user_id, &role_str,
-            Some("Choose a role"),
-        )),
+        _ => {
+            let (csrf_token, csrf_cookie) = mint_csrf()?;
+            let mut resp = render::html_response(|| ui::for_organization(
+                &principal, &org.id, &org.slug, &user_id, &role_str,
+                Some("Choose a role"), &csrf_token,
+            ))?;
+            attach_csrf_cookie(&mut resp, &csrf_cookie);
+            return Ok(resp);
+        }
     };
     if user_id.trim().is_empty() {
-        return render::html_response(|| ui::for_organization(
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| ui::for_organization(
             &principal, &org.id, &org.slug, &user_id, &role_str,
-            Some("User id is required"),
-        ));
+            Some("User id is required"), &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     let now = OffsetDateTime::now_utc().unix_timestamp();
@@ -175,9 +210,12 @@ pub async fn submit_org<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Res
                 => "User id not found".to_owned(),
             _ => "Storage error".to_owned(),
         };
-        return render::html_response(|| ui::for_organization(
-            &principal, &org.id, &org.slug, &user_id, &role_str, Some(&msg),
-        ));
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| ui::for_organization(
+            &principal, &org.id, &org.slug, &user_id, &role_str, Some(&msg), &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     audit::write_owned(
@@ -207,7 +245,10 @@ pub async fn form_group<D>(req: Request, ctx: RouteContext<D>) -> Result<Respons
     let group = match groups.get(&gid).await {
         Ok(Some(g)) => g, _ => return Response::error("not found", 404),
     };
-    render::html_response(|| ui::for_group(&principal, &group.id, &group.slug, &group.tenant_id, "", None))
+    let (csrf_token, csrf_cookie) = mint_csrf()?;
+    let mut resp = render::html_response(|| ui::for_group(&principal, &group.id, &group.slug, &group.tenant_id, "", None, &csrf_token))?;
+    attach_csrf_cookie(&mut resp, &csrf_cookie);
+    Ok(resp)
 }
 
 pub async fn submit_group<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -217,7 +258,11 @@ pub async fn submit_group<D>(mut req: Request, ctx: RouteContext<D>) -> Result<R
     let Some(gid) = ctx.param("gid").map(|s| s.to_owned()) else {
         return Response::error("not found", 404);
     };
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
     let user_id = form.get("user_id").cloned().unwrap_or_default();
 
     let groups = CloudflareGroupRepository::new(&ctx.env);
@@ -226,10 +271,13 @@ pub async fn submit_group<D>(mut req: Request, ctx: RouteContext<D>) -> Result<R
     };
 
     if user_id.trim().is_empty() {
-        return render::html_response(|| ui::for_group(
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| ui::for_group(
             &principal, &group.id, &group.slug, &group.tenant_id, &user_id,
-            Some("User id is required"),
-        ));
+            Some("User id is required"), &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     let now = OffsetDateTime::now_utc().unix_timestamp();
@@ -246,9 +294,12 @@ pub async fn submit_group<D>(mut req: Request, ctx: RouteContext<D>) -> Result<R
                 => "User id not found".to_owned(),
             _ => "Storage error".to_owned(),
         };
-        return render::html_response(|| ui::for_group(
-            &principal, &group.id, &group.slug, &group.tenant_id, &user_id, Some(&msg),
-        ));
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| ui::for_group(
+            &principal, &group.id, &group.slug, &group.tenant_id, &user_id, Some(&msg), &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     audit::write_owned(

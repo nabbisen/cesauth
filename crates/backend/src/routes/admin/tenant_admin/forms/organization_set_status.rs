@@ -12,7 +12,9 @@ use worker::{Request, Response, Result, RouteContext};
 use crate::audit::{self, EventKind};
 use crate::routes::admin::auth;
 use crate::routes::admin::console::render;
-use crate::routes::admin::tenancy_console::forms::common::{confirmed, parse_form, redirect_303};
+use crate::routes::admin::tenancy_console::forms::common::{
+    attach_csrf_cookie, confirmed, mint_csrf, parse_form, redirect_303, verify_csrf,
+};
 use crate::routes::admin::tenant_admin::gate;
 
 /// Common opening: gate + check_permission + load org + verify
@@ -65,7 +67,12 @@ pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
         Ok(pair)  => pair,
         Err(resp) => return Ok(resp),
     };
-    render::html_response(|| form_page(&ctx_ta.principal, &ctx_ta.tenant, &org, None, "", None))
+    let (csrf_token, csrf_cookie) = mint_csrf()?;
+    let mut resp = render::html_response(|| form_page(
+        &ctx_ta.principal, &ctx_ta.tenant, &org, None, "", None, &csrf_token,
+    ))?;
+    attach_csrf_cookie(&mut resp, &csrf_cookie);
+    Ok(resp)
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -74,31 +81,44 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         Err(resp) => return Ok(resp),
     };
 
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
     let target = match form.get("status").map(String::as_str) {
         Some("active")    => OrganizationStatus::Active,
         Some("suspended") => OrganizationStatus::Suspended,
         Some("deleted")   => OrganizationStatus::Deleted,
         _ => {
-            return render::html_response(|| form_page(
+            let (csrf_token, csrf_cookie) = mint_csrf()?;
+            let mut resp = render::html_response(|| form_page(
                 &ctx_ta.principal, &ctx_ta.tenant, &org, None, "",
-                Some("Choose a target status"),
-            ));
+                Some("Choose a target status"), &csrf_token,
+            ))?;
+            attach_csrf_cookie(&mut resp, &csrf_cookie);
+            return Ok(resp);
         }
     };
     let reason = form.get("reason").cloned().unwrap_or_default();
 
     if reason.trim().is_empty() {
-        return render::html_response(|| form_page(
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| form_page(
             &ctx_ta.principal, &ctx_ta.tenant, &org, Some(target), "",
-            Some("Reason is required"),
-        ));
+            Some("Reason is required"), &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     if !confirmed(&form) {
-        return render::html_response(|| preview_page(
-            &ctx_ta.principal, &ctx_ta.tenant, &org, target, &reason,
-        ));
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| preview_page(
+            &ctx_ta.principal, &ctx_ta.tenant, &org, target, &reason, &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     let orgs_repo = CloudflareOrganizationRepository::new(&ctx.env);

@@ -40,6 +40,7 @@ pub fn for_tenant(
     user_id:      &str,
     role:         &str,
     error:        Option<&str>,
+    csrf:         &str,
 ) -> String {
     let title = format!("Add tenant member: {tenant_slug}");
     render(
@@ -53,7 +54,7 @@ pub fn for_tenant(
             ("admin",  "Admin — manage organizations, groups, members"),
             ("member", "Member — basic access to tenant resources"),
         ], role)),
-        error,
+        error, csrf,
     )
 }
 
@@ -66,6 +67,7 @@ pub fn for_organization(
     user_id:    &str,
     role:       &str,
     error:      Option<&str>,
+    csrf:       &str,
 ) -> String {
     let title = format!("Add organization member: {org_slug}");
     render(
@@ -78,7 +80,7 @@ pub fn for_organization(
             ("admin",  "Admin — manage groups + members in this org"),
             ("member", "Member — basic access to org resources"),
         ], role)),
-        error,
+        error, csrf,
     )
 }
 
@@ -91,6 +93,7 @@ pub fn for_group(
     tenant_id:  &str,
     user_id:    &str,
     error:      Option<&str>,
+    csrf:       &str,
 ) -> String {
     let title = format!("Add group member: {group_slug}");
     // Group's "back" target is the owning tenant — there is no
@@ -102,7 +105,7 @@ pub fn for_group(
         &format!("group <code>{}</code>", escape(group_slug)),
         user_id,
         None,
-        error,
+        error, csrf,
     )
 }
 
@@ -115,6 +118,7 @@ fn render(
     user_id:     &str,
     role_select: Option<(&str, &[(&str, &str)], &str)>,
     error:       Option<&str>,
+    csrf:        &str,
 ) -> String {
     let role_field = match role_select {
         None => String::new(),
@@ -147,6 +151,7 @@ fn render(
       </tr>
       {role_field}
     </tbody></table>
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Add member</button></p>
   </form>
 </section>
@@ -161,6 +166,7 @@ fn render(
         back   = back_href,
         action = form_action,
         uid    = escape(user_id),
+        csrf   = escape(csrf),
         error  = match error {
             None    => String::new(),
             Some(m) => format!(
@@ -187,13 +193,13 @@ mod tests {
     /// `.../memberships/new`.
     #[test]
     fn tenant_form_action_is_tenant_scoped() {
-        let html = for_tenant(&p(), "t-acme", "acme", "", "member", None);
+        let html = for_tenant(&p(), "t-acme", "acme", "", "member", None, "tok-1");
         assert!(html.contains(r#"action="/admin/tenancy/tenants/t-acme/memberships/new""#));
     }
 
     #[test]
     fn tenant_form_renders_three_role_options() {
-        let html = for_tenant(&p(), "t", "x", "", "member", None);
+        let html = for_tenant(&p(), "t", "x", "", "member", None, "tok-1");
         assert!(html.contains(r#"value="owner""#));
         assert!(html.contains(r#"value="admin""#));
         assert!(html.contains(r#"value="member""#));
@@ -201,7 +207,7 @@ mod tests {
 
     #[test]
     fn org_form_renders_two_role_options_only() {
-        let html = for_organization(&p(), "o", "x", "", "member", None);
+        let html = for_organization(&p(), "o", "x", "", "member", None, "tok-1");
         // Org-level membership has no "owner" — that's tenant-scope.
         assert!(html.contains(r#"value="admin""#));
         assert!(html.contains(r#"value="member""#));
@@ -212,21 +218,21 @@ mod tests {
     #[test]
     fn group_form_omits_role_field() {
         // Group membership has no role.
-        let html = for_group(&p(), "g", "x", "t-acme", "", None);
+        let html = for_group(&p(), "g", "x", "t-acme", "", None, "tok-1");
         assert!(!html.contains(r#"name="role""#),
             "group membership form must not have a role field");
     }
 
     #[test]
     fn form_preserves_user_id_on_rerender() {
-        let html = for_tenant(&p(), "t", "x", "u-alice", "admin", Some("user not found"));
+        let html = for_tenant(&p(), "t", "x", "u-alice", "admin", Some("user not found"), "tok-1");
         assert!(html.contains(r#"value="u-alice""#));
         assert!(html.contains("user not found"));
     }
 
     #[test]
     fn untrusted_user_id_is_html_escaped() {
-        let html = for_tenant(&p(), "t", "x", r#"<script>alert(1)</script>"#, "member", None);
+        let html = for_tenant(&p(), "t", "x", r#"<script>alert(1)</script>"#, "member", None, "tok-1");
         assert!(!html.contains("<script>"), "user_id must be escaped");
         assert!(html.contains("&lt;script&gt;"));
     }

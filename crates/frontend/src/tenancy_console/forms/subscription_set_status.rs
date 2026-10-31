@@ -14,6 +14,7 @@ pub fn form_page(
     current:     &Subscription,
     selected:    Option<SubscriptionStatus>,
     error:       Option<&str>,
+    csrf:        &str,
 ) -> String {
     let s = selected.unwrap_or(current.status);
     let title = format!("Subscription status: {tenant_slug}");
@@ -35,6 +36,7 @@ pub fn form_page(
       <p><input type="radio" id="s_cancelled" name="status" value="cancelled" {cc}> <label for="s_cancelled"> <code>cancelled</code> — operator-initiated; final period continues</label></p>
       <p><input type="radio" id="s_expired"   name="status" value="expired"   {ce}> <label for="s_expired">   <code>expired</code> — final-period end reached</label></p>
     </fieldset>
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Preview change</button></p>
   </form>
 </section>"##,
@@ -47,6 +49,7 @@ pub fn form_page(
         cp    = if s == SubscriptionStatus::PastDue   { "checked" } else { "" },
         cc    = if s == SubscriptionStatus::Cancelled { "checked" } else { "" },
         ce    = if s == SubscriptionStatus::Expired   { "checked" } else { "" },
+        csrf  = escape(csrf),
         error = match error {
             None    => String::new(),
             Some(m) => format!(
@@ -64,6 +67,7 @@ pub fn confirm_page(
     tenant_slug: &str,
     current:     &Subscription,
     target:      SubscriptionStatus,
+    csrf:        &str,
 ) -> String {
     let title = format!("Confirm subscription status: {tenant_slug}");
     let warning = match (current.status == target, target) {
@@ -93,6 +97,7 @@ pub fn confirm_page(
   <form class="danger" method="post" action="{action_url}">
     <input type="hidden" name="status"  value="{target}">
     <input type="hidden" name="confirm" value="yes">
+    <input type="hidden" name="csrf"    value="{csrf}">
     <p><button type="submit">Apply status change</button></p>
   </form>
 </section>"##,
@@ -104,6 +109,7 @@ pub fn confirm_page(
         to     = render_status_badge(target),
         target = target_str,
         warning = warning,
+        csrf   = escape(csrf),
     );
     tenancy_console_frame(&title, principal.role, principal.name.as_deref(), TenancyConsoleTab::Tenants, &body)
 }
@@ -137,19 +143,19 @@ mod tests {
 
     #[test]
     fn confirm_warns_on_expire() {
-        let html = confirm_page(&p(), "t", "acme", &s(SubscriptionStatus::Active), SubscriptionStatus::Expired);
+        let html = confirm_page(&p(), "t", "acme", &s(SubscriptionStatus::Active), SubscriptionStatus::Expired, "tok-1");
         assert!(html.contains("plan-quota enforcement to fall through"));
     }
 
     #[test]
     fn confirm_warns_on_cancel() {
-        let html = confirm_page(&p(), "t", "acme", &s(SubscriptionStatus::Active), SubscriptionStatus::Cancelled);
+        let html = confirm_page(&p(), "t", "acme", &s(SubscriptionStatus::Active), SubscriptionStatus::Cancelled, "tok-1");
         assert!(html.contains("current period continues"));
     }
 
     #[test]
     fn confirm_no_op_on_same_status() {
-        let html = confirm_page(&p(), "t", "acme", &s(SubscriptionStatus::Active), SubscriptionStatus::Active);
+        let html = confirm_page(&p(), "t", "acme", &s(SubscriptionStatus::Active), SubscriptionStatus::Active, "tok-1");
         assert!(html.contains("No change"));
     }
 }

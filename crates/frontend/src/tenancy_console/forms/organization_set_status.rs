@@ -13,6 +13,7 @@ pub fn form_page(
     selected:  Option<OrganizationStatus>,
     reason_default: &str,
     error:     Option<&str>,
+    csrf:      &str,
 ) -> String {
     let s = selected.unwrap_or(org.status);
     let title = format!("Organization status: {}", org.slug);
@@ -41,6 +42,7 @@ pub fn form_page(
       <label for="reason">Reason (recorded in audit log)</label><br>
       <input id="reason" name="reason" type="text" required maxlength="200" value="{reason}" style="width: 30em;">
     </p>
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Preview change</button></p>
   </form>
 </section>"##,
@@ -53,6 +55,7 @@ pub fn form_page(
         cs     = if s == OrganizationStatus::Suspended { "checked" } else { "" },
         cd     = if s == OrganizationStatus::Deleted   { "checked" } else { "" },
         reason = escape(reason_default),
+        csrf   = escape(csrf),
         error  = match error {
             None => String::new(),
             Some(m) => format!(
@@ -69,6 +72,7 @@ pub fn confirm_page(
     org:       &Organization,
     target:    OrganizationStatus,
     reason:    &str,
+    csrf:      &str,
 ) -> String {
     let title = format!("Confirm organization status: {}", org.slug);
     let warning = match (org.status == target, target) {
@@ -99,6 +103,7 @@ pub fn confirm_page(
     <input type="hidden" name="status"  value="{target}">
     <input type="hidden" name="reason"  value="{reason}">
     <input type="hidden" name="confirm" value="yes">
+    <input type="hidden" name="csrf"    value="{csrf}">
     <p><button type="submit">Apply change</button></p>
   </form>
 </section>"##,
@@ -111,6 +116,7 @@ pub fn confirm_page(
         reason = escape(reason),
         target = target_str,
         warning = warning,
+        csrf   = escape(csrf),
     );
     tenancy_console_frame(&title, principal.role, principal.name.as_deref(), TenancyConsoleTab::Tenants, &body)
 }
@@ -143,13 +149,29 @@ mod tests {
 
     #[test]
     fn confirm_warns_on_suspend() {
-        let html = confirm_page(&p(), &o(), OrganizationStatus::Suspended, "off-boarding");
+        let html = confirm_page(&p(), &o(), OrganizationStatus::Suspended, "off-boarding", "tok-1");
         assert!(html.contains("unreachable for its members"));
     }
 
     #[test]
     fn confirm_no_op_on_same_status() {
-        let html = confirm_page(&p(), &o(), OrganizationStatus::Active, "x");
+        let html = confirm_page(&p(), &o(), OrganizationStatus::Active, "x", "tok-1");
         assert!(html.contains("No change"));
+    }
+
+    #[test]
+    fn confirm_carries_csrf_token() {
+        let html = confirm_page(&p(), &o(), OrganizationStatus::Active, "x", "tok-1");
+        // `confirm_page`'s hidden inputs are column-aligned (see its
+        // template above: "status"/"reason"/"confirm"/"csrf" each pad
+        // out to the same `value=` column), so the literal has more
+        // than one space here, unlike `form_page`'s single input below.
+        assert!(html.contains(r#"name="csrf"    value="tok-1""#));
+    }
+
+    #[test]
+    fn form_carries_csrf_token() {
+        let html = form_page(&p(), &o(), None, "", None, "tok-1");
+        assert!(html.contains(r#"name="csrf" value="tok-1""#));
     }
 }

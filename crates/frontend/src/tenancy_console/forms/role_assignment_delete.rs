@@ -15,6 +15,7 @@ pub fn confirm_page(
     user_id:     &str,
     assignment:  &RoleAssignment,
     role_label:  &str,
+    csrf:        &str,
 ) -> String {
     let title = "Revoke role assignment".to_owned();
     let scope_html = render_scope(&assignment.scope);
@@ -39,6 +40,7 @@ pub fn confirm_page(
   <form class="danger" method="post" action="{action_url}">
     <input type="hidden" name="user_id" value="{uid}">
     <input type="hidden" name="confirm" value="yes">
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Revoke role assignment</button></p>
   </form>
 </section>"##,
@@ -51,6 +53,7 @@ pub fn confirm_page(
         granted_by = escape(&assignment.granted_by),
         granted_at = assignment.granted_at,
         aid        = escape(&assignment.id),
+        csrf       = escape(csrf),
     );
     tenancy_console_frame(&title, principal.role, principal.name.as_deref(), TenancyConsoleTab::UserRoleAssignments, &body)
 }
@@ -89,7 +92,7 @@ mod tests {
             scope: Scope::System,
             granted_by: "x".into(), granted_at: 0, expires_at: None,
         };
-        let html = confirm_page(&p(), "u-alice", &a, "<code>system_admin</code>");
+        let html = confirm_page(&p(), "u-alice", &a, "<code>system_admin</code>", "tok-1");
         assert!(html.contains(r#"action="/admin/tenancy/role_assignments/a-1/delete""#));
         assert!(html.contains(r#"name="confirm" value="yes""#));
     }
@@ -101,7 +104,7 @@ mod tests {
             scope: Scope::System,
             granted_by: "x".into(), granted_at: 0, expires_at: None,
         };
-        let html = confirm_page(&p(), "u", &a, "system_admin");
+        let html = confirm_page(&p(), "u", &a, "system_admin", "tok-1");
         // System scope is the most-impactful — must call attention.
         assert!(html.contains(r#"badge critical">system"#));
     }
@@ -113,7 +116,7 @@ mod tests {
             scope: Scope::Tenant { tenant_id: "t".into() },
             granted_by: "x".into(), granted_at: 0, expires_at: None,
         };
-        let html = confirm_page(&p(), "u", &a, "tenant_admin");
+        let html = confirm_page(&p(), "u", &a, "tenant_admin", "tok-1");
         assert!(html.contains("session is not invalidated"));
     }
 }

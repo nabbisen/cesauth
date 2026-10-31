@@ -17,6 +17,7 @@ pub fn form_page(
     available:    &[Plan],
     selected_id:  &str,
     error:        Option<&str>,
+    csrf:         &str,
 ) -> String {
     let title = format!("Change plan: {}", tenant_slug);
     let current_label = current_plan
@@ -48,6 +49,7 @@ pub fn form_page(
         {options}
       </select>
     </p>
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Preview change</button></p>
   </form>
 </section>"##,
@@ -57,6 +59,7 @@ pub fn form_page(
         slug    = escape(tenant_slug),
         current = current_label,
         options = options,
+        csrf    = escape(csrf),
         error   = match error {
             None    => String::new(),
             Some(m) => format!(
@@ -74,6 +77,7 @@ pub fn confirm_page(
     tenant_slug:  &str,
     current_plan: Option<&Plan>,
     target_plan:  &Plan,
+    csrf:         &str,
 ) -> String {
     let title = format!("Confirm plan change: {}", tenant_slug);
     let same = current_plan.map(|p| p.id == target_plan.id).unwrap_or(false);
@@ -105,6 +109,7 @@ pub fn confirm_page(
   <form class="danger" method="post" action="{action_url}">
     <input type="hidden" name="plan_id" value="{plan_id}">
     <input type="hidden" name="confirm" value="yes">
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Apply plan change</button></p>
   </form>
 </section>"##,
@@ -116,6 +121,7 @@ pub fn confirm_page(
         tgt     = format!("{} (<code>{}</code>)", escape(&target_plan.display_name), escape(&target_plan.slug)),
         plan_id = escape(&target_plan.id),
         warning = warning,
+        csrf    = escape(csrf),
     );
     tenancy_console_frame(&title, principal.role, principal.name.as_deref(), TenancyConsoleTab::Tenants, &body)
 }
@@ -184,7 +190,7 @@ mod tests {
     fn confirm_warns_when_target_is_inactive() {
         let cur = plan("plan-pro", "pro", true, vec![]);
         let tgt = plan("plan-archived", "archived", false, vec![]);
-        let html = confirm_page(&p(), "t", "acme", Some(&cur), &tgt);
+        let html = confirm_page(&p(), "t", "acme", Some(&cur), &tgt, "tok-1");
         assert!(html.contains("Target plan is marked inactive"));
     }
 
@@ -192,7 +198,7 @@ mod tests {
     fn confirm_renders_quota_delta_with_arrow_marker_for_decrease() {
         let cur = plan("p1", "old", true, vec![Quota { name: "max_users".into(), value: 100 }]);
         let tgt = plan("p2", "new", true, vec![Quota { name: "max_users".into(), value: 10 }]);
-        let html = confirm_page(&p(), "t", "acme", Some(&cur), &tgt);
+        let html = confirm_page(&p(), "t", "acme", Some(&cur), &tgt, "tok-1");
         assert!(html.contains("max_users"));
         assert!(html.contains("100"));
         assert!(html.contains(">10"));
@@ -202,7 +208,7 @@ mod tests {
     #[test]
     fn confirm_no_op_on_same_plan() {
         let same = plan("p1", "pro", true, vec![]);
-        let html = confirm_page(&p(), "t", "acme", Some(&same), &same);
+        let html = confirm_page(&p(), "t", "acme", Some(&same), &same, "tok-1");
         assert!(html.contains("No change"));
     }
 
@@ -212,7 +218,7 @@ mod tests {
             plan("p1", "free", true, vec![]),
             plan("p2", "pro",  true, vec![]),
         ];
-        let html = form_page(&p(), "t", "acme", &s("p2"), Some(&plans[1]), &plans, "p2", None);
+        let html = form_page(&p(), "t", "acme", &s("p2"), Some(&plans[1]), &plans, "p2", None, "tok-1");
         // The selected option must carry the "selected" attribute.
         assert!(html.contains(r#"value="p2" selected"#));
     }

@@ -97,7 +97,7 @@ mod token_mint_tests {
     fn form_renders_radio_for_each_admin_role() {
         let html = form_page(&admin(), &MintInput {
             subject_user: &target_user(),
-            role: "operations", name: "", error: None,
+            role: "operations", name: "", error: None, csrf: "tok-1",
         });
         for r in ["read_only", "security", "operations", "super"] {
             assert!(html.contains(&format!(r#"value="{r}""#)),
@@ -114,6 +114,7 @@ mod token_mint_tests {
             subject_user: &target_user(),
             role: AdminRole::Operations,
             name: "alice's first token",
+            csrf: "tok-1",
         });
         // Some version of "shown once / cannot recover" must appear.
         let warns = html.contains("once") || html.contains("only once");

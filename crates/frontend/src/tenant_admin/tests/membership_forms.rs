@@ -23,7 +23,7 @@ fn membership_add_tenant_form_is_slug_relative() {
     use crate::tenant_admin::forms::membership_add::for_tenant;
     let p = principal();
     let t = tenant();
-    let html = for_tenant(&p, &t, "", "member", None);
+    let html = for_tenant(&p, &t, "", "member", None, "tok-1");
     assert!(html.contains(r#"action="/admin/t/acme/memberships""#),
         "form action must be slug-relative");
     assert!(!html.contains("/admin/tenancy/"),
@@ -35,7 +35,7 @@ fn membership_add_tenant_form_renders_three_role_options() {
     use crate::tenant_admin::forms::membership_add::for_tenant;
     let p = principal();
     let t = tenant();
-    let html = for_tenant(&p, &t, "", "member", None);
+    let html = for_tenant(&p, &t, "", "member", None, "tok-1");
     assert!(html.contains(r#"value="owner""#));
     assert!(html.contains(r#"value="admin""#));
     assert!(html.contains(r#"value="member""#));
@@ -46,7 +46,7 @@ fn membership_add_organization_form_renders_two_role_options() {
     use crate::tenant_admin::forms::membership_add::for_organization;
     let p = principal();
     let t = tenant();
-    let html = for_organization(&p, &t, "o-eng", "engineering", "", "member", None);
+    let html = for_organization(&p, &t, "o-eng", "engineering", "", "member", None, "tok-1");
     assert!(html.contains(r#"value="admin""#));
     assert!(html.contains(r#"value="member""#));
     // Org-level memberships do NOT have an Owner role.
@@ -59,7 +59,7 @@ fn membership_remove_carries_confirm_yes() {
     use crate::tenant_admin::forms::membership_remove::for_tenant;
     let p = principal();
     let t = tenant();
-    let html = for_tenant(&p, &t, "u-bob", "member");
+    let html = for_tenant(&p, &t, "u-bob", "member", "tok-1");
     // Apply path is gated by confirm=yes, same convention as the
     // 0.14.0 high-risk forms. Without it, a stray POST with no
     // body would silently apply.

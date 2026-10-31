@@ -38,6 +38,7 @@ pub struct RoleAssignmentCreateInput<'a> {
     pub scope_id:        &'a str,
     pub expires_at:      &'a str,
     pub error:           Option<&'a str>,
+    pub csrf:            &'a str,
 }
 
 pub fn role_assignment_create_form(
@@ -79,6 +80,7 @@ pub fn role_assignment_create_form(
         </td>
       </tr>
     </tbody></table>
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Grant role</button></p>
   </form>
 </section>
@@ -103,6 +105,7 @@ pub fn role_assignment_create_form(
         expires      = escape(input.expires_at),
         role_options = render_role_options(input.available_roles, input.role_id),
         scope_radios = render_scope_radios(input.scope_type),
+        csrf         = escape(input.csrf),
         error        = match input.error {
             None    => String::new(),
             Some(m) => format!(
@@ -166,7 +169,7 @@ mod tests {
         RoleAssignmentCreateInput {
             user_id: uid, available_roles: roles,
             role_id: "", scope_type: "tenant", scope_id: "", expires_at: "",
-            error: None,
+            error: None, csrf: "tok-1",
         }
     }
 

@@ -12,7 +12,7 @@ use cesauth_core::tenancy::types::Group;
 
 use super::super::frame::{tenancy_console_frame, TenancyConsoleTab};
 
-pub fn confirm_page(principal: &AdminPrincipal, group: &Group) -> String {
+pub fn confirm_page(principal: &AdminPrincipal, group: &Group, csrf: &str) -> String {
     let title = format!("Delete group: {}", group.slug);
     let body = format!(
         r##"<p><a href="javascript:history.back()">← Back</a></p>
@@ -32,6 +32,7 @@ pub fn confirm_page(principal: &AdminPrincipal, group: &Group) -> String {
 <section aria-label="Apply">
   <form class="danger" method="post" action="{delete_url}">
     <input type="hidden" name="confirm" value="yes">
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Delete group</button></p>
   </form>
 </section>"##,
@@ -41,6 +42,7 @@ pub fn confirm_page(principal: &AdminPrincipal, group: &Group) -> String {
         id   = escape(&group.id),
         // RFC 108 escape contract.
         delete_url = escape(&routes::group_delete(&group.id)),
+        csrf = escape(csrf),
     );
     tenancy_console_frame(&title, principal.role, principal.name.as_deref(), TenancyConsoleTab::Tenants, &body)
 }
@@ -66,14 +68,20 @@ mod tests {
 
     #[test]
     fn confirm_page_carries_apply_form() {
-        let html = confirm_page(&p(), &g());
+        let html = confirm_page(&p(), &g(), "tok-1");
         assert!(html.contains(r#"name="confirm" value="yes""#));
         assert!(html.contains(r#"action="/admin/tenancy/groups/g-1/delete""#));
     }
 
     #[test]
+    fn confirm_page_carries_csrf_token() {
+        let html = confirm_page(&p(), &g(), "tok-1");
+        assert!(html.contains(r#"name="csrf" value="tok-1""#));
+    }
+
+    #[test]
     fn confirm_page_warns_recovery_requires_sql() {
-        let html = confirm_page(&p(), &g());
+        let html = confirm_page(&p(), &g(), "tok-1");
         assert!(html.contains("Recovery requires manual SQL"));
     }
 }

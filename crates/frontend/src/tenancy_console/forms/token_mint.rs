@@ -30,6 +30,7 @@ pub struct MintInput<'a> {
     pub role:         &'a str,   // "read_only" / "security" / "operations" / "super"
     pub name:         &'a str,
     pub error:        Option<&'a str>,
+    pub csrf:         &'a str,
 }
 
 pub fn form_page(
@@ -65,6 +66,7 @@ pub fn form_page(
       <label for="name">Token nickname (recorded in audit log)</label><br>
       <input id="name" name="name" type="text" required maxlength="80" value="{name}" style="width: 30em;">
     </p>
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Preview mint</button></p>
   </form>
 </section>"##,
@@ -80,6 +82,7 @@ pub fn form_page(
         cu    = if input.role == "super"      { "checked" } else { "" },
         name  = escape(input.name),
         error = render_error(input.error),
+        csrf  = escape(input.csrf),
     );
     tenancy_console_frame(&title, principal.role, principal.name.as_deref(),
                           TenancyConsoleTab::UserRoleAssignments, &body)
@@ -90,6 +93,7 @@ pub struct MintPreviewInput<'a> {
     pub subject_user: &'a User,
     pub role:         AdminRole,
     pub name:         &'a str,
+    pub csrf:         &'a str,
 }
 
 pub fn preview_page(
@@ -119,6 +123,7 @@ pub fn preview_page(
     <input type="hidden" name="role" value="{role_value}">
     <input type="hidden" name="name" value="{name}">
     <input type="hidden" name="confirm" value="yes">
+    <input type="hidden" name="csrf" value="{csrf}">
     <p>
       <button type="submit" class="critical">Apply mint</button>
       <a href="{cancel_url}">Cancel</a>
@@ -135,6 +140,7 @@ pub fn preview_page(
         role       = role_label(input.role),
         role_value = role_value(input.role),
         name       = escape(input.name),
+        csrf       = escape(input.csrf),
     );
     tenancy_console_frame(&title, principal.role, principal.name.as_deref(),
                           TenancyConsoleTab::UserRoleAssignments, &body)

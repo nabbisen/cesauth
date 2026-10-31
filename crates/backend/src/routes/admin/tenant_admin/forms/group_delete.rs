@@ -17,7 +17,9 @@ use worker::{Request, Response, Result, RouteContext};
 use crate::audit::{self, EventKind};
 use crate::routes::admin::auth;
 use crate::routes::admin::console::render;
-use crate::routes::admin::tenancy_console::forms::common::{confirmed, parse_form, redirect_303};
+use crate::routes::admin::tenancy_console::forms::common::{
+    attach_csrf_cookie, confirmed, mint_csrf, parse_form, redirect_303, verify_csrf,
+};
 use crate::routes::admin::tenant_admin::gate;
 
 async fn gate_and_load_group<D>(
@@ -89,9 +91,12 @@ pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
         Ok(t)     => t,
         Err(resp) => return Ok(resp),
     };
-    render::html_response(|| form_page(
-        &ctx_ta.principal, &ctx_ta.tenant, &group, &org_slug, &org_id, "", None,
-    ))
+    let (csrf_token, csrf_cookie) = mint_csrf()?;
+    let mut resp = render::html_response(|| form_page(
+        &ctx_ta.principal, &ctx_ta.tenant, &group, &org_slug, &org_id, "", None, &csrf_token,
+    ))?;
+    attach_csrf_cookie(&mut resp, &csrf_cookie);
+    Ok(resp)
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -100,13 +105,20 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         Err(resp) => return Ok(resp),
     };
 
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
     let reason = form.get("reason").cloned().unwrap_or_default();
     if reason.trim().is_empty() {
-        return render::html_response(|| form_page(
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| form_page(
             &ctx_ta.principal, &ctx_ta.tenant, &group, &org_slug, &org_id, "",
-            Some("Reason is required"),
-        ));
+            Some("Reason is required"), &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     if !confirmed(&form) {
@@ -122,10 +134,13 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
             .list_group_members(&group.id)
             .await.map(|v| v.len()).unwrap_or(0);
 
-        return render::html_response(|| preview_page(
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| preview_page(
             &ctx_ta.principal, &ctx_ta.tenant, &group, &org_id,
-            &reason, n_assignments, n_memberships,
-        ));
+            &reason, n_assignments, n_memberships, &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     let groups_repo = CloudflareGroupRepository::new(&ctx.env);

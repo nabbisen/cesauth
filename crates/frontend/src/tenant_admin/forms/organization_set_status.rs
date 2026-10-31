@@ -18,6 +18,7 @@ pub fn form_page(
     selected:       Option<OrganizationStatus>,
     reason_default: &str,
     error:          Option<&str>,
+    csrf:           &str,
 ) -> String {
     let s = selected.unwrap_or(org.status);
     let title = format!("Organization status: {}", org.slug);
@@ -46,6 +47,7 @@ pub fn form_page(
       <label for="reason">Reason (recorded in audit log)</label><br>
       <input id="reason" name="reason" type="text" required maxlength="200" value="{reason}" style="width: 30em;">
     </p>
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Preview change</button></p>
   </form>
 </section>"##,
@@ -59,6 +61,7 @@ pub fn form_page(
         cd     = if s == OrganizationStatus::Deleted   { "checked" } else { "" },
         reason = escape(reason_default),
         error  = render_error(error),
+        csrf   = escape(csrf),
     );
     tenant_admin_frame(
         &title,
@@ -79,6 +82,7 @@ pub fn preview_page(
     org:       &Organization,
     target:    OrganizationStatus,
     reason:    &str,
+    csrf:      &str,
 ) -> String {
     let title = format!("Confirm status change: {}", org.slug);
     // RFC 108 escape contract.
@@ -100,6 +104,7 @@ pub fn preview_page(
     <input type="hidden" name="status" value="{tgt_value}">
     <input type="hidden" name="reason" value="{reason}">
     <input type="hidden" name="confirm" value="yes">
+    <input type="hidden" name="csrf" value="{csrf}">
     <p>
       <button type="submit" class="critical">Apply</button>
       <a href="{cancel_url}">Cancel</a>
@@ -115,6 +120,7 @@ pub fn preview_page(
         tgt       = render_status_badge(target),
         tgt_value = status_value(target),
         reason    = escape(reason),
+        csrf      = escape(csrf),
     );
     tenant_admin_frame(
         &title,

@@ -20,6 +20,7 @@ pub fn for_tenant(
     slug:         &str,
     display_name: &str,
     error:        Option<&str>,
+    csrf:         &str,
 ) -> String {
     render(principal,
         &format!("New group in tenant: {tenant_slug}"),
@@ -29,7 +30,7 @@ pub fn for_tenant(
         &escape(&routes::tenant(tenant_id)),
         &escape(&routes::tenant_groups_new(tenant_id)),
         "tenant", &format!("tenant <code>{}</code>", escape(tenant_slug)),
-        slug, display_name, error,
+        slug, display_name, error, csrf,
     )
 }
 
@@ -41,13 +42,14 @@ pub fn for_organization(
     slug:         &str,
     display_name: &str,
     error:        Option<&str>,
+    csrf:         &str,
 ) -> String {
     render(principal,
         &format!("New group in organization: {org_slug}"),
         &escape(&routes::organization(org_id)),
         &escape(&routes::organization_groups_new(org_id)),
         "organization", &format!("organization <code>{}</code>", escape(org_slug)),
-        slug, display_name, error,
+        slug, display_name, error, csrf,
     )
 }
 
@@ -61,6 +63,7 @@ fn render(
     slug:        &str,
     display_name:&str,
     error:       Option<&str>,
+    csrf:        &str,
 ) -> String {
     let _ = parent_kind;  // hidden field intentionally omitted; the URL carries it
     let body = format!(
@@ -79,6 +82,7 @@ fn render(
         <td><input id="display_name" name="display_name" type="text" required value="{name}"></td>
       </tr>
     </tbody></table>
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Create group</button></p>
   </form>
 </section>
@@ -96,6 +100,7 @@ fn render(
         action = form_action,
         slug   = escape(slug),
         name   = escape(display_name),
+        csrf   = escape(csrf),
         error  = match error {
             None    => String::new(),
             Some(m) => format!(
@@ -118,14 +123,14 @@ mod tests {
 
     #[test]
     fn tenant_form_action_is_tenant_scoped() {
-        let html = for_tenant(&p(), "t-acme", "acme", "", "", None);
+        let html = for_tenant(&p(), "t-acme", "acme", "", "", None, "tok-1");
         assert!(html.contains(r#"action="/admin/tenancy/tenants/t-acme/groups/new""#));
         assert!(html.contains("acme"));
     }
 
     #[test]
     fn organization_form_action_is_org_scoped() {
-        let html = for_organization(&p(), "o-eng", "engineering", "", "", None);
+        let html = for_organization(&p(), "o-eng", "engineering", "", "", None, "tok-1");
         assert!(html.contains(r#"action="/admin/tenancy/organizations/o-eng/groups/new""#));
         assert!(html.contains("engineering"));
     }

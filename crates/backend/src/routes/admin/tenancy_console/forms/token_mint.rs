@@ -27,7 +27,9 @@ use crate::audit::{self, EventKind};
 use crate::routes::admin::auth;
 use crate::routes::admin::console::render;
 use crate::routes::admin::console::tokens::{hash_hex, mint_plaintext};
-use crate::routes::admin::tenancy_console::forms::common::{confirmed, parse_form};
+use crate::routes::admin::tenancy_console::forms::common::{
+    attach_csrf_cookie, confirmed, mint_csrf, parse_form, verify_csrf,
+};
 
 async fn require_token_mint(
     req: &Request,
@@ -78,9 +80,12 @@ pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
         Ok(u)     => u,
         Err(resp) => return Ok(resp),
     };
-    render::html_response(|| form_page(&principal, &MintInput {
-        subject_user: &user, role: "", name: "", error: None,
-    }))
+    let (csrf_token, csrf_cookie) = mint_csrf()?;
+    let mut resp = render::html_response(|| form_page(&principal, &MintInput {
+        subject_user: &user, role: "", name: "", error: None, csrf: &csrf_token,
+    }))?;
+    attach_csrf_cookie(&mut resp, &csrf_cookie);
+    Ok(resp)
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -96,38 +101,51 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         Err(resp) => return Ok(resp),
     };
 
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
     let role_str = form.get("role").cloned().unwrap_or_default();
     let name     = form.get("name").cloned().unwrap_or_default();
 
     let role = match parse_role(&role_str) {
         Some(r) => r,
         None    => {
-            return render::html_response(|| form_page(
+            let (csrf_token, csrf_cookie) = mint_csrf()?;
+            let mut resp = render::html_response(|| form_page(
                 &principal,
                 &MintInput {
                     subject_user: &user, role: &role_str, name: &name,
-                    error: Some("Pick a role"),
+                    error: Some("Pick a role"), csrf: &csrf_token,
                 },
-            ));
+            ))?;
+            attach_csrf_cookie(&mut resp, &csrf_cookie);
+            return Ok(resp);
         }
     };
 
     if name.trim().is_empty() {
-        return render::html_response(|| form_page(
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| form_page(
             &principal,
             &MintInput {
                 subject_user: &user, role: &role_str, name: &name,
-                error: Some("Token nickname is required (recorded in audit)"),
+                error: Some("Token nickname is required (recorded in audit)"), csrf: &csrf_token,
             },
-        ));
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     if !confirmed(&form) {
-        return render::html_response(|| preview_page(
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| preview_page(
             &principal,
-            &MintPreviewInput { subject_user: &user, role, name: &name },
-        ));
+            &MintPreviewInput { subject_user: &user, role, name: &name, csrf: &csrf_token },
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     // Resolve the user's tenant slug for the post-apply page link.

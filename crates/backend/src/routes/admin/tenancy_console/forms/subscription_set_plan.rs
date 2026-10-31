@@ -16,7 +16,8 @@ use worker::{Request, Response, Result, RouteContext};
 use crate::audit::{self, EventKind};
 use crate::routes::admin::console::render;
 use crate::routes::admin::tenancy_console::forms::common::{
-    confirmed, parse_form, redirect_303, require_manage,
+    attach_csrf_cookie, confirmed, mint_csrf, parse_form, redirect_303, require_manage,
+    verify_csrf,
 };
 
 /// **RFC 145 cycle 3.** Used to return the Leptos shell with no
@@ -41,10 +42,13 @@ pub async fn form<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     let plans = CloudflarePlanRepository::new(&ctx.env);
     let current_plan = plans.get(&current.plan_id).await.ok().flatten();
     let available = plans.list_active().await.unwrap_or_default();
-    render::html_response(|| form_page(
+    let (csrf_token, csrf_cookie) = mint_csrf()?;
+    let mut resp = render::html_response(|| form_page(
         &principal, &tenant.id, &tenant.slug, &current,
-        current_plan.as_ref(), &available, "", None,
-    ))
+        current_plan.as_ref(), &available, "", None, &csrf_token,
+    ))?;
+    attach_csrf_cookie(&mut resp, &csrf_cookie);
+    Ok(resp)
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -55,7 +59,11 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         return Response::error("not found", 404);
     };
 
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
     let plan_id = form.get("plan_id").cloned().unwrap_or_default();
 
     let tenants = CloudflareTenantRepository::new(&ctx.env);
@@ -73,38 +81,50 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
 
     if plan_id.trim().is_empty() {
         let available = plans.list_active().await.unwrap_or_default();
-        return render::html_response(|| form_page(
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| form_page(
             &principal, &tenant.id, &tenant.slug, &current,
             current_plan.as_ref(), &available, "",
-            Some("Select a target plan"),
-        ));
+            Some("Select a target plan"), &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     let target_plan = match plans.get(&plan_id).await.ok().flatten() {
         Some(p) => p,
         None => {
             let available = plans.list_active().await.unwrap_or_default();
-            return render::html_response(|| form_page(
+            let (csrf_token, csrf_cookie) = mint_csrf()?;
+            let mut resp = render::html_response(|| form_page(
                 &principal, &tenant.id, &tenant.slug, &current,
                 current_plan.as_ref(), &available, &plan_id,
-                Some("Unknown plan id"),
-            ));
+                Some("Unknown plan id"), &csrf_token,
+            ))?;
+            attach_csrf_cookie(&mut resp, &csrf_cookie);
+            return Ok(resp);
         }
     };
 
     if !confirmed(&form) {
-        return render::html_response(|| confirm_page(
-            &principal, &tenant.id, &tenant.slug, current_plan.as_ref(), &target_plan,
-        ));
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| confirm_page(
+            &principal, &tenant.id, &tenant.slug, current_plan.as_ref(), &target_plan, &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     if !target_plan.active {
         let available = plans.list_active().await.unwrap_or_default();
-        return render::html_response(|| form_page(
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| form_page(
             &principal, &tenant.id, &tenant.slug, &current,
             current_plan.as_ref(), &available, &plan_id,
-            Some("Target plan is inactive — refusing"),
-        ));
+            Some("Target plan is inactive — refusing"), &csrf_token,
+        ))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     let now = OffsetDateTime::now_utc().unix_timestamp();

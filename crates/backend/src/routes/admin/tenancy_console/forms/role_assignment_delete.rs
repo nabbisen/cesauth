@@ -10,7 +10,8 @@ use worker::{Request, Response, Result, RouteContext};
 use crate::audit::{self, EventKind};
 use crate::routes::admin::console::render;
 use crate::routes::admin::tenancy_console::forms::common::{
-    confirmed, parse_form, redirect_303, require_manage,
+    attach_csrf_cookie, confirmed, mint_csrf, parse_form, redirect_303, require_manage,
+    verify_csrf,
 };
 
 /// Look up an assignment by id by walking `list_for_user(user_id)`.
@@ -66,7 +67,10 @@ pub async fn confirm<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> 
         return Response::error("assignment not found", 404);
     };
     let label = role_label(&ctx.env, &assignment.role_id).await;
-    render::html_response(|| confirm_page(&principal, &user_id, &assignment, &label))
+    let (csrf_token, csrf_cookie) = mint_csrf()?;
+    let mut resp = render::html_response(|| confirm_page(&principal, &user_id, &assignment, &label, &csrf_token))?;
+    attach_csrf_cookie(&mut resp, &csrf_cookie);
+    Ok(resp)
 }
 
 pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
@@ -77,7 +81,11 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         return Response::error("not found", 404);
     };
 
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
     let form = parse_form(&mut req).await?;
+    if !verify_csrf(&form, &cookie_header) {
+        return Response::error("Bad Request", 400);
+    }
     let user_id = form.get("user_id").cloned().unwrap_or_default();
     if user_id.is_empty() {
         return Response::error("user_id form field required", 400);
@@ -90,7 +98,10 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
             return Response::error("assignment not found", 404);
         };
         let label = role_label(&ctx.env, &assignment.role_id).await;
-        return render::html_response(|| confirm_page(&principal, &user_id, &assignment, &label));
+        let (csrf_token, csrf_cookie) = mint_csrf()?;
+        let mut resp = render::html_response(|| confirm_page(&principal, &user_id, &assignment, &label, &csrf_token))?;
+        attach_csrf_cookie(&mut resp, &csrf_cookie);
+        return Ok(resp);
     }
 
     let repo = CloudflareRoleAssignmentRepository::new(&ctx.env);

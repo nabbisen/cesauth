@@ -16,6 +16,7 @@ pub fn organization_create_form(
     slug:         &str,
     display_name: &str,
     error:        Option<&str>,
+    csrf:         &str,
 ) -> String {
     let title = format!("New organization in: {}", tenant.slug);
     let body = format!(
@@ -35,6 +36,7 @@ pub fn organization_create_form(
         </tr>
       </tbody>
     </table>
+    <input type="hidden" name="csrf" value="{csrf}">
     <p><button type="submit">Create organization</button></p>
   </form>
 </section>
@@ -51,6 +53,7 @@ pub fn organization_create_form(
         // RFC 108 escape contract.
         back_url   = escape(&routes::tenant(&tenant.id)),
         action_url = escape(&routes::tenant_orgs_new(&tenant.id)),
+        csrf = escape(csrf),
         error = match error {
             None => String::new(),
             Some(msg) => format!(
@@ -83,13 +86,13 @@ mod tests {
 
     #[test]
     fn form_action_includes_tenant_id() {
-        let html = organization_create_form(&p(), &t(), "", "", None);
+        let html = organization_create_form(&p(), &t(), "", "", None, "tok-1");
         assert!(html.contains(r#"action="/admin/tenancy/tenants/t-acme/organizations/new""#));
     }
 
     #[test]
     fn quota_is_mentioned_in_help() {
-        let html = organization_create_form(&p(), &t(), "", "", None);
+        let html = organization_create_form(&p(), &t(), "", "", None, "tok-1");
         assert!(html.contains("Quota"));
     }
 }
