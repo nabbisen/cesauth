@@ -7,6 +7,47 @@ the document made true, the real control pinned). **Half B dispatched
 stage 2, §6's `GET /admin/login` cookie fixation, its own cycle in the same
 release. See §5.
 
+**Half C PROPOSED 2026-10-31 — a third surface makes the same claim.** RFC 152
+scoped itself to `/admin/t/*` and `/admin/tenancy/*` and never asked whether any
+other surface documented the same control; the stage-1 handoff inherited that
+scope and E6's path filter inherited it again. Asked during stage 2's review:
+of **57 `POST` rows claiming CSRF `required`** across the whole table, E6 covers
+34, and **nine of the rest claim `required` with no `csrf::verify`,
+`verify_csrf` or `check_origin_or_referer` anywhere in the resolved handler
+body** — all on the **operator console**:
+`POST /admin/console/tokens` (which **mints an admin token**),
+`…/tokens/:id/disable`, `…/config/:bucket/{preview,apply,edit}`,
+`…/config/log_level/{preview,apply}`, `…/thresholds/:name`,
+`…/safety/:bucket/verify`. Same shape, same non-exploitability for the same
+single reason (`SameSite=Strict`), same document naming a control that is not
+there. `tokens.rs` even calls `csrf_json()` — the surface serves tokens to its
+pages and checks none coming back.
+
+**Half C opens with a measurement stage, not code**: `safety.rs` has no frontend
+view at all, the `config`/`thresholds` views live under
+`crates/frontend/src/admin/` and may be inside RFC 161's disconnected set, and
+the only form at the tokens surface posts to `/admin/console/tokens/disable`,
+**a path no route serves** (RFC 166 §4b's recorded instance). Which of the nine
+have a reachable caller decides whether half C is stage 1 again or RFC 161/166
+material — and stage 1's two-renderer surprise is the argument for measuring
+first. **E6 should also grow to cover every `required` row**, which needs E4's
+multi-line registration walk: 10 rows outside E6's filter are registered as
+multi-line closures. Second gate to ask for RFC 163's single-extractor end
+state.
+
+**Stage 2 SHIPPED to `main` in `994bde6`** (not yet released). `GET
+/admin/login?token=…` validates against the store and sets nothing; it renders a
+confirmation page naming the identity and role the operator is about to assume,
+carrying a CSRF token; a new `POST /admin/login` verifies it, re-validates the
+bearer and only then sets the cookie. Verified live by the architect: **200**
+with no session cookie, **401** for a garbage token with no cookie, **400** for
+a `POST` with no or wrong token, **303** with the full cookie attribute set for
+a matching one — and **400** for a `POST` carrying the correct form field with
+no CSRF cookie, which is what a cross-site submission looks like under
+`SameSite=Strict`. `X-Frame-Options: DENY` is present on the confirmation page,
+so the deliberate click cannot be harvested by framing, and the document's nonce
+matches the response's CSP header (RFC 150's invariant holds on the new page).
+
 **Stage 1 SHIPPED to `main` in `c9ae019`** (not yet released; 0.90.0's cut
 waits on stage 2). **32 handlers gained `csrf::verify`**, the two
 `routes/invitations.rs` routes among them; 34 of the 36 contract cells now read
