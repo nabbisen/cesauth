@@ -1,6 +1,23 @@
 # RFC 133 — Frontend build reproducibility
 
 **Status.** Accepted. **Half A shipped in v0.84.3** (+C1-133); **half B deferred to 1.0 hardening** (§12.3), which is why this RFC stays in `accepted/` rather than `done/`.
+
+**No decision is pending on half B** (recorded 2026-10-31, after the architect
+reviewed what was actually outstanding). It was deferred by the owner's own
+authorization of §12, the deferral is recorded as a decision rather than a
+silence (§12.3), and §15 — which added a reproducible datum, measured twice —
+states in its own words that it *"changes nothing in the schedule"*. Half B is
+parked behind **1.0, which is not declared, not scoped and not dated**, so
+there is nothing to decide until that is. It had been carried on the architect's
+own list as *"awaiting an explicit owner decision"*, which was wrong: the
+decision exists and the gate on it is 1.0.
+
+**Half A's guarantee was re-confirmed by experiment on 2026-10-31**, outside any
+cycle of this RFC: reverting the workspace version to `0.89.3` and rebuilding
+reproduced that release's bundle with **both sha256 digests byte-exact**, which
+is local build reproducibility demonstrated rather than asserted. The same
+experiment established that the version string reaches the compiled wasm through
+symbol mangling — see `contributing.md` §Cutting a release.
 **Tier.** P2 · Category B — a real property we do not have; not urgent, not dismissible.
 **Size.** Small to measure, unknown to fix. §5 is a measurement gate first.
 **Tracks.** 0.81.2 release-candidate review §1–2. Discovered because task 008

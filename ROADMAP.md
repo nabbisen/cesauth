@@ -134,15 +134,22 @@ numbers are assigned at each cut, not reserved here.
 | ~~0.89.4~~ | patch | ✅ **shipped 2026-10-31** — RFC 161 §9(a) + RFC 167 slice 1. Took two cycles: the first "Deploy it" list followed an order the architect specified that told readers to `wrangler deploy` before migrations |
 | ~~0.89.5~~ | patch | ✅ **shipped 2026-10-31** — RFC 167 slice 2 + RFC 028's CHANGELOG half. `docs/src/deployment/first-production-deploy.md`, one ordered pass from an empty Cloudflare account to a tenant completing an OIDC flow, placed first under `# Deployment`. Took two cycles: the spine in `README.md` was still missing `production.md` Step 3 (seed the signing key), which three readings passed over and the **local rehearsal** caught by reproducing `/jwks.json` serving `{"keys":[]}`. The *"blocked on an owner decision"* condition this row carried was the architect's own over-specification: a real account is needed for six commands, not for the page, so the evidence term splits per step — sequence `exercised`, the six remote-only commands `reviewed` and named. CHANGELOG 318 KB → 42 KB |
 | ~~0.90.0~~ | **minor** | ✅ **shipped 2026-10-31** — RFC 152 half B, in two stages. Stage 1: **34** admin `POST` routes across 23 files gained `csrf::verify`, the 21 server-rendered forms gained a token, every re-render mints a fresh one, and **E6** fails the build if a row claiming `required` stops being true. Stage 2: `GET /admin/login` validated nothing and set the session cookie anyway — it now validates, sets nothing, and renders a confirmation page naming the identity the operator is about to assume; a new `POST /admin/login` verifies a CSRF token before the cookie exists. **Found in review and not fixed here: nine operator-console rows make the same `required` claim with no check** — RFC 152 half C |
-| 0.90.x | patch | **RFC 164** (the link gate RFC 000 mandates), then **RFC 165 §3** (exemption-list staleness) |
-| **0.91.0** | minor | **RFC 141 cycle 2** — the OIDC clients screen. The backend has been complete since v0.85.0; `GET /admin/console/clients` currently answers **200** and renders *"Page not found"*, because no CSR route exists for it |
-| 0.91.x | patch | **RFC 163** — the duplicate-route test's needle, plus a non-zero-count assertion |
-| **0.92.0** | minor | **RFC 131 §0 slices 1–2** — the audit browser with the export form that already exists, and chain status. The two incident-response surfaces |
-| **0.93.0** | minor | **RFC 131 §0 slices 3–6** — safety, alerts, cost, config |
+| 0.90.x | patch | **RFC 165 §3** (exemption-list staleness) |
+| **0.91.0** | **minor** | **RFC 152 half C** — the operator console makes the same `required` CSRF claim on **seven** rows (not the nine first reported; `config/log_level/*` carry an HMAC'd preview-token binding my scan did not know). Three are browser forms and get stage 1's token, including **`POST /admin/console/tokens`, which mints an admin token**; four are `curl`-documented JSON APIs and become **header-only**, so CSRF is impossible by construction rather than checked; two need an honest cell. **E6 grows to assert the control each cell names**, in both directions. **Dispatched 2026-10-31** |
+| 0.91.x | patch | **RFC 169** — the book omits 11 of its own 80 pages, including the three most recent ADRs and the route-contract table one in-book page already links to twice. Then **RFC 164** (the link sweep RFC 000 mandates) and **RFC 168** (the three release-record checks) — all three live in `drift-scan.sh` or beside it, so they ride together and the workflow count stays at 14 |
+| **0.92.0** | minor | **RFC 141 cycle 2** — the OIDC clients screen. The backend has been complete since v0.85.0; `GET /admin/console/clients` currently answers **200** and renders *"Page not found"*, because no CSR route exists for it |
+| 0.92.x | patch | **RFC 163** — the duplicate-route test's needle, plus a non-zero-count assertion |
+| **0.93.0** | minor | **RFC 131 §0 slices 1–2** — the audit browser with the export form that already exists, and chain status. The two incident-response surfaces |
+| **0.94.0** | minor | **RFC 131 §0 slices 3–6** — safety, alerts, cost, config |
 
-**Not in this sequence, and said rather than omitted:** RFC 133 half B and
-RFC 151 remain accepted, above the queue, and unsequenced against it — awaiting
-an explicit decision either way. RFC 158 §5.5's two items, RFC 166's census
+**Not in this sequence, and said rather than omitted:** **RFC 133 half B needs
+no decision** — it is parked behind 1.0, which is not declared, not scoped and
+not dated, and §15's new datum states in its own words that it changes nothing
+in the schedule. Carrying it as *"awaiting an owner decision"* was the
+architect's error, corrected 2026-10-31. **RFC 151's open question is answered**
+(§6, 2026-10-31): the rule stands, and its back-fill is **eight P0/P1 RFCs in
+`done/` with no evidence term** — the architect's own work, not release-bound,
+and RFC 151 stays in `accepted/` until they are done. RFC 158 §5.5's two items, RFC 166's census
 stage, the `/admin/tenancy/*` half of RFC 161's condition, and RFCs 110a, 112,
 119–124 and 144 are likewise unscheduled.
 

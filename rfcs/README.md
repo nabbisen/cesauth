@@ -68,6 +68,7 @@ the residual gaps. See ROADMAP.md "UI/UX finishing track" for grouping.
 
 | ID | Title | Tier | Target |
 |----|-------|------|--------|
+| [169](./proposed/169-the-book-does-not-contain-eleven-of-its-own-pages.md) | **The book does not contain eleven of its own pages.** `mdbook` builds only what `SUMMARY.md` lists; **11 of the 80 `.md` files under `docs/src` are not listed**, so the published book omits them and `mdbook build` is clean about it. Among the missing: `expert/route-contracts.md` (the table every route gate reads), `expert/contributing.md` (where every ruling is written down), `deployment/email-delivery.md`, and **ADR-016/017/018 — the three most recent decision records**, so a reader of the ADR index concludes 015 is the latest. **One is already a dead link in the published book**: `expert/view-rendering-policy.md` links twice to `route-contracts.md`, once under the words *"Enforced by"*. Ninth instance of a documented thing with no gate, and the first where the gap makes **correct, current** documentation invisible rather than merely unenforced | P2 | **patch**, recommended after RFC 152 half C and ahead of RFC 164 — shares `drift-scan.sh` with it. Mirror image of RFC 164: that one gates links between RFCs, this one gates links into the book | 164, 165 |
 | [112](./proposed/112-worker-auth-macro-batch-migration.md) | Worker auth macro batch migration (RFC 100 全面適用) | P2 | env-blocked |
 | [110a](./proposed/110a-rate-limit-summary.md) | Rate limit summary surface (RFC 110 sub-RFC) | P2 | v0.75.0+ (KV-heavy, env-blocked) |
 

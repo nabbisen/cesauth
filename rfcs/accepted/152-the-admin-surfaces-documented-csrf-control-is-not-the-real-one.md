@@ -10,6 +10,73 @@ release. See §5.
 **Half B SHIPPED in v0.90.0**, 2026-10-31, both stages. **Half A shipped in
 v0.86.3.** **Half C is outstanding**, so this RFC stays in `accepted/`.
 
+### Half C, measured — seven, not nine, in three classes (2026-10-31)
+
+**Correction first: the count I reported was wrong, and it was mine.** The
+stage-2 review said **nine** rows claim `required` with no check. It is
+**seven**. `POST /admin/console/config/log_level/preview` and `…/apply` **do**
+carry a CSRF control — not `csrf::verify`, but
+`cesauth_core::admin::preview::verify_preview_token`, an HMAC'd preview token
+with the submitted CSRF value **bound into it**; `apply` fails closed on
+*"expired, tampered, or CSRF mismatch"*. My scan looked for three function
+names and this is a fourth mechanism. **Fourth time in this project that a
+matcher's silence was read as the code's silence**, and the second time it was
+mine inside this RFC.
+
+The seven, classified by what actually calls them — which is the measurement
+half C was supposed to open with, done here so the cycle starts from an answer:
+
+**Class A — real browser forms. Need the double-submit token, stage 1's
+pattern (3):**
+
+| Route | Renders |
+|---|---|
+| `POST /admin/console/tokens` | `token_new_form` / `token_created_page` — **mints an admin token** |
+| `POST /admin/console/config/:bucket/edit` | `config_edit_form` / `config_confirm_page` |
+| `POST /admin/console/safety/:bucket/verify` | content-negotiated; the HTML branch redirects back to its form |
+
+**Class B — JSON endpoints whose only documented caller is `curl` with a bearer
+header (4):** `…/tokens/:id/disable`, `…/config/:bucket/preview`,
+`…/config/:bucket/apply`, `…/thresholds/:name`. All four return
+`json_response` only; `crates/frontend/src/admin/config.rs` documents them as a
+curl API in its own prose; **no view in the frontend fetches or posts to any of
+them.** The one apparent exception is not one:
+`pages/operator/console.rs:108` posts to `/admin/console/tokens/disable` — a
+path with no `:id` that **no route serves** — inside a form with **no submit
+button and no id field**, whose visible text says disabling is done by
+specifying an id. That is a placeholder, RFC 161's class, and it belongs to
+RFC 131 §0's console slices, not here.
+
+**A double-submit token is the wrong control for class B.** A `curl` caller has
+no cookie jar, so the token would be ceremony for the browser and an obstacle
+for the documented caller. **The right fix is structural: make these four
+reject a cookie-derived credential** and require the `Authorization` header.
+`auth::bearer` reads the header first and *falls back* to the admin cookie for
+browser clients; a header-only resolver removes the browser-attached credential
+from these routes entirely, which is what makes CSRF possible in the first
+place. Their cells then read **`N/A (bearer)`** — a value the table already
+carries honestly on 12 other rows — and the claim is true by construction
+rather than by a check.
+
+**Class C — already controlled; one honest cell (2):**
+`…/config/log_level/{preview,apply}`. The substance is there; the column's
+`required` means double-submit elsewhere, so the cell should name this
+mechanism — the table's existing `required (Origin check)` row is the
+precedent.
+
+**And E6 should check the control the cell names, not only `required`.** Today
+it asserts `required ⇒ a verify call`. The end state asserts the cell's claim in
+both directions: `N/A (bearer)` ⇒ the handler uses the header-only resolver,
+`required` ⇒ a verify, `required (…)` ⇒ the named mechanism. That absorbs the 12
+existing `N/A (bearer)` rows into the gate instead of trusting them, and it is
+the same generalisation that needs E4's multi-line registration walk — so
+RFC 163's single-extractor end state is now asked for by a third caller.
+
+**Level: minor.** Class B changes a caller obligation — a client authenticating
+to those four routes by cookie stops working. Scheduled **0.91.0, ahead of
+RFC 141 cycle 2**, because a documented control that is absent outranks a
+screen that does not exist yet.
+
 **Half C PROPOSED 2026-10-31 — a third surface makes the same claim.** RFC 152
 scoped itself to `/admin/t/*` and `/admin/tenancy/*` and never asked whether any
 other surface documented the same control; the stage-1 handoff inherited that

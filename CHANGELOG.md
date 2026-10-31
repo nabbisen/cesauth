@@ -139,6 +139,14 @@ This release adds the control and makes the cells say `required` and mean it.
   this release, proposed as **RFC 152 half C**, which opens by measuring which
   of the nine have a reachable caller at all.
 
+  **Corrected 2026-10-31, after that measurement: seven, not nine.**
+  `…/config/log_level/{preview,apply}` do carry a control — an HMAC'd preview
+  token with the submitted CSRF value bound into it, failing closed on
+  mismatch — through a mechanism the scan behind the figure above did not know
+  to look for. The entry above is left as written rather than rewritten,
+  because a shipped entry is a record; this is the correction, in the place a
+  reader of that claim will meet it.
+
 - **No automated gate observes the admin cookie's attributes on a live
   response** any more. `runtime-smoke-check.sh` could assert them only because
   the old handler set the cookie from an unvalidated placeholder token; that is

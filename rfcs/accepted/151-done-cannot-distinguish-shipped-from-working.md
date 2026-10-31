@@ -254,6 +254,46 @@ consistency pass when an RFC moves folders. That pass is where the new field
 gets checked, so this RFC adds a condition to an existing step rather than a new
 step.
 
+## 6. The open question, answered with numbers (architect, 2026-10-31)
+
+The owner asked the architect to judge this one rather than answer §5
+(2026-10-31). The judgement is **yes, at exactly the width §5 recommended**, and
+it is cheap to state because the rule has been in force since 2026-10-27 and
+the cost is now measurable rather than estimated.
+
+**Measured:**
+
+```
+$ ls rfcs/done/*.md | wc -l                         # 149
+$ # an evidence term in the first 18 lines (the Status block)
+$ ... | wc -l                                       # 45
+$ # tier stated as P0/P1                            # 17, of which 8 carry no term
+```
+
+- **The forward rule costs one field** and is being paid without friction: 45
+  of the 149 `done/` RFCs carry a term, which is every RFC closed since the
+  amendment.
+- **It has already earned its keep once, visibly.** RFC 167 slice 2 shipped
+  with its evidence **split per step** — the sequence `exercised`, the six
+  remote-only commands `reviewed` and named individually, each with what would
+  exercise it — instead of one hedged term for the whole page. Without the
+  field there would have been nothing to split, and the page would have shipped
+  claiming more than it had walked.
+- **The back-fill is eight files, not a hundred.** Only 17 `done/` RFCs state a
+  tier at all, and **8 of those are P0/P1 with no term**: RFC 116, 117, 118,
+  127 (P0) and 132, 143, 146, 147 (P1). 130 state no tier, and for those "no
+  term" is the honest state rather than a gap — inventing one for a 2026 RFC
+  nobody is relying on is the *"filled in without thought"* failure §5 warns
+  about, one level down.
+
+**Decision.** The rule stands as written. The back-fill is **those eight and no
+others**, each assessed against what the code and tests actually do rather than
+against what its own RFC says — which is the whole point of the field, and is
+why it is the architect's work and not a sweep anyone can run. **RFC 151 stays
+in `accepted/` until those eight are done**, because filing it as Implemented
+with its own recommended work outstanding would be precisely the defect it was
+written about.
+
 ## 5. Open question for the owner
 
 This changes the project's own governing policy, which is why it is proposed
