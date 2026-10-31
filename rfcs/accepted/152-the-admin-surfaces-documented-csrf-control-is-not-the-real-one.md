@@ -1,8 +1,34 @@
 # RFC 152 — The admin surfaces' documented CSRF control is not the real one
 
-**Status.** **Accepted** 2026-10-27. **Split: half A scheduled 0.86.3** (patch
-— make the document true and pin the real control), **half B after 0.87.0**
-(the 33 handlers and their forms). See §5.
+**Status.** **Accepted** 2026-10-27. **Half A SHIPPED in v0.86.3** (patch —
+the document made true, the real control pinned). **Half B dispatched
+2026-10-31 as 0.90.0 (minor), in two stages:** stage 1, the missing checks
+(`handoffs/152-the-admin-surfaces-documented-csrf-control-is-not-the-real-one/half-b-stage-1-handoff.md`);
+stage 2, §6's `GET /admin/login` cookie fixation, its own cycle in the same
+release. See §5.
+
+**Half B's population re-derived route-scoped at dispatch** (2026-10-31): **36
+`POST` rows, 34 without a `csrf::verify`, across 23 files** — not 33 of 35. The
+RFC's figure predates `POST /admin/t/:slug/invitations/:id/revoke` (v0.88.0).
+**Two of the 23 files are outside both surface directories** —
+`routes/deletions.rs` (the 2 that *do* verify) and `routes/invitations.rs` (2
+that do not) — so §2's warning about directory-scoped greps has a second
+instance.
+
+**Two findings from that measurement, neither in this RFC before:**
+
+1. **For two of the 36 routes the browser already posts a CSRF token that
+   nothing checks.** `pages/tenant_admin/forms.rs`'s generic `AdminCsrfForm`
+   fetches `{ csrf_token }` and emits `name="csrf"` for
+   `/admin/t/:slug/organizations/new` and `…/memberships/new`; neither `submit`
+   verifies it. The control is three-quarters built on those two.
+2. **§5 understated half B by one layer.** It sized ~32 form templates that
+   take no token; the harder fact is that **two renderers exist** — 21
+   server-rendered views under `frontend/src/{tenant_admin,tenancy_console}/forms/`
+   in which the string `csrf` does not appear at all, and a CSR path that
+   already does it correctly for the only **two** form paths `app.rs` routes.
+   Stage 1's handoff decides for the SSR views and records the duplication as
+   RFC 131/141's subject rather than resolving it inside a security fix.
 **Tier.** P1 — not a live vulnerability, and that is established below rather
 than assumed. It is P1 because **fifteen** destructive or disabling
 operations rest on one undocumented layer while the document claims a different
