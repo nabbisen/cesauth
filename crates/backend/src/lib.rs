@@ -281,6 +281,7 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .delete_async("/admin/sessions/:id", |req, ctx| async move { routes::admin::revoke_session(req, ctx).await })
         // --- Admin Console (v0.3.0) ----------------------------------
         .get_async ("/admin/login",                          |req, ctx| async move { routes::admin::admin_login::get_handler(req, ctx).await })
+        .post_async("/admin/login",                          |req, ctx| async move { routes::admin::admin_login::post_handler(req, ctx).await })
         .get_async ("/admin/console",                          |req, ctx| async move { routes::admin::console::overview::page(req, ctx).await })
         .get_async ("/admin/console.json",                      |req, ctx| async move { routes::admin::console::overview::page_json(req, ctx).await })
         .get_async ("/admin/console/cost",                     |req, ctx| async move { routes::admin::console::cost::page(req, ctx).await })

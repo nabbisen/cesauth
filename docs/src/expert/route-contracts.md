@@ -84,7 +84,8 @@ code-review responsibility.
 |---|---|---|---|---|---|---|---|
 | POST | `/admin/users` | System admin (bearer) | `user_created` | JSON | n/a | n/a | N/A (bearer) |
 | DELETE | `/admin/sessions/:id` | System admin (bearer) | `session_revoked_by_admin` | JSON | n/a | n/a | N/A (bearer) |
-| GET | `/admin/login` | System admin (bearer, pre-cookie) | none | login form (no `?token=`) / 302 redirect to `/admin/console` + sets `__Host-cesauth_admin` cookie (valid `?token=`) | server | n/a | N/A (GET) |
+| GET | `/admin/login` | System admin (bearer, pre-cookie) | `admin_login_failed` (unknown/disabled token only) | login form (no `?token=`) / confirmation page naming the identity + role, carrying a CSRF token (valid, resolvable `?token=`) — RFC 152 half B stage 2: no cookie is set on this GET any more | server | n/a | N/A (GET) |
+| POST | `/admin/login` | System admin (bearer, pre-cookie) | `admin_login_failed` (unknown/disabled token only) | redirect to `/admin/console` + sets `__Host-cesauth_admin` cookie | server | n/a | required |
 | GET | `/admin/console` | System admin | none | overview page — nav + a bare reachability check, not the rollup RFC 161 found this doc overclaiming | client | `admin::tests::console_*` | N/A (GET) |
 | GET | `/admin/console.json` | System admin | none | JSON (`csrf_token`) | n/a | n/a | N/A (GET) |
 | GET | `/admin/console/cost` | System admin | none | placeholder — RFC 161 | client | n/a | N/A (GET) |
@@ -180,6 +181,18 @@ code-review responsibility.
 | POST | `/admin/tenancy/role_assignments/:id/delete` | System admin | `role_assignment_deleted` | redirect | client | n/a | required |
 | GET | `/admin/tenancy/users/:uid/tokens/new` | System admin | none | mint-token form | server | `tenancy_console::tests::rfc145_cycle3::token_mint_form_renders_the_real_page` | N/A (GET) |
 | POST | `/admin/tenancy/users/:uid/tokens/new` | System admin | `admin_token_minted` | redirect | client | n/a | required |
+
+**`POST .../tenants/:id/suspend` and `.../tenants/:id/restore` have no
+caller.** Neither handler reads a form body, and no view in
+`crates/frontend/src` posts to either path
+(`cesauth_core::routes::tenant_suspend`/`tenant_restore` are referenced
+nowhere outside their own definitions) — they are superseded by
+`tenant_set_status.rs`'s preview/confirm flow. Their `N/A (SameSite=Strict)`
+cells above are true, not unexamined: RFC 152 half B stage 1's review and RFC
+166's census both record this as a third category — a registered route no
+caller invokes — distinct from either gate's own blind spot (E4 passes
+because the routes *are* registered; E5 cannot see them because a form
+`POST` is not a `.json` fetch).
 
 ## Admin — tenant-admin console (`/admin/t/:slug`)
 

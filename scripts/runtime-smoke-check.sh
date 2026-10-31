@@ -236,38 +236,46 @@ check_csp_lacks_wasm() {
   fi
 }
 
-# RFC 152 half A — the admin cookie's `SameSite=Strict` is the entire
-# CSRF defense for 33 of 35 admin-surface POST routes (route-contracts.md
-# now names it so, rather than the double-submit token that only two of
-# them actually check). `admin_login.rs:71` screens `?token=` only for
-# "obvious garbage" (length 16-256) before setting the cookie — the real
-# DB lookup happens on the next `/admin/*` request, not here — so a
-# plausible-length placeholder is enough to observe the real Set-Cookie
-# header on a live response, without a real admin token. This is the
-# live counterpart to `admin_login::tests::admin_cookie_carries_the_real_csrf_control`
-# (asserts the same attributes against the pure builder function, on the
-# host); this one asserts them against an actual HTTP response.
-check_admin_cookie_samesite_strict() {
+# RFC 152 half B stage 2 (previously half A — superseded here, not just
+# amended: half A's version of this check sent a plausible-length
+# PLACEHOLDER token to `GET /admin/login` and asserted that the real
+# `__Host-cesauth_admin` cookie came back with `SameSite=Strict` etc.,
+# because the pre-stage-2 handler set that cookie from any length-valid
+# token without validating it. After stage 2, `GET` validates the token
+# against the admin-token store BEFORE setting anything -- and this gate
+# runs with no `.dev.vars` secrets and no D1 migrations applied (RFC 134
+# T4's measured decision, restated in this file's own header), so there
+# is no real token this script can present. A placeholder now correctly
+# fails validation, so the only thing this check can honestly assert
+# without a real credential is the fix itself: an unvalidated/unknown
+# token sets NO cookie and gets a non-200 status. The full confirm-then-
+# POST flow, with a real admin token and asserting the eventual
+# `__Host-cesauth_admin` cookie's attributes, needs D1 state this script
+# deliberately does not set up -- that is exercised against `wrangler
+# dev` directly in each cycle's own review, not here (see
+# `admin_login::tests::admin_cookie_carries_the_real_csrf_control` for
+# the pure-function counterpart of the cookie-attribute assertion).
+check_admin_login_sets_no_cookie_for_an_unvalidated_token() {
   local name="$1"
   local placeholder_token="0000000000000000000000000000000000"
   local headers
   headers="$(curl -si "${BASE}/admin/login?token=${placeholder_token}" 2>/dev/null | sed '/^\r*$/q')"
+  local status
+  status="$(printf '%s' "$headers" | head -1 | tr -d '\r')"
   local set_cookie
   set_cookie="$(printf '%s' "$headers" | grep -i '^set-cookie:' | grep '__Host-cesauth_admin' | head -1)"
 
-  if [ -z "$set_cookie" ]; then
-    echo "❌  $name: no __Host-cesauth_admin Set-Cookie header in the response" >&2
+  if [ -n "$set_cookie" ]; then
+    echo "❌  $name: a cookie was set for an unvalidated token: $set_cookie" >&2
     fail=1
     return
   fi
-  if printf '%s' "$set_cookie" | grep -q 'SameSite=Strict' \
-     && printf '%s' "$set_cookie" | grep -q 'Secure' \
-     && printf '%s' "$set_cookie" | grep -q 'HttpOnly' \
-     && printf '%s' "$set_cookie" | grep -q 'Path=/'; then
-    echo "✅  $name: carries SameSite=Strict, Secure, HttpOnly, Path=/"
-  else
-    echo "❌  $name: missing one or more required attributes: $set_cookie" >&2
+  if printf '%s' "$status" | grep -q ' 200 '; then
+    echo "❌  $name: got 200 for a token that cannot possibly resolve in this" \
+         "unmigrated environment ($status)" >&2
     fail=1
+  else
+    echo "✅  $name: no cookie set, status was $status"
   fi
 }
 
@@ -289,7 +297,7 @@ check_status "/definitely-not-a-route"                          404  "GET /defin
 check_referenced_assets "$ROOT_BODY"                                 "GET / referenced assets"
 check_csp_grants_wasm "/login"                                       "GET /login CSP (client surface)"
 check_csp_lacks_wasm  POST "/magic-link/request"                     "POST /magic-link/request CSP (server surface)"
-check_admin_cookie_samesite_strict                                   "GET /admin/login sets the real CSRF control (RFC 152)"
+check_admin_login_sets_no_cookie_for_an_unvalidated_token            "GET /admin/login validates before setting anything (RFC 152 half B stage 2)"
 
 if grep -qi "Rust panic" "$LOG"; then
   echo "❌  Rust panic observed in the runtime console output:" >&2

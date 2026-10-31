@@ -1243,19 +1243,48 @@ e6_file_for_qualified() {
 # has two field names in one file (`csrf` in `request_self_form`/
 # `cancel_self`, `csrf_token` in `admin_cancel`/`admin_execute`), so a
 # whole-file grep would silently pick whichever occurs first in the file
-# regardless of which function this row actually resolved to. Bounded by
-# the next top-level `pub async fn` (or EOF) -- good enough here because
-# no handler body in this crate declares another top-level `pub async
-# fn` inside it.
+# regardless of which function this row actually resolved to.
+#
+# RFC 152 half B stage 1's review (2026-10-31) flagged the first version
+# of this: it bounded the slice by the next top-level `pub async fn` (or
+# EOF), which swallows a non-`pub` `async fn` declared after a handler
+# into that handler's own slice -- no false pass existed in that stage's
+# population (the reviewer re-derived all 34 rows by brace-counting and
+# got the same answer, row for row), but a future handler whose own
+# `verify_csrf` call got removed could hide behind a still-verifying
+# helper below it. Hardened here to stop at the function's own matching
+# closing brace, by depth, rather than at the next function signature --
+# correct regardless of what's declared after it, `pub` or not.
 e6_fn_body() {
   local file="$1" fn="$2"
   awk -v fn="$fn" '
-    /^pub async fn [A-Za-z0-9_]+/ {
-      if (in_fn) { exit }
-      if ($0 ~ ("fn " fn "[<(]")) { in_fn = 1 }
+    function count(ch, s,    n, i) {
+      n = 0
+      for (i = 1; i <= length(s); i++) if (substr(s, i, 1) == ch) n++
+      return n
+    }
+    BEGIN { in_fn = 0; depth = 0; opened = 0 }
+    in_fn == 0 {
+      if ($0 ~ ("fn " fn "[<(]")) {
+        in_fn = 1
+        # The signature line itself may already carry the opening
+        # (and, for a one-liner, the closing) brace of this function --
+        # count it here, even though the line is not printed, so depth
+        # starts from what this line actually opened, not from zero.
+        o = count("{", $0)
+        if (o > 0) opened = 1
+        depth += o - count("}", $0)
+        if (opened && depth <= 0) { exit }
+      }
       next
     }
-    in_fn { print }
+    in_fn {
+      o = count("{", $0)
+      if (o > 0) opened = 1
+      print
+      depth += o - count("}", $0)
+      if (opened && depth <= 0) { exit }
+    }
   ' "$file"
 }
 
