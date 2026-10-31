@@ -22,6 +22,117 @@ under budget.
 
 ---
 
+## [0.91.0] - 2026-10-31
+
+### The operator console's turn — RFC 152 half C
+
+**Minor, for two reasons.** Three `POST` routes begin requiring a CSRF token no
+caller sent before, and five begin **rejecting a cookie-derived credential**
+outright: a client that authenticated to them with the
+`__Host-cesauth_admin` cookie alone now gets **401**, and only
+`Authorization: Bearer` works.
+
+Half B gave the tenant-admin and tenancy-console surfaces the control their
+documentation claimed. **Half C asked the question half B never did — whether
+any other surface made the same claim** — and the operator console did, on
+**seven** rows. (First reported as nine; two of those, `config/log_level/`'s
+preview and apply pair, carry an HMAC'd preview token with the submitted CSRF
+value bound into it, through a mechanism the scan behind that figure did not
+know to look for.)
+
+### Added
+
+- **Three browser forms get the double-submit token**, stage 1's pattern:
+  `POST /admin/console/tokens` — which **mints an admin token**, the credential
+  every other admin route accepts — `.../config/:bucket/edit`, and their error
+  re-renders. `tokens.rs::create` re-renders on **four** validation paths, not
+  the three the handoff enumerated; the fourth is a token-hash collision, and it
+  mints a fresh token like the others.
+
+- **Five JSON endpoints reject a cookie entirely.** A new header-only resolver
+  sits beside the existing pair, sharing one `resolve_bearer` body rather than a
+  third copy of the resolve-and-audit logic: same store lookup, same
+  `admin_login_failed` audit, **no cookie fallback**. Applied to
+  `.../tokens/:id/disable`, `.../config/:bucket/{preview,apply}`,
+  `.../thresholds/:name` and `.../safety/:bucket/verify`. A `curl` caller has no
+  cookie jar, so a double-submit token would have been ceremony for a browser
+  that never calls them; this makes CSRF impossible by construction instead of
+  checked.
+
+- **E6 now checks the control each cell names, repo-wide**, in both directions:
+  `required` ⇒ a verify call, `required (<mechanism>)` ⇒ that named mechanism,
+  `N/A (bearer)` ⇒ the header-only resolver. It also **has a census**: every
+  mutating row is checked or **declared uncheckable with a reason**, an
+  unrecognised cell is a hard failure rather than a silent skip, declared values
+  and exemptions both carry the stale-entry rule, and two arithmetics are
+  asserted — `94 scanned = 76 claims + 18 declared + 0 unclassified`, and
+  `76 claims = 58 resolved + 0 unresolved + 18 exempted`. The workflow count
+  stays at **14**.
+
+### Fixed
+
+- **`POST /admin/console/tokens` minted admin tokens with no CSRF check** while
+  its row said `required` — and its own `.json` endpoint was already serving a
+  token to that surface that nothing checked coming back.
+
+- **`safety.rs::verify` was reclassified mid-cycle**, against the dispatch. It
+  was listed as a browser form on the strength of its content negotiation; the
+  form it would redirect to **exists in no live path** — its template is
+  referenced only by its own tests, and `GET /admin/console/safety` serves a
+  placeholder that says the feature is not built (RFC 161). Bearer-header-only
+  instead, with the reasoning recorded at the function rather than only in a
+  report.
+
+- **`POST /userinfo`'s CSRF cell read `N/A (Bearer)`** with a capital letter, so
+  E6's exact match skipped it: a row making a claim, unchecked, because of one
+  character. Normalised, and the claim verified true — that endpoint reads its
+  credential through its own `extract_bearer` with no cookie path at all.
+
+- **`POST /accept-invite`'s cell was a bare `N/A`** with no reason recorded.
+  It now says why: no ambient credential and no state change, so a forged
+  request has nothing to ride on.
+
+### Documentation
+
+- `route-contracts.md`: the seven cells corrected, two of them to
+  `required (preview-token binding)` so they name the mechanism they actually
+  have, five to `N/A (bearer)`.
+
+### Known and unfixed
+
+**Twenty-nine mutating rows document a CSRF control that is not the one
+protecting them.** Both sets are exempted by name with stale-entry checks, so
+neither can be forgotten quietly, and both are the subject of **RFC 152
+half D**, which opens with a measurement stage rather than code:
+
+- **18 rows claim `N/A (bearer)` and accept a cookie** — `POST /admin/users`,
+  `DELETE /admin/sessions/:id`, and all 16 `/api/v1/*` mutating routes, which
+  funnel through one resolver that reads the header **or** the cookie.
+- **11 rows claim `N/A (JSON)`**, on the reasoning that a JSON `Content-Type`
+  forces a CORS preflight. **It does not**: the Fetch `Request.json()` these
+  handlers call parses the body regardless of `Content-Type`, no handler checks
+  the header, and `text/plain` is CORS-safelisted. Verified live — the same
+  `{}` body under `text/plain` and under `application/json` produced the same
+  response. These include
+  `/admin/console/clients/{create,update,rotate_secret,delete}`.
+
+**Neither set is exploitable today, for the same single reason as the original
+finding**: the admin cookie is `SameSite=Strict`, so a forged cross-site
+request arrives with no credential and dies at the auth gate. That one cookie
+attribute is doing more work than any document says, which is what this whole
+RFC has been about.
+
+Also carried forward: **no automated gate observes the admin cookie's
+attributes on a live response** (`runtime-smoke-check.sh` could only assert them
+while the login handler set the cookie from an unvalidated token); **nothing
+rate-limits unauthenticated audit appends**; **RFC 147's deletion sweep has no
+`exercised` gate** — it is `observed`, driven once against `wrangler dev`, and
+the durable fix needs the same missing capability as the cookie witness, a CI
+job with D1 state; and **eleven of the book's eighty pages remain absent from
+`SUMMARY.md`** (RFC 169, accepted, next).
+
+---
+
 ## [0.90.0] - 2026-10-31
 
 ### The admin surfaces now have the CSRF control their documentation claimed — RFC 152 half B

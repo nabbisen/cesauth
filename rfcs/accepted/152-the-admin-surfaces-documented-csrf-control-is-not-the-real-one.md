@@ -7,6 +7,10 @@ the document made true, the real control pinned). **Half B dispatched
 stage 2, §6's `GET /admin/login` cookie fixation, its own cycle in the same
 release. See §5.
 
+**Half C SHIPPED in v0.91.0**, 2026-10-31, in two cycles. **Half D is
+outstanding** — 29 rows across two cell values — so this RFC stays in
+`accepted/`.
+
 **Half B SHIPPED in v0.90.0**, 2026-10-31, both stages. **Half A shipped in
 v0.86.3.** **Half C is outstanding**, so this RFC stays in `accepted/`.
 
