@@ -83,10 +83,11 @@ just what you cannot safely skip. Follow each link for the procedure:
 10. **Day-2** — [Day-2 operations runbook](docs/src/deployment/runbook.md)
 
 Not on this list but in the chapter: configuring Magic Link mail
-delivery (Step 7 — only matters if you rely on the Magic Link
-fallback rather than passkeys) and a local `cargo audit` dependency
-check (Step 8 — already run on every push by CI). Real steps, just
-not ones a first deploy breaks without.
+delivery (the chapter's Step 7 — only matters if you rely on the Magic
+Link fallback rather than passkeys) and a local `cargo audit` dependency
+check (the chapter's Step 8 — already run on every push by CI). Real
+steps, just not ones a first deploy breaks without. Every "Step N" above
+is `production.md`'s numbering, not this list's.
 
 ---
 

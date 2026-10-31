@@ -53,10 +53,15 @@ cargo test -p cesauth-core \
 cargo test -p cesauth-migrate-test --test migration_chain
 ```
 
-Expect **1,403 passed, 0 failed** from the first command — 789 core,
-276 frontend (plus its 4 `acceptance_harness` integration tests), 200
-backend, 133 adapter-test, 1 adapter-cloudflare, and 4 ignored
-doc-tests. The `migration_chain` command adds **31**.
+Expect **1,636 passed, 0 failed** across **12 `test result:` lines** from
+the first command — 924 core (917 unit + 7 doc-tests), 324 frontend (320
+unit + its 4 `acceptance_harness` integration tests), 229 backend, 151
+adapter-test, 8 adapter-cloudflare, and 4 ignored doc-tests. The
+`migration_chain` command adds **35**. *(Measured at `4d4dea6`. These are
+a snapshot with no gate behind them — a release that adds tests moves
+them, so treat a higher number as expected and only a **lower** one, a
+non-zero `failed`, or a line count other than 12 as a signal. Sum them
+programmatically over the whole output; never hand-add the lines.)*
 
 (RFC 125 found `cesauth-frontend`'s 280 tests uncounted with no CI
 coverage — see `rfcs/done/125-release-gate-integrity-restoration.md`.)
