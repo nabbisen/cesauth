@@ -343,4 +343,4 @@ This separation allows:
 
 ---
 
-*See also: [Architecture](architecture.md) · [ADR-010 Audit Chain](adrs/010-audit-chain.md)*
+*See also: [Architecture](architecture.md) · [ADR-010 Audit Chain](adr/010-audit-log-hash-chain.md)*

@@ -350,4 +350,179 @@ if [[ ${#ui_url_matches[@]} -gt 0 ]]; then
     exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# RFC 169: the book must contain its own pages.
+#
+# `docs/src/SUMMARY.md` is mdbook's table of contents — a page not reached
+# from it by a `(./<relpath>)` entry is never built, never linked from the
+# book's own nav, and never shows up for a reader who did not already know
+# the exact URL. RFC 169 found eleven such pages, two of them pages a reader
+# would reasonably expect to find (route-contracts.md, contributing.md), and
+# one live consequence: a page already IN the book linked to one that was
+# not, a dead link on the published site.
+#
+# Two checks, not one, because they are different claims:
+#   1. Coverage    -- every docs/src/**/*.md is reachable from SUMMARY.md,
+#                      or is a named, dated, reasoned exclusion.
+#   2. Link integrity -- no page the book builds links to a .md the book
+#                      does not build (which coverage alone cannot catch:
+#                      a page can be in-book and still link to one that
+#                      is not).
+#
+# Same discipline as E4's NAMED_NON_HANDLERS and E6's two exemption lists:
+# a declared-out entry carries a reason, and one matching no file this run
+# is stale -- a pre-authorised exclusion for whatever lands at that path
+# next, reviewed by nobody.
+# ---------------------------------------------------------------------------
+
+DOCS_SRC="${REPO_ROOT}/docs/src"
+SUMMARY_MD="${DOCS_SRC}/SUMMARY.md"
+
+declare -a DOCS_DECLARED_OUT=(
+    "expert/rfc-110-baseline.md	a dated audit of the v0.71.0 codebase, taken for RFC 110 -- a record of a moment, not a page a reader navigates to"
+    "expert/nodejs-compat-investigation.md	RFC 025 Step 2's investigation record -- same reason as rfc-110-baseline.md"
+)
+
+# `(./<relpath>.md)` entries in SUMMARY.md, relpath relative to docs/src/ --
+# every entry in this file uses the `./` form (confirmed: 78 of 78 `.md`
+# links in SUMMARY.md match this exact shape; a bare-filename or `../` entry
+# would need mdbook's own nesting rules anyway, which SUMMARY.md does not use).
+docs_inbook_set=$(grep -oE '\]\(\./[^)]+\.md\)' "$SUMMARY_MD" | sed -E 's/^\]\(\.\///; s/\)$//' | sort -u)
+
+docs_scanned=0
+docs_inbook_count=0
+docs_declared_count=0
+docs_unreachable_count=0
+docs_unreachable_report=""
+docs_declared_matched=""
+
+while IFS= read -r -d '' file; do
+    rel="${file#${DOCS_SRC}/}"
+    docs_scanned=$((docs_scanned + 1))
+    if printf '%s\n' "$docs_inbook_set" | grep -Fxq "$rel"; then
+        docs_inbook_count=$((docs_inbook_count + 1))
+        continue
+    fi
+    declared=0
+    for entry in "${DOCS_DECLARED_OUT[@]}"; do
+        decl_path="${entry%%$'\t'*}"
+        if [[ "$rel" == "$decl_path" ]]; then
+            docs_declared_count=$((docs_declared_count + 1))
+            docs_declared_matched="${docs_declared_matched}${decl_path}\n"
+            declared=1
+            break
+        fi
+    done
+    [[ $declared -eq 1 ]] && continue
+    docs_unreachable_count=$((docs_unreachable_count + 1))
+    docs_unreachable_report="${docs_unreachable_report}${rel}\n"
+done < <(find "$DOCS_SRC" -name "*.md" ! -name "SUMMARY.md" -print0)
+
+if [[ "$docs_scanned" -ne "$((docs_inbook_count + docs_declared_count + docs_unreachable_count))" ]]; then
+    echo "drift-scan: BROKEN -- docs coverage arithmetic does not close:" >&2
+    echo "  ${docs_scanned} scanned != ${docs_inbook_count} in-book +" >&2
+    echo "  ${docs_declared_count} declared + ${docs_unreachable_count} unreachable." >&2
+    exit 2
+fi
+
+if [[ "$docs_scanned" -eq 0 ]]; then
+    echo "drift-scan: BROKEN -- found ZERO .md files under docs/src; the docs" >&2
+    echo "  coverage check would pass vacuously. The scan path is wrong." >&2
+    exit 2
+fi
+
+echo "ℹ️   docs coverage: scanned ${docs_scanned} page(s) under docs/src -- ${docs_inbook_count} in-book, ${docs_declared_count} declared out, ${docs_unreachable_count} unreachable"
+
+docs_coverage_failed=0
+
+if [[ -n "$docs_unreachable_report" ]]; then
+    echo ""
+    echo "docs page(s) not reachable from SUMMARY.md and not declared out:"
+    printf '%b' "$docs_unreachable_report" | while IFS= read -r line; do [[ -n "$line" ]] && echo "    $line"; done
+    echo ""
+    echo "  Add a SUMMARY.md entry, or add it to DOCS_DECLARED_OUT in"
+    echo "  scripts/drift-scan.sh with a reason."
+    docs_coverage_failed=1
+fi
+
+docs_declared_stale=""
+for entry in "${DOCS_DECLARED_OUT[@]}"; do
+    decl_path="${entry%%$'\t'*}"
+    if ! printf '%b' "$docs_declared_matched" | grep -Fxq "$decl_path"; then
+        docs_declared_stale="${docs_declared_stale}${decl_path}\n"
+    fi
+done
+
+if [[ -n "$docs_declared_stale" ]]; then
+    echo ""
+    echo "DOCS_DECLARED_OUT entr(y|ies) matching NO scanned file this run (stale):"
+    printf '%b' "$docs_declared_stale" | while IFS= read -r line; do [[ -n "$line" ]] && echo "    $line"; done
+    echo ""
+    echo "  The file behind this entry was added to SUMMARY.md, renamed, or"
+    echo "  removed -- remove it from DOCS_DECLARED_OUT above, rather than"
+    echo "  leaving a pre-authorised exclusion nobody is reviewing."
+    docs_coverage_failed=1
+fi
+
+if [[ "$docs_coverage_failed" -eq 1 ]]; then
+    exit 1
+fi
+
+# Link integrity: every `.md` link inside an IN-BOOK page must resolve to
+# another in-book page, if it resolves under docs/src/ at all. Links that
+# resolve OUTSIDE docs/src/ (an RFC under ../../../rfcs/, say) are out of
+# scope -- a different, much larger check this one does not attempt.
+#
+# Each file's newlines are flattened to spaces BEFORE extraction: at least
+# one real link wraps its target across two source lines
+# (`adr/012-session-hardening.md`'s own
+# `[ADR-011: ...](\n  011-....md)`), and grep matches a pattern spanning an
+# embedded newline as ONE match either way -- flattening first means `-o`
+# still emits exactly one match per link, each on its own output line, so
+# the `while read` loop below sees one target per iteration rather than
+# that one link's target arriving split across two.
+docs_link_scanned=0
+docs_link_broken=""
+
+while IFS= read -r -d '' file; do
+    rel="${file#${DOCS_SRC}/}"
+    printf '%s\n' "$docs_inbook_set" | grep -Fxq "$rel" || continue
+    dir=$(dirname "$file")
+    while IFS= read -r target; do
+        [[ -z "$target" ]] && continue
+        docs_link_scanned=$((docs_link_scanned + 1))
+        target="${target%%#*}"
+        # Trim leading/trailing whitespace left over from a target that
+        # wrapped across source lines before the tr/grep flattening above.
+        target="${target#"${target%%[![:space:]]*}"}"
+        target="${target%"${target##*[![:space:]]}"}"
+        [[ "$target" == http://* || "$target" == https://* ]] && continue
+        resolved=$(realpath -m --relative-to="$DOCS_SRC" "${dir}/${target}" 2>/dev/null) || continue
+        case "$resolved" in
+            ..*) continue ;;  # resolves outside docs/src -- out of scope
+        esac
+        if ! printf '%s\n' "$docs_inbook_set" | grep -Fxq "$resolved"; then
+            docs_link_broken="${docs_link_broken}${rel} -> ${resolved}\n"
+        fi
+    done < <(tr '\n' ' ' < "$file" | grep -oE '\]\([^)]+\.md(#[^)]*)?\)' | sed -E 's/^\]\(//; s/\)$//')
+done < <(find "$DOCS_SRC" -name "*.md" ! -name "SUMMARY.md" -print0)
+
+if [[ "$docs_link_scanned" -eq 0 ]]; then
+    echo "drift-scan: BROKEN -- found ZERO .md links across in-book pages; the" >&2
+    echo "  link-integrity check would pass vacuously." >&2
+    exit 2
+fi
+
+echo "ℹ️   docs link integrity: scanned ${docs_link_scanned} in-book .md link(s), 0 broken" \
+     | ( [[ -n "$docs_link_broken" ]] && sed 's/0 broken/BROKEN LINKS FOUND/' || cat )
+
+if [[ -n "$docs_link_broken" ]]; then
+    echo ""
+    echo "in-book page(s) linking to a .md the book does not build:"
+    printf '%b' "$docs_link_broken" | while IFS= read -r line; do [[ -n "$line" ]] && echo "    $line"; done
+    echo ""
+    echo "  Add the target to SUMMARY.md, or fix the link."
+    exit 1
+fi
+
 echo "drift-scan: clean — no stale phrases detected."
