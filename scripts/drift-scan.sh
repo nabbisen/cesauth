@@ -482,6 +482,10 @@ fi
 # the `while read` loop below sees one target per iteration rather than
 # that one link's target arriving split across two.
 docs_link_scanned=0
+docs_link_seen=0
+docs_link_absolute=0
+docs_link_outside=0
+docs_link_unresolvable=0
 docs_link_broken=""
 
 while IFS= read -r -d '' file; do
@@ -490,17 +494,27 @@ while IFS= read -r -d '' file; do
     dir=$(dirname "$file")
     while IFS= read -r target; do
         [[ -z "$target" ]] && continue
-        docs_link_scanned=$((docs_link_scanned + 1))
+        docs_link_seen=$((docs_link_seen + 1))
         target="${target%%#*}"
         # Trim leading/trailing whitespace left over from a target that
         # wrapped across source lines before the tr/grep flattening above.
         target="${target#"${target%%[![:space:]]*}"}"
         target="${target%"${target##*[![:space:]]}"}"
-        [[ "$target" == http://* || "$target" == https://* ]] && continue
-        resolved=$(realpath -m --relative-to="$DOCS_SRC" "${dir}/${target}" 2>/dev/null) || continue
+        # Every `continue` below is a link this check does NOT validate, so
+        # each one is counted by name. `docs_link_scanned` counts only what
+        # was actually checked: a denominator that includes what a check
+        # skipped is the same overstatement E6's census was built to stop
+        # (RFC 152 half C cycle 2), and this check is its first caller.
+        if [[ "$target" == http://* || "$target" == https://* ]]; then
+            docs_link_absolute=$((docs_link_absolute + 1))
+            continue
+        fi
+        resolved=$(realpath -m --relative-to="$DOCS_SRC" "${dir}/${target}" 2>/dev/null) || {
+            docs_link_unresolvable=$((docs_link_unresolvable + 1)); continue; }
         case "$resolved" in
-            ..*) continue ;;  # resolves outside docs/src -- out of scope
+            ..*) docs_link_outside=$((docs_link_outside + 1)); continue ;;  # outside docs/src -- out of scope
         esac
+        docs_link_scanned=$((docs_link_scanned + 1))
         if ! printf '%s\n' "$docs_inbook_set" | grep -Fxq "$resolved"; then
             docs_link_broken="${docs_link_broken}${rel} -> ${resolved}\n"
         fi
@@ -513,8 +527,19 @@ if [[ "$docs_link_scanned" -eq 0 ]]; then
     exit 2
 fi
 
-echo "ℹ️   docs link integrity: scanned ${docs_link_scanned} in-book .md link(s), 0 broken" \
-     | ( [[ -n "$docs_link_broken" ]] && sed 's/0 broken/BROKEN LINKS FOUND/' || cat )
+docs_link_broken_count=$(printf '%b' "$docs_link_broken" | grep -c . || true)
+if [[ $((docs_link_scanned + docs_link_absolute + docs_link_outside + docs_link_unresolvable)) -ne "$docs_link_seen" ]]; then
+    echo "drift-scan: BROKEN -- link-integrity census does not close:" \
+         "${docs_link_seen} seen != ${docs_link_scanned} checked +" \
+         "${docs_link_absolute} absolute + ${docs_link_outside} outside docs/src +" \
+         "${docs_link_unresolvable} unresolvable. This is a bug in the check." >&2
+    exit 2
+fi
+
+echo "ℹ️   docs link integrity: saw ${docs_link_seen} .md link(s) in in-book pages --" \
+     "${docs_link_scanned} checked, ${docs_link_absolute} absolute/http," \
+     "${docs_link_outside} resolving outside docs/src (out of scope)," \
+     "${docs_link_unresolvable} unresolvable; ${docs_link_broken_count} broken"
 
 if [[ -n "$docs_link_broken" ]]; then
     echo ""

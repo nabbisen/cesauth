@@ -2,6 +2,29 @@
 
 **Status.** **Accepted** 2026-10-31 by the owner (*"RFC 169 is accepted."*).
 Proposed the same day by the architect, while reviewing v0.89.5.
+**IMPLEMENTED on `main` in `ae8e2a2`** (not yet released; the 0.91.1 cut
+follows). **Evidence: `exercised`** — two checks in `scripts/drift-scan.sh`,
+run by its own workflow on every push, failing the build when a page leaves the
+book or an in-book link stops resolving. Both report their own census and both
+were negative-tested, by the implementer and again by the architect.
+
+The nine pages are in the book, including **ADR-016/017/018**, so the ADR index
+no longer stops at 015, and `expert/view-rendering-policy.md`'s two links to
+`route-contracts.md` resolve **without that page being edited** — adding the
+target to `SUMMARY.md` was the whole fix, as predicted.
+
+**The check found one thing on its first run beyond the eleven**:
+`expert/data-model.md:346` pointed at `adrs/010-audit-chain.md` — a plural
+directory that does not exist and a filename that never did. Corrected to
+`adr/010-audit-log-hash-chain.md`, traced by hand before the gate was trusted.
+
+**One figure in the handoff was wrong and the cycle was right not to match
+it.** The handoff cited 72 HTML pages as the baseline; the cycle measured 73 and
+said so. The difference is the architect's own command, which filtered out
+`print.html` — 82 with it at the current commit, 81 without, +9 either way.
+A figure without its command is not reproducible, which is the second half of
+the rule that produced the disagreement.
+
 **Scheduled 0.91.x — patch**, after RFC 152 half C and ahead of RFC 164, with
 which it shares `drift-scan.sh`. **Not dispatched**: 0.91.0's cut is pending, and
 its code must not land on `main` before that tag can be cut honestly.
