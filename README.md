@@ -73,13 +73,14 @@ just what you cannot safely skip. Follow each link for the procedure:
 1. **Pre-flight, then provision resources** — [Pre-flight checklist](docs/src/deployment/preflight.md),
    then [provision D1 / KV / R2 / Durable Objects](docs/src/deployment/production.md#step-1--provision-real-resources)
 2. **Migrations `--remote`** — [production.md, Step 2](docs/src/deployment/production.md#step-2--apply-migrations-remotely)
-3. **Secrets**, including the first admin's `ADMIN_API_KEY` — [Secrets & environment variables](docs/src/deployment/secrets.md) ([production.md, Step 4](docs/src/deployment/production.md#step-4--set-production-secrets))
-4. **Confirm `WRANGLER_LOCAL` is off** — [production.md, Step 6](docs/src/deployment/production.md#step-6--confirm-wrangler_local-is-off) — a classic footgun if skipped, not optional
-5. **Configure Cron Triggers** — [Cron Triggers](docs/src/deployment/cron-triggers.md)
-6. **`wrangler deploy`** — [production.md, Step 9](docs/src/deployment/production.md#step-9--deploy)
-7. **Register your first OIDC client** — [production.md, Step 5](docs/src/deployment/production.md#step-5--register-your-oidc-clients) — comes *after* deploy here, even though the chapter numbers it Step 5; the chapter's own Step 5 curls a URL that isn't live until Step 9, a pre-existing inconsistency this list does not repeat (tracked for a future documentation-sequencing pass)
-8. **Observability** — [Observability](docs/src/deployment/observability.md)
-9. **Day-2** — [Day-2 operations runbook](docs/src/deployment/runbook.md)
+3. **Seed the signing key** — [production.md, Step 3](docs/src/deployment/production.md#step-3--seed-production-rows) — not optional: without the public half registered in `jwt_signing_keys`, `/jwks.json` serves no keys and every token cesauth issues fails verification
+4. **Secrets**, including the first admin's `ADMIN_API_KEY` — [Secrets & environment variables](docs/src/deployment/secrets.md) ([production.md, Step 4](docs/src/deployment/production.md#step-4--set-production-secrets))
+5. **Confirm `WRANGLER_LOCAL` is off** — [production.md, Step 6](docs/src/deployment/production.md#step-6--confirm-wrangler_local-is-off) — a classic footgun if skipped, not optional
+6. **Configure Cron Triggers** — [Cron Triggers](docs/src/deployment/cron-triggers.md)
+7. **`wrangler deploy`** — [production.md, Step 9](docs/src/deployment/production.md#step-9--deploy)
+8. **Register your first OIDC client** — [production.md, Step 5](docs/src/deployment/production.md#step-5--register-your-oidc-clients) — comes *after* deploy here, even though the chapter numbers it Step 5; the chapter's own Step 5 curls a URL that isn't live until Step 9, a pre-existing inconsistency this list does not repeat (tracked for a future documentation-sequencing pass)
+9. **Observability** — [Observability](docs/src/deployment/observability.md)
+10. **Day-2** — [Day-2 operations runbook](docs/src/deployment/runbook.md)
 
 Not on this list but in the chapter: configuring Magic Link mail
 delivery (Step 7 — only matters if you rely on the Magic Link
