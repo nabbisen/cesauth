@@ -1,10 +1,12 @@
 # RFC 167 — Nothing takes a new operator from zero to production
 
-**Status.** **Slice 1 SHIPPED in v0.89.4**, 2026-10-31, in two cycles (§8).
-**Evidence: `reviewed`.** **Slice 2 outstanding and blocked on an owner
-decision** — walking `first-production-deploy.md` against a real Cloudflare
-account, or shipping it marked `reviewed` rather than `exercised`. Stays in
-`accepted/` until then.
+**Status.** **DONE — both slices shipped.** Slice 1 in **v0.89.4**,
+2026-10-31, in two cycles (§8); slice 2 in **v0.89.5**, 2026-10-31, also in two
+cycles. **Evidence: slice 1 `reviewed`; slice 2 `exercised` for the sequence and
+`reviewed` for the six remote-only commands, each named** (§8) — the split the
+RFC itself proposed, used as proposed. The "blocked on an owner decision"
+condition this line carried was the architect's own over-specification and was
+withdrawn before dispatch, not satisfied.
 
 **Accepted** 2026-10-30 — *"Understood. Should be improved and
 enhanced with actual schedule and plans."* The schedule is §8, and it puts this
@@ -183,6 +185,19 @@ while every line linked into a chapter whose own order puts deploy at **Step
 migrations applied. Seven chapter steps were unrepresented, including
 *Provision real resources* and *Confirm `WRANGLER_LOCAL` is off*.
 
+**A third defect in the same spine, found later and by walking rather than
+reading** (v0.89.5, 2026-10-31): the corrected nine-line list still had **no
+line for `production.md` Step 3**, seeding the JWT signing key's public half.
+It was not among the two steps the list names as deliberately excluded; it was
+simply absent. Slice 2's local rehearsal reproduced the symptom rather than
+inferring it — with the key unseeded, `/jwks.json` serves `{"keys":[]}` and
+every token cesauth issues fails verification everywhere, which is the
+definition of a step a first deploy breaks without. Added in slice 2's cycle 2
+(`4d4dea6`), bringing the list to ten lines. **All three of this slice's
+defects were the architect's specification rather than the implementation**, and
+the third was invisible to every reading of the spine, including the reviews
+that passed it.
+
 **The order was the architect's**, specified in item 1 above and again in the
 handoff, and implemented faithfully. An ordering was written for a procedure
 without reading the ordering of the chapter it was being ordered against — the
@@ -243,6 +258,35 @@ unwalkable step then costs one line rather than the page's credibility.
 `handoffs/167-nothing-takes-a-new-operator-to-production/slice-2-handoff.md`.
 Third correction this week in which the architect's specification, not the work,
 was the obstacle — the deploy order, the acceptance test, and this.
+
+**SHIPPED in v0.89.5**, 2026-10-31, in two cycles. The page is
+`docs/src/deployment/first-production-deploy.md`, placed **first** under
+`# Deployment` in `SUMMARY.md` — before `preflight.md`, because it is the page
+that tells a reader which order to read the rest in. Eleven sections: §0 for the
+one prerequisite a walk cannot discover (Workers Paid plan, linking
+`preflight.md § A`), the ten chapter steps in the order they actually run, and
+*"Prove it works"*, which hands off to `beginner/first-oidc-flow.md`.
+
+**The local rehearsal earned its place three times over**, each a thing no
+amount of reading would have produced:
+
+1. **Step 3 reproduced as a symptom**, which is what exposed slice 1's third
+   defect above.
+2. **`first-oidc-flow.md` cannot be run as-is against production** — a finding
+   neither this RFC nor the handoff anticipated. Its Step 4b uses
+   `/__dev/stage-auth-code`, which step 5 of the walk deliberately gates off,
+   and a `confidential` client authenticates at `/token` by HTTP Basic rather
+   than the tutorial's bare `client_id` form field. Both adjustments are now
+   named in the page's closing section, so the companion chapter the page hands
+   off to does not strand the reader it was handed.
+3. **A real OIDC flow completed** against a client registered through the
+   documented `POST /admin/console/clients` call: user created, Magic Link
+   requested and verified, authorization code exchanged, access/id/refresh
+   tokens returned, refresh rotation confirmed.
+
+**Cycle 2** added the one missing README line and nothing else. The dispatch
+level was **patch** with the trigger stated at dispatch (none of the minor
+triggers hit), and it held through both cycles.
 
 ### What this displaces, and why that is the right call
 

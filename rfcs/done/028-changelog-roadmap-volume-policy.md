@@ -393,6 +393,15 @@ requires a broken path to stay broken is not what that rule is for.
 
 ### Outstanding
 
+- **The three defects above were fixed in the output, not in the tool**
+  (recorded 2026-10-31). `scripts/changelog-archive-split.sh` is unchanged, so
+  the next run reproduces all three: the invalid README-index `sed` still
+  swallowed by `|| true`, a fifth duplicate `## Older releases`, and
+  root-relative links broken again in whatever block moves next. **Do not run
+  it blind.** Not fixed here because the next CHANGELOG split is five minor
+  versions away and the fix belongs with the budget check RFC 028 §Step 5
+  specified and nobody built — one cycle, not two.
+
 - **The ROADMAP half is not done.** 134 KB against its own 40 KB budget, 61
   shipped rows inline, archive stopped at v0.52. There is **no script** for it,
   and the convention is *summary + link* rather than a verbatim move — so each

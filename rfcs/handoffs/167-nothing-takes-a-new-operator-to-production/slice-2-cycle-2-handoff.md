@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 167 slice 2, cycle 2 (one line)
 
-**Governing RFC.** `rfcs/accepted/167-nothing-takes-a-new-operator-to-production.md` §8 slice 1 item 1.
+**Governing RFC.** `rfcs/done/167-nothing-takes-a-new-operator-to-production.md` §8 slice 1 item 1.
 **Review.** `.git-exclude/reviewed/167-slice-2-review.md`
 **Builds on.** `80cf753` on `main`. **Nothing to revert** — the page stands.
 

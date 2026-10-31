@@ -22,6 +22,147 @@ under budget.
 
 ---
 
+## [0.89.5] - 2026-10-31
+
+### A reader who wants to deploy now has one ordered path — RFC 167 slice 2, RFC 028
+
+No behaviour changes. No Rust, no routes, no schema. This release adds the
+sequence that fifteen good deployment chapters did not have between them, and
+enforces a volume policy that had been written and unenforced for forty minor
+versions.
+
+### Added
+
+- **`docs/src/deployment/first-production-deploy.md` — one ordered pass from an
+  empty Cloudflare account to a tenant completing an OIDC flow.** Placed
+  **first** under `# Deployment`, before the pre-flight checklist, because it is
+  the page that tells a reader in which order to read the other fifteen. Eleven
+  sections: §0 for the one prerequisite a walkthrough cannot discover for you
+  (the **Workers Paid plan** — the daily cron maintenance passes alone exceed
+  Free-plan subrequest and D1-query limits), the ten `production.md` steps in
+  the order they actually run, and *"Prove it works"*, which hands off to
+  `beginner/first-oidc-flow.md`. Each step is a paragraph of what and why, then
+  a link to the chapter that owns the commands — a second copy of a command is a
+  second thing that can drift from the first.
+
+- **The page was rehearsed, not just written.** The whole sequence was walked
+  locally with the local analogue substituted for each of the six genuinely
+  remote-only commands, through to a real OIDC flow: a client registered via the
+  documented `POST /admin/console/clients`, a user created, a Magic Link
+  requested and verified, an authorization code exchanged over HTTP Basic, and a
+  refresh token rotated. Evidence terms are split per step rather than hedged
+  across the page — the sequence is **exercised**; the six remote-only commands
+  are **reviewed**, named individually, each with what would exercise it.
+
+### Fixed
+
+- **The deploy spine omitted the step without which every token fails
+  verification.** `README.md`'s *"Deploy it"* list had no line for
+  `production.md` Step 3, seeding the public half of the JWT signing key into
+  `jwt_signing_keys` — and it was not among the two steps the list names as
+  deliberately left off. Without it `/jwks.json` serves `{"keys":[]}` and every
+  token cesauth issues fails verification everywhere. Found by the rehearsal
+  reproducing the symptom against an emptied local D1, not by reading the list;
+  three reviews had read past it. The list is now ten lines.
+
+- **`first-oidc-flow.md` cannot be followed as written against a production
+  deployment**, which nothing had said. Its Step 4b uses
+  `/__dev/stage-auth-code`, which the walkthrough's own step 5 gates off on
+  purpose, and a `confidential` client authenticates at `/token` by HTTP Basic
+  rather than the tutorial's bare `client_id` form field. Both adjustments are
+  now stated in the new page's closing section, so the chapter it hands off to
+  does not strand the reader it was handed.
+
+- **`README.md` used the same numerals for two different things.** The closing
+  paragraph's *"Step 7"* and *"Step 8"* are `production.md`'s numbering, two
+  lines below a list whose **own** items 7 and 8 are deploy and client
+  registration. Both now say *"the chapter's Step N"*, and the paragraph closes
+  by stating which numbering is meant.
+
+- **`contributing.md` told contributors to expect the wrong test count, and had
+  since the 0.83.0 era.** §Running tests promised **1,403 passed** with a
+  per-crate breakdown in which every figure was stale — core 789, frontend 276,
+  backend 200, adapter-test 133, adapter-cloudflare 1, `migration_chain` 31,
+  against an actual **1,636** (924 / 324 / 229 / 151 / 8) and **35**. A
+  contributor running the gate could not tell growth from defect. Corrected, and
+  **de-claimed**: the figures now cite the commit they were measured at, say
+  they are a snapshot no gate protects, and name the actual signal — a *lower*
+  count, a non-zero `failed`, or a line count other than 12.
+
+- **RFC 028's volume policy, enforced for the first time since it was written.**
+  The policy keeps the five most recent minor versions in `CHANGELOG.md` under
+  an 80 KB budget; the file had reached **318 KB** with **40 minor versions
+  inline**, and the archive stopped at v0.49. RFC 028 is not wrong — it
+  specified its own CI budget check in full, as runnable bash, and that check was
+  never built, so the rule rotted for forty minor versions while the RFC's own
+  Status said *Implemented*. Four splits later (`0.50-0.59`, `0.60-0.69`,
+  `0.70-0.79`, `0.80-0.84`) the root file is **42 KB**, and the set of
+  `## [version]` entries across root plus archives is identical to the 83 before
+  the split — no history lost, none duplicated.
+
+- **Three defects in `changelog-archive-split.sh`, found by running it**, all
+  repaired **in the output and not yet in the tool** (recorded in RFC 028
+  §Outstanding — do not run it blind): an archive-README `sed` using `|` as both
+  delimiter and replacement text, invalid and swallowed by `|| true`; a
+  duplicate `## Older releases` section appended on every run; and relocated
+  content keeping repo-root-relative links, which broke five links the pre-split
+  check had not looked for — it measured links *into* the CHANGELOG, not links
+  *out of* the content being moved. **The original 2026 migration had the
+  identical defect**, and four links in `CHANGELOG-0.1-to-0.30.md` had been
+  broken ever since. All nine now resolve.
+
+- **`drift-scan.sh` went red on the moved content**: six patterns matched
+  historical prose in the new archive files, which are a record rather than a
+  live claim. `docs/changelog-archive/` is now excluded in all six, the same way
+  the root CHANGELOG already was.
+
+### Documentation
+
+- **Four release rulings recorded in `contributing.md` §Cutting a release**, each
+  written where the next cut will read it: an **MSRV bump is a minor**; **a
+  dispatch handoff states its level and the trigger it hits**, with *"no trigger,
+  therefore a patch"* an argument to be made rather than a default; **the Worker
+  bundle is measured at the release commit, after the version bump**, because the
+  workspace version reaches the compiled wasm through symbol mangling (0.89.4's
+  recorded 882,900 B describes a 0.89.3 tree; the tagged artifact is 882,830 B);
+  and **a handoff's baseline figures cite the commit they were measured at**,
+  which is how that offset was found rather than argued. The bundle ruling was
+  established by experiment — reverting the version and rebuilding reproduced the
+  earlier figure with both sha256 digests byte-exact, which also re-confirms
+  RFC 133 half A's reproducibility guarantee.
+
+- **A fifth condition on the `cesauth-core` → `cesauth` rename**: publishing
+  hands the compatibility rubric to Cargo, where `^0.x` makes each `0.x` its own
+  compatibility unit, so the rename must happen before the first publish or not
+  at all.
+
+- **The versioning policy in `ROADMAP.md`** now states that a catch-all test
+  added for a case callers must handle is a **caller obligation, not an
+  observable difference** — the distinction the level table turns on.
+
+- **RFC 168 accepted** — the release rules are written and unenforced: nothing
+  reads `CHANGELOG.md`, nothing compares tags to entries, and nothing compares a
+  release's level to what it changed. Forward-only at the owner's direction.
+  Scheduled immediately after RFC 164, which shares the script.
+
+### Known and unfixed
+
+- **Eleven of the book's eighty pages are absent from `docs/src/SUMMARY.md`**, so
+  `mdbook` never builds them and `mdbook build` is clean about it — among them
+  `expert/contributing.md`, `expert/route-contracts.md`,
+  `deployment/email-delivery.md` and ADRs 016–018. One is already a dead link in
+  the published book: `expert/view-rendering-policy.md` points twice at
+  `route-contracts.md`, the page it names as the enforcing document. Found while
+  reviewing this release; needs its own RFC and the owner's acceptance.
+
+- **The ROADMAP half of RFC 028 is outstanding** — 134 KB against its own 40 KB
+  budget, 61 shipped rows inline. There is no script for it and the convention is
+  *summary + link* rather than a verbatim move, so each row must be condensed,
+  which is judgement rather than a shell loop. Scoped separately rather than
+  improvised at 134 KB.
+
+---
+
 ## [0.89.4] - 2026-10-31
 
 ### The operator console stops claiming features it does not have — RFC 161 §9(a), RFC 167 slice 1

@@ -438,7 +438,7 @@ reader is not left guessing:
 Until all of that holds, the honest state is the one in place now: the name is
 held, the crates are unpublished, and **`README.md` must say so next to its
 crates.io/docs.rs/deps.rs badges** — which it does not yet
-([RFC 167](https://github.com/nabbisen/cesauth/blob/main/rfcs/accepted/167-nothing-takes-a-new-operator-to-production.md)
+([RFC 167](https://github.com/nabbisen/cesauth/blob/main/rfcs/done/167-nothing-takes-a-new-operator-to-production.md)
 §2.2, slice 1).
 - **The dev team runs the gate set for readiness; the architect re-runs the
   release-critical ones and any gate where a claim could hide.** Not the whole

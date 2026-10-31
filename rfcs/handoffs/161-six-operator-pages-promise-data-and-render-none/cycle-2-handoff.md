@@ -1,6 +1,6 @@
 # Developer Handoff — 0.89.4 cycle 2 (small): the "Deploy it" list
 
-**Governing RFC.** `rfcs/accepted/167-nothing-takes-a-new-operator-to-production.md` §8 slice 1 item 1.
+**Governing RFC.** `rfcs/done/167-nothing-takes-a-new-operator-to-production.md` §8 slice 1 item 1.
 **Review.** `.git-exclude/reviewed/161-record-correction-review.md`
 **Builds on.** `a09f39f` on `main`. **Nothing to revert** — everything else in
 that commit stands.

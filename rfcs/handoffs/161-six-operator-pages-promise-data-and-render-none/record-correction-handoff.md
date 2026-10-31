@@ -1,7 +1,7 @@
 # Developer Handoff — 0.89.4: RFC 161 §9(a) + RFC 167 slice 1
 
 **Governing RFCs.** `rfcs/accepted/161-six-operator-pages-promise-data-and-render-none.md` **§9(a)**
-and `rfcs/accepted/167-nothing-takes-a-new-operator-to-production.md` **§8 slice 1**.
+and `rfcs/done/167-nothing-takes-a-new-operator-to-production.md` **§8 slice 1**.
 **Why one cycle.** Both edit `README.md` and
 `docs/src/deployment/observability.md`. Two cycles each believing they own the
 same two sentences is how a correction gets applied twice or not at all

@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 167 slice 2: `first-production-deploy.md`
 
-**Governing RFC.** `rfcs/accepted/167-nothing-takes-a-new-operator-to-production.md` §5, §8 slice 2.
+**Governing RFC.** `rfcs/done/167-nothing-takes-a-new-operator-to-production.md` §5, §8 slice 2.
 **Builds on.** `main` at the `0.89.4` tag or later.
 
 **Target release.** **Patch.** **Trigger: none of the policy's minor triggers is
