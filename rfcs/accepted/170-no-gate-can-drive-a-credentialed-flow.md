@@ -1,6 +1,17 @@
 # RFC 170 — No gate can drive a credentialed flow, and two findings are stuck behind that
 
-**Status.** **Proposed** 2026-11-01 by the architect, while scoping 0.92.
+**Status.** **Accepted** 2026-11-01 by the owner (*"RFC 170 is accepted."*).
+Proposed the same day by the architect, while scoping 0.92.
+**Scheduled: patch, after 0.92.0**, with **RFC 147's sweep refactor as its
+remainder** (§5 — the two are the cheap half and the half that cannot be
+refactored away, and doing both is the whole fix). **Not dispatched**: 0.91.1's
+cut is pending.
+
+**The acceptance was of the whole RFC, not only §5's cheaper alternative**, so
+both halves are in scope: the credentialed job *and* the refactor. If the owner
+meant only one, the refactor is the half to keep and the cookie witness is the
+half that guards 29 rows — said here so the record does not quietly assume the
+larger reading.
 **Tier.** **P2.** Nothing is broken. Two established findings cannot be closed
 to `exercised`, and both were found by hand because no gate could find them.
 **Size.** **Medium**, and the honest reason it is medium rather than small is

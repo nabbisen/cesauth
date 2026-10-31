@@ -30,6 +30,25 @@ placeholder that says *"未実装 (RFC 161)"*. Reclassified as B. The architect'
 classification rested on the handler and never asked whether the form existed,
 which is the question the handoff itself told the team to ask about class B.
 
+**Half D is split, and the split is the architect's call** (2026-11-01;
+scheduling is the architect's, authorization the owner's). **Stage 1 — a patch
+after 0.92.0** — is the measurement plus the **11 `N/A (JSON)` cells**, which
+are documentation: if the honest cell names `SameSite=Strict`, that is eleven
+cells and no code, and E6 already checks that value so the gate closes behind
+it immediately. **Stage 2 — the 18 `N/A (bearer)` rows — is unscheduled until
+stage 1 answers one question**: does any real caller authenticate to them by
+cookie today. If none does, making them header-only is mechanical; if one does,
+it is a breaking change for an integrator and belongs in its own minor with
+notice. Sizing it before that answer exists is what half B and half C each got
+wrong in their first draft.
+
+**And stage 1 answers one more thing than "is each cell honest"**: how much
+should rest on `SameSite=Strict` at all. Three consecutive halves of this RFC
+ended at the same sentence — the control the document named was not the one
+protecting the route, and the one protecting it was that cookie attribute.
+**RFC 170** (accepted 2026-11-01) is the concrete half of that question: the
+attribute has no witness on a live response, and 29 rows rest on it.
+
 **Half D — now 29 rows across two cell values.** The second value was found in
 cycle 2's review (2026-10-31): **11 mutating rows claim `N/A (JSON)`, and the
 control that cell names does not exist.** The stated reasoning is that a JSON
