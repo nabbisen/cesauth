@@ -1257,6 +1257,28 @@ e6_mechanism_check() {
   esac
 }
 
+# `N/A (bearer)`'s default check requires the SHARED header-only
+# resolver (resolve_from_request_header_only/resolve_or_respond_header_only).
+# RFC 152 half C cycle 2 found one route genuinely header-only by a
+# DIFFERENT, independent mechanism: `routes::oidc::userinfo_handler`
+# (OIDC Core §5.3's UserInfo endpoint) reads only the `Authorization`
+# header via its own `extract_bearer`, predating `admin::auth` entirely
+# and unrelated to the admin cookie this whole RFC is about -- not
+# broken, just not the shared helper. Named here rather than folded
+# into either E6_BEARER_LEGACY_EXEMPT (that list means "known not to
+# back its claim, pending its own fix") or a blind regex widening (that
+# would also accept a FUTURE route's own one-off "looks bearer-ish"
+# helper that never actually checked for a cookie). Keyed by the
+# qualified handler name, since `extract_bearer` is this one file's own
+# name, not a generically reusable marker the way the mechanism-check
+# table's functions are.
+e6_bearer_alt_check() {
+  case "$1" in
+    "routes::oidc::userinfo_handler") echo "extract_bearer\\(" ;;
+    *)                                echo "" ;;
+  esac
+}
+
 # **RFC 152 half C's own finding, exempted rather than fixed here.**
 # `N/A (bearer)` on these 18 rows is NOT true today: `legacy.rs`'s two
 # handlers and every `/api/v1/*` route (all 16, through the single
@@ -1357,21 +1379,45 @@ e6_qualified_handler_for() {
 # when the direct file does not actually define the function, rather
 # than chasing a general re-export graph (E4's own job, for a
 # different question).
+#
+# Echoes `file<TAB>fn_name` -- the fn name can differ from the one in
+# `$1` when the registration names a RENAMING re-export (E4's own
+# "Shape 2" in the other direction): `routes::oidc::userinfo_handler`
+# is `oidc.rs`'s `pub use userinfo::handler as userinfo_handler;`,
+# found while fixing cycle 2's `/userinfo` row -- the real function is
+# `handler`, in `oidc/userinfo.rs`, not a function literally named
+# `userinfo_handler` anywhere. Same one-level discipline as the
+# same-name submodule fallback above it (and as E4's own
+# `e4_reexport_names`, chased here in the opposite direction: given the
+# alias, find what it is an alias FOR).
 e6_file_for_qualified() {
   local q="${1#routes::}"
   local modpath="${q%::*}"
   local fn="${q##*::}"
   local direct="$REPO_ROOT/crates/backend/src/routes/${modpath//::/\/}.rs"
   if [ -f "$direct" ] && grep -qE "fn ${fn}[<(]" "$direct"; then
-    echo "$direct"
+    printf '%s\t%s\n' "$direct" "$fn"
     return
   fi
   local submodule="$REPO_ROOT/crates/backend/src/routes/${modpath//::/\/}/${fn}.rs"
   if [ -f "$submodule" ] && grep -qE "fn ${fn}[<(]" "$submodule"; then
-    echo "$submodule"
+    printf '%s\t%s\n' "$submodule" "$fn"
     return
   fi
-  echo "$direct"
+  if [ -f "$direct" ]; then
+    local reexport leaf real
+    reexport=$(grep -oE "pub use [A-Za-z0-9_]+::[A-Za-z0-9_]+ as ${fn};" "$direct" | head -1)
+    if [ -n "$reexport" ]; then
+      leaf=$(echo "$reexport" | sed -E 's/pub use ([A-Za-z0-9_]+)::.*/\1/')
+      real=$(echo "$reexport" | sed -E 's/.*::([A-Za-z0-9_]+) as .*/\1/')
+      local renamed="$REPO_ROOT/crates/backend/src/routes/${modpath//::/\/}/${leaf}.rs"
+      if [ -f "$renamed" ] && grep -qE "fn ${real}[<(]" "$renamed"; then
+        printf '%s\t%s\n' "$renamed" "$real"
+        return
+      fi
+    fi
+  fi
+  printf '%s\t%s\n' "$direct" "$fn"
 }
 
 # The CSRF form-field name the resolved HANDLER FUNCTION checks --
@@ -1459,6 +1505,49 @@ e6_field_name_for() {
   echo "$name"
 }
 
+# RFC 152 half C cycle 2: the classifier below used to be a `case`
+# with three arms and a silent `*) continue` -- 19 of 94 mutating rows
+# fell through it without trace, including `POST /userinfo`'s
+# `N/A (Bearer)` (capital B, a bearer claim E6 should have checked and
+# did not) and one row that was a bare `N/A` with no reason recorded at
+# all (`POST /accept-invite` -- see below). E4 closes its own census
+# with "0 unclassified" and fails loudly if that is untrue; this list
+# gives E6 the same property: every cell value that legitimately
+# carries no check is named here, with why, and the stale-entry check
+# a few lines down means a value that stops matching is caught the same
+# way a fixed/renamed/removed row already is for
+# E6_BEARER_LEGACY_EXEMPT above.
+#
+# `POST /accept-invite` was the one bare `N/A` (RFC 152 half C cycle 2
+# deliberately did not say which, or what it meant, wanting a real
+# reading rather than a confirmed guess). Read `accept_submit`
+# (routes/invitations.rs): it authenticates nothing -- no
+# `auth::resolve_or_respond`, no cookie read at all -- and RFC 153 §3's
+# own design is that nothing is accepted or written on this POST ("the
+# invitation stays pending"); completion happens later, elsewhere, once
+# a real magic-link verification succeeds. CSRF's danger model needs an
+# ambient credential (a cookie) the request rides on; there is none
+# here, and no state changes either way, so there is nothing a forged
+# cross-site POST could do that a direct, uncredentialed POST could not
+# already do. Genuinely `N/A`, not a missing check.
+#
+# One more thing worth recording rather than fixing: `accept_page`'s
+# rendered form DOES carry a hidden `csrf_token` field (the name predates
+# the `csrf` convention the rest of this codebase settled on), and
+# `accept_submit` never reads a form field by that name -- `grep -n
+# '"csrf_token"' routes/invitations.rs` shows it only in the render side
+# and in that file's own render-level tests. Dead weight, not a defect:
+# with no credential to protect, an unchecked decorative field changes
+# nothing. Left alone -- removing it is a template cleanup, not a CSRF
+# fix, and this cycle is a gate change only.
+E6_DECLARED_NO_CHECK="N/A (JSON)
+N/A (CORS preflight)
+N/A (RFC 7009)
+N/A (Authorization-only)
+N/A (dev only)
+N/A (SameSite=Strict)
+N/A (no ambient credential, no state change)"
+
 e6_rows=$(awk -F'|' '
   /^\|/ {
     method = $2; gsub(/^[ \t]+|[ \t]+$/, "", method)
@@ -1474,9 +1563,12 @@ e6_claims=0         # rows whose cell is one of the three E6 checks
 e6_resolved=0
 e6_unresolved=0
 e6_exempted=0
+e6_declared=0        # cells on E6_DECLARED_NO_CHECK -- legitimately no check
+e6_unclassified=0    # cells matching neither a claim nor a declared value
 e6_unresolved_report=""
 e6_fields=""
 e6_exempt_matched=""
+e6_declared_matched=""
 
 while IFS=$'\t' read -r method path csrf_cell; do
   [ -z "$method" ] && continue
@@ -1491,7 +1583,23 @@ while IFS=$'\t' read -r method path csrf_cell; do
       mech="${mech%\)}"
       ;;
     "N/A (bearer)") kind="bearer" ;;
-    *) continue ;;
+    *)
+      if printf '%s\n' "$E6_DECLARED_NO_CHECK" | grep -Fxq "$csrf_cell"; then
+        e6_declared=$((e6_declared + 1))
+        e6_declared_matched="${e6_declared_matched}${csrf_cell}\n"
+        continue
+      fi
+      e6_unclassified=$((e6_unclassified + 1))
+      echo "❌  route-contracts.md row with an unrecognised CSRF cell:" >&2
+      echo "    ${method} ${path} -- \"${csrf_cell}\"" >&2
+      echo "" >&2
+      echo "    Either this is a claim E6 should check (add a case above), or it" >&2
+      echo "    is a legitimate no-check value (add it to E6_DECLARED_NO_CHECK" >&2
+      echo "    with its reason) -- a cell E6 does not recognise must fail the" >&2
+      echo "    build, not pass silently (RFC 159 §4.5's rule, applied here)." >&2
+      exit_code=1
+      continue
+      ;;
   esac
   e6_claims=$((e6_claims + 1))
 
@@ -1499,8 +1607,7 @@ while IFS=$'\t' read -r method path csrf_cell; do
   qualified=$(e6_qualified_handler_for "$lc_method" "$path")
   file="" fn_name="" body=""
   if [ -n "$qualified" ]; then
-    file=$(e6_file_for_qualified "$qualified")
-    fn_name="${qualified##*::}"
+    IFS=$'\t' read -r file fn_name <<< "$(e6_file_for_qualified "$qualified")"
     [ -f "$file" ] && body=$(e6_resolve_body "$file" "$fn_name")
   fi
 
@@ -1535,8 +1642,11 @@ while IFS=$'\t' read -r method path csrf_cell; do
         fi
         ;;
       bearer)
-        printf '%s\n' "$body" | grep -qE 'resolve_from_request_header_only\(|resolve_or_respond_header_only\(' \
-          && ok=1 || reason="resolves via a cookie-accepting path, not the header-only resolver its N/A (bearer) cell claims"
+        bearer_pattern='resolve_from_request_header_only\(|resolve_or_respond_header_only\('
+        bearer_alt=$(e6_bearer_alt_check "$qualified")
+        [ -n "$bearer_alt" ] && bearer_pattern="${bearer_pattern}|${bearer_alt}"
+        printf '%s\n' "$body" | grep -qE "$bearer_pattern" \
+          && ok=1 || reason="resolves via a cookie-accepting path, not the header-only resolver (or a named alternate) its N/A (bearer) cell claims"
         ;;
     esac
   fi
@@ -1558,6 +1668,14 @@ if [ "$e6_claims" -ne "$((e6_resolved + e6_unresolved + e6_exempted))" ]; then
        "${e6_resolved} resolved + ${e6_unresolved} unresolved + ${e6_exempted}" \
        "exempted -- this is a bug in the check itself, not a finding about the" \
        "backend." >&2
+  exit_code=1
+fi
+
+if [ "$e6_scanned" -ne "$((e6_claims + e6_declared + e6_unclassified))" ]; then
+  echo "❌  E6 coverage arithmetic does not close: ${e6_scanned} scanned !=" \
+       "${e6_claims} claims + ${e6_declared} declared-no-check + ${e6_unclassified}" \
+       "unclassified -- this is a bug in the check itself, not a finding about" \
+       "the backend." >&2
   exit_code=1
 fi
 
@@ -1602,14 +1720,36 @@ if [ -n "$e6_exempt_stale" ]; then
   exit_code=1
 fi
 
+# Same stale-entry discipline, applied to E6_DECLARED_NO_CHECK: a
+# declared value matching no row this run is a declaration nobody is
+# reviewing any more either.
+e6_declared_stale=""
+while IFS= read -r entry; do
+  [ -z "$entry" ] && continue
+  if ! printf '%b' "$e6_declared_matched" | grep -Fxq "$entry"; then
+    e6_declared_stale="${e6_declared_stale}${entry}\n"
+  fi
+done <<< "$E6_DECLARED_NO_CHECK"
+
+if [ -n "$e6_declared_stale" ]; then
+  echo "❌  E6_DECLARED_NO_CHECK entr(y|ies) matching NO scanned row this run" \
+       "(stale):" >&2
+  printf '%b' "$e6_declared_stale" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line" >&2; done
+  echo "" >&2
+  echo "    The row carrying this cell value was fixed, renamed, or removed --" >&2
+  echo "    remove it from E6_DECLARED_NO_CHECK above." >&2
+  exit_code=1
+fi
+
 e6_distinct_fields=$(printf '%b' "$e6_fields" | grep -v '^$' | sort -u)
 e6_distinct_field_count=$(printf '%s\n' "$e6_distinct_fields" | grep -c . || true)
 
 echo "ℹ️   E6 coverage: scanned ${e6_scanned} mutating row(s) repo-wide -- ${e6_claims}" \
-     "make a CSRF/bearer claim E6 checks, ${e6_resolved} resolved, ${e6_unresolved}" \
-     "unresolved, ${e6_exempted} exempted (RFC 152 half C finding, not this cycle's" \
-     "fix). Distinct CSRF field name(s) in use: ${e6_distinct_field_count}" \
-     "($(printf '%s' "$e6_distinct_fields" | tr '\n' ',' | sed 's/,$//'))"
+     "make a CSRF/bearer claim E6 checks (${e6_resolved} resolved, ${e6_unresolved}" \
+     "unresolved, ${e6_exempted} exempted -- RFC 152 half C finding, not this" \
+     "cycle's fix), ${e6_declared} declared as legitimately uncheckable," \
+     "${e6_unclassified} unclassified. Distinct CSRF field name(s) in use:" \
+     "${e6_distinct_field_count} ($(printf '%s' "$e6_distinct_fields" | tr '\n' ',' | sed 's/,$//'))"
 
 if [ "$exit_code" -eq 0 ]; then
   echo "✅  All ${registered_count} routes are documented in route-contracts.md, and every" \

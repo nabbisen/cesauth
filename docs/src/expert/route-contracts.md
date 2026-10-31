@@ -25,8 +25,8 @@ code-review responsibility.
 
 | Method | Path | Actor | Audit kind | View / template | Rendering | Rendering test | CSRF |
 |---|---|---|---|---|---|---|---|
-| GET | `/userinfo` | RP / end user | none (read) | JSON (UserInfoClaims) | n/a | n/a | N/A (Bearer) |
-| POST | `/userinfo` | RP / end user | none (read) | JSON (UserInfoClaims) | n/a | n/a | N/A (Bearer) |
+| GET | `/userinfo` | RP / end user | none (read) | JSON (UserInfoClaims) | n/a | n/a | N/A (bearer) |
+| POST | `/userinfo` | RP / end user | none (read) | JSON (UserInfoClaims) | n/a | n/a | N/A (bearer) |
 | GET | `/.well-known/openid-configuration` | RP / public | none | JSON | n/a | n/a | N/A (GET, JSON) |
 | GET | `/jwks.json` | RP / public | none | JSON | n/a | n/a | N/A (GET, JSON) |
 | GET | `/authorize` | Anonymous | none (read) | `authorize_login_page` | n/a | `templates::tests::authorize_*` | N/A (GET) |
@@ -104,8 +104,8 @@ code-review responsibility.
 | GET  | `/admin/t/:slug/invitations` | Tenant admin | none | HTML | client | n/a | required |
 | GET  | `/admin/t/:slug/invitations.json` | Tenant admin | none | JSON (`csrf_token`, `invitations`) | n/a | n/a | required |
 | POST | `/admin/t/:slug/invitations/:id/revoke` | Tenant admin | `invitation_revoked` | redirect | client | n/a | required |
-| GET  | `/accept-invite` | public (invite link) | none | HTML | server | n/a | N/A |
-| POST | `/accept-invite` | public (invite link) | none | HTML | server | n/a | N/A |
+| GET  | `/accept-invite` | public (invite link) | none | HTML | server | n/a | N/A (GET) |
+| POST | `/accept-invite` | public (invite link) | none | HTML | server | n/a | N/A (no ambient credential, no state change) |
 | POST | `/me/security/delete-account` | authenticated user | `deletion_requested` | JSON (`scheduled_at`) | n/a | n/a | N/A (JSON) |
 | POST | `/me/security/delete-account/request` | authenticated user | `deletion_requested` | redirect | client | n/a | required |
 | POST | `/me/security/delete-account/cancel` | authenticated user | `deletion_cancelled` | redirect | client | n/a | required |
