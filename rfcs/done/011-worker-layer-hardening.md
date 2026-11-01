@@ -260,7 +260,7 @@ Add a header to
 ```markdown
 # ADR-012: Session hardening + user-facing session list (older draft)
 
-**Status**: **Superseded by [ADR-012 (sessions)](012-sessions.md)** as of 2026-05.
+**Status**: **Superseded by [ADR-012 (sessions)](../../docs/src/expert/adr/012-sessions.md)** as of 2026-05.
 
 The §Q numbering and decisions in this draft were
 refined and consolidated into `012-sessions.md`,

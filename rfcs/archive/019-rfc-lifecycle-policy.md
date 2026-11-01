@@ -235,7 +235,7 @@ When one RFC references another, use a relative path that
 reflects the target's current folder:
 
 ```markdown
-See [RFC 010](../done/010-revoke-tokens.md) for the prior work.
+See RFC 010 (target `../done/010-revoke-tokens.md`) for the prior work.
 ```
 
 This means cross-references break when an RFC moves between
@@ -329,20 +329,20 @@ A typical structure:
 ## Proposed
 | ID | Title | Priority |
 |----|-------|----------|
-| 042 | [Feature flags](./proposed/042-feature-flags.md) | High |
-| 047 | [Caching layer](./proposed/047-caching.md) | Medium |
+| 042 | Feature flags (`./proposed/042-feature-flags.md`) | High |
+| 047 | Caching layer (`./proposed/047-caching.md`) | Medium |
 
 ## Implemented
 | ID | Title | Shipped in |
 |----|-------|------------|
-| 010 | [Revoke tokens](./done/010-revoke-tokens.md) | v1.4.0 |
-| 015 | [Deprecate API](./done/015-deprecate-old-api.md) | v1.5.0 |
+| 010 | Revoke tokens (`./done/010-revoke-tokens.md`) | v1.4.0 |
+| 015 | Deprecate API (`./done/015-deprecate-old-api.md`) | v1.5.0 |
 
 ## Archive
 | ID | Title | Reason |
 |----|-------|--------|
-| 023 | [Multi-region](./archive/023-multi-region.md) | Withdrawn |
-| 035 | [Old caching](./archive/035-old-caching.md) | Superseded by RFC 047 |
+| 023 | Multi-region (`./archive/023-multi-region.md`) | Withdrawn |
+| 035 | Old caching (`./archive/035-old-caching.md`) | Superseded by RFC 047 |
 ```
 
 Some projects prefer prose to tables; either works. The point

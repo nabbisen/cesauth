@@ -140,9 +140,9 @@ The root file keeps:
   | Area | Shipped at | Detail |
   |---|---|---|
   | Five-crate workspace + ports/adapters | v0.1.0 | [archive](../../docs/changelog-archive/CHANGELOG-0.1-to-0.30.md#010) |
-  | OIDC discovery + JWKS | v0.1.0 | [archive](.../CHANGELOG-0.1-to-0.30.md#010) |
-  | TOTP MFA (full track) | v0.26-v0.30 | [archive](.../CHANGELOG-0.1-to-0.30.md#totp-track) |
-  | RFC 7662 introspection | v0.38.0 | [archive](.../CHANGELOG-0.31-to-0.40.md#0380) |
+  | OIDC discovery + JWKS | v0.1.0 | [archive](../../docs/changelog-archive/CHANGELOG-0.1-to-0.30.md#010) |
+  | TOTP MFA (full track) | v0.26-v0.30 | [archive](../../docs/changelog-archive/CHANGELOG-0.1-to-0.30.md#totp-track) |
+  | RFC 7662 introspection | v0.38.0 | [archive](../../docs/changelog-archive/CHANGELOG-0.31-to-0.40.md#0380) |
   | Per-client introspection audience | v0.50.0 | [`#0500`](#v0500) |
   ```
 
@@ -173,7 +173,7 @@ detail.
   fresh databases; FKs from authenticators / consent
   / grants restored to live `users` table; case-
   insensitive email uniqueness restored on `users`.
-  See [RFC 020](rfcs/done/020-migration-chain-hygiene.md).
+  See [RFC 020](./020-migration-chain-hygiene.md).
 ...
 ```
 

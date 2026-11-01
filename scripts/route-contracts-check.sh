@@ -135,6 +135,55 @@ if [ -n "$bad_rendering" ]; then
   exit_code=1
 fi
 
+# ── RFC 165 §3: one shared staleness check for every exemption list in
+#    this file ─────────────────────────────────────────────────────────
+#
+# RFC 159 §4.5 established the rule for NAMED_NON_HANDLERS: an entry that
+# matched nothing this run is a pre-authorised exemption for whatever is
+# written at that key next, reviewed by nobody -- the same failure mode
+# a stale `#[allow]` or a stale test skip is, just further from where
+# anyone looks. Four sibling lists in this file (E3_EXEMPT,
+# GATE_42_EXEMPT, NONCE_EXEMPT, E4_EXEMPT) carried the same risk with no
+# check at all, verified before writing this (`grep -n stale` beside any
+# of the four: zero hits). One helper, used by all five rather than five
+# near-identical inline blocks -- RFC 165 §3's own point 1.
+#
+# $1: the list's full content, one entry per line.
+# $2: every entry actually matched this run (i.e. every value the
+#     caller's loop passed to `grep -Fx` against the list and got a hit),
+#     also one per line, duplicates allowed -- the comparison below only
+#     cares whether each declared entry appears at least once.
+# Echoes each entry in $1 that does not appear in $2, one per line.
+exemption_stale_entries() {
+  local list="$1" matched="$2"
+  while IFS= read -r entry; do
+    [ -z "$entry" ] && continue
+    if ! printf '%s\n' "$matched" | grep -Fxq "$entry"; then
+      echo "$entry"
+    fi
+  done <<< "$list"
+}
+
+# Reports stale entries (if any) for one exemption list, in the message
+# shape RFC 159 §4.5 settled on. $1 list name (for the message), $2 list
+# content, $3 matched-this-run content. Sets exit_code=1 on any finding;
+# the caller's own $exit_code must already be in scope (it is, globally,
+# throughout this script).
+report_exemption_staleness() {
+  local name="$1" list="$2" matched="$3"
+  local stale
+  stale=$(exemption_stale_entries "$list" "$matched")
+  if [ -n "$stale" ]; then
+    echo "❌  ${name} entr(y|ies) matching NO scanned item this run (stale):" >&2
+    printf '%s\n' "$stale" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line" >&2; done
+    echo "" >&2
+    echo "    The item behind this entry was fixed, renamed, or removed -- remove" >&2
+    echo "    it from ${name} above, rather than leaving a pre-authorised" >&2
+    echo "    exemption nobody is reviewing." >&2
+    exit_code=1
+  fi
+}
+
 # ── E3 (RFC 132): a `server`-declared route's handler must not call
 #    leptos_html_shell ────────────────────────────────────────────────
 #
@@ -336,10 +385,14 @@ server_routes=$(
   ' "$CONTRACTS_MD"
 )
 
+e3_scanned=0
 e3_violations=""
 e3_unresolved=""
+e3_exempted_count=0
+e3_matched=""
 while IFS= read -r route; do
   [ -z "$route" ] && continue
+  e3_scanned=$((e3_scanned + 1))
   m="${route%% *}"
   p="${route#* }"
   handler=$(printf '%s\n' "$route_handlers" | awk -F'\t' -v m="$m" -v p="$p" '$1==m && $2==p {print $3; exit}')
@@ -356,6 +409,10 @@ while IFS= read -r route; do
       exempted=$(printf '%s\n' "$E3_EXEMPT" | grep -Fx "$route" || true)
       if [ -z "$exempted" ]; then
         e3_violations="${e3_violations}${m} ${p} -> ${handler} calls leptos_html_shell, not on the exemption list
+"
+      else
+        e3_exempted_count=$((e3_exempted_count + 1))
+        e3_matched="${e3_matched}${exempted}
 "
       fi
       ;;
@@ -385,6 +442,12 @@ if [ -n "$e3_violations" ]; then
   echo "    dated addition to E3_EXEMPT above — not a silent reclassification to client." >&2
   exit_code=1
 fi
+
+report_exemption_staleness "E3_EXEMPT" "$E3_EXEMPT" "$e3_matched"
+
+echo "ℹ️   E3 coverage: scanned ${e3_scanned} server-declared route(s) --" \
+     "$(printf '%s' "$e3_violations" | grep -c . || true) calling the shell unexempted," \
+     "${e3_exempted_count} exempted, $(printf '%s' "$e3_unresolved" | grep -c . || true) unresolved"
 
 # ── §4.2 (RFC 145 cycle 3): a `client`-declared GET row must have a
 #    real, unambiguous `app.rs` route — RFC 145 §15.2 / cycle-3 handoff §3 ──
@@ -506,10 +569,14 @@ client_get_routes=$(
   ' "$CONTRACTS_MD" | sort -u
 )
 
+gate42_scanned=0
 gate42_shadowed=""
 gate42_absent=""
+gate42_exempted_count=0
+gate42_matched=""
 while IFS= read -r path; do
   [ -z "$path" ] && continue
+  gate42_scanned=$((gate42_scanned + 1))
   exempted=$(printf '%s\n' "$GATE_42_EXEMPT" | grep -Fx "GET $path" || true)
   shadow_route=$(classify_client_route "$path") && status=0 || status=$?
   case "$status" in
@@ -518,11 +585,19 @@ while IFS= read -r path; do
       if [ -z "$exempted" ]; then
         gate42_shadowed="${gate42_shadowed}GET ${path} -- shadowed by app.rs route \"${shadow_route}\"
 "
+      else
+        gate42_exempted_count=$((gate42_exempted_count + 1))
+        gate42_matched="${gate42_matched}${exempted}
+"
       fi
       ;;
     2)
       if [ -z "$exempted" ]; then
         gate42_absent="${gate42_absent}GET ${path} -- no app.rs route of any shape
+"
+      else
+        gate42_exempted_count=$((gate42_exempted_count + 1))
+        gate42_matched="${gate42_matched}${exempted}
 "
       fi
       ;;
@@ -549,6 +624,13 @@ if [ -n "$gate42_absent" ]; then
   echo "    this GET server-side (RFC 145) and declare it \`server\`." >&2
   exit_code=1
 fi
+
+report_exemption_staleness "GATE_42_EXEMPT" "$GATE_42_EXEMPT" "$gate42_matched"
+
+echo "ℹ️   GATE_42 coverage: scanned ${gate42_scanned} client-declared GET route(s) --" \
+     "$(printf '%s' "$gate42_shadowed" | grep -c . || true) shadowed," \
+     "$(printf '%s' "$gate42_absent" | grep -c . || true) absent," \
+     "${gate42_exempted_count} exempted"
 
 # ── RFC 150: Response::from_html must not be reached except through a
 #    nonce-setting call, in the same function ──────────────────────────
@@ -605,11 +687,15 @@ from_html_sites=$(
   grep -v 'tests\?\.rs\|tests/'
 )
 
+nonce_scanned=0
 nonce_violations=""
 nonce_unresolved=""
+nonce_exempted_count=0
+nonce_matched=""
 
 while IFS= read -r line; do
   [ -z "$line" ] && continue
+  nonce_scanned=$((nonce_scanned + 1))
   file="${line%%:*}"
   rest="${line#*:}"
   lineno="${rest%%:*}"
@@ -641,6 +727,10 @@ while IFS= read -r line; do
     if [ -z "$exempted" ]; then
       nonce_violations="${nonce_violations}${rel}:${lineno} (fn ${fn}) -- Response::from_html reached with no nonce-setting call in this function's body
 "
+    else
+      nonce_exempted_count=$((nonce_exempted_count + 1))
+      nonce_matched="${nonce_matched}${exempted}
+"
     fi
   fi
 done <<< "$from_html_sites"
@@ -665,6 +755,13 @@ if [ -n "$nonce_violations" ]; then
   echo "    own set_render_nonce call; that per-site pattern is what produced RFC 150." >&2
   exit_code=1
 fi
+
+report_exemption_staleness "NONCE_EXEMPT" "$NONCE_EXEMPT" "$nonce_matched"
+
+echo "ℹ️   NONCE coverage: scanned ${nonce_scanned} Response::from_html call site(s) --" \
+     "$(printf '%s' "$nonce_violations" | grep -c . || true) violations," \
+     "${nonce_exempted_count} exempted," \
+     "$(printf '%s' "$nonce_unresolved" | grep -c . || true) unresolved"
 
 # ── E4 (RFC 159): every handler-shaped `pub async fn` in routes/ must be
 #    reachable from lib.rs ──────────────────────────────────────────────
@@ -952,6 +1049,7 @@ if [ -n "$e4_unclassified" ]; then
 fi
 
 e4_dead=""
+e4_exempt_matched=""
 while IFS=$'\t' read -r file name; do
   [ -z "$file" ] && continue
 
@@ -983,6 +1081,8 @@ while IFS=$'\t' read -r file name; do
     exempted=$(printf '%s\n' "$E4_EXEMPT" | grep -Fx "$key" || true)
     if [ -z "$exempted" ]; then
       e4_dead="${e4_dead}${key} (${rel}, fn ${name})\n"
+    else
+      e4_exempt_matched="${e4_exempt_matched}${exempted}\n"
     fi
   fi
 done < <(printf '%b' "$e4_handlers")
@@ -996,6 +1096,8 @@ if [ -n "$e4_dead" ]; then
   echo "    dated, reasoned entry to E4_EXEMPT above -- not a silent pass." >&2
   exit_code=1
 fi
+
+report_exemption_staleness "E4_EXEMPT" "$E4_EXEMPT" "$(printf '%b' "$e4_exempt_matched")"
 
 e4_handler_count=$((e4_countA + e4_countB))
 

@@ -30,16 +30,19 @@ the seventh instance of a documented rule with no gate.
 `contributing.md` §Cutting a release is good. It states the tag format, the
 level rubric with the 0.81.2 trap that taught it, and five things every release
 must satisfy — including *"A tag exists **and** a CHANGELOG entry exists, for
-the same version. Neither alone is a release"*, with the six historical
-mismatches named and the ruling **"Do not add to this list."**
+the same version. Neither alone is a release"*, with (at the time of writing)
+six historical mismatches named and the ruling **"Do not add to this list."**
+**That count was itself wrong — it is ten, and RFC 165 §3's cycle found the
+missing five** (§3 below).
 
 **Nothing checks any of it.** No workflow reads `CHANGELOG.md`; none compares
 tags to entries; none compares a release's level to what it changed. The
 thirteen release gates pass over every one of these rules.
 
-**This RFC proposes no archaeology.** The six historical mismatches are already
-recorded with a ruling, and the past releases are immutable artifacts. The
-subject is the enforcement that keeps the rule true from here.
+**This RFC proposes no archaeology beyond correcting that count.** The ten
+historical mismatches are recorded with a ruling, and the past releases are
+immutable artifacts. The subject is the enforcement that keeps the rule true
+from here.
 
 ## 2. What is established
 
@@ -68,10 +71,10 @@ manifest stays at **13**.
 1. **Reconciliation, both directions.** Every `X.Y.Z` tag has a `## [X.Y.Z]`
    CHANGELOG entry and vice versa. The two directions are named separately —
    "tagged, never documented" and "documented, never tagged" have different
-   remedies. **The six historical mismatches are a named, dated exemption
-   carrying `contributing.md`'s own "do not add to this list" as its reason**,
-   and after RFC 165 §3 that entry is itself staleness-checked, so it cannot
-   quietly grow.
+   remedies. **The ten historical mismatches are a named, dated exemption
+   carrying `contributing.md`'s own "do not add to this list" as its reason**
+   (corrected from six — see §3's implementation cycle), and after RFC 165 §3
+   that entry is itself staleness-checked, so it cannot quietly grow.
 2. **Level backstop at the cut.** A **patch** must not, versus the previous tag,
    add a registered route, add a migration, or change `rust-version`. It is a
    backstop and not a substitute for §2.2's judgement: it catches the drift
@@ -110,7 +113,7 @@ cut cannot.
 
 ## 5. What this does not claim
 
-- Not that the six historical mismatches need fixing. They are recorded with a
+- Not that the ten historical mismatches need fixing. They are recorded with a
   ruling; this RFC only stops the list growing.
 - Not that the 0.79.x route additions were careless — five releases in one
   migration window, out of 115 tags, with every other trigger clean. The

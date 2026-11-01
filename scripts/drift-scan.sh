@@ -550,4 +550,266 @@ if [[ -n "$docs_link_broken" ]]; then
     exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# RFC 164 — the rfcs/ link sweep.
+#
+# Every relative-path `.md` link inside rfcs/**/*.md must resolve to a file
+# that exists. Unlike the docs/src link check above, this one is NOT bounded
+# to rfcs/ itself: a cross-reference may legitimately point into docs/src/
+# (an ADR) or docs/changelog-archive/ (a release record), and both are in
+# scope. Only a true absolute URL (http/https) is out of scope; everything
+# else is a path this check resolves relative to the linking file's own
+# directory and tests for existence on disk.
+#
+# Same discipline as DOCS_DECLARED_OUT above: a declared-out entry carries a
+# reason, and one matching no broken link this run is stale.
+# ---------------------------------------------------------------------------
+
+RFCS_DIR="${REPO_ROOT}/rfcs"
+
+# One entry. `rfcs/handoffs/.../implementation-handoff.md` quotes RFC 164 §4's
+# own example-link shape — the same one de-linked in done/000 and
+# archive/019 by this cycle — while describing that fix. The handoff was
+# added one commit after cc5329b's own 20-link census, so it was never part
+# of that count, and it is prose the dispatching architect wrote about this
+# very rule, not a navigational cross-reference anyone follows.
+declare -a RFCS_LINK_DECLARED_OUT=(
+    "rfcs/handoffs/164-168-165-the-three-unenforced-records/implementation-handoff.md -> ../done/010-revoke-tokens.md	quotes RFC 164 §4's own example-link shape (the one de-linked in done/000 and archive/019) inside prose describing that fix; added by the commit that dispatched this cycle, one commit after cc5329b's own census"
+)
+
+rfcs_link_seen=0
+rfcs_link_absolute=0
+rfcs_link_unresolvable=0
+rfcs_link_scanned=0
+rfcs_link_declared_count=0
+rfcs_link_broken=""
+rfcs_link_declared_matched=""
+
+while IFS= read -r -d '' file; do
+    rel="${file#${REPO_ROOT}/}"
+    dir=$(dirname "$file")
+    while IFS= read -r target; do
+        [[ -z "$target" ]] && continue
+        rfcs_link_seen=$((rfcs_link_seen + 1))
+        target="${target%%#*}"
+        target="${target#"${target%%[![:space:]]*}"}"
+        target="${target%"${target##*[![:space:]]}"}"
+        if [[ "$target" == http://* || "$target" == https://* ]]; then
+            rfcs_link_absolute=$((rfcs_link_absolute + 1))
+            continue
+        fi
+        resolved=$(realpath -m "${dir}/${target}" 2>/dev/null) || {
+            rfcs_link_unresolvable=$((rfcs_link_unresolvable + 1)); continue; }
+        rfcs_link_scanned=$((rfcs_link_scanned + 1))
+        if [[ ! -f "$resolved" ]]; then
+            key="${rel} -> ${target}"
+            declared=0
+            for entry in "${RFCS_LINK_DECLARED_OUT[@]}"; do
+                decl_key="${entry%%$'\t'*}"
+                if [[ "$key" == "$decl_key" ]]; then
+                    rfcs_link_declared_count=$((rfcs_link_declared_count + 1))
+                    rfcs_link_declared_matched="${rfcs_link_declared_matched}${decl_key}\n"
+                    declared=1
+                    break
+                fi
+            done
+            [[ $declared -eq 1 ]] && continue
+            resolved_rel="${resolved#${REPO_ROOT}/}"
+            rfcs_link_broken="${rfcs_link_broken}${rel} -> ${target} (resolves to ${resolved_rel})\n"
+        fi
+    done < <(tr '\n' ' ' < "$file" | grep -oE '\]\([^)]+\.md(#[^)]*)?\)' | sed -E 's/^\]\(//; s/\)$//')
+done < <(find "$RFCS_DIR" -name "*.md" -print0)
+
+if [[ "$rfcs_link_scanned" -eq 0 ]]; then
+    echo "drift-scan: BROKEN -- found ZERO relative .md links across rfcs/; the" >&2
+    echo "  rfcs/ link check would pass vacuously." >&2
+    exit 2
+fi
+
+rfcs_link_broken_count=$(printf '%b' "$rfcs_link_broken" | grep -c . || true)
+if [[ $((rfcs_link_scanned + rfcs_link_absolute + rfcs_link_unresolvable)) -ne "$rfcs_link_seen" ]]; then
+    echo "drift-scan: BROKEN -- rfcs/ link census does not close:" \
+         "${rfcs_link_seen} seen != ${rfcs_link_scanned} checked +" \
+         "${rfcs_link_absolute} absolute + ${rfcs_link_unresolvable} unresolvable." \
+         "This is a bug in the check." >&2
+    exit 2
+fi
+
+echo "ℹ️   rfcs/ link sweep: saw ${rfcs_link_seen} .md link(s) across rfcs/**/*.md --" \
+     "${rfcs_link_scanned} checked, ${rfcs_link_absolute} absolute/http," \
+     "${rfcs_link_unresolvable} unresolvable; ${rfcs_link_broken_count} broken," \
+     "${rfcs_link_declared_count} declared out"
+
+rfcs_link_failed=0
+
+if [[ -n "$rfcs_link_broken" ]]; then
+    echo ""
+    echo "rfcs/ link(s) not resolving to a file that exists:"
+    printf '%b' "$rfcs_link_broken" | while IFS= read -r line; do [[ -n "$line" ]] && echo "    $line"; done
+    echo ""
+    echo "  Fix the link, or add it to RFCS_LINK_DECLARED_OUT in"
+    echo "  scripts/drift-scan.sh with a reason."
+    rfcs_link_failed=1
+fi
+
+rfcs_link_declared_stale=""
+for entry in "${RFCS_LINK_DECLARED_OUT[@]}"; do
+    decl_key="${entry%%$'\t'*}"
+    if ! printf '%b' "$rfcs_link_declared_matched" | grep -Fxq "$decl_key"; then
+        rfcs_link_declared_stale="${rfcs_link_declared_stale}${decl_key}\n"
+    fi
+done
+
+if [[ -n "$rfcs_link_declared_stale" ]]; then
+    echo ""
+    echo "RFCS_LINK_DECLARED_OUT entr(y|ies) matching NO broken link this run (stale):"
+    printf '%b' "$rfcs_link_declared_stale" | while IFS= read -r line; do [[ -n "$line" ]] && echo "    $line"; done
+    echo ""
+    echo "  The link behind this entry was fixed or removed -- remove it from"
+    echo "  RFCS_LINK_DECLARED_OUT above, rather than leaving a pre-authorised"
+    echo "  exclusion nobody is reviewing."
+    rfcs_link_failed=1
+fi
+
+if [[ "$rfcs_link_failed" -eq 1 ]]; then
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# RFC 168 §3.1 — tag <-> CHANGELOG reconciliation, both directions.
+#
+# Every `X.Y.Z` git tag needs a `## [X.Y.Z]` CHANGELOG entry (root
+# CHANGELOG.md or an archive file under docs/changelog-archive/) and vice
+# versa. The two directions are named separately, as contributing.md's own
+# rule does: "tagged, never documented" and "documented, never tagged" have
+# different remedies.
+#
+# REQUIRES a full git history with tags -- `git tag` returns nothing useful
+# against a shallow, tag-less checkout. See the implementation report for
+# what this needs from CI; this script does not attempt to detect or work
+# around a shallow clone.
+#
+# The ten historical mismatches are a named, dated exemption, carrying
+# contributing.md's own "do not add to this list" as the reason for the
+# five already recorded there, plus the five earliest tags researched for
+# this cycle. Staleness-checked (RFC 165 §3's pattern), so it cannot quietly
+# grow.
+# ---------------------------------------------------------------------------
+
+declare -a RELEASE_RECORD_EXEMPT=(
+    "tagged-never-documented	0.1.0	predates CHANGELOG record-keeping -- the earliest entry in docs/changelog-archive/CHANGELOG-0.1-to-0.30.md is 0.2.1, and nothing before it was ever documented"
+    "tagged-never-documented	0.2.0	predates CHANGELOG record-keeping -- same reason as 0.1.0"
+    "tagged-never-documented	0.3.1	tagged ~7 minutes after 0.3.0 on 2026-04-25 with no entry of its own; the archive's own Versioning history note's re-alignment table does not address it either"
+    "tagged-never-documented	0.4.0	re-aligned by the archive's Versioning history note: this tarball's content is documented under CHANGELOG heading 0.5.0, not under its own tag"
+    "tagged-never-documented	0.50.2	tagged, but its content is narrated inside the surrounding 0.50.1 and 0.50.3 entries' prose (docs/changelog-archive/CHANGELOG-0.50-to-0.59.md) rather than given its own heading"
+    "tagged-never-documented	0.79.6	contributing.md's pre-existing ruling: five patch releases (0.79.1-0.79.6) added seventeen registered routes during RFC 115 Phase C with no corresponding CHANGELOG headings -- do not add to this list"
+    "documented-never-tagged	0.50.3	contributing.md's pre-existing list -- do not add to this list"
+    "documented-never-tagged	0.64.0	contributing.md's pre-existing list -- do not add to this list"
+    "documented-never-tagged	0.78.13	contributing.md's pre-existing list: the declared baseline of the governing requirements and external-design specs, so the tree those documents describe cannot be checked out -- do not add to this list"
+    "documented-never-tagged	0.79.7	contributing.md's pre-existing list -- do not add to this list"
+)
+
+CHANGELOG_FILES=("${REPO_ROOT}/CHANGELOG.md")
+while IFS= read -r -d '' f; do CHANGELOG_FILES+=("$f"); done < <(find "${REPO_ROOT}/docs/changelog-archive" -name "*.md" -print0)
+
+release_tag_list=$(git -C "$REPO_ROOT" tag)
+release_entry_list=$(grep -hoE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "${CHANGELOG_FILES[@]}" | sed -E 's/^## \[//; s/\]$//' | sort -u)
+
+release_tags_compared=0
+release_entries_compared=0
+release_a_violations=""   # tagged, never documented
+release_b_violations=""   # documented, never tagged
+release_a_matched=""
+release_b_matched=""
+
+while IFS= read -r tag; do
+    [[ -z "$tag" ]] && continue
+    release_tags_compared=$((release_tags_compared + 1))
+    if ! printf '%s\n' "$release_entry_list" | grep -Fxq "$tag"; then
+        exempted=0
+        for entry in "${RELEASE_RECORD_EXEMPT[@]}"; do
+            IFS=$'\t' read -r dir ver _ <<< "$entry"
+            if [[ "$dir" == "tagged-never-documented" && "$ver" == "$tag" ]]; then
+                release_a_matched="${release_a_matched}${tag}\n"
+                exempted=1
+                break
+            fi
+        done
+        [[ $exempted -eq 1 ]] || release_a_violations="${release_a_violations}${tag}\n"
+    fi
+done <<< "$release_tag_list"
+
+while IFS= read -r entry_ver; do
+    [[ -z "$entry_ver" ]] && continue
+    release_entries_compared=$((release_entries_compared + 1))
+    if ! printf '%s\n' "$release_tag_list" | grep -Fxq "$entry_ver"; then
+        exempted=0
+        for entry in "${RELEASE_RECORD_EXEMPT[@]}"; do
+            IFS=$'\t' read -r dir ver _ <<< "$entry"
+            if [[ "$dir" == "documented-never-tagged" && "$ver" == "$entry_ver" ]]; then
+                release_b_matched="${release_b_matched}${entry_ver}\n"
+                exempted=1
+                break
+            fi
+        done
+        [[ $exempted -eq 1 ]] || release_b_violations="${release_b_violations}${entry_ver}\n"
+    fi
+done <<< "$release_entry_list"
+
+if [[ "$release_tags_compared" -eq 0 || "$release_entries_compared" -eq 0 ]]; then
+    echo "drift-scan: BROKEN -- tag/CHANGELOG reconciliation compared ZERO" >&2
+    echo "  tags or ZERO entries. git tag likely returned nothing (shallow" >&2
+    echo "  clone?) -- this check would otherwise pass vacuously." >&2
+    exit 2
+fi
+
+release_a_violation_count=$(printf '%b' "$release_a_violations" | grep -c . || true)
+release_b_violation_count=$(printf '%b' "$release_b_violations" | grep -c . || true)
+
+echo "ℹ️   release reconciliation: compared ${release_tags_compared} tag(s) against" \
+     "${release_entries_compared} CHANGELOG entr(y|ies) -- ${release_a_violation_count}" \
+     "tagged-never-documented unexempted, ${release_b_violation_count}" \
+     "documented-never-tagged unexempted"
+
+release_failed=0
+
+if [[ -n "$release_a_violations" ]]; then
+    echo ""
+    echo "tag(s) with no CHANGELOG entry, and not in RELEASE_RECORD_EXEMPT:"
+    printf '%b' "$release_a_violations" | while IFS= read -r line; do [[ -n "$line" ]] && echo "    $line"; done
+    release_failed=1
+fi
+
+if [[ -n "$release_b_violations" ]]; then
+    echo ""
+    echo "CHANGELOG entr(y|ies) with no matching tag, and not in RELEASE_RECORD_EXEMPT:"
+    printf '%b' "$release_b_violations" | while IFS= read -r line; do [[ -n "$line" ]] && echo "    $line"; done
+    release_failed=1
+fi
+
+release_exempt_stale=""
+for entry in "${RELEASE_RECORD_EXEMPT[@]}"; do
+    IFS=$'\t' read -r dir ver _ <<< "$entry"
+    if [[ "$dir" == "tagged-never-documented" ]]; then
+        printf '%b' "$release_a_matched" | grep -Fxq "$ver" || release_exempt_stale="${release_exempt_stale}${dir}: ${ver}\n"
+    else
+        printf '%b' "$release_b_matched" | grep -Fxq "$ver" || release_exempt_stale="${release_exempt_stale}${dir}: ${ver}\n"
+    fi
+done
+
+if [[ -n "$release_exempt_stale" ]]; then
+    echo ""
+    echo "RELEASE_RECORD_EXEMPT entr(y|ies) matching NO mismatch this run (stale):"
+    printf '%b' "$release_exempt_stale" | while IFS= read -r line; do [[ -n "$line" ]] && echo "    $line"; done
+    echo ""
+    echo "  The tag or entry behind this one was fixed -- remove it from" \
+         "RELEASE_RECORD_EXEMPT above, rather than leaving a pre-authorised" \
+         "exclusion nobody is reviewing."
+    release_failed=1
+fi
+
+if [[ "$release_failed" -eq 1 ]]; then
+    exit 1
+fi
+
 echo "drift-scan: clean — no stale phrases detected."

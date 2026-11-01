@@ -23,7 +23,7 @@ copy. **Stays in `accepted/`: §9(b) and §9(c) are outstanding** as
 (c) the two dropped controls restored with the first slice.
 
 **Release.** §9(a) goes **next after RFC 162**, merged with
-[RFC 167](./167-nothing-takes-a-new-operator-to-production.md) slice 1 — both
+[RFC 167](../done/167-nothing-takes-a-new-operator-to-production.md) slice 1 — both
 edit `README.md` and `observability.md`, so one cycle touches them once
 (RFC 167 §6). **Patch.** §9(b)'s first slice is a **minor**: restoring the audit
 browser adds a JSON route surface, which `ROADMAP.md`'s versioning policy makes

@@ -341,11 +341,19 @@ A release that mixes fixes and new capability takes the **higher** level.
 ### Every release must satisfy
 
 - A tag exists **and** a CHANGELOG entry exists, for the same version. Neither
-  alone is a release. Historical gaps in both directions exist — `0.79.6` was
-  tagged with no entry; `0.78.13`, `0.79.7`, `0.64.0` and `0.50.3` have
-  entries but no tag. `0.78.13` is the declared baseline of the governing
-  requirements and external-design specs, so the tree those documents describe
-  cannot be checked out. Do not add to this list.
+  alone is a release. Historical gaps in both directions exist, **ten in
+  total** (RFC 165 §3 found the first five of these were themselves missing
+  from this list): tagged with no entry — `0.1.0` and `0.2.0` (both predate
+  CHANGELOG record-keeping; the archive's earliest entry is `0.2.1`), `0.3.1`
+  (tagged minutes after `0.3.0`, never given its own entry), `0.4.0`
+  (re-aligned by the archive's Versioning history note to CHANGELOG heading
+  `0.5.0`), `0.50.2` (narrated inside the surrounding `0.50.1`/`0.50.3`
+  entries' prose rather than given its own heading), and `0.79.6`; documented
+  with no tag — `0.78.13`, `0.79.7`, `0.64.0` and `0.50.3`. `0.78.13` is the
+  declared baseline of the governing requirements and external-design specs,
+  so the tree those documents describe cannot be checked out. **RFC 168**'s
+  tag/CHANGELOG reconciliation check carries this exact ten-entry exemption,
+  staleness-checked per RFC 165 §3. Do not add to this list.
 - Version numbers are never reused, and a bad release is superseded by a new
   patch rather than re-tagged.
 - The CHANGELOG heading's date is the **tag** date, not the date the candidate
