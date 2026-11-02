@@ -574,7 +574,19 @@ RFCS_DIR="${REPO_ROOT}/rfcs"
 # of that count, and it is prose the dispatching architect wrote about this
 # very rule, not a navigational cross-reference anyone follows.
 declare -a RFCS_LINK_DECLARED_OUT=(
-    "rfcs/handoffs/164-168-165-the-three-unenforced-records/implementation-handoff.md -> ../done/010-revoke-tokens.md	quotes RFC 164 §4's own example-link shape (the one de-linked in done/000 and archive/019) inside prose describing that fix; added by the commit that dispatched this cycle, one commit after cc5329b's own census"
+    # Empty by design, and the staleness check below keeps it honest when it
+    # is. The one entry this list held on arrival exempted the dispatching
+    # handoff's own quotation of RFC 164 §4's example-link shape; that quote
+    # was de-linked instead, which is the same transformation RFC 164 §4
+    # chose for the fourteen examples in done/000 and archive/019. An
+    # exemption list of one, existing only because a document quotes link
+    # syntax, is worse than the de-linking the RFC already settled on.
+    #
+    # Known limitation, recorded rather than built: the extractor does not
+    # skip inline-code spans, so `[text](path.md)` inside backticks is still
+    # read as a link. Stripping code spans is the principled fix and is a
+    # check of its own; until someone needs it, de-linking is one line and
+    # an exemption is a standing one.
 )
 
 rfcs_link_seen=0

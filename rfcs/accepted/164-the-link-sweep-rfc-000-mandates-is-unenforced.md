@@ -105,6 +105,17 @@ arriving through the links rather than through a Status field.
 
 ## 3b. Also in this cycle: RFC 028's root-file byte budgets
 
+**§3b was NOT built in 0.91.2, and could not have been** (recorded 2026-11-03).
+The dispatching handoff never mentioned it — the architect's scope miss, and
+the cycle flagged it rather than silently building or dropping it. But the gate
+would have been **red on arrival**: measured at `38744ed`, `CHANGELOG.md` is
+**67 KB** against its 80 KB budget and **`ROADMAP.md` is 137 KB against its 40
+KB** — three and a half times over, because **RFC 028's ROADMAP half is still
+outstanding** (no script, and the convention is *summary + link* rather than a
+verbatim move, so each row needs condensing by judgement). **The correct
+sequencing is RFC 028's ROADMAP half first, then this gate**, and a handoff
+asking for the gate now would have been wrong even had it remembered.
+
 Added 2026-10-31. Same script, same workflow, same thesis — a documented rule
 with no enforcement — so it rides here rather than earning a sixth RFC.
 

@@ -1,5 +1,25 @@
 # RFC 165 — The gate's exemption lists are unvalidated, and the longest one need not exist
 
+**§3 SHIPPED in 0.91.2** — all four lists (`E3_EXEMPT`, `GATE_42_EXEMPT`,
+`NONCE_EXEMPT`, `E4_EXEMPT`) are staleness-checked, each with its own coverage
+line. **The question this RFC was written to ask is answered: none of them is
+stale.** All three live entries matched a real scanned item; the two lists
+empty by design stayed empty. §4's reduction remains release-unassigned.
+
+**One unexplained anomaly, recorded rather than dismissed** (2026-11-03): the
+implementing cycle saw a single non-reproducible E6 violation on
+`POST /me/security/sessions/revoke-others` in 1 of 7 runs, with clean runs
+either side and no code change between, and reported it. The architect ran the
+gate five more times at the same commit: clean every time, identical coverage
+line — **eleven clean runs between them against one anomalous one.** That route
+is a multi-line registration, the shape E6's window search handles specially,
+so it is the plausible locus; but a deterministic shell script producing a
+one-off differing result points at the environment (a file read mid-write
+during an editing session being the obvious candidate) rather than the logic.
+**What would make it diagnosable: capture the failing run's full output**, since
+the coverage line alone cannot distinguish a resolution miss from a
+classification miss. If it recurs, that capture is the whole ask.
+
 **Status.** **Accepted** 2026-10-30. **§3 — patch**: staleness checks for the
 four unchecked lists, additive, no behaviour change to any passing gate.
 **Fourth in the queue**, behind RFC 162, RFC 161 §9(a) and RFC 164; not

@@ -386,6 +386,16 @@ A release that mixes fixes and new capability takes the **higher** level.
   (ruling, 2026-10-31), not just the version. A baseline whose provenance is
   stated turns a mismatch into a one-line known offset instead of an
   unexplained delta in someone else's report — which is how the above was found.
+- **Any baseline figure in a handoff names the command that produced it**
+  (ruling, 2026-11-03, generalising the bundle rule below after it cost a
+  cycle). A handoff cited *"host tests 1,653 / 0 / 12 lines"* without the
+  invocation; the cycle ran `cargo test --features cesauth-frontend/csr`
+  without the five `-p` flags `contributing.md` §Running tests specifies, got
+  **1,717 / 17 lines** — the whole workspace, double-counting
+  `migration_chain`'s 35 — reproduced it at the cited tag, and reasonably
+  concluded the baseline had never been recomputed. It had been, at every cut.
+  **A number without its command is not a baseline.**
+
 - **A bundle figure names the command that produced it, and a gzip size is
   only comparable within one compressor** (ruling, 2026-10-31). The gate
   measures what `wrangler deploy --dry-run --outdir bundled/` writes; a figure
@@ -403,6 +413,24 @@ A release that mixes fixes and new capability takes the **higher** level.
   `curl -s -o /dev/null -w "%{http_code}"` leaks nothing and is the difference
   between a claim and a capture — the same distinction the `cargo-fmt.log`
   entry above records.
+
+- **A release entry records its level in its first line, as a bold token**
+  (ruling, 2026-11-03). The first non-blank line after a `## [X.Y.Z]` heading
+  begins `**Patch`, `**Minor` or `**Major`, with prose allowed after the word —
+  `**Minor, for two reasons.**` and `**Patch.** Nothing gains capability…` both
+  satisfy it. **This exists so the level backstop can be built at all.**
+  RFC 168 §3 asks for a check that a patch adds no route, migration or MSRV
+  change versus the previous tag, and that check first has to know what level a
+  release claimed. Measured 2026-11-03: of the twelve most recent entries, only
+  **0.90.0, 0.91.0 and 0.91.1** carry a parseable level token — the three
+  written after RFC 168 §4.2's dispatch-level ruling — and each uses different
+  wording. The nine before them record the level nowhere.
+
+  **Forward-only, and the check is scoped by version**: entries below `0.90.0`
+  predate the convention and are out of its scope, named as such rather than
+  back-filled. Back-filling a level onto nine historical entries would be
+  guessing at what a past cut intended, which is the `reviewed`-filled-in-
+  carelessly failure one level down (RFC 151 §22.2).
 
 - **None of the above is checked yet.** No workflow reads `CHANGELOG.md`, none
   compares tags to entries, and none compares a release's level to what it

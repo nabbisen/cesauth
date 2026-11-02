@@ -5,7 +5,17 @@
 # See scripts/drift-scan.sh for the pattern registry.
 #
 # Keeps the "the README is wrong" and "a comment refers to R2" class of drift
-# from accumulating between major reviews. Fast: grep only, no Rust toolchain.
+# from accumulating between major reviews. No Rust toolchain.
+#
+# RFC 168 (0.91.2): this job now also reconciles `git tag` against the
+# CHANGELOG's own `## [X.Y.Z]` headings, so it needs the tags. A default
+# `actions/checkout` fetches neither tags nor history, and the check fails
+# closed when it sees none -- verified by running it in a `--depth 1
+# --no-tags` clone, where it exits 2 with "compared ZERO tags" rather than
+# passing vacuously. Hence `fetch-depth: 0` below: without it the two
+# tag-reading checks added in 0.91.2 cannot run in CI at all, and the gate
+# would be decorative -- which is the exact defect RFC 164 and RFC 168 were
+# written to stop.
 
 name: drift-scan
 
@@ -20,6 +30,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Tags and full history: required by the RFC 168 reconciliation
+          # check. `fetch-tags: true` with the default depth would list the
+          # tag refs, but only full history also resolves a tag to its
+          # commit, which the level backstop will need when it is built.
+          fetch-depth: 0
 
       - name: Run drift-scan
         run: bash scripts/drift-scan.sh --verbose

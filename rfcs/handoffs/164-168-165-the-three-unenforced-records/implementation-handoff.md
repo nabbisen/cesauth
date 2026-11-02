@@ -40,7 +40,7 @@ the argument for the gate, and it is better than the one in the RFC.
 **Fourteen are the example links in the two files that define the rule** —
 `rfcs/done/000-rfc-lifecycle-policy.md` (7) and
 `rfcs/archive/019-rfc-lifecycle-policy.md` (7). These are illustrations like
-`[RFC 010](../done/010-revoke-tokens.md)` inside prose explaining how to write
+`../done/010-revoke-tokens.md`, wrapped in live link syntax, inside prose explaining how to write
 a cross-reference. **RFC 164 §4 recommends de-linking them rather than
 exempting the two files, and that recommendation stands**: an exemption on a
 whole file would also excuse a real broken link that appears in it later. Turn
