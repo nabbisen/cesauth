@@ -39,6 +39,12 @@ cesauth-core                = { workspace = true }
 
 time                        = { workspace = true }
 serde                       = { workspace = true }
+# RFC 141 cycle 2: the clients console builds JSON POST bodies and parses
+# a response body that isn't always the shape it expects (the CSRF check
+# and a couple of early field checks return plain text, not JSON --
+# `error_message_from_body` in pages/operator/clients.rs probes with
+# `serde_json::Value` rather than a fixed struct).
+serde_json                  = { workspace = true }
 
 # Leptos — optional; only compiled when `csr` feature is active.
 # Pin history:
@@ -77,6 +83,12 @@ web-sys                     = {
         # traversal chain — Document for get_element_by_id, Element for
         # its return type, HtmlElement for the cast mount_to requires.
         "Document", "Element", "HtmlElement",
+        # RFC 141 cycle 2: select-on-click for the once-only secret's
+        # readonly input (an `on:click` handler, not an inline `onclick=`
+        # attribute — CSP's script-src has no 'unsafe-inline' here, and
+        # an inline event-handler attribute is blocked live, the same way
+        # an inline `style=` is; found by actually loading the page).
+        "HtmlInputElement",
     ],
     optional = true
 }

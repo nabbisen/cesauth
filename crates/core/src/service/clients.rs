@@ -218,6 +218,13 @@ pub struct NewClient {
     pub allowed_scopes:     Vec<String>,
     pub token_auth_method:  TokenAuthMethod,
     pub audience:           Option<String>,
+    /// **RFC 141 cycle 2.** Unix seconds, read by the caller (the route
+    /// layer; `core` does not read the wall clock) — `register_client`
+    /// does nothing with it but set it on the returned [`OidcClient`],
+    /// so the same instant threads through to both the create response
+    /// and, once `CloudflareClientRepository::create` writes this exact
+    /// value rather than minting its own, every later `find`/`list`.
+    pub created_at:        i64,
 }
 
 /// A successful registration. `secret` is `Some` only for a confidential
@@ -256,6 +263,7 @@ pub async fn register_client<CR: ClientRepository>(
         token_auth_method: new.token_auth_method,
         require_pkce:      true,
         audience:          new.audience,
+        created_at:        new.created_at,
     };
 
     clients.create(&client, secret_hash.as_ref().map(|h| h.as_storage_str())).await?;

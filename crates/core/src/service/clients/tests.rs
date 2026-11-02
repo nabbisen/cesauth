@@ -72,6 +72,7 @@ fn new_public(id: &str) -> NewClient {
         allowed_scopes:    vec!["openid".to_owned(), "profile".to_owned()],
         token_auth_method: TokenAuthMethod::None,
         audience:          None,
+        created_at:        1_700_000_000,
     }
 }
 
@@ -84,6 +85,7 @@ fn new_confidential(id: &str, method: TokenAuthMethod) -> NewClient {
         allowed_scopes:    vec!["openid".to_owned(), "email".to_owned()],
         token_auth_method: method,
         audience:          Some("https://api.example.com".to_owned()),
+        created_at:        1_700_000_000,
     }
 }
 
@@ -255,6 +257,40 @@ async fn minted_secrets_are_not_predictable_repeats() {
     let b = register_client(&repo, new_confidential("app-b", TokenAuthMethod::ClientSecretBasic))
         .await.unwrap().secret.unwrap();
     assert_ne!(a.expose(), b.expose());
+}
+
+// ── created_at (RFC 141 cycle 2) ───────────────────────────────────────────
+
+#[tokio::test]
+async fn registering_a_client_carries_the_callers_created_at_through_to_the_response() {
+    // register_client does not read a clock itself -- core never does --
+    // so this is the one place a caller-supplied value not otherwise
+    // exercised by this test file's fixtures could silently get dropped
+    // on the floor between NewClient and the returned OidcClient.
+    let repo = StubClients::new();
+    let mut new = new_public("demo-cli");
+    new.created_at = 1_650_000_000;
+    let r = register_client(&repo, new).await.unwrap();
+    assert_eq!(r.client.created_at, 1_650_000_000);
+}
+
+#[tokio::test]
+async fn updating_a_client_does_not_change_its_created_at() {
+    let repo = StubClients::new();
+    let mut new = new_public("demo-cli");
+    new.created_at = 1_650_000_000;
+    register_client(&repo, new).await.unwrap();
+
+    let update = ClientUpdate {
+        name:              "Renamed".to_owned(),
+        redirect_uris:     vec!["http://localhost:8787/callback".to_owned()],
+        allowed_scopes:    vec!["openid".to_owned()],
+        token_auth_method: TokenAuthMethod::None,
+        audience:          None,
+    };
+    let updated = update_client(&repo, "demo-cli", update).await.unwrap();
+    assert_eq!(updated.created_at, 1_650_000_000,
+        "update_client must preserve the original created_at -- it is not one of the mutable fields");
 }
 
 #[tokio::test]

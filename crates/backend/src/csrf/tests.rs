@@ -232,3 +232,37 @@ fn mint_csrf_mints_a_fresh_token_and_a_distinct_set_cookie_string_each_call() {
     assert!(cookie_b.contains(&token_b),
         "the set-cookie string attach_csrf_cookie would append must carry the freshly minted token");
 }
+
+// =====================================================================
+// verify_csrf_header — RFC 141 cycle 2. The JSON-endpoint counterpart of
+// verify_csrf, reading a request header instead of a form field.
+// =====================================================================
+
+#[test]
+fn verify_csrf_header_rejects_a_missing_header() {
+    let (_, cookie) = mint_csrf().expect("getrandom must succeed in tests");
+    assert!(!verify_csrf_header(None, &cookie),
+        "no X-CSRF-Token header at all must not verify");
+}
+
+#[test]
+fn verify_csrf_header_rejects_a_wrong_token() {
+    let (_, cookie) = mint_csrf().expect("getrandom must succeed in tests");
+    assert!(!verify_csrf_header(Some("attacker-supplied-value"), &cookie),
+        "a header value that does not match the cookie must not verify");
+}
+
+#[test]
+fn verify_csrf_header_accepts_a_matching_token() {
+    let (token, cookie) = mint_csrf().expect("getrandom must succeed in tests");
+    assert!(verify_csrf_header(Some(&token), &cookie),
+        "a header value matching the cookie must verify");
+}
+
+#[test]
+fn verify_csrf_header_rejects_an_empty_cookie_header_even_with_a_submitted_token() {
+    // Same trap verify_csrf's own test guards against: an empty cookie
+    // header must not compare equal to an empty/missing header value.
+    assert!(!verify_csrf_header(Some(""), ""));
+    assert!(!verify_csrf_header(None, ""));
+}

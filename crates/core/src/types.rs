@@ -113,6 +113,12 @@ pub struct OidcClient {
     /// existing row.
     #[serde(default)]
     pub audience:           Option<String>,
+    /// **RFC 141 cycle 2.** Unix seconds. `oidc_clients.created_at` has
+    /// existed since migration 0001 and `create()` has always written it —
+    /// this type simply never read it back until the operator console
+    /// needed to show it. Immutable after creation; `update()` never
+    /// touches this column.
+    pub created_at:         i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -483,16 +483,15 @@ echo "ℹ️   E3 coverage: scanned ${e3_scanned} server-declared route(s) --" \
 #                undetected before RFC 145 §15.1 found it by hand.
 #   - ABSENT   — no live route matches at all, by either rule. Fail.
 #
-# Named, dated, reviewed exemptions only — one today — same discipline as
-# E3_EXEMPT above; this is not a general escape hatch (that decision
-# stays with whoever can grant it, not this file).
+# Named, dated, reviewed exemptions only; this is not a general escape
+# hatch (that decision stays with whoever can grant it, not this file).
 #
-#   GET /admin/console/clients  -- RFC 145 §11.3: no template exists for
-#                                   it at all (`console/clients.rs` is
-#                                   JSON throughout); RFC 141 cycle 2 owns
-#                                   building the screen. Absent, and
-#                                   expected to be, until that cycle lands.
-GATE_42_EXEMPT="GET /admin/console/clients"
+# `GET /admin/console/clients` was here (RFC 145 §11.3: no template
+# existed for it at all) until RFC 141 cycle 2 (2026-11-03) built the
+# screen and its `app.rs` route. Empty by design, like `NONCE_EXEMPT`
+# and `E4_EXEMPT` -- an empty list is the cheapest case to keep honest,
+# not a skippable one (RFC 165 §3).
+GATE_42_EXEMPT=""
 
 # Split a route path into its '/'-separated segments as a single
 # space-joined string (bash word-splitting does the rest at call sites).
@@ -1339,7 +1338,15 @@ COMMON_RS="$REPO_ROOT/crates/backend/src/routes/admin/tenancy_console/forms/comm
 # routes' `required (preview-token binding)`, found by half C's own
 # measurement to carry a *different* real control
 # (`cesauth_core::admin::preview::verify_preview_token`) that the
-# original 36-row population scan did not know to look for.
+# original 36-row population scan did not know to look for. A third,
+# `required (header token)`, added by RFC 141 cycle 2 (2026-11-03) for the
+# four `/admin/console/clients*` write routes: a JSON-body endpoint has no
+# form field to carry a double-submit token, so the control is a
+# non-safelisted request header instead (`crate::csrf::verify_csrf_header`,
+# called via `clients.rs`'s own `csrf_header_ok` -- the grep below matches
+# the shared primitive, not the per-file wrapper, the same way `plain`
+# rows below match `csrf::verify\(|verify_csrf\(` rather than every
+# route's own call site name).
 #
 # Two kinds of entry: an ERE pattern to search the resolved body for
 # (grep -E), or the sentinel `STANDARD` meaning "this parenthetical is
@@ -1354,6 +1361,7 @@ e6_mechanism_check() {
   case "$1" in
     "Origin check")          echo "check_origin_or_referer\\(" ;;
     "preview-token binding") echo "mint_preview_token\\(|verify_preview_token\\(" ;;
+    "header token")          echo "verify_csrf_header\\(" ;;
     "form path")             echo "STANDARD" ;;
     *)                       echo "" ;;
   esac

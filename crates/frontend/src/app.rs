@@ -28,6 +28,7 @@ use leptos_router::path;
 
 use crate::pages::login::Login;
 use crate::pages::operator::{
+    clients::ConsoleClients,
     console::{
         ConsoleAlerts, ConsoleAudit, ConsoleAuditChain, ConsoleConfig,
         ConsoleCost, ConsoleOperations, ConsoleOverview, ConsoleSafety,
@@ -83,6 +84,7 @@ pub fn App() -> impl IntoView {
                 <Route path=path!("/admin/console/tokens")      view=ConsoleTokens />
                 <Route path=path!("/admin/console/alerts")      view=ConsoleAlerts />
                 <Route path=path!("/admin/console/config")      view=ConsoleConfig />
+                <Route path=path!("/admin/console/clients")     view=ConsoleClients />
                 // ── Tenancy console ───────────────────────────────
                 <Route path=path!("/admin/tenancy")              view=TenancyOverview />
                 <Route path=path!("/admin/tenancy/tenants")      view=TenancyTenants />

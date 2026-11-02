@@ -3,8 +3,8 @@
 //!
 //! | Route | What it does |
 //! |---|---|
-//! | `GET  /admin/console/clients` | the Leptos shell (console screen: cycle 2) |
-//! | `GET  /admin/console/clients.json` | `{"clients": [...]}` — every registered client, never a secret |
+//! | `GET  /admin/console/clients` | the Leptos shell (console screen, RFC 141 cycle 2) |
+//! | `GET  /admin/console/clients.json` | `{"clients": [...], "csrf_token": "..."}` — every registered client (never a secret) plus a fresh token the screen's write actions send as `X-CSRF-Token` |
 //! | `POST /admin/console/clients` | create. Mints a secret for a confidential client, returned exactly once |
 //! | `POST /admin/console/clients/:id` | update the mutable fields (`name`, `redirect_uris`, `allowed_scopes`, `audience`, and — C1-141 — `token_auth_method`, within the client's unchangeable `client_type`) |
 //! | `POST /admin/console/clients/:id/rotate-secret` | mint a new secret, returned exactly once |
@@ -14,17 +14,31 @@
 //! `AdminAction::ManageClients` (write) — the same tier as
 //! `ViewTenancy`/`ManageTenancy`.
 //!
-//! **CSRF.** These are JSON-body endpoints, not form posts. Per
-//! `crate::csrf`'s own documented model, only
-//! `application/x-www-form-urlencoded` submissions need the double-submit
-//! token: a cross-origin page cannot silently issue a cross-origin
-//! `application/json` POST — the browser's CORS preflight blocks it, and
-//! this deployment sets no `Access-Control-Allow-Origin` that would permit
-//! one. CLI/API callers are JSON callers already, by design (RFC 141 §4.1:
-//! "through the API"). This is the same reasoning the webauthn and
-//! `/api/v1/anonymous/*` routes rely on (see `route-contracts.md`, their
-//! `CSRF` column: `N/A (JSON)`), not a new exemption invented for this
-//! route.
+//! **CSRF (RFC 141 cycle 2).** These four write routes require the
+//! `X-CSRF-Token` request header, matched against the `__Host-cesauth-csrf`
+//! cookie (`crate::csrf::verify_csrf_header`) — **not** the reasoning this
+//! doc used to give. That reasoning — "a cross-origin page cannot silently
+//! issue a cross-origin `application/json` POST, because the browser's CORS
+//! preflight blocks it" — is **false**: `worker::Request::json()` parses the
+//! body regardless of `Content-Type`, and none of these handlers ever
+//! checked the header. Verified live against `wrangler dev`: a `POST
+//! /admin/console/clients` with `content-type: text/plain` and the same
+//! JSON body as an `application/json` request returned the identical `id is
+//! required` either way — `text/plain` is CORS-safelisted, so no preflight
+//! occurs, and the body was parsed both times. Before this cycle the admin
+//! cookie's `SameSite=Strict` was the only thing protecting these routes.
+//! Three other route groups (`/webauthn/*`, `/me/security/delete-account`,
+//! `/api/v1/anonymous/*`) still carry the same false `N/A (JSON)` reasoning
+//! this doc once did — confirmed none of them checks `Content-Type` either
+//! — and are RFC 152 half D's scope, not fixed here: this cycle gives a
+//! browser caller to exactly these four routes (the new screen), the other
+//! seven have none yet.
+//!
+//! The header requirement alone is already a complete defence: a cross-site
+//! `<form>` can't set it, and a cross-site `fetch()` that tries triggers a
+//! preflight this deployment never grants. The cookie comparison on top is
+//! double-submit, same as the form-field check everywhere else in this
+//! crate — see `crate::csrf::verify_csrf_header`'s own doc.
 //!
 //! **The secret appears in exactly one field, in exactly two responses**
 //! (`create`'s and `rotate_secret`'s), via `RawSecret::expose()`. No other
@@ -40,6 +54,7 @@ use serde::Deserialize;
 use worker::{Request, Response, Result, RouteContext};
 
 use crate::audit::{self, EventKind};
+use crate::csrf;
 use crate::routes::admin::auth;
 
 fn client_type_str(t: ClientType) -> &'static str {
@@ -98,7 +113,22 @@ pub async fn list_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
         Ok(l)  => l,
         Err(e) => return op_error_response(e),
     };
-    let mut resp = Response::from_json(&serde_json::json!({ "clients": list }))?;
+
+    // RFC 141 cycle 2: bundles a fresh CSRF token with the real list data
+    // in one response, the way `sessions.rs`'s `SessionsResponse` already
+    // does — not a second fetch to a separate `.json` endpoint, and not
+    // `operator_json_api::csrf_json()` directly, since that builds a
+    // complete `{ csrf_token }`-only `Response` with nothing to merge a
+    // `clients` array into.
+    let csrf_token = csrf::mint()
+        .map_err(|_| worker::Error::RustError("csrf rng failed".into()))?;
+    let set_cookie = csrf::set_cookie_header(&csrf_token);
+
+    let mut resp = Response::from_json(&serde_json::json!({
+        "clients": list,
+        "csrf_token": csrf_token,
+    }))?;
+    resp.headers_mut().append("set-cookie", &set_cookie).ok();
     let _ = resp.headers_mut().set("cache-control", "no-store");
     Ok(resp)
 }
@@ -143,6 +173,11 @@ pub async fn create<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     if let Err(r) = auth::ensure_role_allows(&principal, AdminAction::ManageClients) {
         return Ok(r);
     }
+    let csrf_header = req.headers().get(csrf::CSRF_HEADER_NAME).ok().flatten();
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
+    if !csrf::verify_csrf_header(csrf_header.as_deref(), &cookie_header) {
+        return Response::error("missing or invalid CSRF token", 400);
+    }
 
     let body: CreateClientBody = match req.json().await {
         Ok(b)  => b,
@@ -178,6 +213,7 @@ pub async fn create<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
         allowed_scopes:    body.allowed_scopes.unwrap_or_default(),
         token_auth_method,
         audience:          body.audience.filter(|s| !s.is_empty()),
+        created_at:        time::OffsetDateTime::now_utc().unix_timestamp(),
     };
 
     let repo = CloudflareClientRepository::new(&ctx.env);
@@ -227,6 +263,11 @@ pub async fn update<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     };
     if let Err(r) = auth::ensure_role_allows(&principal, AdminAction::ManageClients) {
         return Ok(r);
+    }
+    let csrf_header = req.headers().get(csrf::CSRF_HEADER_NAME).ok().flatten();
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
+    if !csrf::verify_csrf_header(csrf_header.as_deref(), &cookie_header) {
+        return Response::error("missing or invalid CSRF token", 400);
     }
     let Some(id) = ctx.param("id").cloned() else {
         return Response::error("missing client id", 400);
@@ -304,6 +345,11 @@ pub async fn rotate_secret<D>(req: Request, ctx: RouteContext<D>) -> Result<Resp
     if let Err(r) = auth::ensure_role_allows(&principal, AdminAction::ManageClients) {
         return Ok(r);
     }
+    let csrf_header = req.headers().get(csrf::CSRF_HEADER_NAME).ok().flatten();
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
+    if !csrf::verify_csrf_header(csrf_header.as_deref(), &cookie_header) {
+        return Response::error("missing or invalid CSRF token", 400);
+    }
     let Some(id) = ctx.param("id").cloned() else {
         return Response::error("missing client id", 400);
     };
@@ -338,6 +384,11 @@ pub async fn delete<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     };
     if let Err(r) = auth::ensure_role_allows(&principal, AdminAction::ManageClients) {
         return Ok(r);
+    }
+    let csrf_header = req.headers().get(csrf::CSRF_HEADER_NAME).ok().flatten();
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
+    if !csrf::verify_csrf_header(csrf_header.as_deref(), &cookie_header) {
+        return Response::error("missing or invalid CSRF token", 400);
     }
     let Some(id) = ctx.param("id").cloned() else {
         return Response::error("missing client id", 400);

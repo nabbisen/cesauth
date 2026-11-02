@@ -39,6 +39,9 @@ struct ClientRow {
     /// the field deserialize cleanly.
     #[serde(default)]
     audience:           Option<String>,
+    /// **RFC 141 cycle 2.** Always present (migration 0001, `NOT NULL`) —
+    /// no `#[serde(default)]` needed, unlike `audience` above.
+    created_at:         i64,
 }
 
 impl ClientRow {
@@ -65,6 +68,7 @@ impl ClientRow {
             token_auth_method,
             require_pkce:       self.require_pkce != 0,
             audience:           self.audience,
+            created_at:         self.created_at,
         })
     }
 }
@@ -73,7 +77,7 @@ impl ClientRepository for CloudflareClientRepository<'_> {
     async fn find(&self, client_id: &str) -> PortResult<Option<OidcClient>> {
         let db   = db(self.env)?;
         let stmt = db.prepare(
-            "SELECT id, name, client_type, redirect_uris, allowed_scopes, token_auth_method, require_pkce, audience \
+            "SELECT id, name, client_type, redirect_uris, allowed_scopes, token_auth_method, require_pkce, audience, created_at \
              FROM oidc_clients WHERE id = ?1"
         )
             .bind(&[client_id.into()])
@@ -160,6 +164,12 @@ impl ClientRepository for CloudflareClientRepository<'_> {
             TokenAuthMethod::ClientSecretBasic => "client_secret_basic",
             TokenAuthMethod::ClientSecretPost  => "client_secret_post",
         };
+        // RFC 141 cycle 2: `created_at` is now `client.created_at`, set by
+        // `register_client` from the route layer's own clock read, so the
+        // row this INSERT writes matches exactly what the create response
+        // already told the caller. `updated_at` stays this adapter's own
+        // reading -- it is not part of `OidcClient` and nothing reads it
+        // back (see `update`'s own comment below).
         let now = time::OffsetDateTime::now_utc().unix_timestamp();
 
         let redirect_uris  = serde_json::to_string(&client.redirect_uris).map_err(|_| PortError::Serialization)?;
@@ -180,7 +190,7 @@ impl ClientRepository for CloudflareClientRepository<'_> {
                 tam_s.into(),
                 d1_int(client.require_pkce as i64),
                 client.audience.clone().map(Into::into).unwrap_or(JsValue::NULL),
-                d1_int(now),
+                d1_int(client.created_at),
                 d1_int(now),
             ])
             .map_err(|e| run_err("oidc_clients.create bind", e))?
@@ -193,7 +203,7 @@ impl ClientRepository for CloudflareClientRepository<'_> {
     async fn list(&self) -> PortResult<Vec<OidcClient>> {
         let db   = db(self.env)?;
         let rows = db.prepare(
-            "SELECT id, name, client_type, redirect_uris, allowed_scopes, token_auth_method, require_pkce, audience \
+            "SELECT id, name, client_type, redirect_uris, allowed_scopes, token_auth_method, require_pkce, audience, created_at \
              FROM oidc_clients ORDER BY id"
         )
             .all().await.map_err(|_| PortError::Unavailable)?;

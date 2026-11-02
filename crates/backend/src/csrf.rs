@@ -220,5 +220,32 @@ pub fn verify_csrf(form: &HashMap<String, String>, cookie_header: &str) -> bool 
     verify(submitted, from_cookie)
 }
 
+/// Name of the header a JSON-body endpoint requires, carrying the same
+/// token the `__Host-cesauth-csrf` cookie does.
+pub const CSRF_HEADER_NAME: &str = "x-csrf-token";
+
+/// Verify a `X-CSRF-Token` request header against the request's CSRF
+/// cookie — the JSON-endpoint counterpart of [`verify_csrf`] (which reads
+/// a form field instead). RFC 141 cycle 2.
+///
+/// **Why a header is a complete defence on its own, for a JSON body.** A
+/// cross-site `<form>` POST cannot set an arbitrary request header — only
+/// `Content-Type`, and only to one of the three form-safelisted values,
+/// none of which is `application/json`. A cross-site `fetch()` that tries
+/// to add this header triggers a CORS preflight, which this deployment
+/// never answers with an `Access-Control-Allow-*` that would permit a
+/// foreign origin. So the header's mere presence already rules out a
+/// forged cross-site request; comparing its value against the cookie
+/// (double-submit, same as [`verify_csrf`]) is defence in depth on top of
+/// that, not the only thing standing between the request and the handler.
+///
+/// `header_value` is the raw `x-csrf-token` request header value, if any.
+/// `cookie_header` is the raw `cookie` request header value.
+pub fn verify_csrf_header(header_value: Option<&str>, cookie_header: &str) -> bool {
+    let submitted = header_value.unwrap_or("");
+    let from_cookie = extract_from_cookie_header(cookie_header).unwrap_or("");
+    verify(submitted, from_cookie)
+}
+
 #[cfg(test)]
 mod tests;

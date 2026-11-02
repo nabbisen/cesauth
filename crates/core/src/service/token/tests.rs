@@ -65,6 +65,7 @@ mod id_token_tests {
             token_auth_method: TokenAuthMethod::ClientSecretBasic,
             require_pkce:      true,
             audience:          None,
+            created_at:        1_700_000_000,
         }
     }
 

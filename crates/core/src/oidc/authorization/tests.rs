@@ -14,6 +14,7 @@ fn sample_client() -> OidcClient {
         token_auth_method: TokenAuthMethod::None,
         require_pkce:      true,
         audience:          None,
+        created_at:        1_700_000_000,
     }
 }
 
