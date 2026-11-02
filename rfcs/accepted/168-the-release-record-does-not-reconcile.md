@@ -85,6 +85,29 @@ manifest stays at **13**.
    loop never updated its `prev` variable, so it compared nothing and said so
    as success. A check that silently compares nothing is worse than no check.
 
+## 3c. The check could not survive its own release (found 2026-11-03, cutting 0.91.2)
+
+**Check 1 as first built failed on every release commit.** A cut writes the
+`## [X.Y.Z]` entry in the same commit the tag will point at, so at that commit
+the entry exists and the tag cannot — and the check read that as *"documented,
+never tagged"*. The gate would have been red on every cut from here on, which
+is the one state that makes a check worse than none: it trains whoever cuts the
+next release to ignore it.
+
+Found by the architect while cutting the release that added the check — the
+first cut it had ever seen, and the first time the question *"what does this
+check do during a cut?"* was asked of it. Neither the RFC nor the dispatching
+handoff asked it, which is the lesson worth keeping: **a check that reads the
+release record has to be run against the act of releasing**, not only against
+the record at rest.
+
+**The fix is scoped to exactly one version**: an untagged entry is permitted iff
+it equals the `[workspace.package] version` in `Cargo.toml`. That is stricter
+than exempting "the newest entry" — an entry for any other untagged version
+still fails, and so does an entry written for a version nobody bumped to. If
+the workspace version cannot be read the check exits 2 rather than silently
+stopping to exempt. Negative-tested both ways.
+
 ## 4. Two rulings for the rubric
 
 ### 4.1 An MSRV bump is a minor

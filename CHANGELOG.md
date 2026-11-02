@@ -22,6 +22,105 @@ under budget.
 
 ---
 
+## [0.91.2] - 2026-11-03
+
+**Patch.** Three rules this project wrote down and never gated now have gates.
+Nothing gains capability: every change is a check, a link target, an exemption
+list, or a workflow line that lets a check run at all.
+
+### The gates — RFC 164, RFC 168, RFC 165 §3
+
+- **Cross-reference links in `rfcs/` are checked.** RFC 000 mandates a link
+  sweep whenever an RFC moves between folders, and nothing enforced it. **167
+  relative `.md` links are now verified on every push**, and a broken one fails
+  the build. Twenty were broken when this cycle began — against the fourteen
+  expected, because **six had rotted in since the audit six days earlier**,
+  during the releases in which the sweep was being run by hand at every move.
+  One of the six was a link this project's own architect broke and then swept
+  past: a sweep that greps the old full path cannot see a sibling file linking
+  with `./slug`, which is the case for a check rather than a habit.
+
+- **Tags and CHANGELOG entries are reconciled, both directions.** **140 tags
+  against 138 entries**, with "tagged, never documented" and "documented, never
+  tagged" reported separately because they have different remedies. The
+  historical mismatches are a named, reasoned, staleness-checked exemption of
+  **ten** — not the six this project's own RFC claimed, nor the five
+  `contributing.md` listed; both figures were wrong, both are corrected, and
+  five of the ten are tags from before CHANGELOG record-keeping began.
+
+- **Four exemption lists in `route-contracts-check.sh` are staleness-checked**
+  (`E3_EXEMPT`, `GATE_42_EXEMPT`, `NONCE_EXEMPT`, `E4_EXEMPT`), each with its
+  own coverage line. An entry that no longer matches anything is now a hard
+  failure, because a stale exemption is a pre-authorised pass for whatever is
+  written at that key next. **The question RFC 165 was written to ask is
+  answered: none of the four is stale.**
+
+### Fixed
+
+- **The new checks could not have run in CI.** `drift-scan.yml` checked out
+  with no `fetch-depth` or `fetch-tags`, and no workflow in this repository
+  fetched tags — so the two checks that read `git tag` would have seen none.
+  Verified in a `--depth 1 --no-tags` clone: the gate **exits 2** with
+  *"compared ZERO tags"* rather than passing vacuously, which is the designed
+  failure mode and the reason the defect was caught before the release rather
+  than after. `fetch-depth: 0` added, with the reason recorded in the workflow.
+
+- **The reconciliation check could not survive its own release.** A cut writes
+  the CHANGELOG entry in the very commit the tag will point at, so at the
+  release commit the entry exists and the tag cannot — and the check read that
+  as *"documented, never tagged"* and failed. **Every release commit would have
+  failed it**, making it impossible to cut with a green gate. Found while
+  cutting this release, which is the first cut the check has ever seen. An entry
+  with no tag is now permitted for **exactly one version — the workspace version
+  in `Cargo.toml`** — which is stricter than a blanket "newest entry" allowance
+  would be: an entry for any other untagged version still fails, and so does one
+  written for a version nobody bumped to. If that version cannot be read, the
+  check exits rather than quietly stopping to exempt.
+
+- **Twenty broken links**: six real fixes (three ellipsis-inside-link-syntax
+  targets whose correct form sat one line above them; a repo-root-relative link
+  inside a subdirectory — RFC 028's own defect class in RFC 028's own file; a
+  bare filename the same file writes correctly 185 lines earlier; and one
+  folder-move rot from this project's own 0.89.5 cut), and fourteen
+  illustrative examples in the two documents that define the cross-reference
+  rule, de-linked rather than exempted so that a file-level exemption cannot
+  later excuse real rot in them.
+
+### Documentation
+
+- **A release entry records its level in its first line** (ruling): the first
+  non-blank line after a `## [X.Y.Z]` heading begins `**Patch`, `**Minor` or
+  `**Major`, prose allowed after the word. This exists so RFC 168's level
+  backstop can be built at all — of the twelve entries before this one, only
+  three recorded the level in any parseable form. Scoped to `0.90.0` and above;
+  older entries are named out of scope rather than back-filled, because
+  back-filling a level onto a past cut is guessing at what it intended.
+
+- **Any baseline figure in a handoff names the command that produced it**
+  (ruling), generalising the existing rule about bundle figures after a cited
+  test count without its invocation cost a cycle an afternoon.
+
+### Known and unfixed
+
+- **RFC 168's level backstop** — a patch must add no route, migration or MSRV
+  change versus the previous tag. Now a one-cycle build with no design question
+  left, given the ruling above.
+- **RFC 164 §3b's byte budgets** — 80 KB for `CHANGELOG.md`, 40 KB for
+  `ROADMAP.md`. Not built, and it could not have been: `CHANGELOG.md` is 67 KB,
+  but **`ROADMAP.md` is 137 KB**, so the gate would be red on arrival until
+  RFC 028's ROADMAP half lands. That sequencing is now recorded.
+- Unchanged from 0.91.1: **29 mutating rows document a CSRF control that is not
+  the one protecting them** (RFC 152 half D); **no gate observes the admin
+  cookie's attributes on a live response** and **RFC 147's deletion sweep has no
+  `exercised` gate**, both blocked on the same missing capability (RFC 170,
+  accepted); and **nothing rate-limits unauthenticated audit appends**.
+
+**No RFC closes with this release.** RFC 164 keeps §3b, RFC 168 keeps its
+backstop, RFC 165 keeps §4 — each a named remainder rather than a silent gap,
+which is the distinction RFC 151 exists to enforce.
+
+---
+
 ## [0.91.1] - 2026-11-01
 
 ### The book now contains its own pages — RFC 169

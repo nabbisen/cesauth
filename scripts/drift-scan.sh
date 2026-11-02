@@ -751,12 +751,38 @@ while IFS= read -r tag; do
     fi
 done <<< "$release_tag_list"
 
+release_workspace_version=$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([0-9][0-9.]*\)".*/\1/p' "${REPO_ROOT}/Cargo.toml" | head -1)
+if [[ -z "$release_workspace_version" ]]; then
+    echo "drift-scan: BROKEN -- could not read [workspace.package] version from" >&2
+    echo "  Cargo.toml; the in-flight-release arm below would silently stop" >&2
+    echo "  exempting the release being cut." >&2
+    exit 2
+fi
+release_b_in_flight=""
+
 while IFS= read -r entry_ver; do
     [[ -z "$entry_ver" ]] && continue
     release_entries_compared=$((release_entries_compared + 1))
     if ! printf '%s\n' "$release_tag_list" | grep -Fxq "$entry_ver"; then
         exempted=0
+        # The release being cut right now is documented and not yet tagged, by
+        # construction: the entry is written in the very commit the tag will
+        # point at, so the tag cannot exist when this runs. Without this arm
+        # the check fails on every release commit, which would make it
+        # impossible to cut a release with a green gate -- found while cutting
+        # 0.91.2, the release that added the check.
+        #
+        # Scoped so it exempts exactly one version and only the right one: the
+        # workspace version in Cargo.toml. That makes the arm stricter than a
+        # blanket "newest entry" allowance would be -- an entry for any other
+        # untagged version still fails, and so does an entry written for a
+        # version nobody bumped to.
+        if [[ "$entry_ver" == "$release_workspace_version" ]]; then
+            release_b_in_flight="$entry_ver"
+            exempted=1
+        fi
         for entry in "${RELEASE_RECORD_EXEMPT[@]}"; do
+            [[ $exempted -eq 1 ]] && break
             IFS=$'\t' read -r dir ver _ <<< "$entry"
             if [[ "$dir" == "documented-never-tagged" && "$ver" == "$entry_ver" ]]; then
                 release_b_matched="${release_b_matched}${entry_ver}\n"
@@ -781,7 +807,7 @@ release_b_violation_count=$(printf '%b' "$release_b_violations" | grep -c . || t
 echo "ℹ️   release reconciliation: compared ${release_tags_compared} tag(s) against" \
      "${release_entries_compared} CHANGELOG entr(y|ies) -- ${release_a_violation_count}" \
      "tagged-never-documented unexempted, ${release_b_violation_count}" \
-     "documented-never-tagged unexempted"
+     "documented-never-tagged unexempted${release_b_in_flight:+ (plus ${release_b_in_flight}, the release being cut)}"
 
 release_failed=0
 
