@@ -269,7 +269,7 @@ understated** (re-derived 2026-10-30 before dispatch):
 - **Not "four" `route-contracts.md` rows — eight name a view that does not
   render.** The six here, plus `/admin/console/tokens` (*"token list"*, which
   lists nothing) and `/admin/console/clients` (*"client list"*, which renders
-  `NotFound`; see [RFC 141](./141-oidc-client-registration.md)). A ninth,
+  `NotFound`; see [RFC 141](../done/141-oidc-client-registration.md)). A ninth,
   `/admin/console` (*"overview page"*), shows a navigation list and a ✓/⚠ line
   derived from a CSRF-only endpoint — it overstates without being false.
 - **Not "three" handler doc comments — all six do it**, and three

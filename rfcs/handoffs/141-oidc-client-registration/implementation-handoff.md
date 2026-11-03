@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 141 cycle 1, the client-registration API and its documentation
 
-**Governing RFC.** [`rfcs/accepted/141-oidc-client-registration.md`](../../accepted/141-oidc-client-registration.md) — read **§10 first**: it closes §9 q1 and records two defects found closing it.
+**Governing RFC.** [`rfcs/done/141-oidc-client-registration.md`](../../done/141-oidc-client-registration.md) — read **§10 first**: it closes §9 q1 and records two defects found closing it.
 **Target release.** 0.85.0. **Level: minor** — new capability, plus one
 behaviour change at `/token` (§3.6).
 **Prepared by.** Architect · **Implemented by.** Mid-capability model

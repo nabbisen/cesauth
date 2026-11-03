@@ -15,12 +15,131 @@ changes will always be called out here.
 ## Older releases
 
 **v0.84.x and earlier are in [`docs/changelog-archive/`](docs/changelog-archive/README.md)**,
-split by minor range and never edited after creation. This file keeps the most
-recent five minor versions, under the ~80 KB budget RFC 028 set — enforced by
-`scripts/changelog-archive-split.sh`, which refuses to split a file already
-under budget.
+split by minor range and never edited after creation. The intent is that this
+file keeps the most recent **five** minor versions under the ~80 KB budget
+RFC 028 set, enforced by `scripts/changelog-archive-split.sh`, which refuses to
+split a file already under budget.
+
+**It currently holds eight** (0.85–0.92) **at 79 KB of the 80 KB budget**, so
+the byte guard has never fired and the five-minor rule has never been checked by
+anything — the script only measures bytes, and nothing runs it. Recorded at the
+0.92.0 cut rather than fixed in it: a split creates archive files and moves
+history, which is a deliberate change whose link integrity should be re-verified
+on its own, not inside a release. **The next cut crosses the byte budget**, so
+it lands there.
 
 ---
+
+## [0.92.0] - 2026-11-03
+
+**Minor.** The OIDC clients screen now exists — the product's primary
+integration action could not be reached from the console at all — and a
+duplicate value, anywhere in this schema, stopped answering 500.
+
+### The clients screen — RFC 141 cycle 2
+
+- **`GET /admin/console/clients` answered 200 and rendered *"Page not found"***
+  to a signed-in operator, because no CSR route existed for it. The screen now
+  lists, creates, updates, rotates and deletes OIDC clients. The backend had
+  been in place since v0.85.0 — except for one field: `clients.json` could not
+  report `created_at`. That column has existed since migration 0001 and `create`
+  always wrote it, but `OidcClient` carried no field and both `find` and `list`
+  omitted it from their `SELECT`s. Threaded through, with one clock read at the
+  route layer so `cesauth-core` stays clock-free and the written row matches the
+  create response.
+- **A minted secret is shown exactly once**, in a `role="alert"` panel with a
+  deliberate dismissal rather than a toast, and the operator is warned *before*
+  each action that would mint one.
+- **Two CSP violations, both found by running the screen rather than reading
+  it.** An inline `style=` was blocked live; removing it exposed an inline
+  `onclick` that `script-src` would have blocked the first time anyone clicked
+  it. Neither was visible to the host tests, to review, or to any of the
+  thirteen gates.
+
+### Four write routes gained the CSRF control their own documentation claimed
+
+- `clients.rs`'s module doc said a cross-origin `application/json` POST was
+  impossible because preflight blocks it. **The handlers never checked
+  `Content-Type`, and `text/plain` is CORS-safelisted** — so the documented
+  reasoning was false and the routes were unprotected. All four write routes now
+  require an `X-CSRF-Token` header matched against the cookie, which is a
+  complete defence for a JSON endpoint: a cross-site form POST cannot set a
+  custom header.
+- Verified live, as captured status lines: **no header 400, wrong header 400,
+  `text/plain` with a JSON body and no header 400** — the exact request the old
+  module doc called impossible — **matching header past the gate to 201.**
+- `clients.json` now returns `{"clients": [...], "csrf_token": "..."}` in one
+  response, their cells read `required (header token)`, and the route gate's
+  **E6** checks the mechanism each cell names.
+
+### A duplicate value answered 500 — RFC 141 cycle 2b, correcting RFC 160
+
+- **`classify_insert_message` matched only `_UNIQUE` and `_FOREIGNKEY`.** SQLite
+  reports a duplicate **primary key** as `SQLITE_CONSTRAINT_PRIMARYKEY`, in a
+  message whose English still reads `UNIQUE constraint failed` — the classifier
+  reads the code, so the prose was never the thing to trust. Of 61 `PRIMARY KEY`
+  declarations in `migrations/`, exactly one is `INTEGER`, so **RFC 160's
+  `Conflict` was unreachable wherever the primary key is the uniqueness
+  constraint**, which here is nearly everywhere.
+- **Ten shipped paths branched on that `Conflict`:** six written *"User is
+  already a member of this tenant/organization/group"* messages across two
+  consoles, all falling through to *"Storage error"*; three `api_v1` membership
+  responses answering **500** where they document **409**; and
+  `magic_link/verify.rs`'s invitation idempotency arm — whose failure left the
+  invitation `pending` with **no acceptance record and no audit row,
+  permanently**, because the membership still existed and the retry it logged
+  about failed identically.
+- **One `||` repaired all ten.** RFC 160 had already migrated the three
+  `add_*_membership` sites to the shared classifier, so only the classifier was
+  blind. A duplicate client id now answers **409** — *"a client with that id
+  already exists"* — in place of 500 *"storage error"*.
+- The classifier's doc census, which listed four constraint classes and
+  justified omitting two, is **replaced by all twelve** of SQLite's constraint
+  extended codes, each either classified or named with a reason and the command
+  behind it. **A more precise matcher is not a more correct one until its
+  vocabulary has been enumerated.**
+
+### Why nothing caught it — RFC 171, accepted
+
+- `adapter-test`'s in-memory double returned `Conflict` on a duplicate
+  membership; the D1 adapter returned `Unavailable`. **Two implementations of
+  one port disagreed about the one error the port documents, and the double was
+  the one that was right** — so every host test over those paths was green
+  against behaviour production did not have, and no test asserted any of the six
+  messages. Nothing in the gate set asks whether a matched variant has a
+  producer, or whether a test double agrees with its adapter. RFC 171 is
+  accepted and scheduled; its parity half waits on RFC 170's credentialed CI
+  job, which is the only environment that can run it.
+
+### A retraction, and it is the architect's own measurement error
+
+- The **~4.1 KB bundle "cross-environment offset"** recorded during cycle 2 —
+  attributed to `cargo install worker-build` lacking `--locked` and written into
+  RFC 133 half B as its first real cross-environment datum — **was neither
+  cross-environment nor worker-build.** It was `gzip -9` against this project's
+  established default level. Same bytes, gzip 1.15, measured both ways at this
+  release commit: **896,672 B** at the default level, **892,451 B** at `-9`, a
+  difference of **4,221 B**. `contributing.md` already carried the ruling that a
+  gzip size is a property of the compressor too; the flag was printed in the
+  cycle's own evidence log. **Retracted from RFC 133 half B.** `worker-build`
+  installing without `--locked` remains a real reproducibility hazard — it is
+  now recorded as hygiene with no datum behind it, which is what it always was.
+
+### Release figures
+
+- Worker bundle at this commit, after the version bump, via
+  `./node_modules/.bin/wrangler deploy --dry-run --outdir bundled/`, gzip 1.15
+  at its default level: **896,672 B** (885,972 wasm + 10,700 `shim.js`), raw
+  2,451,977 + 61,887 bytes.
+  `sha256 e0064ad099def12a2a1deb6b1c830e55093c3528b3c9180f661a5438d57f2127`
+  (wasm) and
+  `42db389be1ccb68dc47074cd4d52faf5d3c31e0b4bf448cb9ef0cb3a7b42b0f4` (shim).
+  Against 0.91.2's **896,301 B** on the same compressor setting: **+371 B**.
+- Host tests **1,677** passed / 0 failed / 4 ignored across 12 `test result:`
+  lines, via the five-crate invocation in `contributing.md` §Running tests;
+  `migration_chain` **35**; 194 routes; E4 `218 = 194 + 24 + 0`; E5
+  `17 = 17 + 0 + 0`; E6 `94 = 80 claims + 14 declared + 0 unclassified`;
+  Playwright **20**.
 
 ## [0.91.2] - 2026-11-03
 

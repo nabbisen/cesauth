@@ -74,12 +74,17 @@ see (the 409 body is plain text) is witnessed by the live capture instead.
 
 **Status.** Accepted — approved by the owner 2026-09-24. **Cycle 1 (+ C1-141)
 shipped v0.85.0**, 2026-10-25: the API, `token_auth_method` enforcement and the
-integrator chapter. **Cycle 2 (`357c7f6`) and cycle 2b (`3df23cd`) complete
-§4.1's console screen** and are on `main`, unreleased. **Moves to `done/` at the
-0.92.0 cut, not before** — the screen, its CSRF control and its 409 are each
-`observed` live rather than `reviewed`, so RFC 000 §22.2 is satisfied, but a
-release this RFC's completion depends on has not been cut and `done/` would
-assert a tree state that does not exist yet.
+integrator chapter. **DONE — cycle 2 (`357c7f6`) and cycle 2b (`3df23cd`)
+shipped in 0.92.0, 2026-11-03**, completing §4.1's console screen. The screen,
+its CSRF control and its 409 are each `observed` live rather than `reviewed`, so
+RFC 000 §22.2 is satisfied. §13 was discharged by RFC 159 in v0.89.2.
+
+**One thing this RFC's work produced belongs to another RFC and is not closed
+here:** cycle 2b's classifier fix repaired ten paths outside this RFC's scope,
+and the reason nothing caught them — a matched error variant with no producer,
+and a test double disagreeing with its adapter — is
+[RFC 171](../accepted/171-the-arm-is-written-and-the-error-is-never-produced.md),
+accepted 2026-11-03 and scheduled after this release.
 
 **§13 discharged 2026-10-30 by RFC 159 (v0.89.2)** — its six unregistered
 `page_json` handlers (`alerts`, `audit`, `audit_chain`, `config`, `cost`,
@@ -101,7 +106,7 @@ not list it either.
 
 Two things in its favour, both checked before this was written: `clients.rs`'s
 module doc is **honest** (*"the Leptos shell (console screen: cycle 2)"*), so
-unlike [RFC 161](./161-six-operator-pages-promise-data-and-render-none.md)'s six
+unlike [RFC 161](../accepted/161-six-operator-pages-promise-data-and-render-none.md)'s six
 this file claims nothing it lacks; and the six backend routes are complete,
 gated on `ViewClients`/`ManageClients`, with `clients.json` serving real data
 since v0.85.0. **Cycle 2 is a screen on a finished backend**, not a programme —
@@ -109,7 +114,7 @@ which is why it is one minor on its own. It is worse than RFC 161's six in one
 respect: a placeholder promising data is a promise, and a `200` rendering
 *"Page not found"* is a contradiction.
 
-**§4.1's console screen is also where [RFC 161](./161-six-operator-pages-promise-data-and-render-none.md)
+**§4.1's console screen is also where [RFC 161](../accepted/161-six-operator-pages-promise-data-and-render-none.md)
 §9 lands** — that re-review found the console's six read surfaces were built,
 shipped and disconnected, so cycle 2's screen should be sequenced with
 RFC 131's slices rather than on its own.

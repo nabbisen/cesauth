@@ -8,7 +8,7 @@
 > `lib.rs`**, and the template has no caller outside its own tests. Neither the
 > page nor the form it posts to can be reached.
 >
-> **Already owned, not a new RFC.** [RFC 141](../accepted/141-oidc-client-registration.md)
+> **Already owned, not a new RFC.** [RFC 141](141-oidc-client-registration.md)
 > §10.2 — *"The 'tenant admin editor' does not exist"* — documents this with
 > measurements and owns the fix. A second record would duplicate it.
 >

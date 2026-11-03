@@ -2,30 +2,14 @@
 
 **Status.** Accepted. **Half A shipped in v0.84.3** (+C1-133); **half B deferred to 1.0 hardening** (§12.3), which is why this RFC stays in `accepted/` rather than `done/`.
 
-**Half B has its first real cross-environment datum** (2026-11-03, found in
-RFC 141 cycle 2's review). The implementing environment and the architect's
-measured the **same commit** with the **same command** and the same `gzip` and
-differed by **~4.1 KB**, consistently across two commits — 892,218 vs 896,301 at
-`481dcab`, 892,577 vs 896,677 at `357c7f6`, with the implementer's `shim.js`
-~237 bytes smaller in both. The **deltas** agreed within 17 bytes, so both
-environments measure *change* reliably; only the absolute differs.
-
-**The cause is one missing word.** Everything is pinned — `rust-toolchain.toml`
-at 1.98.1, Binaryen `version_123` by SHA256, `worker-build` 0.8.4 — except that
-`wrangler.toml`'s build command runs `cargo install -q worker-build --version
-0.8.4` **without `--locked`**, while `cargo install trunk --version 0.21.14
---locked` appears four times in the workflows. `worker-build` generates
-`shim.js` and post-processes the wasm, so its own dependency graph floating is
-enough to change the output of a pinned version.
-
-**This is the datum §15 did not have.** §15's cross-host gap was retracted as
-the architect's measurement error; this one survives the same scrutiny — two
-commits, consistent offset, agreeing deltas, and a named mechanism. **Not fixed
-on discovery**: adding `--locked` changes every build at once, and if 0.8.4's
-lockfile pins dependencies that do not compile on 1.98.1 the whole project
-breaks together. It needs a cycle with verification. **It does not reopen half
-B's schedule** — 1.0 is still undeclared — but half B now opens with evidence
-and a candidate fix rather than with a question.
+**RETRACTED 2026-11-03, at the 0.92.0 cut: half B's "first real
+cross-environment datum" was neither.** The ~4.1 KB offset recorded here on
+2026-11-03 — two commits, a consistent gap, and `worker-build` installing
+without `--locked` as the named mechanism — **was `gzip -9` against this
+project's established default compression level.** Same bytes, one machine, one
+compressor version. **§16 has the measurement and the reconciliation.** The
+claim that it "survives the same scrutiny" §15 failed is withdrawn: it failed
+the same scrutiny, one layer out.
 
 **No decision is pending on half B** (recorded 2026-10-31, after the architect
 reviewed what was actually outstanding). It was deferred by the owner's own
@@ -816,3 +800,70 @@ enough to dismiss" was the representative figure all along.
   is: **a derived figure must reconcile against its own parts before it is
   recorded.** Both broken rows would have been caught at entry by adding two
   numbers together, and §15.2's table is where that check finally happened.
+
+---
+
+## §16. The retraction, 2026-11-03 (recorded at the 0.92.0 cut)
+
+**The offset was the compression level.** Measured at the 0.92.0 release commit,
+on the same two files, with the same `gzip 1.15`:
+
+```
+gzip (default, = -6)   wasm=885,972   shim=10,700   total=896,672
+gzip -9                wasm=881,989   shim=10,462   total=892,451
+difference                                                 4,221
+```
+
+The header's figures were **896,301 / 896,677** on one side and
+**892,218 / 892,577** on the other. The gap is the flag, not the environment.
+
+**It reconciles against its own parts, which is how it should have been caught.**
+The retracted entry recorded a sub-observation — *"the implementer's `shim.js`
+~237 bytes smaller in both"*. The compressor accounts for **238 bytes** of
+`shim.js` (10,700 at the default level against 10,462 at `-9`) on a raw 61,887
+that has not changed in either measurement. A component figure matching to one
+byte is not a coincidence, and §15's own standing lesson is the check that was
+owed: **a derived figure must reconcile against its own parts before it is
+recorded.** Here the part was *already on the page* and pointed at the answer.
+
+**Two things make this worse than §15, and both are the architect's.**
+
+1. **There was never a second environment.** The dev team and the architect work
+   in the **same working copy on the same machine** — that is how the
+   handoff/review file exchange works, the dev team's commits carry the same git
+   identity, and their probe rows were still in this repository's local D1 when
+   the review ran. "Cross-environment" was an inference from two numbers, never
+   an observation about two machines.
+2. **The mechanism was ruled out by a filesystem check that was never run.**
+   `~/.cargo/bin/worker-build` is dated **2026-09-09** and `cargo install` is a
+   no-op when the pinned version already matches, so the binary was byte-identical
+   for both measurements. One `ls -l` would have killed the hypothesis before it
+   was written into an RFC.
+
+And the flag was **printed in the cycle's own evidence log**, in its method
+line — `gzip=$(gzip -9 -c "$f" | wc -c)`. `contributing.md` already carried the
+ruling it violates: *"a gzip size is only comparable within one compressor …
+sha256 plus raw bytes are the portable identity; gzip size is a property of the
+compressor too."* The rule existed, was written by the same hand, and was not
+applied.
+
+### What this changes
+
+- **The header's datum, its cause and its "survives the same scrutiny" claim are
+  retracted.** Kept in place rather than deleted, for the same reason §15's
+  figures were: the record of how a number got into an RFC is worth more than a
+  clean file.
+- **`worker-build` installing without `--locked` is still a real reproducibility
+  hazard** — `trunk` is installed `--locked` in four workflows and this is not,
+  and a pinned version whose dependency graph floats can produce different
+  output. It is now recorded as **hygiene with no datum behind it**, which is
+  what it always was. Worth a cycle on its own merits; not evidence for
+  anything.
+- **Half B has no cross-environment evidence at all.** Both of its candidate
+  data were the architect's measurement errors, and it stays deferred with the
+  question it always had.
+- **The standing lesson gains a second half.** §15's was *reconcile a derived
+  figure against its parts*. This one adds: **when two measurements disagree,
+  the first hypothesis to test is that the two measurements were not taken the
+  same way** — and the cheapest test is to read the other side's method line
+  before theorising about their environment.

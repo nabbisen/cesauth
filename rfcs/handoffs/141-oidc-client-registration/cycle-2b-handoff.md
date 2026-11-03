@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 141 cycle 2b: a duplicate client id answers 500
 
-**Governing RFC.** `rfcs/accepted/141-oidc-client-registration.md` §4.1, with
+**Governing RFC.** `rfcs/done/141-oidc-client-registration.md` §4.1, with
 `rfcs/done/160-every-constraint-failure-is-a-conflict.md` as the pattern.
 **Review.** `.git-exclude/reviewed/141-cycle2-review.md`
 **Builds on.** `357c7f6` on `main`. **Nothing to revert** — the screen and the
@@ -281,3 +281,32 @@ that is RFC 171's work and you should report it, not build it.
 **Your `clients.json` and E6 figures do not move**; the classifier change adds
 host tests, so the only baseline you should expect to move is the host-test
 count — report it with the five `-p` flags, per §4.
+
+---
+
+# Correction — 2026-11-03, at the 0.92.0 cut: §5 was wrong
+
+**§5 told you the ~4.1 KB bundle offset "is now explained" by `worker-build`
+installing without `--locked`. It was not.** It was **`gzip -9` against this
+project's established default compression level** — your evidence log's own
+method line said `gzip -9 -c`, and the architect theorised about environments
+instead of reading it.
+
+Measured at the 0.92.0 release commit, same two files, same `gzip 1.15`:
+default **896,672 B** (885,972 + 10,700), `-9` **892,451 B** (881,989 + 10,462),
+difference **4,221 B**. Your `shim.js` gap of ~237 bytes is the compressor's
+**238**, on a raw 61,887 that never changed.
+
+**There was never a second environment** — we work in the same copy on the same
+machine — and `~/.cargo/bin/worker-build` is dated 2026-09-09, so the binary was
+identical for both measurements. One `ls -l` would have ended it.
+
+**Nothing you did was wrong, and nothing in your report needs amending.** Your
+−11 B delta was measured correctly, both sides on the same compressor, which is
+exactly what §5 asked for and the reason the figure was usable at all. Retracted
+in RFC 133 §16.
+
+**For future cycles: report the gzip level with the figure**, the way the
+command is already required. `896,672 B (gzip 1.15, default)` and
+`892,451 B (gzip 1.15, -9)` are both correct and not comparable, and the
+project's recorded progression is on the default.

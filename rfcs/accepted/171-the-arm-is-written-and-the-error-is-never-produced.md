@@ -41,7 +41,7 @@ noticed is a different defect from the one being fixed.
 [RFC 166](166-reachability-stops-at-the-crate-boundary.md) (the dual
 question — see §2.3), [RFC 153](../done/153-an-invitation-grants-nothing.md)
 (whose completion ordering this silently defeats),
-[RFC 141](141-oidc-client-registration.md) (the cycle that found it).
+[RFC 141](../done/141-oidc-client-registration.md) (the cycle that found it).
 
 **On 1.0:** not declared, not scoped, not dated.
 

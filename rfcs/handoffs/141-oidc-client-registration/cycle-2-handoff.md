@@ -1,6 +1,6 @@
 # Developer Handoff — RFC 141 cycle 2: the OIDC clients screen
 
-**Governing RFC.** `rfcs/accepted/141-oidc-client-registration.md` §4.1, and its
+**Governing RFC.** `rfcs/done/141-oidc-client-registration.md` §4.1, and its
 cycle-2 re-scope note (2026-10-30).
 **Builds on.** `481dcab` on `main` — tag `0.91.2`, 13/13 CI green.
 
