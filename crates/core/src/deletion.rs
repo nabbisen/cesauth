@@ -23,10 +23,15 @@
 //! ## Sweep
 //!
 //! The daily cron pass calls `cesauth_backend::sweep::sweep_pending_deletions`
-//! (RFC 147 cycle 2), which itself lists every request where
+//! (RFC 147 cycle 2), which delegates its decision core to
+//! [`sweep_due_deletions`] (RFC 170 §6): list every request where
 //! `scheduled_at <= now` and `status = 'pending'` via
-//! [`DeletionRequestRepository::list_due`] and calls [`execute_deletion`] for
-//! each, updating the row. Before cycle 2 this function existed and was
+//! [`DeletionRequestRepository::list_due`] and call [`execute_deletion`] for
+//! each. `sweep_due_deletions` is a pure function over the repository
+//! ports — no `worker::Env`, host-testable the same way `execute_deletion`
+//! already is — and the worker-side caller turns its per-row results into
+//! log lines and `deletion_executed` audit events, which need `Env` and so
+//! cannot live here. Before RFC 147 cycle 2 this function existed and was
 //! correct but nothing called it — RFC 147 §13 records that no deletion had
 //! ever executed in cesauth by any path.
 
@@ -275,6 +280,58 @@ where
     Ok(ExecuteOutcome { scrub })
 }
 
+/// One due request's outcome from [`sweep_due_deletions`] — either the
+/// [`ExecuteOutcome`] `execute_deletion` returned, or the error it
+/// returned, paired with the two fields a caller's audit/log emission
+/// needs and must not re-derive: `request_id` and `user_id` (the
+/// **subject** of the eventual `deletion_executed` audit event — RFC 147
+/// cycle 2 D5's own defect was passing `None` here instead of this field).
+#[derive(Debug)]
+pub struct SweptDeletion {
+    pub request_id: String,
+    pub user_id:     String,
+    pub result:      CoreResult<ExecuteOutcome>,
+}
+
+/// Execute every due deletion request. The decision core of RFC 147's
+/// sweep (RFC 170 §6): list the due requests, call [`execute_deletion`]
+/// for each, and hand back one [`SweptDeletion`] per row — never emitting
+/// audit events or log lines itself, so it needs nothing from `worker::Env`
+/// and is host-testable with the stub repositories below, the same way
+/// [`execute_deletion`] already is.
+///
+/// **Best-effort, like `execute_deletion` itself**: one request's failure
+/// does not stop the rest from executing (see
+/// [`crate::deletion`][self] module's sibling, `cesauth_backend::sweep`,
+/// for the caller that turns each [`SweptDeletion::result`] into a log
+/// line and, on success, a `deletion_executed` audit event).
+pub async fn sweep_due_deletions<DR, UR, IR>(
+    del_repo:        &DR,
+    user_repo:       &UR,
+    invitation_repo: &IR,
+    executed_by:     &str,
+    now:             UnixSeconds,
+) -> PortResult<Vec<SweptDeletion>>
+where
+    DR: DeletionRequestRepository,
+    UR: UserRepository,
+    IR: InvitationRepository,
+{
+    let due = del_repo.list_due(now).await?;
+
+    let mut swept = Vec::with_capacity(due.len());
+    for req in &due {
+        let result = execute_deletion(del_repo, user_repo, invitation_repo, &req.id, executed_by, now).await;
+        swept.push(SweptDeletion {
+            request_id: req.id.clone(),
+            user_id:    req.user_id.clone(),
+            result,
+        });
+    }
+
+    Ok(swept)
+}
+
 /// Cancel a pending deletion request.
 pub async fn cancel_deletion<DR>(
     repo:         &DR,
@@ -314,7 +371,17 @@ mod tests {
     // ── Stub ──────────────────────────────────────────────────────────────
 
     #[derive(Default)]
-    struct StubDelRepo(RefCell<HashMap<String, DeletionRequest>>);
+    struct StubDelRepo(RefCell<HashMap<String, DeletionRequest>>, RefCell<Option<String>>);
+
+    impl StubDelRepo {
+        /// Makes `find_by_id(id)` return `Err` once this is set — used by
+        /// `sweep_due_deletions_continues_past_one_failure_and_executes_the_rest`
+        /// to simulate the kind of mid-sweep storage failure
+        /// `execute_deletion` can hit on one row without the others.
+        fn fail_find_by_id_for(&self, id: &str) {
+            *self.1.borrow_mut() = Some(id.to_owned());
+        }
+    }
 
     impl DeletionRequestRepository for StubDelRepo {
         async fn create(&self, req: &DeletionRequest) -> PortResult<()> {
@@ -322,6 +389,9 @@ mod tests {
             Ok(())
         }
         async fn find_by_id(&self, id: &str) -> PortResult<Option<DeletionRequest>> {
+            if self.1.borrow().as_deref() == Some(id) {
+                return Err(PortError::Unavailable);
+            }
             Ok(self.0.borrow().get(id).cloned())
         }
         async fn find_pending_by_user(&self, user_id: &str) -> PortResult<Option<DeletionRequest>> {
@@ -668,6 +738,87 @@ mod tests {
         let pending_t2 = dr.list_pending_by_tenant("t-2").await.unwrap();
         assert_eq!(pending_t2.len(), 1);
         assert_eq!(pending_t2[0].id, other_tenant.id);
+    }
+
+    // ── sweep_due_deletions (RFC 170 §6: the decision core lifted out of
+    // `cesauth_backend::sweep::sweep_pending_deletions`) ──────────────────
+
+    /// The happy path, and the exact regression RFC 147 cycle 2 D5 found by
+    /// hand: `SweptDeletion::user_id` must be the *deleted* user's id, not
+    /// `None` and not the sweep's own `executed_by` actor. Before D5 the
+    /// caller passed `None` as the audit subject; this is the host-testable
+    /// guard that fact cannot recur silently.
+    #[tokio::test]
+    async fn sweep_due_deletions_reports_the_deleted_users_id_as_subject() {
+        let dr = StubDelRepo::default();
+        let ur = StubUserRepo::default();
+        let ir = StubInvitationRepo::default();
+        ur.seed(stub_user("u-subj", "t-1", "subj@example.com"));
+        let req = schedule_deletion(&dr, "u-subj", "t-1", "u-subj", None, 0, NOW).await.unwrap();
+
+        let swept = sweep_due_deletions(&dr, &ur, &ir, "sweep", NOW).await.unwrap();
+
+        assert_eq!(swept.len(), 1);
+        assert_eq!(swept[0].request_id, req.id);
+        assert_eq!(swept[0].user_id, "u-subj");
+        assert!(swept[0].result.is_ok());
+    }
+
+    /// Only requests `list_due` actually returns are executed — a request
+    /// still inside its grace period must not be touched.
+    #[tokio::test]
+    async fn sweep_due_deletions_skips_requests_not_yet_due() {
+        let dr = StubDelRepo::default();
+        let ur = StubUserRepo::default();
+        let ir = StubInvitationRepo::default();
+        schedule_deletion(&dr, "u-future", "t-1", "u-future", None, DEFAULT_GRACE_SECS, NOW).await.unwrap();
+
+        let swept = sweep_due_deletions(&dr, &ur, &ir, "sweep", NOW).await.unwrap();
+        assert!(swept.is_empty());
+    }
+
+    /// RFC 147's module doc: the sweep is best-effort, not transactional.
+    /// One due request's storage failure must not strand the rest of the
+    /// batch — the property `cesauth_backend::sweep`'s per-row `match` on
+    /// the old inline loop relied on, now pinned on the pure function
+    /// itself rather than only on the worker-side caller nothing here can
+    /// host-test.
+    #[tokio::test]
+    async fn sweep_due_deletions_continues_past_one_failure_and_executes_the_rest() {
+        let dr = StubDelRepo::default();
+        let ur = StubUserRepo::default();
+        let ir = StubInvitationRepo::default();
+        ur.seed(stub_user("u-ok", "t-1", "ok@example.com"));
+        ur.seed(stub_user("u-bad", "t-1", "bad@example.com"));
+        let req_ok  = schedule_deletion(&dr, "u-ok", "t-1", "u-ok", None, 0, NOW).await.unwrap();
+        let req_bad = schedule_deletion(&dr, "u-bad", "t-1", "u-bad", None, 0, NOW).await.unwrap();
+        dr.fail_find_by_id_for(&req_bad.id);
+
+        let swept = sweep_due_deletions(&dr, &ur, &ir, "sweep", NOW).await.unwrap();
+
+        assert_eq!(swept.len(), 2);
+        let ok  = swept.iter().find(|s| s.request_id == req_ok.id).unwrap();
+        let bad = swept.iter().find(|s| s.request_id == req_bad.id).unwrap();
+        assert!(ok.result.is_ok(), "the other row must still execute: {:?}", ok.result);
+        assert!(bad.result.is_err());
+        assert!(ur.deleted.borrow().contains(&"u-ok".to_owned()),
+            "the good row's user must still be deleted despite the bad row's failure");
+    }
+
+    /// `executed_by` threads through to the repository's own record of the
+    /// row, not just to the function's own return value.
+    #[tokio::test]
+    async fn sweep_due_deletions_threads_executed_by_into_the_stored_row() {
+        let dr = StubDelRepo::default();
+        let ur = StubUserRepo::default();
+        let ir = StubInvitationRepo::default();
+        ur.seed(stub_user("u-actor", "t-1", "actor@example.com"));
+        let req = schedule_deletion(&dr, "u-actor", "t-1", "u-actor", None, 0, NOW).await.unwrap();
+
+        sweep_due_deletions(&dr, &ur, &ir, "sweep", NOW).await.unwrap();
+
+        let updated = dr.find_by_id(&req.id).await.unwrap().unwrap();
+        assert_eq!(updated.executed_by.as_deref(), Some("sweep"));
     }
 
     #[tokio::test]

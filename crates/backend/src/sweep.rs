@@ -46,7 +46,6 @@
 
 use cesauth_cf::ports::repo::CloudflareUserRepository;
 use cesauth_core::anonymous::ANONYMOUS_USER_RETENTION_SECONDS;
-use cesauth_core::deletion::DeletionRequestRepository;
 use cesauth_core::ports::repo::UserRepository;
 use time::OffsetDateTime;
 use worker::Env;
@@ -235,6 +234,15 @@ async fn totp_unconfirmed_sweep(
 ///   2. For each: calls `UserRepository::delete_by_id` + marks request executed.
 ///   3. Emits a `DeletionExecuted` audit event per row.
 ///
+/// **RFC 170 §6.** The listing + per-row execution — the decision core —
+/// lives in [`cesauth_core::deletion::sweep_due_deletions`], a pure function
+/// over the repository ports with no `worker::Env` dependency, so it is
+/// host-testable the same way `execute_deletion` already is. This function
+/// is now a thin `Env`-bound shell around it: build the concrete
+/// repositories, call the pure function, then turn each
+/// [`cesauth_core::deletion::SweptDeletion`] into the log line or audit
+/// event only `Env` can produce.
+///
 /// Returns the number of deletions executed this pass.
 pub async fn sweep_pending_deletions(env: &Env) -> worker::Result<usize> {
     use cesauth_cf::ports::repo::{
@@ -255,7 +263,7 @@ pub async fn sweep_pending_deletions(env: &Env) -> worker::Result<usize> {
     let user_repo = CloudflareUserRepository::new(env);
     let invitation_repo = CloudflareInvitationRepository::new(env);
 
-    let due = match del_repo.list_due(now).await {
+    let swept = match deletion::sweep_due_deletions(&del_repo, &user_repo, &invitation_repo, "sweep", now).await {
         Ok(v)  => v,
         Err(e) => {
             log::emit(&cfg.log, Level::Error, Category::Storage,
@@ -265,8 +273,8 @@ pub async fn sweep_pending_deletions(env: &Env) -> worker::Result<usize> {
     };
 
     let mut executed = 0_usize;
-    for req in &due {
-        match deletion::execute_deletion(&del_repo, &user_repo, &invitation_repo, &req.id, "sweep", now).await {
+    for row in &swept {
+        match &row.result {
             Ok(outcome) => {
                 executed += 1;
                 // RFC 147 cycle 2 D5: `subject` is the affected (deleted)
@@ -278,21 +286,21 @@ pub async fn sweep_pending_deletions(env: &Env) -> worker::Result<usize> {
                 // outcome rides in the same detail string.
                 audit::write_owned(
                     env, audit::EventKind::DeletionExecuted,
-                    Some(req.user_id.clone()), None,
-                    Some(format!("request:{} sweep scrub:{}", req.id, outcome.scrub.as_str())),
+                    Some(row.user_id.clone()), None,
+                    Some(format!("request:{} sweep scrub:{}", row.request_id, outcome.scrub.as_str())),
                 ).await.ok();
                 if outcome.scrub == cesauth_core::deletion::ScrubOutcome::Failed {
                     // RFC 148 §7: loud, not just in the audit detail — an
                     // operator scanning the daily sweep's logs must also
                     // see a scrub failure, same as the admin-triggered path.
                     log::emit(&cfg.log, Level::Error, Category::Storage,
-                        &format!("deletion sweep id={}: invitation email scrub failed", req.id),
-                        Some(&req.user_id));
+                        &format!("deletion sweep id={}: invitation email scrub failed", row.request_id),
+                        Some(&row.user_id));
                 }
             }
             Err(e) => {
                 log::emit(&cfg.log, Level::Error, Category::Storage,
-                    &format!("deletion sweep execute id={} failed: {e:?}", req.id),
+                    &format!("deletion sweep execute id={} failed: {e:?}", row.request_id),
                     None);
             }
         }
