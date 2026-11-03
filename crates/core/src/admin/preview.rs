@@ -25,6 +25,21 @@
 //! * `preview_ts` enforces the 5-minute TTL; a stale token is rejected at apply.
 //! * The apply handler must re-check permissions and re-fetch current state; the
 //!   token does not encode authorization.
+//!
+//! ## RFC 166 — reachability, as of 2026-11-03
+//!
+//! [`mint_preview_token`] and [`verify_preview_token`] have **no production
+//! caller** since RFC 174(b) deleted their only two call sites
+//! (`config.rs`'s `log_level_preview`/`log_level_apply`). **Kept
+//! deliberately, named with a reason rather than silently kept**
+//! (RFC 166's own discipline for a caller-less `pub` item): this is a
+//! correct, 12-host-test HMAC mechanism binding a CSRF value into a signed
+//! token, and the generic `/admin/console/config/:bucket/{preview,apply}`
+//! pair is the obvious future consumer of the same pattern. Deleting a
+//! well-tested primitive to satisfy a reachability rule is how it gets
+//! rewritten worse later than the one time it sits idle. If a future RFC
+//! disagrees, say so and delete it then — this note is the record of why
+//! it was kept now, not a decision binding later ones.
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use hmac::{Hmac, Mac};

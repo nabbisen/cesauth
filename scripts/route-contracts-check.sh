@@ -1360,6 +1360,17 @@ COMMON_RS="$REPO_ROOT/crates/backend/src/routes/admin/tenancy_console/forms/comm
 # caller exists to confirm it against; see `N/A (no ambient credential)`
 # below instead.
 #
+# `preview-token binding` (the two `config/log_level/{preview,apply}`
+# entries described two paragraphs up) was REMOVED by RFC 174(b)
+# (2026-11-03): both routes were deleted outright (a live probe found the
+# console rendered no form reaching them, and `apply` answered 400 before
+# the KV write or the audit event it falsely claimed). Removing the two
+# `route-contracts.md` rows left this `case` arm matching nothing --
+# checked, nothing failed, because the "scanned-but-never-matched"
+# staleness discipline below covers `NAMED_NON_HANDLERS` and the
+# exemption lists, not these mechanism arms. Extending it to cover them
+# too is queued separately (RFC 174 §3), not built here.
+#
 # Two kinds of entry: an ERE pattern to search the resolved body for
 # (grep -E), or the sentinel `STANDARD` meaning "this parenthetical is
 # scope commentary on the ordinary double-submit check, not a different
@@ -1372,7 +1383,6 @@ COMMON_RS="$REPO_ROOT/crates/backend/src/routes/admin/tenancy_console/forms/comm
 e6_mechanism_check() {
   case "$1" in
     "Origin check")          echo "check_origin_or_referer\\(" ;;
-    "preview-token binding") echo "mint_preview_token\\(|verify_preview_token\\(" ;;
     "header token")          echo "verify_csrf_header\\(" ;;
     "Content-Type")          echo "require_json_content_type\\(" ;;
     "form path")             echo "STANDARD" ;;

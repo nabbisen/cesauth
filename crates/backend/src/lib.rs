@@ -294,9 +294,6 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async ("/admin/console/config",                   |req, ctx| async move { routes::admin::console::config::page(req, ctx).await })
         .post_async("/admin/console/config/:bucket/preview",   |req, ctx| async move { routes::admin::console::config::preview(req, ctx).await })
         .post_async("/admin/console/config/:bucket/apply",     |req, ctx| async move { routes::admin::console::config::apply(req, ctx).await })
-        // RFC 042: LOG_LEVEL preview-and-apply
-        .post_async("/admin/console/config/log_level/preview", |req, ctx| async move { routes::admin::console::config::log_level_preview(req, ctx).await })
-        .post_async("/admin/console/config/log_level/apply",   |req, ctx| async move { routes::admin::console::config::log_level_apply(req, ctx).await })
         .get_async ("/admin/console/alerts",                   |req, ctx| async move { routes::admin::console::alerts::page(req, ctx).await })
         .post_async("/admin/console/thresholds/:name",         |req, ctx| async move { routes::admin::console::actions::threshold(req, ctx).await })
         // --- Admin Console (v0.4.0) ----------------------------------
