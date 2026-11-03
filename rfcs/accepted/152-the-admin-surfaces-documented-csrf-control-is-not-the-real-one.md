@@ -168,7 +168,7 @@ ever consulted (reads `user_id` from the challenge state `start` wrote, not a
 session cookie)"* — **is the whole defect.** `register_start` takes its subject
 from the request body and authenticates nobody; `register_finish` writes the
 authenticator and issues a session for it.
-[RFC 172](../proposed/172-passkey-registration-authenticates-nobody.md),
+[RFC 172](172-passkey-registration-authenticates-nobody.md),
 **P0**, exposure zero because nobody has deployed this tree. **The cell is
 correct and the sentence it states is the bug**, which is why stage 1 stands as
 written.

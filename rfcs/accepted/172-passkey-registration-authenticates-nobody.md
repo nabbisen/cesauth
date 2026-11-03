@@ -1,8 +1,19 @@
 # RFC 172 — Passkey registration authenticates nobody, and names its own subject
 
-**Status.** **Proposed** 2026-11-03 by the architect, found reviewing RFC 152
-half D stage 1. **Not scheduled. Needs the owner's acceptance, and it should
-have it before anything else queued.**
+**Status.** **Accepted** 2026-11-03 by the owner (*"RFC 172 is accepted."*).
+Proposed the same day by the architect, found reviewing RFC 152 half D stage 1.
+
+**Scheduled: the same held cut as RFC 152 half D** — patch, number assigned at
+the cut. The cut was already held for half D stage 1b; a P0 goes out in it
+rather than waiting for a release of its own. **Dispatched 2026-11-03, to run
+after stage 1b** — both touch files near each other and the work is serialised.
+**Ahead of RFC 170 and RFC 171 §3 Q1.**
+
+**§4 is corrected below (§4.1, 2026-11-03), and the correction changes the
+fix.** The original §4 recommended deleting the body field and leaving the
+`user_id: None` branch as an anonymous signup path. That branch does not work:
+it mints a UUID with no `users` row behind it. The fix takes the subject from
+the **session** instead.
 **Tier.** **P0.** `POST /webauthn/register/start` accepts the account it is
 registering a passkey for **as a field in the request body**, with no credential
 of any kind, and `POST /webauthn/register/finish` writes that authenticator and
@@ -24,10 +35,10 @@ cycle recorded *"no ambient credential is ever consulted (reads `user_id` from
 the challenge state `start` wrote, not a session cookie)"* as the justification
 for a CSRF cell, which is correct, and is also the whole defect stated in one
 line.
-**Relates to.** [RFC 152](../accepted/152-the-admin-surfaces-documented-csrf-control-is-not-the-real-one.md)
-(the cycle that surfaced it), [RFC 166](../accepted/166-reachability-stops-at-the-crate-boundary.md)
+**Relates to.** [RFC 152](152-the-admin-surfaces-documented-csrf-control-is-not-the-real-one.md)
+(the cycle that surfaced it), [RFC 166](166-reachability-stops-at-the-crate-boundary.md)
 (these routes have no caller, and that is why nobody looked),
-[RFC 171](../accepted/171-the-arm-is-written-and-the-error-is-never-produced.md)
+[RFC 171](171-the-arm-is-written-and-the-error-is-never-produced.md)
 (the same shape one layer up: a control nothing produces).
 
 **On 1.0:** not declared, not scoped, not dated.
@@ -149,6 +160,52 @@ owner's and not consequences of the bug:
   would create a new instance of §3's own class 1. **Shipping only the fix —
   drop the body field — and leaving flow 1 until a screen needs it is the
   smaller, more honest change**, and is this RFC's recommendation.
+
+## 4.1 Correction, 2026-11-03, before dispatch: the subject comes from the session
+
+**§4 above was wrong about flow 2, and the error would have shipped a broken
+fix.** It called `user_id: None`'s mint-a-fresh-UUID branch *"already safe"* and
+*"how [username-less signup] works"*. It is safe in the only sense that matters
+to this RFC — it cannot name a victim — and it is **not a working flow**:
+
+`register_finish`'s own comment states the premise the code is built on —
+*"The user was created before this registration challenge was issued; fall back
+to `'tenant-default'` if the lookup fails (defence-in-depth)."* **The design
+expects an existing `users` row.** A server-minted UUID has none, so that branch
+writes an authenticator for a user that does not exist and then issues a session
+for it. The `tenant-default` fallback is what hides it.
+
+**And "username-less first" in `introduction.md` does not mean what §4 read into
+it.** The ceremony requests `"residentKey":"required"` — that is username-less
+**authentication**, a discoverable credential the user signs in with *without
+typing an identifier*. It is not account creation without a prior record.
+
+**So there is one flow, not two**, and the fix is:
+
+- **`register_start` requires an authenticated session** and takes the subject
+  from it. `me_auth::resolve_or_redirect` is the resolver, and
+  `routes/deletions.rs:101-107` is the precedent in this same tree for using it
+  on a JSON route: `Err(_)` answers **401 JSON**, not a 302, so a
+  redirect-following client cannot mistake a failure for success (RFC 149 §2).
+- **`RegisterStartBody::user_id` is deleted.** `preferred_name` stays.
+- **`registration::start`'s `user_id: Option<String>` parameter stays**, now
+  filled with `Some(session.user_id)`. Removing it was the other candidate and
+  is **rejected**: it would force the `None` branch to be the only behaviour,
+  which is the branch that writes orphans. Its two remaining callers are tests
+  in `crates/core/src/webauthn/registration/tests.rs`, both passing `None` —
+  **so after this fix the `None` branch has no production caller at all**, which
+  is an RFC 166 item to record, not to act on here.
+
+**This is a surface-contract change and it is stated as one**: a caller may no
+longer choose the account, and must now present a session. **No caller exists to
+break** — RFC 152 half D stage 1 confirmed nothing under `crates/` calls either
+register path — so the level stays **patch**. If a caller had existed, this
+would still ship, and it would ship as a minor with notice.
+
+**What this does not add.** No screen, and no new capability. A session-bound
+registration entry point with no caller is RFC 166's own class, and it is
+accepted here only because the alternative is leaving a takeover path open. The
+route stays uncalled until RFC 131's passkey surface needs it.
 
 ## 5. What the fix must carry
 

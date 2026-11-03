@@ -112,14 +112,19 @@ handoff and been right.
 
 ## 5. Not in this cycle
 
-**`rfcs/proposed/172-passkey-registration-authenticates-nobody.md` — a P0 your
-own stage 1 found.** Your justification for `register/*`'s cell, *"no ambient
-credential is ever consulted"*, is the whole defect:
-`POST /webauthn/register/start` takes the account it registers a passkey for
-from the request body and authenticates nobody, and `register_finish` then
+**`rfcs/accepted/172-passkey-registration-authenticates-nobody.md` — a P0 your
+own stage 1 found, accepted by the owner 2026-11-03.** Your justification for
+`register/*`'s cell, *"no ambient credential is ever consulted"*, is the whole
+defect: `POST /webauthn/register/start` takes the account it registers a passkey
+for from the request body and authenticates nobody, and `register_finish` then
 issues a session for it. **You wrote the fact down correctly and it is the
 finding**; recognising what it implied was the architect's job, not a cycle's.
-It needs the owner's acceptance first. **Do not touch `webauthn/register.rs`.**
+
+**It is dispatched separately and runs after this cycle** —
+`half-d-stage-1b-...` first, then
+`rfcs/handoffs/172-passkey-registration-authenticates-nobody/implementation-handoff.md`.
+**Do not touch `webauthn/register.rs` in this cycle**: RFC 172 rewrites it, and
+two cycles editing one function is how a conflict gets made.
 
 ## 6. Baselines at `79e9090`, each with its command
 
