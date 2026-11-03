@@ -14,7 +14,15 @@ use worker::Env;
 /// Failure is best-effort — we never panic or abort the cron pass
 /// because of a KV write failure.
 pub async fn record_cron_pass(env: &Env, record: &CronPassRecord) -> worker::Result<()> {
-    let kv   = env.kv("CESAUTH_KV")?;
+    // Found while implementing RFC 173: `wrangler.toml` declares exactly
+    // one KV namespace, bound as "CACHE" — every other KV call site in
+    // this codebase uses that name. "CESAUTH_KV" was never declared, so
+    // this call has failed on every cron pass since this module shipped,
+    // discarded by its caller's `let _ = ...` (RFC 170 §8/`lib.rs`). No
+    // `cron:last-run:*` key has ever existed to read. Confirmed live:
+    // triggering the scheduled handler against pre-fix code and listing
+    // every key in the real "CACHE" namespace showed none.
+    let kv   = env.kv("CACHE")?;
     let key  = format!("cron:last-run:{}", record.pass_name);
     let body = serde_json::to_string(record)
         .map_err(|e| worker::Error::RustError(format!("cron_status serialize: {e}")))?;
