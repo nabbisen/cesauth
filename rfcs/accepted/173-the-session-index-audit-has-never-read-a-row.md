@@ -71,7 +71,7 @@ zero `cron:last-run:*` keys, then six. Fixed in `c135d86`.
 `env.kv("CONFIG_KV")` is also undeclared, nothing reads the value it would
 store, and the handler writes an `OperationApplied` audit row saying the log
 level was applied —
-[RFC 174](../proposed/174-applying-a-log-level-writes-an-audit-event-for-nothing.md),
+[RFC 174](174-applying-a-log-level-writes-an-audit-event-for-nothing.md),
 P1. Also recorded there: `operations_route.rs`'s `CronRecord` is never
 constructed, so nothing displays the records that now finally persist.
 

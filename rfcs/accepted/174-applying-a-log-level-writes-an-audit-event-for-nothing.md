@@ -1,8 +1,24 @@
 # RFC 174 — Applying a log level writes an audit event for something that cannot happen
 
-**Status.** **Proposed** 2026-11-03 by the architect, found reviewing RFC 173 by
-sweeping the class that RFC's own fix belonged to. **Not scheduled. Needs the
-owner's acceptance.**
+**Status.** **Accepted** 2026-11-03 by the owner (*"RFC 174 is accepted."*).
+Proposed the same day by the architect, found reviewing RFC 173 by sweeping the
+class that RFC's own fix belonged to.
+
+**Scheduled in two parts, because §3's question is not settled by the
+acceptance.** **The false ledger entry is dispatched now** — patch, the next cut
+after 0.92.2 — because it is true under both of §3's answers and it is the live
+defect. **§3's (a)-or-(b) choice is put to the owner**, because (b) removes an
+operator affordance and (a) adds a capability that has never existed, which is a
+**minor**: an acceptance cannot be read as picking either one without saying so,
+and the architect's recommendation in §3 is a recommendation.
+
+**Said plainly so the record does not quietly assume the larger reading**
+(the same note RFC 170's own acceptance carries): if the owner meant the whole
+of §3 including its recommendation, that is **(b)** and the route goes — say so
+and it goes in the same cut.
+
+**Sibling links.** `rfcs/accepted/173-…` and `rfcs/accepted/161-…` are reached
+from here as siblings now that this file has moved.
 **Tier.** **P1.** `POST /admin/console/config/log_level/apply` writes nothing,
 could not take effect if it did, and then **writes a hash-chained audit event
 saying it was applied.** The operator is told it worked, the project's record of
@@ -18,11 +34,11 @@ either `wrangler.toml` + `crates/backend/src/log.rs` or the route and its docs �
 **Found by.** The architect, 2026-11-03. The dev team fixed one undeclared KV
 binding in RFC 173's cycle; sweeping for the rest of that class found this one.
 **One fixed binding is not the fixed class.**
-**Relates to.** [RFC 173](../accepted/173-the-session-index-audit-has-never-read-a-row.md)
+**Relates to.** [RFC 173](173-the-session-index-audit-has-never-read-a-row.md)
 (the sibling instance, and the cycle that exposed the family),
-[RFC 161](../accepted/161-six-operator-pages-promise-data-and-render-none.md)
+[RFC 161](161-six-operator-pages-promise-data-and-render-none.md)
 (operator surfaces that promise and do not deliver),
-[RFC 171](../accepted/171-the-arm-is-written-and-the-error-is-never-produced.md)
+[RFC 171](171-the-arm-is-written-and-the-error-is-never-produced.md)
 (a success nothing earns).
 
 **On 1.0:** not declared, not scoped, not dated.
