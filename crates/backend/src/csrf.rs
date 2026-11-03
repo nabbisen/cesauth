@@ -248,13 +248,27 @@ pub fn verify_csrf_header(header_value: Option<&str>, cookie_header: &str) -> bo
 }
 
 /// Pure decision: does this `Content-Type` header value count as
-/// `application/json`? Case-insensitive, and tolerant of a trailing
-/// `; charset=...` (`.contains`, not an exact match) — the rule
-/// `routes::deletions::request_self` established (RFC 149 §2) and RFC 152
-/// half D reuses for `/webauthn/authenticate/{start,finish}`.
+/// `application/json`? Compares the MIME **essence** — the part before the
+/// first `;`, trimmed and lowercased — against `application/json` exactly.
+///
+/// **RFC 152 half D stage 1b.** The original version used `.contains`,
+/// meant to tolerate a trailing `; charset=utf-8` — but `.contains` matches
+/// a *parameter* too: `Content-Type: text/plain; x=application/json`
+/// contains the substring `application/json` and passed, while its MIME
+/// essence is `text/plain`, which is CORS-safelisted. A cross-site
+/// `fetch(..., {credentials: 'include'})` can send exactly that value with
+/// no preflight, walking straight past a control three rows now document
+/// as real (`required (Content-Type)`). Observed live against `wrangler
+/// dev` at `79e9090`, on both `/webauthn/authenticate/start` and the
+/// pre-existing `/me/security/delete-account` (RFC 149 §2, unchanged since
+/// before this check had a name) — `text/plain; x=application/json`
+/// reached the handler on both. Fixed by comparing the essence exactly,
+/// not by tightening `.contains` into a longer substring match, which
+/// would have left the same class of bypass one parameter away.
 pub fn is_json_content_type(content_type: Option<&str>) -> bool {
     content_type
-        .map(|ct| ct.to_ascii_lowercase().contains("application/json"))
+        .and_then(|ct| ct.split(';').next())
+        .map(|essence| essence.trim().eq_ignore_ascii_case("application/json"))
         .unwrap_or(false)
 }
 

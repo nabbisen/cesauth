@@ -306,3 +306,42 @@ fn text_plain_is_not_json() {
 fn missing_content_type_is_not_json() {
     assert!(!is_json_content_type(None));
 }
+
+// RFC 152 half D stage 1b -- the `.contains` bypass, each as its own
+// named witness rather than folded into a generic "false" case. Both are
+// the exact strings observed live against wrangler dev at 79e9090,
+// reaching /webauthn/authenticate/start and /me/security/delete-account
+// past the (pre-fix) control.
+
+#[test]
+fn a_parameter_that_merely_contains_the_json_essence_is_not_json() {
+    // text/plain's MIME essence is CORS-safelisted; a cross-site fetch
+    // with credentials: 'include' can send this exact value with no
+    // preflight. The whole bypass: `.contains("application/json")` is
+    // true here even though the essence is text/plain.
+    assert!(!is_json_content_type(Some("text/plain; x=application/json")));
+}
+
+#[test]
+fn application_json_disguised_as_a_charset_parameter_is_not_json() {
+    assert!(!is_json_content_type(Some("text/plain;charset=application/json")));
+}
+
+#[test]
+fn whitespace_around_the_essence_is_trimmed() {
+    assert!(is_json_content_type(Some("  application/json  ")));
+}
+
+#[test]
+fn a_longer_essence_sharing_the_json_prefix_is_not_json() {
+    // The old `.contains` check accepted this too (and the reverse,
+    // below) -- nothing in the six original tests exercised either
+    // direction, since both still contain "application/json" as neither
+    // a strict prefix nor suffix collision was tried.
+    assert!(!is_json_content_type(Some("application/jsonx")));
+}
+
+#[test]
+fn a_longer_essence_sharing_the_json_suffix_is_not_json() {
+    assert!(!is_json_content_type(Some("xapplication/json")));
+}

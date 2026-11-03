@@ -1,18 +1,32 @@
 //! WebAuthn authentication ceremony (`/webauthn/authenticate/{start,finish}`).
 //!
-//! **CSRF (RFC 152 half D, 2026-11-03).** Both routes require
-//! `Content-Type: application/json` (`crate::csrf::require_json_content_type`)
-//! — `route-contracts.md`'s own cell used to read `N/A (JSON)` here, which
-//! was false the same way it was on `/admin/console/clients*` before RFC 141
-//! cycle 2: nothing checked the header. The real caller, `static/
-//! webauthn.js`'s `cesauthPasskeyAuthenticate`, already sends it on both
-//! calls, so requiring it costs that caller nothing — unlike `clients.rs`'s
-//! case, no new caller obligation is created here, only an existing one
-//! enforced. `/webauthn/register/{start,finish}` do **not** get this check:
-//! they have no live caller at all (confirmed: nothing under `crates/`
-//! references either path outside the backend's own route definitions and
-//! core logic), so there is no real sender to verify against — see
-//! `route-contracts.md`'s own cell for those two instead.
+//! **CSRF (RFC 152 half D, 2026-11-03; corrected stage 1b, same day).**
+//! Only `authenticate_finish` carries a real control. Stage 1 gave both
+//! routes `required (Content-Type)` on the wrong test — "does a live
+//! caller send this header" rather than "does this handler read an
+//! ambient credential" — and the two routes are not alike by the second
+//! question:
+//!
+//! - **`authenticate_finish` reads `cookie_header` before consuming the
+//!   body**, for `post_auth::extract_pending_handle` → `complete_auth`,
+//!   which reads `login_next` and steers where the resulting session
+//!   lands. That is an ambient credential, so `Content-Type: application/
+//!   json` (`crate::csrf::require_json_content_type`) stays required —
+//!   confirmed against the real caller, `static/webauthn.js`'s
+//!   `cesauthPasskeyAuthenticate`, which already sends it.
+//! - **`authenticate_start` reads no cookie at all.** It has nothing
+//!   ambient for a forged cross-site request to ride on, so it is `N/A
+//!   (no ambient credential)` — the same value and the same reasoning
+//!   `webauthn/register.rs` and `api_v1/anonymous::begin` already carry,
+//!   not a new one. Its `Content-Type` check is removed, not weakened:
+//!   the route needed no control in the first place.
+//!
+//! `/webauthn/register/{start,finish}` are untouched by this correction —
+//! see `route-contracts.md`'s own cells and RFC 172 for `register_finish`,
+//! which this same stage 1b review found carries the identical ambient-
+//! credential shape `authenticate_finish` does, left for that RFC rather
+//! than edited here (RFC 172 rewrites `register.rs` and must touch those
+//! rows anyway).
 
 use cesauth_cf::ports::repo::CloudflareAuthenticatorRepository;
 use cesauth_cf::ports::store::CloudflareAuthChallengeStore;
@@ -43,9 +57,6 @@ struct AuthenticateStartBody {
 }
 
 pub async fn authenticate_start<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    if let Some(resp) = csrf::require_json_content_type(&req)? {
-        return Ok(resp);
-    }
     let cfg  = Config::from_env(&ctx.env)?;
     let rp   = rp_from_config(&cfg);
     let body: AuthenticateStartBody = req.json().await.unwrap_or_default();

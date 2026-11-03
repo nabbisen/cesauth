@@ -40,7 +40,7 @@ code-review responsibility.
 |---|---|---|---|---|---|---|---|
 | POST | `/webauthn/register/start` | End user | none | JSON (challenge) | n/a | n/a | N/A (no ambient credential) |
 | POST | `/webauthn/register/finish` | End user | `passkey_registered` | JSON | n/a | n/a | N/A (no ambient credential) |
-| POST | `/webauthn/authenticate/start` | Anonymous | none | JSON (challenge) | n/a | n/a | required (Content-Type) |
+| POST | `/webauthn/authenticate/start` | Anonymous | none | JSON (challenge) | n/a | n/a | N/A (no ambient credential) |
 | POST | `/webauthn/authenticate/finish` | Anonymous | `passkey_login_succeeded` / `passkey_login_failed` | JSON | n/a | n/a | required (Content-Type) |
 
 ## Magic Link routes
