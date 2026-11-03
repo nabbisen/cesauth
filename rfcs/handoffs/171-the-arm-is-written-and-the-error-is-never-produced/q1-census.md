@@ -45,20 +45,44 @@ anywhere:
 
 **Population: 36 port traits, 156 port methods.**
 
-| Trait group | Traits | Methods |
-|---|---|---|
-| Admin console (`admin/ports.rs`) | 7 | 18 |
-| `anonymous.rs`, `turnstile.rs` | 2 | 5 |
-| Authorization (`authz/ports.rs`) | 3 | 12 |
-| Billing (`billing/ports.rs`) | 3 | 9 |
-| `deletion.rs`, `invitation.rs` | 2 | 14 |
-| `ports/session_index.rs` | 1 | 3 |
-| `ports/audit.rs`, `ports/audit_chain.rs`, `ports/cache.rs` | 3 | 11 |
-| `ports/repo.rs` (OIDC-era repositories) | 5 | 27 |
-| `ports/store.rs` (DO-shaped stores) | 4 | 15 |
-| Tenancy (`tenancy/ports.rs`) | 4 | 29 |
-| TOTP (`totp/storage.rs`) | 2 | 13 |
-| **Total** | **36** | **156** |
+| § | Trait group | Traits | Methods |
+|---|---|---|---|
+| 3.1 | Admin console + `anonymous.rs` + `turnstile.rs` | 9 | 23 |
+| 3.2 | Authorization (`authz/ports.rs`) | 3 | 12 |
+| 3.3 | Billing (`billing/ports.rs`) | 3 | 9 |
+| 3.4 | `deletion.rs`, `invitation.rs` | 2 | 14 |
+| 3.5 | `ports/session_index.rs` | 1 | 3 |
+| 3.6 | `ports/audit.rs`, `ports/audit_chain.rs`, `ports/cache.rs` | 3 | 11 |
+| 3.7 | `ports/repo.rs` (OIDC-era repositories) | 5 | 27 |
+| 3.8 | `ports/store.rs` (DO-shaped stores) | 4 | 15 |
+| 3.9 | Tenancy (`tenancy/ports.rs`) | 4 | 29 |
+| 3.10 | TOTP (`totp/storage.rs`) | 2 | 13 |
+| | **Total** | **36** | **156** |
+
+**Reconciliation — owed by RFC 159 §4.5's own discipline and checked here,
+not just asserted.** The review of this document's first version could not
+reproduce `156 = resolved + DEFECT + no_caller` from the table rows alone
+(102 verdict rows summed, not 156 — the remaining methods were covered only
+by prose, and one trait's two methods were missing from §3.8 entirely,
+folded back in below). Each of §3.1–§3.10 now ends with an explicit subtotal
+line; they sum to:
+
+| | Traits | Methods | resolved | DEFECT | no_caller |
+|---|---|---|---|---|---|
+| §3.1 | 9 | 23 | 4 | 2 | 17 |
+| §3.2 | 3 | 12 | 0 | 0 | 12 |
+| §3.3 | 3 | 9 | 2 | 3 | 4 |
+| §3.4 | 2 | 14 | 2 | 0 | 12 |
+| §3.5 | 1 | 3 | 0 | 0 | 3 |
+| §3.6 | 3 | 11 | 0 | 0 | 11 |
+| §3.7 | 5 | 27 | 5 | 0 | 22 |
+| §3.8 | 4 | 15 | 1 | 0 | 14 |
+| §3.9 | 4 | 29 | 12 | 0 | 17 |
+| §3.10 | 2 | 13 | 1 | 0 | 12 |
+| **Total** | **36** | **156** | **27** | **5** | **124** |
+
+`27 + 5 + 124 = 156`. **`unclassified = 0`**, now checkable by a reader who
+did not write this document, not just asserted by one who did.
 
 **Implementations.** 34 of the 36 traits have exactly two: one in
 `cesauth-adapter-cloudflare` (the production implementation) and one in
@@ -73,6 +97,22 @@ concrete adapter type directly). A caller "matches a variant" when it names
 that specific `PortError` variant in a `match`/`if let`/`matches!` — a bare
 `?` or a catch-all `Err(_) =>` matches nothing, which is its own valid
 category (`no_caller`), not an omission.
+
+**The handoff's own first question, answered directly rather than left to be
+assembled from rows.** §2 of the handoff named the `Serialization`
+asymmetry as *"the census's first real question, not a bonus"*:
+`adapter-cloudflare` produces `Serialization` at roughly 77 call sites
+across the population; `adapter-test` produces it at **zero**. Checked
+against every row in §3: **it is inert.** The only place in the entire
+codebase that names `Serialization` by a specific match arm — not a
+catch-all — is `api_v1::auth::port_error_response`'s own `Serialization`
+arm (`auth.rs:80`), and that arm maps to the exact same `server_error()`
+response its neighboring `Unavailable` arm produces. So the double's
+inability to simulate `Serialization` changes no observable behaviour
+anywhere this census found a caller for it. This is also why none of the
+`DEFECT` findings in §5 are `Serialization`-shaped: the one variant with a
+real production/double asymmetry is also the one variant nobody's response
+actually distinguishes.
 
 ## 2. Classification scheme
 
@@ -104,7 +144,7 @@ per-trait tables below.
 
 ## 3. The table, by trait group
 
-### 3.1 Admin console (`admin/ports.rs`, 7 traits, 18 methods)
+### 3.1 Admin console + `anonymous.rs` + `turnstile.rs` (9 traits, 23 methods)
 
 | Trait::method | CF producer | Test producer | Caller match | Class |
 |---|---|---|---|---|
@@ -132,6 +172,8 @@ per-trait tables below.
 | `::delete_expired` | Unavailable | Unavailable | **zero callers anywhere** | no_caller — and the method's own doc comment (*"Called by the daily sweep handler"*) is **false**: `sweep.rs`'s real anonymous-trial sweep calls `UserRepository::{list_anonymous_expired, delete_by_id}` directly and relies on cascade, never this method. Documented, ungated, same shape as this whole RFC family |
 | `TurnstileVerifier::verify` | Unavailable only (`HttpTurnstileVerifier`, implemented in `cesauth-backend` itself — not either adapter crate) | n/a — no `adapter-test` double exists; a local `CannedVerifier`/`FailingVerifier` lives inside `crates/core/src/turnstile.rs`'s own test module | `core::turnstile::verify()` collapses the result via `.map_err(|_| CoreError::Internal)` immediately — no downstream caller can ever see a `PortError` variant | no_caller |
 
+**§3.1 subtotal: 23 methods = 4 resolved + 2 DEFECT + 17 no_caller.**
+
 ### 3.2 Authorization (`authz/ports.rs`, 3 traits, 12 methods)
 
 | Trait::method | CF producer | Test producer | Caller match | Class |
@@ -149,6 +191,8 @@ per-trait tables below.
 | `::list_in_scope` | Unavailable, Serialization | never errors | none named | no_caller |
 | `::purge_expired` | Unavailable | never errors | **zero production callers** (matches its own *"called by a background sweep (future)"* comment) | no_caller — RFC 166 item |
 
+**§3.2 subtotal: 12 methods = 0 resolved + 0 DEFECT + 12 no_caller.**
+
 ### 3.3 Billing (`billing/ports.rs`, 3 traits, 9 methods)
 
 | Trait::method | CF producer | Caller match | Class |
@@ -162,6 +206,8 @@ per-trait tables below.
 | `::set_status` | Unavailable, **NotFound** | same | resolved |
 | `SubscriptionHistoryRepository::append` | Unavailable only (plain `run_err` on an INSERT) | `.ok()`-discarded everywhere | no_caller |
 | `::list_for_subscription` | Unavailable, Serialization | routed through the dispatcher at least once | **DEFECT (chokepoint)** |
+
+**§3.3 subtotal: 9 methods = 2 resolved + 3 DEFECT + 4 no_caller.**
 
 ### 3.4 `deletion.rs` / `invitation.rs` (2 traits, 14 methods)
 
@@ -182,6 +228,8 @@ per-trait tables below.
 | `::list_pending_by_tenant` | Unavailable | never errors | `.unwrap_or_default()` | no_caller |
 | `::scrub_email` | Unavailable | always `Ok` | `Err(_)=>Failed` inside `execute_deletion` | no_caller |
 
+**§3.4 subtotal: 14 methods = 2 resolved + 0 DEFECT + 12 no_caller.**
+
 ### 3.5 `ports/session_index.rs` (1 trait, 3 methods)
 
 | Method | CF producer | Test producer | Caller match | Class |
@@ -191,6 +239,8 @@ per-trait tables below.
 | `mark_revoked` | Unavailable | none | `Err(_)=>errors+=1` | no_caller |
 
 `SessionIndexRepo` has **no `adapter-test` double at all** — one of two traits in the entire population with this shape (§3.9/§3.6). `run_repair_pass`'s own host tests can only exercise a hand-rolled stub local to that test module, never the real adapter's behaviour. Confirmed the `d1_int()` usage in the real adapter is correct (bind-through-f64-cast, no BigInt bug — read directly, not assumed, distinct from the unrelated `session_index_audit.rs` bug fixed in RFC 173's cycle).
+
+**§3.5 subtotal: 3 methods = 0 resolved + 0 DEFECT + 3 no_caller.**
 
 ### 3.6 `ports/audit.rs`, `ports/audit_chain.rs`, `ports/cache.rs` (3 traits, 11 methods)
 
@@ -209,6 +259,8 @@ per-trait tables below.
 | `::put` | Unavailable | Unavailable | `let _ =` | no_caller |
 
 Every method of all three traits is `no_caller` — nothing in the codebase matches a specific variant from any of them. `AuditChainCheckpointStore`: the double never produces `Serialization` for any of its 4 methods (no JSON round-trip); inert today since nothing matches it, same shape as the rest of this family.
+
+**§3.6 subtotal: 11 methods = 0 resolved + 0 DEFECT + 11 no_caller.**
 
 ### 3.7 `ports/repo.rs` (5 traits, 27 methods)
 
@@ -242,6 +294,8 @@ Every method of all three traits is `no_caller` — nothing in the codebase matc
 | `::register` | **Unavailable only** — plain `run_err`, despite `kid TEXT PRIMARY KEY` | **Conflict** on dup kid | **zero production callers** (keys seeded another way) | no_caller — RFC 166 item, also a producer-gap finding, §5.2 |
 | `::retire` | Unavailable only | Unavailable, NotFound | **zero production callers** | no_caller — RFC 166 item |
 
+**§3.7 subtotal: 27 methods = 5 resolved + 0 DEFECT + 22 no_caller.**
+
 ### 3.8 `ports/store.rs` (4 traits, 15 methods)
 
 | Trait::method | CF producer | Test producer | Caller match | Class |
@@ -249,6 +303,17 @@ Every method of all three traits is `no_caller` — nothing in the codebase matc
 | `AuthChallengeStore::create` / `get` / `consume` / `bump_magic_link_attempts` | Unavailable (±Conflict/NotFound/PreconditionFailed per method; full detail not reproduced per-row here — every method's only matched variant, where one exists, is genuinely producible) | matches CF | 1 of 4 resolved (`bump_magic_link_attempts`), 3 `no_caller` | resolved ×1, no_caller ×3 |
 | `RefreshTokenFamilyStore::init` / `rotate` / `revoke` / `peek` | `Conflict` (init, id collision), `NotFound` (rotate/revoke, uninitialized family) both genuinely producible | matches CF | **all four methods' call sites use blanket `.map_err(|_| CoreError::Internal)`** — nothing distinguishes `Conflict`/`NotFound` from anything else | no_caller ×4 (producible variants are inert noise; a different *pattern* than the admin-console routes, which do discriminate — this layer discards detail uniformly) |
 | `ActiveSessionStore::start` / … (5 methods) | `Conflict` producible on `start`, rest Unavailable-only | matches CF | none named | no_caller ×5 |
+| `RateLimitStore::hit` | Unavailable, Serialization (shared `rpc_call`/`rpc_request` JSON-over-DO-fetch helpers) | Unavailable only | every one of 5 call sites (`introspect.rs:516`, `token.rs:295`, `anonymous.rs:113`, `magic_link/request.rs:181`, `magic_link/verify.rs:211`) is catch-all | no_caller |
+| `::reset` | Unavailable, Serialization | Unavailable | **zero callers anywhere, not even catch-all** | no_caller — RFC 166 item |
+
+**Found missing from this section on review** (§3's own reconciliation
+check, below): `RateLimitStore` is the fourth trait the section header
+already counted (`ports/store.rs:494`, same file as the other three) but
+whose two rows were absent from the first version of this table —
+corrected here, not re-derived; fork 3's original findings already covered
+both methods.
+
+**§3.8 subtotal: 15 methods = 1 resolved + 0 DEFECT + 14 no_caller.**
 
 ### 3.9 Tenancy (`tenancy/ports.rs`, 4 traits, 29 methods)
 
@@ -261,13 +326,16 @@ Every method of all three traits is `no_caller` — nothing in the codebase matc
 
 **RFC 171 §2.1/§2.2's own findings, reconfirmed as closed in the current tree** — the ten paths and the production/double disagreement over `Conflict` vs `Unavailable` for duplicate memberships are both fixed (RFC 141 cycle 2b). What is **not** closed, and corrects the RFC's own citation: `crates/core/src/tenancy/service.rs`'s three thin wrapper functions (`add_user_to_tenant`/`add_user_to_organization`/`add_user_to_group`, the ones whose doc comment RFC 171 §2.1 quotes as *"the documentation is false"*) have **zero production callers at all** — every route handler calls `CloudflareMembershipRepository` directly, bypassing them. The documentation claim is still false, but the function it's attached to is also simply never run in production — an RFC 166 item layered on top of the RFC 171 one, not previously noted.
 
+**§3.9 subtotal: 29 methods = 1 (Tenant) + 2 (Organization) + 3 (Group) + 6
+(Membership) = 12 resolved + 0 DEFECT + 5+4+2+6 = 17 no_caller.**
+
 ### 3.10 TOTP (`totp/storage.rs`, 2 traits, 13 methods)
 
 | Trait::method | CF producer | Test producer | Caller match | Class |
 |---|---|---|---|---|
 | `TotpAuthenticatorRepository::create` | **Unavailable, Serialization only** — plain `run_err`, despite `id TEXT PRIMARY KEY` (`migrations/0007...`). Doc comment at `totp/storage.rs:72-74`: *"Returns `Conflict` if the id is already taken… the adapter must honor the PRIMARY KEY"* — **false of the real adapter today** | **Conflict**, correctly | `enroll.rs:139`: `if totp_repo.create(&row).await.is_err()` — a boolean check, **not** a match on `Conflict` | no_caller today — but the clearest "loaded gun" in the census: anyone who trusts the doc comment and later writes `Err(Conflict) => …` gets RFC 171's own failure mode instantly. `TotpRecoveryCodeRepository::bulk_create`, same table family, does this correctly via `classify_insert_err` — parity holds there |
 | `::confirm` | — | — | 1 resolved call site | resolved |
-| (6 other methods) | — | — | none named | no_caller ×6 |
+| (5 other methods — `find`, `find_all_for_user`, `delete_all_for_user`, and two more) | — | — | none named | no_caller ×5 |
 | `::delete` (single-row) | — | — | **zero production callers** (only `delete_all_for_user` is used) | no_caller — RFC 166 item |
 | `TotpRecoveryCodeRepository` (5 methods) | — | — | none named anywhere | no_caller ×5 |
 
@@ -276,6 +344,11 @@ Test-only, one-off failure-injection stubs exist locally inside
 (`FailingAuthRepo`, `FailingFindRepo`, `FailingCreateRepo`, `FailingLookupRepo`,
 `RaceLossRepo`, `FailingRecoveryRepo`) — scaffolding for specific host tests,
 not the real `adapter-test` double, not counted as producers.
+
+**§3.10 subtotal: 13 methods (8 + 5) = 1 resolved + 0 DEFECT + 12 no_caller**
+— corrected from an earlier count of 9 rows against an 8-method trait: `::delete`
+is one of the "other methods," not an additional one; this version lists 5
+others, not 6.
 
 ## 4. The interpretive question the sweeps disagreed on, resolved
 
