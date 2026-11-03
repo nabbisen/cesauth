@@ -32,6 +32,93 @@ re-fixed in the script, which is its own change with its own verification.
 
 ---
 
+## [0.92.3] - 2026-11-03
+
+**Patch.** Nothing gains capability and nothing an operator could reach changes
+behaviour. A console action that could never complete is gone, along with the
+two modules that existed only to serve it.
+
+### The log-level apply flow is removed — RFC 174(b)
+
+- **`POST /admin/console/config/log_level/apply` wrote to a KV namespace this
+  project does not declare**, nothing would have read the value if it had
+  landed (`LogConfig::from_env` reads `env.var("LOG_LEVEL")` and never touches
+  KV), and the handler then wrote an `OperationApplied` audit row saying the
+  level was applied.
+- **Probed before anything was built, and the RFC's own framing was wrong.**
+  `GET /admin/console/config` returns **200 with zero `<form>` elements** — the
+  control never existed in the UI — and the preview page's form carries an empty
+  `csrf_token`, so `apply` answered **400 `csrf_token required`** before
+  reaching either the KV write or the audit row. **No `log_level applied` audit
+  row has ever existed.** The RFC claimed the operator was told it worked; that
+  was `reviewed`, it was tiered P1 on a reading, and the probe moved it to
+  **P2**. The correction is recorded in the RFC rather than quietly in this
+  entry.
+- **Removed**: both handlers, their registrations, their two
+  `route-contracts.md` rows, and the comments that described a binding
+  requirement never met and a `from_env` preference that never existed.
+  **Routes 194 → 192**; E4 `216 = 192 + 24 + 0`; E6 `92 = 83 + 9 + 0`.
+- The two deleted URLs are now absorbed by the surviving `:bucket` wildcard and
+  answer **401** without a credential, **404 `unknown bucket`** with one — the
+  generic handler's own checks, captured rather than predicted. Both fail safe
+  and nothing references either path.
+- **The log level remains a deploy-time `wrangler.toml` `[vars]` value**, which
+  is what every page in the book already said. This release makes the code agree
+  with the documentation rather than the other way round.
+
+### And the two modules that served only that flow — 19 tests, 682 lines
+
+- After the removal, **every public item in `cesauth_core::admin::preview` and
+  `cesauth_frontend::admin::preview` had zero references outside those two
+  files** — `mint_preview_token`, `verify_preview_token`, `PreviewTokenPayload`,
+  `DiffEntry`, `ImpactStatement`, `ImpactSeverity`, `log_level_impact`,
+  `admin_token_rotation_impact`, `preview_body`, `preview_body_noop`.
+- **An architect instruction to keep part of it was reversed.** The removal
+  handoff said to keep the HMAC token pair because the generic bucket
+  preview/apply flow was its *"obvious future consumer"* — that flow returns a
+  plain `json_response` and never used any of it. Keeping two dead modules on a
+  speculative consumer, in the release that removed their only real one, would
+  have been a deliberate instance of the class RFC 166 exists to stop.
+- **Deleted**, with a dated entry in RFC 166 naming the cluster and the commit
+  it is recoverable from — and the recovery commands were run, not just written.
+  Host tests **1,694 → 1,675**, exactly the 19 tests the deleted modules owned.
+- `admin_token_rotation_impact` went with the file. It never had a caller at
+  all, which predates this work.
+
+### Found in review, recorded not fixed
+
+- **`config::apply` — the generic bucket apply, three functions from the
+  deleted one — was already correct**: it writes `attempt:{bucket}`
+  unconditionally and `ok:{bucket}` only on success, with a comment saying why.
+  So RFC 174 was never a class; it was one handler that did not follow its own
+  sibling's pattern.
+- **`unused_imports` is denied in `cesauth-backend` only**, and `cesauth-core`
+  and `cesauth-frontend` carry three live warnings to show it matters —
+  pre-existing, and found because deleting two modules could not have caused
+  them.
+- Removing the last rows that use an E6 mechanism leaves its `case` arm matching
+  nothing, and **nothing fails**: the staleness discipline covers the exemption
+  lists, not the mechanism table. The arm was removed by hand this cycle.
+
+### Release figures
+
+- Worker bundle at this commit, after the version bump, via
+  `./node_modules/.bin/wrangler deploy --dry-run --outdir bundled/`, **gzip 1.15
+  at its default level**: **888,787 B** (878,087 wasm + 10,700 `shim.js`), raw
+  2,433,164 + 61,887 bytes.
+  `sha256 a8a98a21ab2d5ad3f2f192ff89b5515b2187763e7bbfc7ff460682b502e1e98d`
+  (wasm) and
+  `c5a27a553aa08e39f87ae6b0ac5647f3bccaa9add998ad9afac1c92acdece5c3` (shim).
+  Against 0.92.2's **897,191 B**, measured the same way after its own bump:
+  **−8,404 B**, the first decrease in this series. Almost all of it is the
+  deleted handler's complete styled HTML document; the module deletion added
+  only −192 B, because the linker had already dropped the unreachable functions
+  and the 19 tests never entered a release build.
+- Host tests **1,675** passed / 0 failed / 4 ignored across 12 `test result:`
+  lines; `migration_chain` **35**; **192 routes**; E4 `216 = 192 + 24 + 0`; E5
+  `17 = 17 + 0 + 0`; **E6 `92 = 83 claims + 9 declared + 0 unclassified`**,
+  `83 = 65 + 0 + 18`; Playwright **20**; `runtime-smoke-check` passed.
+
 ## [0.92.2] - 2026-11-03
 
 **Patch.** Nothing gains capability. CI can now drive a credentialed flow for
