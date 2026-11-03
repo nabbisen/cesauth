@@ -78,23 +78,37 @@ pub(crate) fn run_err(context: &'static str, e: worker::Error) -> PortError {
 /// Classify a D1 INSERT failure by SQLite's extended result code, which
 /// D1 embeds verbatim in the error message as `(extended:
 /// SQLITE_CONSTRAINT_<CLASS>)` — more specific than matching the bare
-/// word `constraint`, which every constraint class (UNIQUE, FOREIGN KEY,
-/// CHECK, NOT NULL) contains, and which is RFC 160's defect: all four
-/// collapsed into `Conflict`.
+/// word `constraint`, which every constraint class contains, and which
+/// was RFC 160's original defect: every class collapsed into `Conflict`.
 ///
-/// **Only UNIQUE and FOREIGN KEY are classified.** CHECK and NOT NULL are
-/// not reachable by any production caller today — every `CHECK`-
-/// constrained column in this schema is written from a Rust enum through
-/// a `_str()` helper, never a raw caller-controlled string, and every
-/// `NOT NULL` column backing an INSERT here is bound from a non-`Option`
-/// field. Classifying branches nothing can produce would put untestable
-/// code in the exact helper whose untested assumption caused this RFC
-/// (RFC 160 §4.5/§1.1 — provoking those two classes at all required a
-/// temporary, sentinel-gated bind substitution in production code,
-/// restored afterward, specifically because no real caller can reach
-/// them). Anything else — including a genuine CHECK/NOT NULL failure, if
-/// a future change ever makes one reachable — falls through to
-/// [`run_err`], today's path, unchanged.
+/// **Every one of SQLite's twelve constraint extended codes, classified
+/// or named with a reason (RFC 159 §4.5's rule — no item left uncounted).
+/// RFC 160 shipped a census of four and left eight unnamed; `PRIMARYKEY`
+/// was one of them, and RFC 141 cycle 2b is the reason it was found: a
+/// duplicate `TEXT PRIMARY KEY` reports `UNIQUE constraint failed` in
+/// English and `SQLITE_CONSTRAINT_PRIMARYKEY` in the extended code — the
+/// classifier reads the code, so the prose was never the thing to trust.**
+///
+/// | extended code | verdict | reason |
+/// |---|---|---|
+/// | `_UNIQUE` | [`Conflict`](PortError::Conflict) | classified, RFC 160 |
+/// | `_PRIMARYKEY` | [`Conflict`](PortError::Conflict) | classified here (RFC 141 cycle 2b) — every primary key in this schema but `audit_log.seq` (the one `INTEGER PRIMARY KEY`) is `TEXT` or composite, so a duplicate key is the *common* shape, not the edge case `_UNIQUE` alone suggested |
+/// | `_FOREIGNKEY` | [`NotFound`](PortError::NotFound) | classified, RFC 160 §4.5 |
+/// | `_CHECK` | falls through | every `CHECK`-constrained column in this schema is written from a Rust enum through a `_str()` helper, never a raw caller-controlled string (RFC 160 §4.5) |
+/// | `_NOTNULL` | falls through | every `NOT NULL` column backing an INSERT here is bound from a non-`Option` field (RFC 160 §4.5) |
+/// | `_DATATYPE` | unreachable | no table in this schema is declared `STRICT` — `grep -rn STRICT migrations/` matches only the unrelated word `RESTRICT`, five times |
+/// | `_TRIGGER` | unreachable | `grep -rc "CREATE TRIGGER" migrations/` is zero everywhere |
+/// | `_VTAB`, `_FUNCTION` | unreachable | `grep -rc "CREATE VIRTUAL" migrations/` is zero everywhere |
+/// | `_ROWID` | unreachable | only reachable from an INSERT that binds an explicit `rowid`; no site here does |
+/// | `_COMMITHOOK`, `_PINNED` | unreachable | neither a commit hook nor a pinned statement is reachable through D1's API surface |
+///
+/// Classifying a branch nothing can produce would put untestable code in
+/// the exact helper whose untested assumption caused RFC 160 in the first
+/// place (RFC 160 §4.9's own regression-guard reasoning, which this
+/// table now extends to every code, not just the two RFC 160 classified).
+/// Anything that reaches "falls through" or "unreachable" — including a
+/// genuine CHECK/NOT NULL/etc. failure, if a future schema change ever
+/// makes one reachable — goes to [`run_err`], today's path, unchanged.
 ///
 /// `FOREIGN KEY` maps to [`PortError::NotFound`]: an INSERT addresses no
 /// existing row, so the only possible subject is something it
@@ -117,7 +131,7 @@ pub(crate) fn classify_insert_message(msg: &str) -> Option<PortError> {
     let msg = msg.to_ascii_lowercase();
     if msg.contains("sqlite_constraint_foreignkey") {
         Some(PortError::NotFound)
-    } else if msg.contains("sqlite_constraint_unique") {
+    } else if msg.contains("sqlite_constraint_unique") || msg.contains("sqlite_constraint_primarykey") {
         Some(PortError::Conflict)
     } else {
         None
@@ -142,6 +156,24 @@ mod tests {
 
     const UNIQUE_MSG: &str =
         "D1: D1Error { cause: JsValue(Error: UNIQUE constraint failed: tenants.slug: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_UNIQUE)) }";
+    // RFC 141 cycle 2b — captured verbatim against a live `wrangler dev` +
+    // local D1, from a duplicate `POST /admin/console/clients` with an
+    // id already registered. The message text says "UNIQUE constraint
+    // failed"; the extended code says PRIMARYKEY — `oidc_clients.id` is
+    // `TEXT PRIMARY KEY`, not a separate `UNIQUE` column, and SQLite
+    // reports a duplicate single-column primary key this way, not as
+    // `SQLITE_CONSTRAINT_UNIQUE`. This is the string that, uncaught,
+    // reached `run_err` and rendered "storage error", 500.
+    const PRIMARYKEY_MSG: &str =
+        "D1: D1Error { cause: JsValue(Error: UNIQUE constraint failed: oidc_clients.id: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_PRIMARYKEY)) }";
+    // A composite-key collision reports the same extended code — the
+    // shape `user_tenant_memberships`/`user_organization_memberships`/
+    // `user_group_memberships` (PRIMARY KEY over two columns, no
+    // separate UNIQUE) depend on. Needs its own witness rather than
+    // riding on the single-column case above: a classifier that matched
+    // only a one-column message shape would still miss this.
+    const COMPOSITE_PRIMARYKEY_MSG: &str =
+        "D1: D1Error { cause: JsValue(Error: UNIQUE constraint failed: user_tenant_memberships.tenant_id, user_tenant_memberships.user_id: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_PRIMARYKEY)) }";
     const FOREIGN_KEY_MSG: &str =
         "D1: D1Error { cause: JsValue(Error: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_FOREIGNKEY)) }";
     const CHECK_MSG: &str =
@@ -157,6 +189,17 @@ mod tests {
     #[test]
     fn message_unique_is_conflict() {
         assert!(matches!(classify_insert_message(UNIQUE_MSG), Some(PortError::Conflict)));
+    }
+
+    #[test]
+    fn message_primarykey_is_conflict() {
+        // RFC 141 cycle 2b: the class RFC 160's own classifier missed.
+        assert!(matches!(classify_insert_message(PRIMARYKEY_MSG), Some(PortError::Conflict)));
+    }
+
+    #[test]
+    fn message_composite_primarykey_is_conflict() {
+        assert!(matches!(classify_insert_message(COMPOSITE_PRIMARYKEY_MSG), Some(PortError::Conflict)));
     }
 
     #[test]
@@ -191,6 +234,11 @@ mod tests {
     #[test]
     fn err_unique_classifies_as_conflict() {
         assert!(matches!(classify_insert_err("test", err(UNIQUE_MSG)), PortError::Conflict));
+    }
+
+    #[test]
+    fn err_primarykey_classifies_as_conflict() {
+        assert!(matches!(classify_insert_err("test", err(PRIMARYKEY_MSG)), PortError::Conflict));
     }
 
     #[test]

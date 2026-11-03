@@ -7,7 +7,7 @@ use serde::Deserialize;
 use worker::wasm_bindgen::JsValue;
 use worker::Env;
 
-use super::{d1_int, db, run_err};
+use super::{classify_insert_err, d1_int, db, run_err};
 
 
 pub struct CloudflareClientRepository<'a> {
@@ -194,9 +194,16 @@ impl ClientRepository for CloudflareClientRepository<'_> {
                 d1_int(now),
             ])
             .map_err(|e| run_err("oidc_clients.create bind", e))?
+            // RFC 141 cycle 2b: a duplicate id is the ordinary mistake this
+            // INSERT can hit (the only uniqueness constraint on this table
+            // is `id`'s own `PRIMARY KEY`), so `.run()`'s failure path goes
+            // through the classifier, not the generic 500 -- `.bind()`
+            // above stays on `run_err`: a bind failure is a type/parameter
+            // mismatch, never a constraint violation (RFC 160's own
+            // precedent, `tenancy/memberships.rs::add_tenant_membership`).
             .run()
             .await
-            .map_err(|e| run_err("oidc_clients.create run", e))?;
+            .map_err(|e| classify_insert_err("oidc_clients.create run", e))?;
         Ok(())
     }
 

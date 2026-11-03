@@ -615,6 +615,20 @@ mod tests {
     }
 
     #[test]
+    fn a_409_duplicate_id_body_renders_the_already_exists_message() {
+        // RFC 141 cycle 2b: before the classifier fix, a duplicate client
+        // id produced a 500 with this body's text replaced by "storage
+        // error" -- the defect this test pins is that once the backend
+        // answers correctly (409, this exact plain-text body from
+        // `op_error_response`'s `ClientOpError::Conflict` arm), the screen
+        // must show the operator the real reason, not a generic failure.
+        assert_eq!(
+            error_message_from_body("a client with that id already exists"),
+            "a client with that id already exists",
+        );
+    }
+
+    #[test]
     fn empty_body_gets_a_generic_message() {
         assert_eq!(error_message_from_body(""), "エラーが発生しました。");
         assert_eq!(error_message_from_body("   "), "エラーが発生しました。");
