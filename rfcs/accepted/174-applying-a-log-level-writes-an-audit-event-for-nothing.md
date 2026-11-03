@@ -192,6 +192,36 @@ false positives and one finding.** The class is narrow or it is noise.
 code reach the thing it names?* — and a P1 whose repair is a few lines should
 not wait on it.
 
+## 4.5 Shipped as removal in `abf1020`, and two corrections from reviewing it
+
+**The routes are gone** — handlers, registrations, `route-contracts.md` rows and
+the misleading comments. Routes **194 → 192**, E4 `216 = 192 + 24 + 0`,
+E6 `92 = 83 + 9 + 0`. The deleted URLs are now absorbed by the surviving
+`:bucket` wildcard and answer **401** without a credential, **404 `unknown
+bucket`** with one — captured, not predicted, and both fail safe.
+
+**Correction 1: §5's "family" needs a qualifier.** `config::apply` — the generic
+bucket apply, three functions away in the same file — writes `attempt:{bucket}`
+unconditionally and `ok:{bucket}` **only** in its `Ok` arm, with a comment
+saying why. **That is exactly what this RFC would have asked of the log-level
+handler, and it already existed.** So this was not a class: it was one handler
+that did not follow its own sibling's pattern. The other three family members
+are swallowed errors and unbuilt readers; this one had a correct model next to
+it.
+
+**Correction 2: the architect's "keep the HMAC mechanism" instruction was
+wrong.** The removal handoff said to keep `mint_preview_token`/
+`verify_preview_token` because *"the generic bucket preview/apply pair is the
+obvious future consumer"*. **It is not and never was** — `config::preview`
+returns a plain `json_response` with no preview-token or impact-statement
+concept. And the orphan is not two functions: **every public item in both
+`admin/preview.rs` modules now has zero references outside them** — 8 items, 2
+modules, 19 tests. Keeping that would be deliberately creating a two-module
+instance of the class RFC 166 exists to stop, in the same release that removed
+its only consumer, on a speculative argument. **The cluster is deleted**, with a
+dated pointer in RFC 166 §3's census to the commit it is recoverable from.
+`admin_token_rotation_impact` goes with it.
+
 ## 5. The family, named because it is now four
 
 One review surfaced four instances of *a capability that reports success without
