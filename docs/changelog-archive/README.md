@@ -15,8 +15,9 @@ budget (~80 KB for CHANGELOG.md, ~40 KB for ROADMAP.md).
 | [`CHANGELOG-0.60-to-0.69.md`](CHANGELOG-0.60-to-0.69.md) | v0.60.0 – v0.69.0 |
 | [`CHANGELOG-0.70-to-0.79.md`](CHANGELOG-0.70-to-0.79.md) | v0.70.0 – v0.79.7 |
 | [`CHANGELOG-0.80-to-0.84.md`](CHANGELOG-0.80-to-0.84.md) | v0.80.0 – v0.84.3 |
+| [`CHANGELOG-0.85-to-0.87.md`](CHANGELOG-0.85-to-0.87.md) | v0.85.0 – v0.87.1 |
 
-Current releases (**v0.85.0 and newer**) are in the root
+Current releases (**v0.88.0 and newer**) are in the root
 [`CHANGELOG.md`](../../CHANGELOG.md).
 
 > The four v0.50–v0.84 files were added 2026-10-31, in one pass. The policy
@@ -26,6 +27,12 @@ Current releases (**v0.85.0 and newer**) are in the root
 > this table (its `sed` for that is broken and swallowed by `|| true`) and it
 > appends a duplicate "Older releases" section on each successive run. Both were
 > fixed by hand here, and both are recorded in RFC 028's enforcement note.
+>
+> `CHANGELOG-0.85-to-0.87.md` was added 2026-11-03 (RFC 152 half D), by the
+> same script, with the same two defects, fixed by hand the same way. The root
+> file was at 79 KB of its 80 KB budget — under budget, so the script's own
+> size guard would have refused to run — but already held eight minors against
+> the five the policy states; this split ran by that rule, not by the guard.
 
 ## ROADMAP shipped-table archive
 
