@@ -1,7 +1,7 @@
 # RFC 175 — Disabling an admin token reports success without checking, and audits it
 
-**Status.** **Proposed** 2026-11-04 by the architect, from RFC 171 §3 Q1's
-census. **Not scheduled. Needs the owner's acceptance.**
+**Status.** **Accepted** 2026-11-04, dispatched immediately. Proposed the
+same day by the architect, from RFC 171 §3 Q1's census.
 **Tier.** **P1.** `POST /admin/console/tokens/:id/disable` returns success for an
 id that does not exist or is already disabled, and writes
 **`AdminTokenDisabled` to the hash-chained audit log** for an action that did
