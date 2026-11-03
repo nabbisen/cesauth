@@ -32,6 +32,98 @@ re-fixed in the script, which is its own change with its own verification.
 
 ---
 
+## [0.92.2] - 2026-11-03
+
+**Patch.** Nothing gains capability. CI can now drive a credentialed flow for
+the first time, which closed two findings that had been stuck at `observed` —
+and found a third on its very first run: a detector that had never run once and
+reported success every day for six months.
+
+### CI can drive a credentialed flow — RFC 170, both halves
+
+- **Every other gate in this project runs with no credential and no migrated D1
+  state**, so two findings could not reach `exercised`: a gate has to be able to
+  fail when the behaviour stops working, and nothing could drive these.
+  `.github/workflows/credentialed-flows.yml` applies migrations to a local D1,
+  seeds one per-run random admin token — **sha256 only, masked, never logged,
+  never committed** — and makes exactly two assertions.
+- **RFC 147's deletion sweep: `observed` → `exercised`.** The job triggers
+  `/__scheduled?cron=0+4+*+*+*` against a real `wrangler dev --test-scheduled`
+  with an already-due request and asserts **three facts, not a status**: the
+  user row is gone, the request reads `executed`/`sweep`, and the audit chain
+  carries `deletion_executed` with `subject` = the deleted user.
+- **RFC 152 half A's admin cookie witness: restored.** The job walks the real
+  two-step `/admin/login` flow and asserts the `Set-Cookie` string carries
+  `__Host-`, `Path=/`, `HttpOnly`, `Secure` and `SameSite=Strict`, reporting a
+  missing attribute **by name** with the header withheld from the log.
+- **The release workflow set is now 14** (15 files with the one off-path entry),
+  and the manifest, `contributing.md`'s three prose counts and a new
+  stale-phrase guard moved with it.
+- **RFC 147's remainder, also shipped**: the sweep's decision core is lifted
+  into `cesauth_core::deletion::sweep_due_deletions`, a pure function over the
+  repository ports, with `sweep_pending_deletions` reduced to the `Env`-bound
+  shell that produces the log lines and audit events only `Env` can. Four host
+  tests, one pinning RFC 147 cycle 2 D5's own regression — the audit call that
+  once passed `None` as the subject.
+
+### A detector that had never read a row, and said so daily — RFC 173
+
+- **`session_index_audit` bound an `i64` straight into D1.** `wasm_bindgen`
+  turns that into a JavaScript BigInt, which D1 rejects outright, so
+  `fetch_active_rows` failed on **every run since 2026-05-06** — six months.
+  The exact pitfall, and its fix, are documented at the top of the adapter
+  crate's `ports/repo.rs`; the helper that implements it is `pub(crate)` and was
+  **unreachable from the one caller outside that crate.**
+- **Its error path returned `Ok`.** So the operator-facing cron status recorded
+  a **successful** session-index audit, with no error string and 0 rows walked,
+  every day. Zero drift is also what a working detector reports — there was no
+  observable difference to notice. Both early returns now propagate, including
+  the identical `Config::from_env` arm three lines above the one the RFC named.
+- **What was lost**: the only signal for a class whose own documentation reads
+  *"the user sees a phantom row in their list"* and *"DO is revoked but D1 still
+  thinks active … the page would render this as still-active and offer a no-op
+  revoke button."* Whether drift is occurring is **unknown**, not zero, and the
+  first green run is the first datum — **no historical figure is claimed.**
+- **And no cron pass had ever been recorded at all.**
+  `cron_status::record_cron_pass` called `env.kv("CESAUTH_KV")`; this project
+  declares exactly one KV namespace, `CACHE`, and a namespace can only come from
+  `wrangler.toml`. All six daily passes failed there, the error discarded by
+  `let _ =`. Zero `cron:last-run:*` keys before the one-line fix; six after.
+- **RFC 170's third assertion**, which its scope fence said would arrive only
+  when a third finding needed one: the job now asserts the recorded pass has
+  `processed_count >= 1`, not `success` alone — which is precisely what six
+  months of this looked like.
+
+### Found in review, recorded not fixed
+
+- **`POST /admin/console/config/log_level/apply` writes a hash-chained
+  `OperationApplied` audit row for a change that cannot happen** — the KV
+  binding it writes to is undeclared, and `LogConfig::from_env` never reads KV
+  anyway. The operator is told it worked, the record of truth says it worked,
+  and the log level cannot be changed at runtime. **RFC 174**, P1, accepted
+  2026-11-03.
+- `operations_route.rs`'s `CronRecord` is never constructed, so nothing displays
+  the cron records that now finally persist.
+- `required (Content-Type)` is sound only while no `Access-Control-Allow-Origin`
+  exists anywhere in this worker — an absence nothing guards.
+
+### Release figures
+
+- Worker bundle at this commit, after the version bump, via
+  `./node_modules/.bin/wrangler deploy --dry-run --outdir bundled/`, **gzip 1.15
+  at its default level**: **897,191 B** (886,492 wasm + 10,699 `shim.js`), raw
+  2,454,460 + 61,887 bytes.
+  `sha256 ef6fbd1885b3a0eb5fbcba61ab30a9f8620ccd0c4645e3d51ea47856deddb362`
+  (wasm) and
+  `d4de41a41795a276889f81c538b3d193d41d9e7e934a619e92cf39d335ed146e` (shim).
+  Against 0.92.1's **896,990 B**, measured the same way after its own bump:
+  **+201 B** — RFC 170's refactor adds real code to the shipped Worker, which is
+  a change in bytes and not in behaviour.
+- Host tests **1,694** passed / 0 failed / 4 ignored across 12 `test result:`
+  lines; `migration_chain` **35**; 194 routes; E4 `218 = 194 + 24 + 0`; E5
+  `17 = 17 + 0 + 0`; **E6 `94 = 85 claims + 9 declared + 0 unclassified`**,
+  `85 = 67 + 0 + 18`; Playwright **20**; `runtime-smoke-check` passed.
+
 ## [0.92.1] - 2026-11-03
 
 **Patch.** Nothing gains capability. A passkey registration route that
