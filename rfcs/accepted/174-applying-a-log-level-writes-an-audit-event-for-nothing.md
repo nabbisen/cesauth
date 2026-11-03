@@ -19,10 +19,12 @@ and it goes in the same cut.
 
 **Sibling links.** `rfcs/accepted/173-…` and `rfcs/accepted/161-…` are reached
 from here as siblings now that this file has moved.
-**Tier.** **P1.** `POST /admin/console/config/log_level/apply` writes nothing,
-could not take effect if it did, and then **writes a hash-chained audit event
-saying it was applied.** The operator is told it worked, the project's record of
-truth says it worked, and the log level cannot be changed at runtime at all.
+**Tier.** **P2 — downgraded from P1 on 2026-11-03 by the architect, who wrote
+the P1 and was wrong about its most quotable claim.** §0 has the live probe.
+`POST /admin/console/config/log_level/apply` writes nothing, could not take
+effect if it did, and *would* write a hash-chained audit event saying it was
+applied — but **no operator can reach it**, and no such audit row has ever been
+written. The defect is real and nobody is tripping over it.
 **Not an exposure.** Nothing is newly reachable and no control is weakened — the
 HMAC'd preview-token binding in front of this action is real and was validated
 in RFC 152 half C. **The control is real; the action behind it is not.**
@@ -44,6 +46,47 @@ binding in RFC 173's cycle; sweeping for the rest of that class found this one.
 **On 1.0:** not declared, not scoped, not dated.
 
 ---
+
+## 0. Corrected by a live probe, 2026-11-03 — and the decision taken
+
+**§3(b) is the owner's decision** (*"Your recommendation is accepted."*,
+2026-11-03): **remove the action and document the log level as deploy-time
+only.** §1–§5 below are the text as proposed; this section is what probing it
+actually found, and it narrows the defect while strengthening the decision.
+
+**What is reachable, measured against `wrangler dev` with a real admin session:**
+
+| step | result |
+|---|---|
+| `GET /admin/console/config` | **200, and zero `<form>` elements.** No log-level control exists in the UI, and the page sets no CSRF cookie |
+| `POST …/log_level/preview` | **200** — the real `log_level_preview` handler (static segment wins over `:bucket`; verified, not assumed), renders the preview page and writes an honest `operation_previewed` audit row |
+| the preview page's own form | carries `preview_token` **and `csrf_token` with an empty value** |
+| `POST …/log_level/apply`, submitted exactly as that form would | **400 `csrf_token required`** |
+| `audit_events` where `reason LIKE '%log_level applied%'`, whole history | **0 rows** |
+
+**So the sentence this RFC was built on — *"the operator is told it worked, the
+record of truth says it worked"* — is false.** The console has no control to
+click; the preview page's form is rejected before the KV write or the audit row;
+and no `log_level applied` row has ever existed. That claim was `reviewed`, I
+tiered it P1 on a reading, and the probe says otherwise. **Corrected here rather
+than quietly in a cut.**
+
+**What is still true, and still worth removing:** two registered routes that can
+never complete, a write to a namespace this project does not declare, a reader
+(`LogConfig::from_env`) that never consults it, and — behind a hand-crafted
+request from someone who already holds an admin session — a false `applied`
+audit row. Nothing an operator trips over, nothing an attacker gains.
+
+**And it changes the premise of the question I asked the owner.** §3 called (b)
+the owner's call *because it removes an operator affordance*. **There is no
+affordance to remove** — the page renders no form. (b) was accepted anyway,
+which is what the facts support; said here because banking the right answer on a
+premise that did not hold is not the same as being right.
+
+**The docs already tell the truth.** Every mention of `LOG_LEVEL` in `docs/src`
+treats it as a `wrangler.toml` `[vars]` value — deployment, logging and
+environments pages alike. Removing these routes makes the code agree with the
+book, which is the opposite of this project's usual direction of travel.
 
 ## 1. What happens today
 

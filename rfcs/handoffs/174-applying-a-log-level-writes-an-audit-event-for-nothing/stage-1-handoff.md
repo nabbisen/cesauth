@@ -121,3 +121,26 @@ believe it does, and I would rather be told than have it decided inside a patch.
 **Name the command, the commit and the gzip level for every figure.** `-9` reads
 ~4.2 KB lower on identical bytes and that gap was once mistaken for an
 environment difference (RFC 133 §16).
+
+---
+
+# WITHDRAWN and replaced — 2026-11-03
+
+**Do not implement anything above.** The owner has chosen RFC 174 §3**(b)**
+(*"Your recommendation is accepted."*), so the handler this handoff asked you to
+make honest **is being deleted instead.** Building an honest failure message for
+a route that is about to go would be work with a one-cycle lifespan, and the
+reason I split the RFC in two — that stage 1 was true under either answer — stops
+applying the moment (b) is chosen.
+
+**If you already started: stop, and keep nothing.** Report what you had, so the
+record says what was thrown away and why.
+
+**The replacement is `removal-handoff.md`, in this directory.** It is smaller
+than this was.
+
+**And read RFC 174 §0 first.** A live probe found that this handoff's premise was
+partly wrong — the console renders no log-level control at all, and the apply
+route answers **400** before it can reach either the KV write or the audit row.
+The defect is narrower than the RFC first said, the tier is now **P2**, and the
+correction is the architect's.
