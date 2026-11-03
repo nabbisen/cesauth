@@ -142,6 +142,30 @@ asserted, the coverage line must say what it scanned** — `.json` literals in
 and population, not a certification that anything is correct, and RFC 162 fixed
 a page a tenant owner reaches today. Recorded here instead.
 
+## 4c. Found ahead of the census, recorded here since no census list exists yet
+
+§3's census (the actual gate) has not been built — it is still queued, run
+first and on its own. In the meantime, the few caller-less items this project
+has found by hand have nowhere else to be recorded as a dated entry; this
+section is that record until the census exists and can carry it structurally.
+
+**The `cesauth_core::admin::preview` / `cesauth_frontend::admin::preview`
+cluster, deleted 2026-11-03 (RFC 174's cluster-removal cycle).** Both whole
+modules — `mint_preview_token`, `verify_preview_token`, `PreviewTokenPayload`,
+`DiffEntry`, `ImpactStatement`, `ImpactSeverity`, `log_level_impact`,
+`admin_token_rotation_impact`, `preview_body`, `preview_body_noop` — had zero
+references outside their own two files (confirmed by grep, twice
+independently, before deletion) once RFC 174(b) removed their only production
+call sites. The removal handoff's own §2 argued one pair should be *kept*
+because "the generic bucket preview/apply pair is the obvious future
+consumer" — checked at review and found false: `config::preview`/`apply`
+return plain JSON and have no preview-token or impact-statement concept
+anywhere in them. Recoverable from `git show abf1020:crates/core/src/admin/preview.rs` and
+`git show abf1020:crates/frontend/src/admin/preview.rs` — `abf1020` deleted
+the two call sites but not the module files themselves; the files were
+removed one commit later, this one. 19 tests went with it (12 + 7), host
+test count 1,694 → 1,675.
+
 ## 5. What this does not claim
 
 - Not that uncalled means deletable. Six of these services are wanted back
