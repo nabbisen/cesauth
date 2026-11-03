@@ -6,6 +6,7 @@
     "browser-tests.yml",
     "bundle-size.yml",
     "clippy.yml",
+    "credentialed-flows.yml",
     "csr-bundle-check.yml",
     "deny.yml",
     "docs.yml",

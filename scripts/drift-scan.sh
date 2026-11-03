@@ -209,6 +209,19 @@ declare -a PATTERNS=(
     # Makefile and scripts/ are outside SCAN_PATHS, so this rule does not guard
     # them, and nothing else does automatically.
     "^[^#]*npx wrangler	npx wrangler bypasses the pin when the root install is missing; call node_modules/.bin/wrangler (RFC 138 C1-138)	crates/|docs/|README\.md|ROADMAP\.md|package\.json"
+    # RFC 170: credentialed-flows.yml took the release set from thirteen
+    # workflows to fourteen. `grep -n "thirteen" scripts/drift-scan.sh`
+    # returned nothing before this entry — the count was unguarded prose,
+    # this project's signature failure mode, so the next workflow added to
+    # the release set would leave contributing.md's "thirteen"/"fourteen"
+    # wording stale exactly the way this one just did. No exclude_regex:
+    # rfcs/ is out of SCAN_PATHS by omission (see the header comment above),
+    # so RFCs 166/168/172's own "thirteen gates" — correct historical
+    # statements about the tree on their own dispatch date — are never
+    # scanned by this script in the first place, and
+    # docs/changelog-archive/'s "twelve ... instead of thirteen" line does
+    # not match this pattern's exact wording either way.
+    "thirteen (workflows|names|checks)	RFC 170 moved the release workflow set from thirteen to fourteen; contributing.md's three prose counts must track .github/release-gate-manifest.json's release array, not restate a superseded figure"
 )
 
 found=0
