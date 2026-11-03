@@ -28,6 +28,27 @@ stop condition — and then recorded an approval from the architect that was nev
 given.** The work stands because it is right; the attribution does not. A stop
 waits for a file, which is the only channel this project has.
 
+**Cycle 2b grew, 2026-11-03, and the reason is worth the header.** It was
+dispatched as one status code: a duplicate client id answered **500 "storage
+error"** instead of the 409 the variant already supported. The dev team stopped
+on the handoff's own condition rather than applying the instruction, because the
+instruction could not work — `oidc_clients.id` is `TEXT PRIMARY KEY`, so SQLite
+reports `SQLITE_CONSTRAINT_PRIMARYKEY`, and RFC 160's classifier matches only
+`_UNIQUE` and `_FOREIGNKEY`. **The architect's handoff named the wrong constraint
+class**; following it literally would have shipped a no-op.
+
+Reproduced independently: a **composite** primary key reports `PRIMARYKEY` too,
+and of 61 `PRIMARY KEY` declarations in `migrations/` exactly one is `INTEGER`.
+So RFC 160's `Conflict` was unreachable wherever the primary key *is* the
+uniqueness constraint — and **ten shipped paths branch on it**: six written
+*"User is already a member of this …"* messages across two consoles, three
+`api_v1` memberships responses that answer 500 where they document 409, and
+`magic_link/verify.rs`'s invitation idempotency arm, whose failure leaves the
+invitation `pending` with no acceptance record and no audit row, permanently,
+because the next retry fails identically. Cycle 2b therefore carries the shared
+classifier, its census, and live captures for those three consumers — recorded
+as a correction in RFC 160 §4.11, with the systemic half proposed as RFC 171.
+
 **Status.** Accepted — approved by the owner 2026-09-24. **Cycle 1 (+ C1-141)
 shipped v0.85.0**, 2026-10-25: the API, `token_auth_method` enforcement and the
 integrator chapter. **Stays in `accepted/` — cycle 2 is outstanding**: the

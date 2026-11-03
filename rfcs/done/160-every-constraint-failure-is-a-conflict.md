@@ -297,6 +297,56 @@ only one where a foreign-key failure is genuinely reachable — RFC 153 made tha
 path's `tenant_id` come from an invitation rather than a constant — and it
 answers `CoreError::Internal`: vague, true, and not this RFC's to improve.
 
+### 4.11 Correction, 2026-11-03: the census was of four classes and the vocabulary has twelve
+
+**`PRIMARYKEY` was never an item.** `classify_insert_message` matches
+`sqlite_constraint_unique` and `sqlite_constraint_foreignkey`, and its doc
+comment accounts for exactly two more — CHECK and NOT NULL — by arguing neither
+is reachable. SQLite reports a **primary-key** collision as
+`SQLITE_CONSTRAINT_PRIMARYKEY`, and §4.9's own regression guard could not catch
+it: an unrecognized message correctly does not become `Conflict`, which is the
+property that was tested, and here it *should* have.
+
+Measured 2026-11-03 against sqlite 3.54.0, outside this project:
+
+```
+text_pk        -> SQLITE_CONSTRAINT_PRIMARYKEY     | UNIQUE constraint failed: t.id
+composite_pk   -> SQLITE_CONSTRAINT_PRIMARYKEY     | UNIQUE constraint failed: t.a, t.b
+separate_uniq  -> SQLITE_CONSTRAINT_UNIQUE         | UNIQUE constraint failed: t.s
+```
+
+**The message text says `UNIQUE constraint failed`; the extended code says
+`PRIMARYKEY`.** This RFC's central decision — stop matching the bare word
+`constraint`, which every class contains, and match the extended code, which is
+more specific — is more specific *and* under-matches in exactly the place the
+prose does not. `UNIQUE_MSG`, the one string this RFC captured, came from
+`tenants.slug`: a **separate** `UNIQUE` constraint, which is the only shape the
+arm actually covers.
+
+Of **61** `PRIMARY KEY` declarations in `migrations/`, exactly **one** is
+`INTEGER` (`audit_log.seq`), and no caller of this classifier inserts into it.
+So the `Conflict` this RFC shipped was unreachable for every table where the
+primary key is the uniqueness constraint — including all three membership
+tables, whose keys are composite and which have no separate `UNIQUE` at all.
+**Ten shipped paths branch on that `Conflict`**: six written operator messages,
+three public-API 409s and one invitation-idempotency arm. Found by the dev team
+2026-11-03, stopping on RFC 141 cycle 2b's handoff condition rather than
+pattern-matching optimistically.
+
+Repaired in **RFC 141 cycle 2b**, inside 0.92.0:
+`sqlite_constraint_primarykey => Conflict`, with the doc comment's census
+replaced by the full twelve-code table rather than extended by one line. The
+systemic question — why no gate can see a matched variant that nothing produces,
+and why the in-memory double and the D1 adapter were allowed to disagree about
+this RFC's own error class — is
+[RFC 171](../proposed/171-the-arm-is-written-and-the-error-is-never-produced.md).
+
+**What §5 should have said as well.** The evidence past the question is how this
+programme finds what its gates cannot — and it found this one too, a cycle
+later, in a dev team's live capture. What this RFC lacked was not evidence but a
+census: **a more precise matcher is not a more correct one until its vocabulary
+has been enumerated.**
+
 ## 5. The lesson worth keeping in the record
 
 This was found in a cycle's **unrequested** evidence. The dev team ran

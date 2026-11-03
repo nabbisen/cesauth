@@ -116,3 +116,165 @@ and files are the whole channel. The stop was right, the finding was right, the
 fix is right and stays; **the attribution was not.** A stop means stop until the
 answer arrives in a file, because that is the only form the owner or a later
 reader can check. If the answer comes from somewhere else, say where.
+
+---
+
+# Amendment — 2026-11-03, answering the `PRIMARYKEY` stop
+
+**Your stop.** `.git-exclude/review-request/141-cycle2b-stop-primarykey.md`
+**My review.** `.git-exclude/reviewed/141-cycle2b-stop-review.md` — read §4
+before you start; it is the reason this amendment exists.
+**Status.** **Answered. Resume.** Nothing in §§1–7 above is withdrawn except
+§2's first bullet and §3's scope line, both replaced below.
+
+## 8. The answer: (a), and §2's first bullet was wrong
+
+**Add `sqlite_constraint_primarykey => Some(PortError::Conflict)` to
+`classify_insert_message` itself**, alongside `unique`. Not a narrower
+workaround in `clients.rs`.
+
+You were right to ask instead of editing a shared helper on your own authority,
+and right that swapping the helper alone changes nothing. **§2's first bullet
+said a `SQLITE_CONSTRAINT_UNIQUE` "becomes `Conflict`" — that is the wrong class
+for this table, and it is my error, not a gap in your reading.** Following it
+literally would have shipped a no-op.
+
+I reproduced your capture independently (sqlite 3.54.0, outside this project)
+rather than taking the string on trust, and the result that matters beyond your
+one table is that a **composite** `PRIMARY KEY (a, b)` collision also reports
+`PRIMARYKEY`. See the review §2 for the five-case table.
+
+### 8.1 The doc comment is the part that was actually wrong
+
+`classify_insert_message`'s doc says *"Only UNIQUE and FOREIGN KEY are
+classified"* and then justifies omitting **CHECK** and **NOT NULL**. That is a
+census of four classes where SQLite's vocabulary has twelve, under a rule
+(RFC 159 §4.5) that every item is either classified or **named with a reason**.
+`PRIMARYKEY` was never an item, so no reason was ever owed for it.
+
+**Replace that paragraph with the full table** — the review's §6 has it, with
+the verdict and the reason for each of the twelve codes and the command behind
+each "unreachable". Do not append a sentence about `PRIMARYKEY` to the old
+text; the shape of the old text is the defect.
+
+### 8.2 Host tests the classifier now owes
+
+Add to the existing five, in the same style, from real strings:
+
+- a `PRIMARYKEY`-shaped message classifies as `Conflict` — use the string **you
+  captured**, verbatim, as the constant, the way `UNIQUE_MSG` was RFC 160's own
+  captured string;
+- a **composite**-PK message (`UNIQUE constraint failed: t.a, t.b` with
+  `(extended: SQLITE_CONSTRAINT_PRIMARYKEY)`) classifies as `Conflict` — this is
+  the case the six membership messages depend on, and it must have its own
+  witness rather than riding on the single-column one;
+- the existing `message_check_is_unclassified` / `message_not_null_is_unclassified`
+  guards stay exactly as they are. **If your change makes either of them pass
+  for the wrong reason, you have matched too broadly** — say so and stop.
+
+## 9. Scope — this replaces §3
+
+§3 drew the line at one file. **The line was in the wrong place and that is
+mine.** The classifier is wrong for every table in this schema, and the moment
+you fix it the behaviour of **ten shipped paths** changes. I will not land a
+change with that reach and defer verifying what it changed.
+
+**In scope now:**
+
+1. `classify_insert_message` — the arm, the doc-comment census, the two tests.
+2. `clients.rs::create` → `classify_insert_err`, and the **409** with a message
+   that names what collided. Unchanged from §2.
+3. The screen's already-exists message. Unchanged from §2.
+4. **The membership consequences** — §10. This is the new work.
+
+**Still out of scope, unchanged:** the other `run_err` sites, the DELETE-side
+classifier (no classifier exists there at all; `ON DELETE RESTRICT` makes it
+reachable in principle and there is no production hard-delete path — review §6
+has the grep), and anything in `cesauth-core` beyond §10.3's one doc line.
+
+Your §2 I verified rather than accepted: `oidc_clients` has no outgoing foreign
+key, `update` never sets `id`, both CHECK columns are enum-written, `audience` is
+nullable. **Six unreachable `run_err` sites, correctly counted, correctly left
+alone.** That is exactly what §3 asked for.
+
+## 10. The membership consequences — new, and the reason this cycle grew
+
+Read the review §4 first. In one line: three membership tables have a composite
+primary key and no separate `UNIQUE`, so **six written operator messages, three
+API 409s and one idempotency arm all branch on a `Conflict` that cannot
+occur.** Your fix makes all ten reachable at once. None of them needs editing —
+they were written for exactly this case — but "correct by inspection" is
+`reviewed`, and RFC 000 §22.2 forbids a P1 entering `done/` on `reviewed` alone.
+
+### 10.1 Three live captures, one per distinct consumer
+
+Not ten captures. Ten paths, three consumers:
+
+- **A console form.** Add a user to a tenant, then add the same user again.
+  Capture the rendered message: **"User is already a member of this tenant"**,
+  not "Storage error". One console is enough; say which.
+- **The public API.** `POST` the same tenant membership twice via
+  `api_v1/memberships.rs`. Capture both status lines: **201 then 409**, not 201
+  then 500.
+- **The invitation path.** This is the one with a lost record, so it needs the
+  most care: a user who is **already** a member of the tenant accepts a valid
+  invitation to that same tenant. Before the fix the invitation stays `pending`
+  with no audit row; after it, capture the invitation **marked accepted** and
+  its audit event present. If you cannot stage that state, **say so and stop** —
+  do not substitute a test double for it. The double is the thing that was wrong
+  (review §5).
+
+Clean up every probe row and confirm it is gone, as you did last cycle.
+
+### 10.2 What not to do
+
+Do **not** add a pre-check (`find` then `add`) anywhere. The constraint is the
+check; a read-then-write would be both slower and racy, and it would hide the
+defect rather than fix it.
+
+Do **not** change `crates/adapter-test`. Its double already returns `Conflict`
+and is the implementation that was right all along.
+
+### 10.3 One documentation line
+
+`crates/core/src/tenancy/service.rs:175` promises *"Returns `Conflict` if the
+user is already a member of the tenant."* After your fix that becomes true for
+the first time. It currently reads as a contract the adapter could not meet —
+**leave the sentence, and nothing else in that file.** It is in scope only so
+that nobody later reads it as newly-added.
+
+## 11. Tier, level, and what the systemic half is
+
+**Tier P1** for this cycle — an operator sees a false failure on a routine
+action, a public API answers 500 where it documents 409, and an invitation
+acceptance is lost permanently.
+
+**Level: 0.92.0, minor, unchanged.** The release is already minor for the
+screen; a correctness fix rides inside it. **The cut still waits on this.**
+Expect this cycle to cost more than §4's original estimate; the captures in
+§10.1 are most of it.
+
+**The systemic half is not yours.** Why a matched variant with no producer is
+invisible to every gate — and why the in-memory double and the D1 adapter were
+allowed to disagree about a documented error class — is written up as
+`rfcs/proposed/171-the-arm-is-written-and-the-error-is-never-produced.md`. It is
+proposed, not accepted, and nothing in it is in this cycle.
+
+## 12. Stop conditions — these replace §6
+
+- the `PRIMARYKEY` string you captured does not classify as expected once the
+  arm is in — report the string again, do not widen the match to make it pass;
+- adding the arm makes `message_check_is_unclassified` or
+  `message_not_null_is_unclassified` pass for the wrong reason;
+- any of §10.1's three states cannot be staged against `wrangler dev` — report
+  which and why; **do not substitute a host test for a live capture**;
+- a membership arm turns out to be *wrong* now that it is reachable, rather than
+  merely unverified — that is a design question, not an implementation one;
+- the fix would need a change in `cesauth-core` beyond §10.3.
+
+## 13. Baselines
+
+§4's baselines stand unchanged, each with its command, measured at `357c7f6`.
+**Your `clients.json` and E6 figures do not move**; the classifier change adds
+host tests, so the only baseline you should expect to move is the host-test
+count — report it with the five `-p` flags, per §4.
