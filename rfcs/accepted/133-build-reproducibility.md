@@ -814,8 +814,13 @@ gzip -9                wasm=881,989   shim=10,462   total=892,451
 difference                                                 4,221
 ```
 
-The header's figures were **896,301 / 896,677** on one side and
-**892,218 / 892,577** on the other. The gap is the flag, not the environment.
+The header's figures, with the commits they were measured at, were
+**896,301 at `481dcab`** (tag `0.91.2`) and **896,677 at `357c7f6`** on the
+architect's side — both at gzip's default level — against **892,218** and
+**892,577** at the same two commits on the dev team's, both at `-9`. The gap is
+the flag, not the environment. **These four figures are the retracted entry's
+own, kept here with their provenance** so a later reader can check the
+arithmetic rather than take the retraction on trust.
 
 **It reconciles against its own parts, which is how it should have been caught.**
 The retracted entry recorded a sub-observation — *"the implementer's `shim.js`

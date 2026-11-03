@@ -134,7 +134,10 @@ duplicate value, anywhere in this schema, stopped answering 500.
   `sha256 e0064ad099def12a2a1deb6b1c830e55093c3528b3c9180f661a5438d57f2127`
   (wasm) and
   `42db389be1ccb68dc47074cd4d52faf5d3c31e0b4bf448cb9ef0cb3a7b42b0f4` (shim).
-  Against 0.91.2's **896,301 B** on the same compressor setting: **+371 B**.
+  Against **896,301 B** — measured at `481dcab`, tag `0.91.2`, with the same
+  command and the same default compression level, and recorded in RFC 133
+  §16 — **+371 B**. The 0.91.2 entry itself records no bundle figure, so the
+  provenance is named rather than implied.
 - Host tests **1,677** passed / 0 failed / 4 ignored across 12 `test result:`
   lines, via the five-crate invocation in `contributing.md` §Running tests;
   `migration_chain` **35**; 194 routes; E4 `218 = 194 + 24 + 0`; E5
