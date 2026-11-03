@@ -1,7 +1,9 @@
 # RFC 173 — The session-index audit has never read a row, and reports success daily
 
-**Status.** **Proposed** 2026-11-03 by the architect, found in RFC 170's live
-rehearsal. **Not scheduled. Needs the owner's acceptance.**
+**Status.** **Accepted** 2026-11-03 by the owner, dispatched immediately —
+ahead of the rest of the queue, per the RFC 170 review's own recommendation
+(small, P1, found live in that job's first rehearsal). Proposed the same day
+by the architect.
 **Tier.** **P1.** A detection capability that has never run once, whose failure
 path reports **success** to the operator-facing cron status surface, since
 **2026-05-06** — six months. Not an exposure: nothing is newly reachable. What

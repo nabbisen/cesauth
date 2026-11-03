@@ -61,7 +61,7 @@ stale and correctly did not recompute it unasked.
 `/__scheduled` surfaced an unrelated error in the same cron pass:
 `session_index_audit` has never read a row since 2026-05-06 and its failure path
 returns `Ok`, so the operator-facing cron status has recorded success daily.
-[RFC 173](../proposed/173-the-session-index-audit-has-never-read-a-row.md),
+[RFC 173](../accepted/173-the-session-index-audit-has-never-read-a-row.md),
 **P1** — and **it is this job's third assertion**, which §7's scope fence said
 would arrive only when a third finding needed one and said that finding's own
 RFC must say so.
