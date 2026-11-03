@@ -1,27 +1,28 @@
 //! WebAuthn registration ceremony (`/webauthn/register/{start,finish}`).
 //!
-//! **CSRF (RFC 152 half D, 2026-11-03).** `route-contracts.md`'s cell is
-//! `N/A (no ambient credential)`, not a `Content-Type` check like the
-//! sibling `authenticate` routes get. Two independent reasons, checked
-//! rather than assumed:
+//! **RFC 172 (P0, 2026-11-03): the subject comes from the session.**
+//! `register_start` used to read the account it was registering a passkey
+//! for out of the request body, with no credential check at all —
+//! `register_finish` would then write an authenticator for that account
+//! and sign the caller in as it (`post_auth::complete_auth`, under the
+//! comment "Registration doubles as a first-login"). Given a user id, that
+//! was account takeover in two unauthenticated requests. `register_start`
+//! now resolves a session first (`me_auth::resolve_or_redirect`) and takes
+//! the subject from it; the request body no longer carries one. No live
+//! caller existed either way (RFC 152 half D stage 1's own grep, re-
+//! confirmed here), so this is not a caller-obligation change.
 //!
-//! 1. **No live caller.** Nothing under `crates/frontend/` — or anywhere
-//!    else in this repository — references either path; `static/
-//!    webauthn.js` implements only the authenticate ceremony. There is no
-//!    real sender to verify a header against, and adding a check nothing
-//!    exercises would be exactly the untested-assumption shape RFC 160
-//!    warned against.
-//! 2. **Neither handler reads an ambient credential.** `register_start`
-//!    takes an optional `user_id` straight from the JSON body; `register_
-//!    finish` resolves the principal from the challenge state `start`
-//!    stored, never from a session cookie. CSRF's danger model needs an
-//!    ambient credential a forged request can ride on — there is none
-//!    here, so a cross-site POST cannot do anything a direct, credential-
-//!    less POST with the same body could not already do. (`finish` does
-//!    create an authenticator row, unlike `POST /accept-invite`'s
-//!    genuinely state-free precedent — the "no state change" half of that
-//!    existing cell value does not hold here, which is why this is a new
-//!    value rather than a reuse of that one.)
+//! **CSRF (RFC 152 half D stage 1 named `N/A (no ambient credential)`
+//! here; RFC 172 supersedes that for `register_start`, which now reads
+//! one).** Both routes require `Content-Type: application/json`
+//! (`crate::csrf::require_json_content_type`, the same control
+//! `authenticate_finish` and `/me/security/delete-account` carry):
+//! `register_start` because it now consults the session cookie
+//! `resolve_or_redirect` reads; `register_finish` because it already
+//! captured `cookie_header` for `post_auth::extract_pending_handle` →
+//! `complete_auth`, the identical shape `authenticate_finish` carries the
+//! control for — stage 1b left this row for this cycle rather than
+//! editing a file RFC 172 was about to rewrite anyway.
 
 use cesauth_cf::ports::repo::CloudflareAuthenticatorRepository;
 use cesauth_cf::ports::store::CloudflareAuthChallengeStore;
@@ -36,8 +37,22 @@ use crate::audit::{self, EventKind};
 use crate::config::Config;
 use crate::error::oauth_error_response;
 use crate::post_auth;
+use crate::routes::me::auth as me_auth;
 
 use super::rp_from_config;
+
+/// `{"error": "not authenticated"}`, 401, `cache-control: no-store` — the
+/// same shape `deletions.rs`'s own `json_response` gives, inlined here
+/// rather than shared across files for one caller each. RFC 149 §2's
+/// ruling: a JSON route answers 401 on an unauthenticated caller, never a
+/// 302 — a redirect-following client cannot tell a 302-to-success from a
+/// 302-to-failure.
+fn not_authenticated() -> Result<Response> {
+    let mut resp = Response::from_json(&serde_json::json!({ "error": "not authenticated" }))?
+        .with_status(401);
+    resp.headers_mut().set("cache-control", "no-store").ok();
+    Ok(resp)
+}
 
 // -------------------------------------------------------------------------
 // POST /webauthn/register/start
@@ -45,16 +60,64 @@ use super::rp_from_config;
 
 #[derive(Debug, Deserialize, Default)]
 struct RegisterStartBody {
-    user_id:        Option<String>,
     preferred_name: Option<String>,
 }
 
+/// **RFC 172's whole fix, as one pure, host-testable decision.** The
+/// subject a registration challenge mints for is the session's user id —
+/// always, and `RegisterStartBody` is not a parameter here, because it no
+/// longer carries anything that could name a different one (the field
+/// this function would have had to ignore was deleted, not just unread).
+///
+/// This exists because the actual call site, `register_start`, needs a
+/// real `worker::Request`/`SessionState` and is not host-testable (the
+/// same boundary this crate draws everywhere else — see `tenant_admin/
+/// overview.rs`'s own `classify_overview_status` for the pattern this
+/// follows). RFC 000 §22.2's sibling lesson, restated in this RFC's own
+/// §5: *"testing the outcome type is not testing the caller that reports
+/// it"* — a `core`-level test of `registration::start` cannot see which
+/// argument reached it, only that the function it reached is well-formed;
+/// this is the one place in the route layer where RFC 172's own property
+/// — the subject a REQUEST can choose — is decided.
+fn registration_subject(session_user_id: &cesauth_core::types::UserId) -> Option<String> {
+    Some(session_user_id.to_string())
+}
+
 pub async fn register_start<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    // RFC 172 (P0, 2026-11-03): the subject comes from the session, never
+    // from the caller. This used to read `user_id` straight out of the
+    // request body with no credential check at all -- a registration
+    // challenge, and after `finish`, a session, for any account whose id
+    // an anonymous caller named. Resolved first, before anything else in
+    // this handler.
+    let session = match me_auth::resolve_or_redirect(&req, &ctx.env).await? {
+        Ok(s)  => s,
+        Err(_) => return not_authenticated(),
+    };
+    // This route now reads an ambient credential (the session cookie
+    // `resolve_or_redirect` just consulted) for the first time -- the
+    // same reason `authenticate_finish`/`delete-account` carry this
+    // control applies here too, newly, by the same test RFC 152 half D
+    // stage 1b corrected `authenticate_start` with: a route either reads
+    // an ambient credential and needs the control, or it doesn't and
+    // claiming one would be the same overstatement half D keeps finding.
+    if let Some(resp) = crate::csrf::require_json_content_type(&req)? {
+        return Ok(resp);
+    }
+
     let cfg  = Config::from_env(&ctx.env)?;
     let rp   = rp_from_config(&cfg);
     let body: RegisterStartBody = req.json().await.unwrap_or_default();
 
-    let (challenge, state) = match registration::start(&rp, body.user_id, body.preferred_name.as_deref()) {
+    // `registration::start`'s `user_id: Option<String>` parameter is kept
+    // (not removed) and always filled with `Some(..)` here -- the `None`
+    // branch mints a UUID with no `users` row behind it, which
+    // `register_finish`'s own "the user was created before this challenge
+    // was issued" assumption does not survive (RFC 172 §4.1). After this
+    // fix the `None` branch has no production caller; it stays for
+    // `registration::start`'s own two existing `core` tests, which is a
+    // reachability fact for RFC 166 to record, not this fix's to act on.
+    let (challenge, state) = match registration::start(&rp, registration_subject(&session.user_id), body.preferred_name.as_deref()) {
         Ok(v)  => v,
         Err(e) => return oauth_error_response(&e),
     };
@@ -91,6 +154,32 @@ struct RegisterFinishBody {
 }
 
 pub async fn register_finish<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    // RFC 172 (stage 1b left this cell for this cycle): the identical
+    // shape `authenticate_finish` already carries the control for. Both
+    // capture `cookie_header` below for `post_auth::extract_pending_handle`
+    // -> `complete_auth`, which reads `login_next` -- an ambient credential,
+    // same as `authenticate_finish`'s.
+    if let Some(resp) = crate::csrf::require_json_content_type(&req)? {
+        return Ok(resp);
+    }
+
+    // RFC 172 §4.1: `register_start`'s fix already binds this ceremony's
+    // subject to the session that started it (the challenge can only
+    // carry a session-derived `user_id` now). An *additional* "does the
+    // current request also carry a valid session" check here was
+    // considered and deliberately NOT added: the challenge handle is a
+    // single-consumption, 60-second-bound, high-entropy token (the same
+    // shape every other challenge/CSRF token in this crate uses) -- not
+    // guessable, not replayable -- so nothing short of possessing the
+    // handle itself (which only the browser `start` responded to ever
+    // saw) can reach this point. A naive "some session exists" check
+    // without ALSO verifying it matches the challenge's bound `user_id`
+    // would be strictly worse than no check: it would let a second,
+    // currently-valid session complete someone else's pending
+    // registration and be signed in as THEM via `complete_auth` below,
+    // which uses the challenge's subject, not the checking session's.
+    // Doing that correctly is a real design decision, not an improvised
+    // addition to a P0 fix; left to its own cycle if the owner wants it.
     let cfg  = Config::from_env(&ctx.env)?;
     let rp   = rp_from_config(&cfg);
 
@@ -174,4 +263,38 @@ pub async fn register_finish<D>(mut req: Request, ctx: RouteContext<D>) -> Resul
         &ctx.env, &cfg, &authn.user_id, AuthMethod::Passkey,
         pending.as_deref(), cookie_header.as_deref(),
     ).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cesauth_core::types::UserId;
+
+    // RFC 172 §5's own witness requirement: not a reading, the subject a
+    // REQUEST can choose. `RegisterStartBody` has no field that could
+    // name one (see the struct above -- `user_id` was deleted, not left
+    // unread), so the only thing left to pin is that the session's id is
+    // what actually reaches `registration::start`.
+
+    #[test]
+    fn the_subject_is_always_the_sessions_user_id() {
+        let session_id = UserId::from_storage("session-owner-id");
+        assert_eq!(
+            registration_subject(&session_id),
+            Some("session-owner-id".to_owned()),
+        );
+    }
+
+    #[test]
+    fn a_different_session_produces_a_different_subject() {
+        // Not a tautology: pins that the function is keyed on the
+        // SESSION argument, not a constant -- if a future edit hardcoded
+        // a value or ignored the argument, this is the test that would
+        // catch it while the one above would not.
+        let a = UserId::from_storage("alice");
+        let b = UserId::from_storage("bob");
+        assert_ne!(registration_subject(&a), registration_subject(&b));
+        assert_eq!(registration_subject(&a), Some("alice".to_owned()));
+        assert_eq!(registration_subject(&b), Some("bob".to_owned()));
+    }
 }
