@@ -414,6 +414,25 @@ A release that mixes fixes and new capability takes the **higher** level.
   between a claim and a capture — the same distinction the `cargo-fmt.log`
   entry above records.
 
+  **Refined 2026-11-03, by a cycle rather than by the architect: a status line
+  is not always sufficient, and where two outcomes share one, the body is the
+  evidence.** RFC 152 half D stage 1b verified that a `Content-Type` CSRF
+  control had stopped being bypassable. On `POST /webauthn/authenticate/finish`
+  **both** outcomes answer **400** — the control rejecting the request, and the
+  control passing with body validation failing next — so a status-only capture
+  would have been indistinguishable from a fix that broke the route. The cycle
+  captured the bodies instead: `{"error":"Content-Type: application/json
+  required (this header is this route's CSRF control)"}` against
+  `{"error":"invalid_request"}`. **Capture the narrowest output that
+  distinguishes the outcomes you are claiming to distinguish** — usually the
+  status line, and not only the status line when it collides.
+
+  **And a denial alone is not a witness for an authorization fix** (ruling,
+  2026-11-03). RFC 172's probe had to capture **both** halves: the request
+  denied *and* the legitimate request allowed with the right subject. A
+  401-only capture is equally consistent with a fix that rejects everything,
+  and that is a different bug, not the absence of one.
+
 - **A release entry records its level in its first line, as a bold token**
   (ruling, 2026-11-03). The first non-blank line after a `## [X.Y.Z]` heading
   begins `**Patch`, `**Minor` or `**Major`, with prose allowed after the word —
