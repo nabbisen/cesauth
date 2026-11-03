@@ -2,12 +2,15 @@
 
 **Status.** **Accepted** 2026-11-04, dispatched immediately. Proposed the
 same day by the architect, from RFC 171 §3 Q1's census.
-**Tier.** **P1.** `POST /admin/console/tokens/:id/disable` returns success for an
-id that does not exist or is already disabled, and writes
-**`AdminTokenDisabled` to the hash-chained audit log** for an action that did
-not happen — on the credential surface. **Bounded**: no live token stays valid
-while the operator is told otherwise (§2), so this is an integrity defect in the
-record, not an exposure.
+**Tier.** **P2 — downgraded from P1 on 2026-11-04 by the architect, who wrote
+the P1 and got its reachability wrong.** §2.1 has the probe.
+`POST /admin/console/tokens/:id/disable` returned success for an id that does
+not exist or is already disabled, and wrote **`AdminTokenDisabled` to the
+hash-chained audit log** for an action that did not happen — on the credential
+surface. **Bounded twice**: no live token stayed valid while the caller was told
+otherwise, *and* the route is bearer-header-only with **no console affordance at
+all**, so no operator could reach it by clicking. A script or a direct API
+caller with a stale or wrong id could.
 **Size.** **Small.** One `meta().changes()` check in the adapter, and the dead
 arm that is already written for it starts working.
 **Touches.** `crates/adapter-cloudflare/src/admin/tokens.rs`, tests. **No
@@ -68,6 +71,43 @@ where one actually was.
 already-disabled token. The reachable path is a **stale page** — the list opened
 before the token was disabled in another tab or by another operator — and a
 typo'd or stale id in a direct request. Routine, not constant.
+
+## 2.1 Correction, 2026-11-04: §2's reachability claim was wrong, and the fix is verified
+
+**§2 said the reachable path is "a stale page — the list opened before the token
+was disabled in another tab."** That path does not exist. Probed against
+`wrangler dev`:
+
+- `GET /admin/console/tokens` with a valid admin **cookie** → 200 and **zero
+  `<form>` elements**; the string `/disable` appears **0 times** in the page.
+- `POST …/disable` with that cookie → **401 `missing bearer token`**. The route
+  is bearer-header-only (RFC 152 half C class B), **and its own comment already
+  says the HTML-redirect branch is unreachable from a browser** — before this
+  change as well.
+
+So the console has no disable affordance, and no operator could reach this by
+clicking. **The reachable caller is a script or a direct API client** with a
+stale or wrong id. That is still a real defect on a documented surface, and it
+is **P2, not P1** — the same bound RFC 174 earned for the same reason, and the
+architect's own severity claim was again written before the probe rather than
+after it.
+
+**The fix itself is verified, all three cases, by the architect:**
+
+```
+POST …/arch-175-does-not-exist/disable   -> 404 "unknown token"   (was 303, false success)
+POST …/arch-175-target/disable           -> 303                   (a real live token)
+POST …/arch-175-target/disable  again    -> 404 "unknown token"   (already disabled)
+
+admin_tokens.disabled_at for the target  -> 1793747592  (genuinely set)
+audit rows kind=admin_token_disabled, subject=arch-175-does-not-exist  -> 0
+audit rows kind=admin_token_disabled, subject=arch-175-target          -> 1  (not 2)
+```
+
+The real-target half is the one a fix that simply rejected everything would
+fail, and the "1, not 2" is the double-disable case now answering honestly.
+Noticed in passing: the route audits its own auth failures
+(`admin_login_failed | missing_bearer`), which the three cookie probes produced.
 
 ## 3. The sibling the census found with it, and it is smaller
 
