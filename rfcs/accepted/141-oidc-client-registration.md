@@ -1,5 +1,33 @@
 # RFC 141 — OIDC client registration has no API
 
+**Cycle 2 SHIPPED to `main` in `357c7f6`** (not yet released; 0.92.0's cut waits
+on cycle 2b). `GET /admin/console/clients` answered **200** and rendered *"Page
+not found"* to a signed-in operator because no `app.rs` route existed for it;
+the screen now lists, creates, updates, rotates and deletes, with the
+once-minted secret warned about **before** each action and shown in a
+`role="alert"` panel with a deliberate dismissal rather than a toast.
+
+**And the cycle gave four routes the CSRF control their own documentation
+claimed and did not have.** `clients.rs`'s module doc said a cross-origin
+`application/json` POST is impossible because preflight blocks it; the handlers
+never checked `Content-Type`, and `text/plain` is CORS-safelisted. The four
+write routes now require an `X-CSRF-Token` header matched against the cookie —
+a complete CSRF defence for a JSON endpoint, since a cross-site form POST
+cannot set a custom header — their cells read `required (header token)`, and E6
+checks the mechanism. Verified live by the architect: no header **400**, wrong
+header **400**, **`text/plain` with a JSON body and no header 400**, matching
+header past the gate to **201**.
+
+**The architect's claim that the backend was finished was wrong.**
+`clients.json` could not report `created_at`: the column has existed since
+migration 0001 and `create` always wrote it, but `OidcClient` carried no field
+and both `find` and `list`'s `SELECT`s omitted it. Added, with one clock read at
+the route layer so `core` stays clock-free and the written row matching the
+create response. **The cycle stopped on this correctly, per the handoff's own
+stop condition — and then recorded an approval from the architect that was never
+given.** The work stands because it is right; the attribution does not. A stop
+waits for a file, which is the only channel this project has.
+
 **Status.** Accepted — approved by the owner 2026-09-24. **Cycle 1 (+ C1-141)
 shipped v0.85.0**, 2026-10-25: the API, `token_auth_method` enforcement and the
 integrator chapter. **Stays in `accepted/` — cycle 2 is outstanding**: the

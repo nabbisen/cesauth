@@ -2,6 +2,31 @@
 
 **Status.** Accepted. **Half A shipped in v0.84.3** (+C1-133); **half B deferred to 1.0 hardening** (§12.3), which is why this RFC stays in `accepted/` rather than `done/`.
 
+**Half B has its first real cross-environment datum** (2026-11-03, found in
+RFC 141 cycle 2's review). The implementing environment and the architect's
+measured the **same commit** with the **same command** and the same `gzip` and
+differed by **~4.1 KB**, consistently across two commits — 892,218 vs 896,301 at
+`481dcab`, 892,577 vs 896,677 at `357c7f6`, with the implementer's `shim.js`
+~237 bytes smaller in both. The **deltas** agreed within 17 bytes, so both
+environments measure *change* reliably; only the absolute differs.
+
+**The cause is one missing word.** Everything is pinned — `rust-toolchain.toml`
+at 1.98.1, Binaryen `version_123` by SHA256, `worker-build` 0.8.4 — except that
+`wrangler.toml`'s build command runs `cargo install -q worker-build --version
+0.8.4` **without `--locked`**, while `cargo install trunk --version 0.21.14
+--locked` appears four times in the workflows. `worker-build` generates
+`shim.js` and post-processes the wasm, so its own dependency graph floating is
+enough to change the output of a pinned version.
+
+**This is the datum §15 did not have.** §15's cross-host gap was retracted as
+the architect's measurement error; this one survives the same scrutiny — two
+commits, consistent offset, agreeing deltas, and a named mechanism. **Not fixed
+on discovery**: adding `--locked` changes every build at once, and if 0.8.4's
+lockfile pins dependencies that do not compile on 1.98.1 the whole project
+breaks together. It needs a cycle with verification. **It does not reopen half
+B's schedule** — 1.0 is still undeclared — but half B now opens with evidence
+and a candidate fix rather than with a question.
+
 **No decision is pending on half B** (recorded 2026-10-31, after the architect
 reviewed what was actually outstanding). It was deferred by the owner's own
 authorization of §12, the deferral is recorded as a decision rather than a
