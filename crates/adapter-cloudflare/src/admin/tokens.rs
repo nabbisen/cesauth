@@ -7,7 +7,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 use worker::Env;
 
-use crate::ports::repo::{d1_int, db, run_err};
+use crate::ports::repo::{classify_insert_err, d1_int, db, run_err};
 
 pub struct CloudflareAdminTokenRepository<'a> {
     env: &'a Env,
@@ -78,7 +78,13 @@ impl AdminTokenRepository for CloudflareAdminTokenRepository<'_> {
                 d1_int(now_unix),
             ])
             .map_err(|e| run_err("admin_tokens.create bind", e))?
-            .run().await.map_err(|e| run_err("admin_tokens.create run", e))?;
+            // RFC 175 §4.2: token_hash is a real UNIQUE column, and id is a
+            // separate PRIMARY KEY (a server-minted UUID collision) — both
+            // classify to Conflict after RFC 160 §4.11, so one arm covers
+            // it. `.bind()` stays on `run_err` (RFC 141 cycle 2b's own
+            // precedent): a bind failure is a type/parameter mismatch,
+            // never a constraint violation.
+            .run().await.map_err(|e| classify_insert_err("admin_tokens.create run", e))?;
         // System-admin tokens (no user binding); user-bound tokens
         // are minted via `create_user_bound` (added in v0.13.0).
         Ok(AdminPrincipal { id, name: name_owned, role, user_id: None })
@@ -86,13 +92,21 @@ impl AdminTokenRepository for CloudflareAdminTokenRepository<'_> {
 
     async fn disable(&self, id: &str, now_unix: i64) -> PortResult<()> {
         let db = db(self.env)?;
-        db.prepare(
+        let result = db.prepare(
             "UPDATE admin_tokens SET disabled_at = ?2 \
              WHERE id = ?1 AND disabled_at IS NULL"
         )
             .bind(&[id.into(), d1_int(now_unix)])
             .map_err(|e| run_err("admin_tokens.disable bind", e))?
             .run().await.map_err(|e| run_err("admin_tokens.disable run", e))?;
+        // RFC 175 §4.1: D1's run() succeeds on zero rows affected, so the
+        // UPDATE's own success tells us nothing about whether an id
+        // existed and was actually disabled. Zero rows matched means the
+        // id does not exist or was already disabled -- same precedent as
+        // oidc_clients' update/set_secret_hash (RFC 141 cycle 2b).
+        if result.meta().map(|m| m.and_then(|m| m.changes).unwrap_or(0)).unwrap_or(0) == 0 {
+            return Err(PortError::NotFound);
+        }
         Ok(())
     }
 
