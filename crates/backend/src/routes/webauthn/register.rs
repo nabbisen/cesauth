@@ -1,4 +1,27 @@
 //! WebAuthn registration ceremony (`/webauthn/register/{start,finish}`).
+//!
+//! **CSRF (RFC 152 half D, 2026-11-03).** `route-contracts.md`'s cell is
+//! `N/A (no ambient credential)`, not a `Content-Type` check like the
+//! sibling `authenticate` routes get. Two independent reasons, checked
+//! rather than assumed:
+//!
+//! 1. **No live caller.** Nothing under `crates/frontend/` — or anywhere
+//!    else in this repository — references either path; `static/
+//!    webauthn.js` implements only the authenticate ceremony. There is no
+//!    real sender to verify a header against, and adding a check nothing
+//!    exercises would be exactly the untested-assumption shape RFC 160
+//!    warned against.
+//! 2. **Neither handler reads an ambient credential.** `register_start`
+//!    takes an optional `user_id` straight from the JSON body; `register_
+//!    finish` resolves the principal from the challenge state `start`
+//!    stored, never from a session cookie. CSRF's danger model needs an
+//!    ambient credential a forged request can ride on — there is none
+//!    here, so a cross-site POST cannot do anything a direct, credential-
+//!    less POST with the same body could not already do. (`finish` does
+//!    create an authenticator row, unlike `POST /accept-invite`'s
+//!    genuinely state-free precedent — the "no state change" half of that
+//!    existing cell value does not hold here, which is why this is a new
+//!    value rather than a reuse of that one.)
 
 use cesauth_cf::ports::repo::CloudflareAuthenticatorRepository;
 use cesauth_cf::ports::store::CloudflareAuthChallengeStore;

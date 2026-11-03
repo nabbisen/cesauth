@@ -266,3 +266,43 @@ fn verify_csrf_header_rejects_an_empty_cookie_header_even_with_a_submitted_token
     assert!(!verify_csrf_header(Some(""), ""));
     assert!(!verify_csrf_header(None, ""));
 }
+
+// =====================================================================
+// is_json_content_type -- RFC 152 half D. require_json_content_type
+// itself needs a real worker::Request (not host-constructable, same
+// class of issue as attach_csrf_cookie above); this is its pure core.
+// =====================================================================
+
+#[test]
+fn plain_application_json_is_json() {
+    assert!(is_json_content_type(Some("application/json")));
+}
+
+#[test]
+fn application_json_with_charset_suffix_is_json() {
+    assert!(is_json_content_type(Some("application/json; charset=utf-8")));
+}
+
+#[test]
+fn case_is_ignored() {
+    assert!(is_json_content_type(Some("Application/JSON")));
+}
+
+#[test]
+fn form_urlencoded_is_not_json() {
+    assert!(!is_json_content_type(Some("application/x-www-form-urlencoded")));
+}
+
+#[test]
+fn text_plain_is_not_json() {
+    // The exact probe RFC 141 cycle 2 used to prove its own header
+    // control did not depend on Content-Type -- this is the opposite
+    // property, a route that DOES, and text/plain is the CORS-safelisted
+    // value an attacker would reach for first.
+    assert!(!is_json_content_type(Some("text/plain")));
+}
+
+#[test]
+fn missing_content_type_is_not_json() {
+    assert!(!is_json_content_type(None));
+}

@@ -1346,7 +1346,19 @@ COMMON_RS="$REPO_ROOT/crates/backend/src/routes/admin/tenancy_console/forms/comm
 # called via `clients.rs`'s own `csrf_header_ok` -- the grep below matches
 # the shared primitive, not the per-file wrapper, the same way `plain`
 # rows below match `csrf::verify\(|verify_csrf\(` rather than every
-# route's own call site name).
+# route's own call site name). A fourth, `required (Content-Type)`, added
+# by RFC 152 half D (2026-11-03): for a JSON-body endpoint the mere
+# presence of a non-safelisted `Content-Type: application/json` is
+# itself a complete CSRF defence (`crate::csrf::require_json_content_type`
+# -- see its own doc for why), distinct from `header token` above (a
+# CUSTOM header, also non-safelisted, but compared against the CSRF
+# cookie too). Three rows: `/me/security/delete-account` (the control
+# already existed; only its cell was false), `/webauthn/authenticate/
+# {start,finish}` (the control was added this cycle, confirmed against
+# `static/webauthn.js`'s real caller first). `/webauthn/register/
+# {start,finish}` deliberately do NOT get this mechanism -- no live
+# caller exists to confirm it against; see `N/A (no ambient credential)`
+# below instead.
 #
 # Two kinds of entry: an ERE pattern to search the resolved body for
 # (grep -E), or the sentinel `STANDARD` meaning "this parenthetical is
@@ -1362,6 +1374,7 @@ e6_mechanism_check() {
     "Origin check")          echo "check_origin_or_referer\\(" ;;
     "preview-token binding") echo "mint_preview_token\\(|verify_preview_token\\(" ;;
     "header token")          echo "verify_csrf_header\\(" ;;
+    "Content-Type")          echo "require_json_content_type\\(" ;;
     "form path")             echo "STANDARD" ;;
     *)                       echo "" ;;
   esac
@@ -1381,11 +1394,16 @@ e6_mechanism_check() {
 # helper that never actually checked for a cookie). Keyed by the
 # qualified handler name, since `extract_bearer` is this one file's own
 # name, not a generically reusable marker the way the mechanism-check
-# table's functions are.
+# table's functions are. A second entry, RFC 152 half D (2026-11-03):
+# `routes::api_v1::anonymous::promote` reads only the `Authorization`
+# header via its own `resolve_anonymous_bearer` (crates/backend/src/
+# routes/api_v1/anonymous.rs) -- the same shape as `userinfo_handler`
+# above, an independent header-only resolver unrelated to `admin::auth`.
 e6_bearer_alt_check() {
   case "$1" in
-    "routes::oidc::userinfo_handler") echo "extract_bearer\\(" ;;
-    *)                                echo "" ;;
+    "routes::oidc::userinfo_handler")    echo "extract_bearer\\(" ;;
+    "routes::api_v1::anonymous::promote") echo "resolve_anonymous_bearer\\(" ;;
+    *)                                    echo "" ;;
   esac
 }
 
@@ -1443,10 +1461,32 @@ DELETE /api/v1/role_assignments/:id"
 # shared `LIB_RS_LIVE`, now searched across the window from the matching
 # registration line up to (not including) the next `.{get,post,put,
 # delete}_async(` line, instead of requiring both on one line.
+#
+# RFC 152 half D (2026-11-03): the registration-line match used to be
+# `index($0, ".${method}_async(")` -- a literal substring, no space
+# tolerated between `_async` and `(`. 13 registrations in `lib.rs` are
+# column-aligned as `.post_async  ("...", ...)` (two spaces, so every
+# route's handler starts in the same column); the substring check could
+# never match any of them. Invisible until now because all but one of
+# the 13 are `N/A (bearer)` rows already sitting in
+# `E6_BEARER_LEGACY_EXEMPT`, which `continue`s before ever using the
+# (empty, unresolved) qualified name -- `/api/v1/anonymous/promote`
+# becoming a real bearer-alt claim this cycle is what made the gap
+# fail loudly instead of silently. Fixed by matching the method/async
+# boundary as a regex tolerating any run of spaces, not by reformatting
+# 13 lines of an unrelated file to dodge a parser's assumption.
 e6_qualified_handler_for() {
   local method="$1" path="$2"
-  awk -v n1=".${method}_async(" -v n2="\"${path}\"" '
-    BEGIN { collecting = 0 }
+  # `re1` is built INSIDE the awk script from `method` (passed via -v
+  # with no regex metacharacters of its own) rather than passed in
+  # pre-escaped -- gawk's own `-v` assignment does its own backslash
+  # processing and silently drops an unrecognised escape (`\.` becomes
+  # plain `.`), which a pre-escaped `-v re1=...` string could not
+  # survive. Built as a literal awk string instead, where `\\` is
+  # awk's own string escape for one backslash, so the backslash reaches
+  # the regex engine intact.
+  awk -v method="$method" -v n2="\"${path}\"" '
+    BEGIN { collecting = 0; re1 = "\\." method "_async[ ]*\\(" }
     function emit() {
       if (match($0, /routes::[A-Za-z0-9_:]+\(/)) {
         s = substr($0, RSTART, RLENGTH)
@@ -1458,12 +1498,11 @@ e6_qualified_handler_for() {
     }
     {
       if (collecting) {
-        if (index($0, ".get_async(") > 0 || index($0, ".post_async(") > 0 ||
-            index($0, ".put_async(") > 0 || index($0, ".delete_async(") > 0) { exit }
+        if ($0 ~ /\.(get|post|put|delete)_async[ ]*\(/) { exit }
         if (emit()) exit
         next
       }
-      if (index($0, n1) > 0 && index($0, n2) > 0) {
+      if ($0 ~ re1 && index($0, n2) > 0) {
         if (emit()) exit
         collecting = 1
       }
@@ -1525,6 +1564,28 @@ e6_file_for_qualified() {
         printf '%s\t%s\n' "$renamed" "$real"
         return
       fi
+    fi
+  fi
+  # A fourth shape, found resolving RFC 152 half D's own new claims:
+  # `webauthn.rs`'s `pub use authenticate::{authenticate_finish,
+  # authenticate_start};` and `pub use register::{register_finish,
+  # register_start};` -- a BRACE-LIST re-export, same names (so the
+  # renaming case above never matches: there is no ` as `), from a
+  # submodule file named after the *ceremony* (`authenticate.rs`,
+  # `register.rs`), not after either individual function the way the
+  # one-level submodule guess above assumes. Every one of the three
+  # existing shapes resolved every row before this cycle, so this is
+  # new vocabulary, not a fix to a wrong answer -- `authenticate_start`/
+  # `authenticate_finish`/`register_start`/`register_finish` were always
+  # `N/A (JSON)` (declared, no resolution needed) until two of the four
+  # became `required (Content-Type)` claims this cycle.
+  if [ -f "$direct" ] && grep -qE "pub use [A-Za-z0-9_]+::\{[^}]*\\b${fn}\\b[^}]*\\};" "$direct"; then
+    local brace_leaf="$direct"
+    leaf=$(grep -oE "pub use [A-Za-z0-9_]+::\{[^}]*\\b${fn}\\b[^}]*\\};" "$brace_leaf" | head -1 | sed -E 's/pub use ([A-Za-z0-9_]+)::.*/\1/')
+    local braced="$REPO_ROOT/crates/backend/src/routes/${modpath//::/\/}/${leaf}.rs"
+    if [ -f "$braced" ] && grep -qE "fn ${fn}[<(]" "$braced"; then
+      printf '%s\t%s\n' "$braced" "$fn"
+      return
     fi
   fi
   printf '%s\t%s\n' "$direct" "$fn"
@@ -1650,13 +1711,36 @@ e6_field_name_for() {
 # with no credential to protect, an unchecked decorative field changes
 # nothing. Left alone -- removing it is a template cleanup, not a CSRF
 # fix, and this cycle is a gate change only.
-E6_DECLARED_NO_CHECK="N/A (JSON)
-N/A (CORS preflight)
+#
+# `N/A (JSON)` removed here by RFC 152 half D (2026-11-03): all seven
+# rows that carried it were false (the cell claimed a Content-Type check
+# that did not exist) and are now one of `required (Content-Type)`
+# (a real control, confirmed against a real caller first) or the new
+# `N/A (no ambient credential)` below (no live caller, or none that
+# could be confirmed, so no check to add). No row uses the literal value
+# `N/A (JSON)` any more -- left in the list it would be caught as stale
+# by the check a few lines down; removed instead of waiting for that.
+#
+# `N/A (no ambient credential)` is new, narrower than the existing
+# `N/A (no ambient credential, no state change)` below: three rows
+# (`webauthn/register/{start,finish}`, `api_v1/anonymous::begin`) read no
+# ambient credential the same way `POST /accept-invite` does, but DO
+# change state (an authenticator row; a new anonymous user) where
+# `accept_submit` changes none. CSRF's danger model is about an ambient
+# credential a forged request can ride on; without one, whether state
+# changes is beside the point -- a forged POST does nothing a direct,
+# credential-less POST with the same body could not already do. Kept as
+# its own value rather than stretched onto the existing one, per this
+# file's own rule against inventing a synonym for a value that already
+# exists but also against silently widening one to cover a case its own
+# wording does not describe.
+E6_DECLARED_NO_CHECK="N/A (CORS preflight)
 N/A (RFC 7009)
 N/A (Authorization-only)
 N/A (dev only)
 N/A (SameSite=Strict)
-N/A (no ambient credential, no state change)"
+N/A (no ambient credential, no state change)
+N/A (no ambient credential)"
 
 e6_rows=$(awk -F'|' '
   /^\|/ {

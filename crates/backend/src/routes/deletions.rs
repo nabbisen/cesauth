@@ -43,6 +43,7 @@ use cesauth_core::ports::repo::UserRepository;
 
 use crate::audit::{self, EventKind};
 use crate::config::Config;
+use crate::csrf;
 use crate::log::{self, Category, Level};
 use crate::routes::admin::auth;
 use crate::routes::admin::console::render;
@@ -87,16 +88,14 @@ use crate::routes::me::auth as me_auth;
 /// | already pending | `409` + JSON |
 /// | wrong content type | `400` + JSON |
 pub async fn request_self<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    let content_type = req.headers().get("content-type").ok().flatten();
-    let is_json = content_type.as_deref()
-        .map(|ct| ct.to_ascii_lowercase().contains("application/json"))
-        .unwrap_or(false);
-    if !is_json {
-        // This check IS the CSRF control (see the doc comment above) —
-        // it is not a content-negotiation nicety, so the 400 says why.
-        return json_response(400, &serde_json::json!({
-            "error": "Content-Type: application/json required (this header is this route's CSRF control)",
-        }));
+    // This check IS the CSRF control (see the doc comment above) — not a
+    // content-negotiation nicety, so the 400 it returns says why. RFC 152
+    // half D (2026-11-03) pulled the check itself into `crate::csrf`,
+    // shared with `/webauthn/authenticate/{start,finish}`; the wording
+    // and the reasoning are unchanged from when this route was its only
+    // caller.
+    if let Some(resp) = csrf::require_json_content_type(&req)? {
+        return Ok(resp);
     }
 
     let session = match me_auth::resolve_or_redirect(&req, &ctx.env).await? {

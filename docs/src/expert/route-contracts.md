@@ -38,10 +38,10 @@ code-review responsibility.
 
 | Method | Path | Actor | Audit kind | View / template | Rendering | Rendering test | CSRF |
 |---|---|---|---|---|---|---|---|
-| POST | `/webauthn/register/start` | End user | none | JSON (challenge) | n/a | n/a | N/A (JSON) |
-| POST | `/webauthn/register/finish` | End user | `passkey_registered` | JSON | n/a | n/a | N/A (JSON) |
-| POST | `/webauthn/authenticate/start` | Anonymous | none | JSON (challenge) | n/a | n/a | N/A (JSON) |
-| POST | `/webauthn/authenticate/finish` | Anonymous | `passkey_login_succeeded` / `passkey_login_failed` | JSON | n/a | n/a | N/A (JSON) |
+| POST | `/webauthn/register/start` | End user | none | JSON (challenge) | n/a | n/a | N/A (no ambient credential) |
+| POST | `/webauthn/register/finish` | End user | `passkey_registered` | JSON | n/a | n/a | N/A (no ambient credential) |
+| POST | `/webauthn/authenticate/start` | Anonymous | none | JSON (challenge) | n/a | n/a | required (Content-Type) |
+| POST | `/webauthn/authenticate/finish` | Anonymous | `passkey_login_succeeded` / `passkey_login_failed` | JSON | n/a | n/a | required (Content-Type) |
 
 ## Magic Link routes
 
@@ -106,7 +106,7 @@ code-review responsibility.
 | POST | `/admin/t/:slug/invitations/:id/revoke` | Tenant admin | `invitation_revoked` | redirect | client | n/a | required |
 | GET  | `/accept-invite` | public (invite link) | none | HTML | server | n/a | N/A (GET) |
 | POST | `/accept-invite` | public (invite link) | none | HTML | server | n/a | N/A (no ambient credential, no state change) |
-| POST | `/me/security/delete-account` | authenticated user | `deletion_requested` | JSON (`scheduled_at`) | n/a | n/a | N/A (JSON) |
+| POST | `/me/security/delete-account` | authenticated user | `deletion_requested` | JSON (`scheduled_at`) | n/a | n/a | required (Content-Type) |
 | POST | `/me/security/delete-account/request` | authenticated user | `deletion_requested` | redirect | client | n/a | required |
 | POST | `/me/security/delete-account/cancel` | authenticated user | `deletion_cancelled` | redirect | client | n/a | required |
 | GET  | `/admin/t/:slug/deletion-requests` | Tenant admin | none | HTML | server | `tenant_admin::tests::deletion_requests_page_renders_the_real_csrf_token` | required |
@@ -262,8 +262,8 @@ because the routes *are* registered; E5 cannot see them because a form
 | POST | `/api/v1/tenants/:tid/subscription/plan` | System admin (bearer) | `subscription_plan_changed` | JSON | n/a | n/a | N/A (bearer) |
 | POST | `/api/v1/tenants/:tid/subscription/status` | System admin (bearer) | `subscription_status_changed` | JSON | n/a | n/a | N/A (bearer) |
 | GET | `/api/v1/tenants/:tid/subscription/history` | System admin (bearer) | none | JSON | n/a | n/a | N/A (bearer) |
-| POST | `/api/v1/anonymous/begin` | Anonymous | `anonymous_session_started` | JSON | n/a | n/a | N/A (JSON) |
-| POST | `/api/v1/anonymous/promote` | Anonymous user | `anonymous_session_promoted` | JSON | n/a | n/a | N/A (JSON) |
+| POST | `/api/v1/anonymous/begin` | Anonymous | `anonymous_session_started` | JSON | n/a | n/a | N/A (no ambient credential) |
+| POST | `/api/v1/anonymous/promote` | Anonymous user | `anonymous_session_promoted` | JSON | n/a | n/a | N/A (bearer) |
 | DELETE | `/api/v1/tenants/:tid/memberships/:uid` | System admin (bearer) | `membership_removed` | JSON | n/a | n/a | N/A (bearer) |
 | DELETE | `/api/v1/organizations/:oid/memberships/:uid` | System admin (bearer) | `membership_removed` | JSON | n/a | n/a | N/A (bearer) |
 | DELETE | `/api/v1/groups/:gid` | System admin (bearer) | `group_deleted` | JSON | n/a | n/a | N/A (bearer) |

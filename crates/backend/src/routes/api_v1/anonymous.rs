@@ -22,6 +22,27 @@
 //! reused unchanged — `cesauth_core::magic_link::issue` /
 //! `verify`, the `AuthChallengeStore` DO, the existing rate-limit
 //! buckets — so the promotion path doesn't fork any of that logic.
+//!
+//! **CSRF (RFC 152 half D, 2026-11-03).** `route-contracts.md`'s cells
+//! used to read `N/A (JSON)` for both, which was never true here — neither
+//! route ever checked `Content-Type`. The real reason each is safe is
+//! different from that cell and from each other:
+//!
+//! - `begin` reads no credential of any kind — not even the bearer
+//!   `promote` requires — so it is `N/A (no ambient credential)`, the
+//!   same value and the same reasoning `webauthn/register.rs` carries:
+//!   nothing ambient for a forged cross-site request to ride on, so a
+//!   forged POST does nothing a direct one could not. (It does mint a
+//!   user + token, same as `register_finish` creates an authenticator —
+//!   the "no state change" half of `POST /accept-invite`'s existing cell
+//!   does not hold here either.)
+//! - `promote` is `N/A (bearer)`: `resolve_anonymous_bearer` below reads
+//!   only the `Authorization` header, with **no cookie fallback at all** —
+//!   structurally the same shape as `routes::oidc::userinfo_handler`'s own
+//!   independent header-only resolver (RFC 152 half C cycle 2), so it is
+//!   named as that same cell's bearer-alt case in `route-contracts-check.sh`
+//!   rather than reusing the shared admin `resolve_from_request_header_only`
+//!   it has no relationship to.
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use cesauth_cf::anonymous::CloudflareAnonymousSessionRepository;

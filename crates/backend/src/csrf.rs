@@ -247,5 +247,42 @@ pub fn verify_csrf_header(header_value: Option<&str>, cookie_header: &str) -> bo
     verify(submitted, from_cookie)
 }
 
+/// Pure decision: does this `Content-Type` header value count as
+/// `application/json`? Case-insensitive, and tolerant of a trailing
+/// `; charset=...` (`.contains`, not an exact match) — the rule
+/// `routes::deletions::request_self` established (RFC 149 §2) and RFC 152
+/// half D reuses for `/webauthn/authenticate/{start,finish}`.
+pub fn is_json_content_type(content_type: Option<&str>) -> bool {
+    content_type
+        .map(|ct| ct.to_ascii_lowercase().contains("application/json"))
+        .unwrap_or(false)
+}
+
+/// `Content-Type: application/json` as a JSON-body endpoint's complete
+/// CSRF defence (RFC 152 half D — see [`is_json_content_type`]'s own doc
+/// for why the header's mere presence already rules out a forged
+/// cross-site request, the same reasoning [`verify_csrf_header`] gives for
+/// a custom header). `Some(response)` is a 400 whose body says the header
+/// *is* the control, not content negotiation — the wording
+/// `routes::deletions::request_self` established; `None` means the caller
+/// already sent the right header and may proceed.
+///
+/// Takes `&worker::Request` directly rather than a pre-extracted header
+/// value: every call site needs the same two lines (`req.headers().get(
+/// "content-type")`) and there is no pure value worth pulling further out
+/// — [`is_json_content_type`] above is that pure core, host-tested on its
+/// own.
+pub fn require_json_content_type(req: &worker::Request) -> worker::Result<Option<Response>> {
+    let content_type = req.headers().get("content-type").ok().flatten();
+    if is_json_content_type(content_type.as_deref()) {
+        return Ok(None);
+    }
+    let mut resp = Response::from_json(&serde_json::json!({
+        "error": "Content-Type: application/json required (this header is this route's CSRF control)",
+    }))?.with_status(400);
+    resp.headers_mut().set("cache-control", "no-store").ok();
+    Ok(Some(resp))
+}
+
 #[cfg(test)]
 mod tests;

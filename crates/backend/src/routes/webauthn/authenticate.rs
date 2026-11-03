@@ -1,4 +1,18 @@
 //! WebAuthn authentication ceremony (`/webauthn/authenticate/{start,finish}`).
+//!
+//! **CSRF (RFC 152 half D, 2026-11-03).** Both routes require
+//! `Content-Type: application/json` (`crate::csrf::require_json_content_type`)
+//! — `route-contracts.md`'s own cell used to read `N/A (JSON)` here, which
+//! was false the same way it was on `/admin/console/clients*` before RFC 141
+//! cycle 2: nothing checked the header. The real caller, `static/
+//! webauthn.js`'s `cesauthPasskeyAuthenticate`, already sends it on both
+//! calls, so requiring it costs that caller nothing — unlike `clients.rs`'s
+//! case, no new caller obligation is created here, only an existing one
+//! enforced. `/webauthn/register/{start,finish}` do **not** get this check:
+//! they have no live caller at all (confirmed: nothing under `crates/`
+//! references either path outside the backend's own route definitions and
+//! core logic), so there is no real sender to verify against — see
+//! `route-contracts.md`'s own cell for those two instead.
 
 use cesauth_cf::ports::repo::CloudflareAuthenticatorRepository;
 use cesauth_cf::ports::store::CloudflareAuthChallengeStore;
@@ -11,6 +25,7 @@ use worker::{Request, Response, Result, RouteContext};
 
 use crate::audit::{self, EventKind};
 use crate::config::Config;
+use crate::csrf;
 use crate::error::oauth_error_response;
 use crate::post_auth;
 
@@ -28,6 +43,9 @@ struct AuthenticateStartBody {
 }
 
 pub async fn authenticate_start<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    if let Some(resp) = csrf::require_json_content_type(&req)? {
+        return Ok(resp);
+    }
     let cfg  = Config::from_env(&ctx.env)?;
     let rp   = rp_from_config(&cfg);
     let body: AuthenticateStartBody = req.json().await.unwrap_or_default();
@@ -68,6 +86,9 @@ struct AuthenticateFinishBody {
 }
 
 pub async fn authenticate_finish<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    if let Some(resp) = csrf::require_json_content_type(&req)? {
+        return Ok(resp);
+    }
     let cfg  = Config::from_env(&ctx.env)?;
     let rp   = rp_from_config(&cfg);
 
