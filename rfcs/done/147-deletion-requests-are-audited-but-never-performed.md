@@ -4,6 +4,24 @@
 accepted 2026-10-27. **Cycle 1 shipped v0.85.1; cycle 2 shipped v0.86.0.**
 **Evidence: `observed`** (back-filled 2026-10-31; **this is the back-fill's first real finding, and it was closed the same day**). The term was `reviewed` for an afternoon, which §22.2 does not admit for a P1 — so it was driven instead of scheduled.
 
+**Evidence: `exercised` as of 2026-11-03, 0.92.2** — and this time by a gate
+that has actually run in CI, not a rehearsal. `credentialed-flows.yml`'s first
+real Actions run on `fc3e0d8` printed:
+
+```
+✅  user row gone; deletion_requests reads executed/sweep;
+    audit carries deletion_executed subject=rfc170-ci-user
+    reason="request:rfc170-ci-del sweep scrub:scrubbed"
+```
+
+Three facts, not a status code, and **RFC 148's email scrub rides along in the
+same row** (`scrub:scrubbed`) exactly as RFC 170 §4 said it would — so 148 has
+an incidental live witness it did not have either. **Both halves of §20's
+durable fix shipped**: the decision core is now
+`cesauth_core::deletion::sweep_due_deletions`, a pure function over the
+repository ports with four host tests, *and* `/__scheduled` is driven from a CI
+job with D1 state. The two were priced together, as §20 asked.
+
 **What was found first.** `core::deletion::execute_deletion` is well covered (15 unit tests against stub repositories), **its caller `backend/src/sweep.rs::sweep_pending_deletions` has no tests and no test module**, and nothing in CI or `runtime-smoke-check.sh` drives the `#[event(scheduled)]` entry point. RFC 151 §4 named `sweep_pending_deletions_executes_due_requests` and `e2e/deletion.spec.ts` as what `exercised` would require here; **neither exists.** The cause is structural, not forgetfulness: `sweep_pending_deletions` takes `&worker::Env`, which no host test can construct. **The caller chain itself is intact** — `lib.rs:152` calls it inside the 04:00 cron arm — so this is not RFC 047's defect, which was checked before it was claimed.
 
 **Observed, at `b0208ab`, against `wrangler dev --test-scheduled` with local D1.** A user row and a *due* `pending` deletion request were inserted, `GET /__scheduled?cron=0+4+*+*+*` was triggered (200), and afterwards:

@@ -66,6 +66,18 @@ returns `Ok`, so the operator-facing cron status has recorded success daily.
 would arrive only when a third finding needed one and said that finding's own
 RFC must say so.
 
+**All three assertions ran for real and passed on `fc3e0d8`, 14/14 CI green.**
+Checked that the job is not passing trivially — RFC 156's own concern — by
+reading its output rather than its conclusion:
+
+```
+✅  user row gone; deletion_requests reads executed/sweep; audit carries deletion_executed …
+✅  session_index_audit recorded success=true, processed_count=1 (>0, not just a success flag)
+✅  admin cookie carries __Host-, Path=/, HttpOnly, Secure, SameSite=Strict (value withheld from the log)
+```
+
+**RFC 152 half A's cookie witness is live**, over the 20 rows §0 recomputed.
+
 ## 1. Summary
 
 **Every gate in the release set runs against an unmigrated database with no

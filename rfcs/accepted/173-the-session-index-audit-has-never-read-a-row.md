@@ -75,6 +75,17 @@ level was applied —
 P1. Also recorded there: `operations_route.rs`'s `CronRecord` is never
 constructed, so nothing displays the records that now finally persist.
 
+**SHIPPED in 0.92.2 (`fc3e0d8`), and `exercised` as of its first CI run.**
+`credentialed-flows.yml`'s assertion 3 printed, on real Actions hardware:
+
+```
+✅  session_index_audit recorded success=true, processed_count=1
+    (>0, not just a success flag)
+```
+
+`processed_count=1` is the whole point — `success=true` alone is exactly what
+six months of silent failure looked like.
+
 ## 1. Summary
 
 `crates/backend/src/session_index_audit.rs:165`:
