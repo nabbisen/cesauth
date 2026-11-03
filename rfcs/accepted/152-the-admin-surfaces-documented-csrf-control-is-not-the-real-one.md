@@ -92,6 +92,87 @@ check, and recommended as **half D, opening with its own measurement stage**:
 is there a real cookie-borne caller for any of the 18, the same question that
 decided class A from class B here.
 
+### Half D stage 1 reviewed, 2026-11-03 — and the third instance is inside half D itself
+
+**Stage 1 landed in `60bb3e7`.** Question A: **no cookie-borne caller exists for
+any of the 18 `N/A (bearer)` rows** (`reviewed`, correctly labelled — no
+`fetch()` or form POST to any of those paths in `crates/frontend/`, `e2e/` or
+`scripts/`; every frontend mention is operator-facing documentation text). The
+18 stay exempted and unchanged; flipping them is stage 2's own sizing decision.
+Question B resolved all seven `N/A (JSON)` rows, and E6 closed at
+`94 = 84 claims + 10 declared + 0 unclassified`, `84 = 66 + 0 + 18`.
+
+**The cycle also found two latent gate bugs**, both invisible until its own
+reclassification needed the code paths for the first time: the registration-line
+matcher was a literal substring that could not match **88** column-aligned
+`.post_async  (` registrations in `lib.rs`, and the file resolver had no case
+for a brace-list re-export (`pub use authenticate::{authenticate_finish,
+authenticate_start};`). Both were latent because the affected rows were
+`declared`, so the resolver `continue`d before using a silently-empty qualified
+name. **A gate's unused code path is not a working code path.**
+
+#### The third instance: the control half D documented does not hold
+
+`is_json_content_type` decides with
+`ct.to_ascii_lowercase().contains("application/json")` — `.contains`, to tolerate
+`; charset=utf-8`. **A parameter satisfies it too.**
+`Content-Type: text/plain; x=application/json` has a CORS-safelisted MIME
+**essence** (`text/plain`), so a cross-site `fetch` sends it with credentials and
+**no preflight**. Observed by the architect at `79e9090`:
+
+```
+POST /webauthn/authenticate/start      text/plain -> 400 | text/plain; x=application/json -> 200
+POST /me/security/delete-account       text/plain -> 400 | text/plain; x=application/json -> 401
+```
+
+(401 means the control passed and only the session check stopped it.)
+
+**`/me/security/delete-account` is pre-existing** — `deletions.rs` has carried
+this exact check since RFC 149 §2, under a doc comment saying *"this check IS
+the CSRF control"*. A forged cross-site request can reach the handler and
+schedule the victim's account deletion. **Not exploitable today**: no
+`Access-Control-Allow-Origin` is set anywhere, so `SameSite=Strict` holds — half
+D's own refrain, for the third time. **Stage 1 did not introduce it**; it found
+the check, reused it, and promoted it to a documented control on three rows,
+which is how a pre-existing flaw became visible.
+
+**So this RFC's sentence now has three instances, one per half.** Half B: the
+documented control did not exist. Half C: seven rows claimed one they did not
+have. **Half D: the control three rows now claim does not hold.** The fix is to
+compare the MIME essence — split on `;`, trim, lowercase, `==` — and it is
+stage 1b, before 0.92.1 is cut. **The architect's handoff asked the cycle to
+confirm a real caller sends the header and never asked whether the check was
+sound**, treating a shipped, documented control as a verified one.
+
+#### And the four webauthn cells are paired inversely to the code
+
+The split was made on **caller presence** where the question is **ambient
+credential**. Measured per handler:
+
+| route | reads `cookie`? | cell assigned | correct |
+|---|---|---|---|
+| `register/start` | no | `N/A (no ambient credential)` | yes |
+| `register/finish` | **yes** (`extract_pending_handle` + `login_next`) | `N/A (no ambient credential)` | **no** |
+| `authenticate/start` | no | `required (Content-Type)` | overstated |
+| `authenticate/finish` | **yes** (the identical two) | `required (Content-Type)` | yes |
+
+Both `finish` handlers are the same shape and were given opposite cells; so were
+both `start` handlers. By the ambient-credential test: both `start` rows
+`N/A (no ambient credential)`, both `finish` rows a real control. **Rides with
+RFC 172's fix**, which rewrites `register.rs` and must touch these rows anyway.
+
+#### The P0 the cycle found without recognising it
+
+Stage 1's own justification for `register/*`'s cell — *"no ambient credential is
+ever consulted (reads `user_id` from the challenge state `start` wrote, not a
+session cookie)"* — **is the whole defect.** `register_start` takes its subject
+from the request body and authenticates nobody; `register_finish` writes the
+authenticator and issues a session for it.
+[RFC 172](../proposed/172-passkey-registration-authenticates-nobody.md),
+**P0**, exposure zero because nobody has deployed this tree. **The cell is
+correct and the sentence it states is the bug**, which is why stage 1 stands as
+written.
+
 ### Half C, measured — seven, not nine, in three classes (2026-10-31)
 
 **Correction first: the count I reported was wrong, and it was mine.** The
