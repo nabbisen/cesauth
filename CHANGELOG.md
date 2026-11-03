@@ -32,6 +32,131 @@ re-fixed in the script, which is its own change with its own verification.
 
 ---
 
+## [0.92.1] - 2026-11-03
+
+**Patch.** Nothing gains capability. A passkey registration route that
+authenticated nobody now authenticates its subject; a CSRF control three rows
+documented did not hold and now does; seven more rows say what actually protects
+them.
+
+### A passkey could be registered on any account — RFC 172 (P0)
+
+- **`POST /webauthn/register/start` read the account it was registering a
+  passkey for out of the request body**, with no cookie, no `Authorization`
+  header and no token. `register_finish` wrote the authenticator for it and then
+  issued a session, under its own comment *"Registration doubles as a
+  first-login"*. **Given a user id, that was account takeover in two
+  unauthenticated requests.**
+- **Exposure was none: nobody has deployed this tree.** That is the only thing
+  that kept this from being an incident, and it is not a mitigation.
+- **Fixed**: the subject comes from the session, resolved before anything else
+  in the handler. `RegisterStartBody::user_id` is **deleted**, so no field exists
+  for a caller to set, and the type now makes the defect unrepresentable.
+  Failure answers **401 JSON**, not a 302 — RFC 149 §2's ruling, because a
+  redirect-following client cannot tell a 302-to-success from a
+  302-to-failure.
+- **Witnessed, both halves**, because a 401 alone would also be produced by a
+  fix that rejected everything: naming another account with no session answers
+  **401**; with a real magic-link session it answers **200** and
+  `public_key.user.id` is the **session's** user, byte-for-byte, with the body's
+  id appearing nowhere in the response. **No ceremony was driven to completion
+  and no exploit was written** — the missing check was the defect.
+- **`register_finish` deliberately still requires no session**, and the reason
+  matters: `complete_auth` signs the caller in as the *challenge's* subject, so
+  a bare *does-a-session-exist* check would let a second valid session complete
+  someone else's pending registration and be signed in as them — worse than
+  none. The `Content-Type` control added to that route closes the matching
+  session-fixation shape instead.
+- **Found by RFC 152 half D stage 1**, which recorded *"no ambient credential is
+  ever consulted"* as a correct CSRF justification without noticing that the
+  sentence was also the whole defect.
+- **Not fixed here, named instead**: there is still no screen for passkey
+  registration, so the route is correct and uncalled; and nothing in the gate
+  set asks whether a handler that writes security state authenticates the
+  subject it writes it for.
+
+### The CSRF control three rows documented did not hold — RFC 152 half D stage 1b
+
+- **`is_json_content_type` compared a substring.** It used
+  `.contains("application/json")` to tolerate `; charset=utf-8` — and a
+  **parameter** satisfies it too. `Content-Type: text/plain; x=application/json`
+  has a **CORS-safelisted MIME essence**, so a cross-site
+  `fetch(…, {credentials:'include'})` sends exactly that value **with no
+  preflight** and walks past the control.
+- **`/me/security/delete-account` carried this since RFC 149 §2**, under a doc
+  comment reading *"this check IS the CSRF control"*. A forged cross-site
+  request could reach the handler and schedule the victim's account deletion.
+  Not exploitable — `SameSite=Strict` held — but the control the code claimed
+  did not.
+- **Fixed** by comparing the MIME essence: split at the first `;`, trim,
+  compare exactly. Not by lengthening the substring, which would have left the
+  same class of bypass one parameter away.
+- **Third instance of this RFC's own sentence, one per half.** Half B: the
+  documented control did not exist. Half C: seven rows claimed one they did not
+  have. Half D: the control three rows claimed did not hold.
+
+### Seven rows now say what protects them — RFC 152 half D stage 1
+
+- **The measurement, which was the point.** For the 18 rows claiming
+  `N/A (bearer)` while accepting a cookie: **no real cookie-borne caller
+  exists** — no `fetch` or form POST to any of those paths anywhere in the
+  frontend, the e2e suite or `scripts/`. Recorded as `reviewed` and left
+  unchanged; flipping them is a caller-obligation change of its own size.
+- **Seven `N/A (JSON)` rows resolved per row**, not globally. One of them —
+  `/me/security/delete-account` — already enforced the check and its cell was
+  *understating* a control it had; the other six claimed one they did not have.
+  Three now carry `required (Content-Type)` with the check; the rest carry an
+  honest `N/A (no ambient credential)`.
+- **Two latent gate bugs, fixed.** E6's registration-line matcher was a literal
+  substring that could not match the **88** column-aligned `.post_async  (`
+  registrations in `lib.rs`, and its file resolver had no case for a brace-list
+  re-export. Both were invisible because the affected rows were `declared`, so
+  the resolver returned before using a silently-empty name. **A gate's unused
+  code path is not a working code path.**
+
+### `CHANGELOG.md` holds the five minor series it claims — RFC 028
+
+- The file said it keeps the most recent five and held **eight** (0.85–0.92) at
+  **79 KB of its 80 KB budget**, so the byte guard had never fired and the
+  five-minor rule was checked by nothing. 0.85–0.87 are archived to
+  `docs/changelog-archive/CHANGELOG-0.85-to-0.87.md`; the root file is **59 KB**
+  over 0.88–0.92.
+
+### Surface-contract changes, stated as changes
+
+- **`POST /webauthn/register/start` requires a session and no longer accepts a
+  `user_id`.** A caller may not choose the account.
+- **Three routes reject `Content-Type` values they previously accepted** —
+  anything whose MIME essence is not `application/json`.
+- **No caller exists to break**: re-confirmed this release that nothing under
+  `crates/` calls either register path.
+
+### Recorded, not fixed
+
+- **`required (Content-Type)` is sound only while no
+  `Access-Control-Allow-Origin` exists anywhere in this worker.** True today,
+  documented in prose at `routes/deletions.rs:70`, and enforced by nothing —
+  add a CORS header and **four routes silently lose the control their rows
+  claim** while every gate stays green. The gate is one line.
+- `E6_BEARER_LEGACY_EXEMPT`'s comment says *"17 routes"* where its list has 18.
+
+### Release figures
+
+- Worker bundle at this commit, after the version bump, via
+  `./node_modules/.bin/wrangler deploy --dry-run --outdir bundled/`, **gzip 1.15
+  at its default level**: **896,990 B** (886,291 wasm + 10,699 `shim.js`), raw
+  2,453,743 + 61,887 bytes.
+  `sha256 830173cfb147b8ac4a9c8a4a66be2dd2fd00acecf6cd0140768cee09c03a2504`
+  (wasm) and
+  `9d506c4c5c4ad441dd29397eb15cd32cef06f46e17f8218e02cc08543618f1d7` (shim).
+  Against 0.92.0's **896,672 B**, measured the same way after its own bump:
+  **+318 B** — real new control flow (session resolution and three
+  `Content-Type` checks), not noise.
+- Host tests **1,690** passed / 0 failed / 4 ignored across 12 `test result:`
+  lines; `migration_chain` **35**; 194 routes; E4 `218 = 194 + 24 + 0`; E5
+  `17 = 17 + 0 + 0`; **E6 `94 = 85 claims + 9 declared + 0 unclassified`**,
+  `85 = 67 + 0 + 18`; Playwright **20**; `runtime-smoke-check` passed.
+
 ## [0.92.0] - 2026-11-03
 
 **Minor.** The OIDC clients screen now exists — the product's primary
