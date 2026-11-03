@@ -81,8 +81,13 @@ pub async fn run(env: &Env) -> worker::Result<ReconcileStats> {
     let cfg = match crate::config::Config::from_env(env) {
         Ok(c) => c,
         Err(e) => {
+            // RFC 173 §4.2's rule applied to this arm too, beyond its named
+            // list: a pass that cannot even load config did not run, and
+            // `Ok(default)` reported it as a clean, driftless one — the
+            // same shape of false success the RFC exists to end, one
+            // branch up from the one it named.
             worker::console_error!("session_index_audit: config load failed: {e:?}");
-            return Ok(ReconcileStats::default());
+            return Err(e);
         }
     };
 
@@ -92,9 +97,14 @@ pub async fn run(env: &Env) -> worker::Result<ReconcileStats> {
     let rows = match fetch_active_rows(env, RECONCILE_BATCH_LIMIT).await {
         Ok(r) => r,
         Err(e) => {
+            // RFC 173 §4.2: a failure to read ANY row is not one row
+            // failing — it is the pass not happening. The per-row
+            // best-effort semantics in the loop below are unaffected;
+            // this is the one place a whole-batch read failure must not
+            // be reported as a successful, driftless pass.
             log::emit(&cfg.log, Level::Error, Category::Storage,
                 &format!("session_index_audit: D1 read failed: {e:?}"), None);
-            return Ok(ReconcileStats::default());
+            return Err(e);
         }
     };
 
@@ -162,7 +172,13 @@ async fn fetch_active_rows(env: &Env, limit: i64) -> worker::Result<Vec<D1Sessio
          ORDER BY created_at ASC \
          LIMIT ?1",
     )
-    .bind(&[limit.into()])
+    // RFC 173 §1 / crates/adapter-cloudflare/src/ports/repo.rs's own "The
+    // i64 -> JsValue pitfall" doc: `limit.into()` produces a JS BigInt,
+    // which D1's bind() rejects outright. That crate's own `d1_int()` is
+    // `pub(crate)` and unreachable from here (§5 — not resolved by this
+    // fix); bind through the same `as f64` cast directly instead, via
+    // `worker`'s own re-export so no new Cargo dependency is needed.
+    .bind(&[worker::wasm_bindgen::JsValue::from_f64(limit as f64)])
     .map_err(|e| worker::Error::RustError(format!("session_index_audit bind: {e:?}")))?;
     let result = stmt.all().await
         .map_err(|e| worker::Error::RustError(format!("session_index_audit run: {e:?}")))?;
