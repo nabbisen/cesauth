@@ -29,6 +29,43 @@ requirement.
 
 ---
 
+## 0. Both halves landed, 2026-11-03 (not yet released)
+
+**`.github/workflows/credentialed-flows.yml`** (`d9cbc4f`) applies migrations to
+a local D1, seeds one per-run random admin token (sha256 only, masked, never
+logged) plus the two rows its assertions need, and makes exactly the two
+assertions §4 named — the deletion sweep's three facts, and the admin cookie's
+five attributes, reported by attribute *name* on failure with the header
+withheld. The release set moved to **14**, the manifest's `release` array and
+`contributing.md`'s three prose counts with it. **RFC 147's sweep: `observed` →
+`exercised`.**
+
+**The refactor** (`6673333`) lifted the decision core into
+`cesauth_core::deletion::sweep_due_deletions`, a pure function over the
+repository ports; `sweep_pending_deletions` is now the `Env`-bound shell that
+turns each `SweptDeletion` into the log line or audit event only `Env` can
+produce. Verified a **lift and not a duplicate**, with `SweptDeletion.user_id`
+carrying the same value the old code passed as the audit subject. Four host
+tests, one of which pins RFC 147 cycle 2 D5's own regression — the audit call
+that once passed `None` as the subject.
+
+**§2's "29 rows" is recomputed and was stale**: after half D stage 1/1b and
+RFC 172, `N/A (JSON)` is **0** and the rows resting on `SameSite=Strict` are
+**18** (`E6_BEARER_LEGACY_EXEMPT`, which E6 reports as `18 exempted`) **plus 2**
+naming the attribute outright — **20, not 29**. A further **4** rest on
+`required (Content-Type)`, which itself rests on no `Access-Control-Allow-Origin`
+existing anywhere, an absence nothing guards. The dev team flagged the figure as
+stale and correctly did not recompute it unasked.
+
+**And the capability paid for itself on its first rehearsal.** Triggering
+`/__scheduled` surfaced an unrelated error in the same cron pass:
+`session_index_audit` has never read a row since 2026-05-06 and its failure path
+returns `Ok`, so the operator-facing cron status has recorded success daily.
+[RFC 173](../proposed/173-the-session-index-audit-has-never-read-a-row.md),
+**P1** — and **it is this job's third assertion**, which §7's scope fence said
+would arrive only when a third finding needed one and said that finding's own
+RFC must say so.
+
 ## 1. Summary
 
 **Every gate in the release set runs against an unmigrated database with no

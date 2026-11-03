@@ -49,7 +49,13 @@ protecting the route, and the one protecting it was that cookie attribute.
 **RFC 170** (accepted 2026-11-01) is the concrete half of that question: the
 attribute has no witness on a live response, and 29 rows rest on it.
 
-**Half D — now 29 rows across two cell values.** The second value was found in
+**Half D — 29 rows across two cell values when this was written; **20** as of
+2026-11-03** (recomputed at RFC 170's review: `N/A (JSON)` is now 0, all seven
+resolved by stage 1/1b and RFC 172, leaving the 18 `E6_BEARER_LEGACY_EXEMPT`
+rows plus 2 that name `SameSite=Strict` outright. A further 4 now rest on
+`required (Content-Type)`, which rests on no `Access-Control-Allow-Origin`
+existing — an absence nothing guards). The original count, kept because the
+sections below reason from it: The second value was found in
 cycle 2's review (2026-10-31): **11 mutating rows claim `N/A (JSON)`, and the
 control that cell names does not exist.** The stated reasoning is that a JSON
 `Content-Type` forces a CORS preflight the server never grants — but
