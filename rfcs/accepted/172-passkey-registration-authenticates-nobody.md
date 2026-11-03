@@ -45,6 +45,52 @@ line.
 
 ---
 
+## 0. Fixed in `ad0a648`, verified 2026-11-03 (not yet released)
+
+`register_start` resolves a session first and takes the subject from it;
+`RegisterStartBody::user_id` is **deleted**, so no field exists for a caller to
+set; `registration::start`'s `Option` parameter is kept and always filled from
+the session, per §4.1. `register_finish` needed no subject change — after the
+fix the challenge can only carry a session-derived id. Both register rows gained
+`require_json_content_type` and now read `required (Content-Type)`; the `Actor`
+column reads `authenticated user`.
+
+**Witness, `observed` by the dev team and independently by the architect** —
+both halves, because a 401 alone would also be produced by a fix that rejected
+everything:
+
+```
+register/start  {"user_id":"<another account>"}  no session     -> 401 {"error":"not authenticated"}
+register/start  {"user_id":"<another account>"}  valid session  -> 200
+   public_key.user.id == base64url(the SESSION's user id), byte-for-byte
+   the body's id appears nowhere in the response
+```
+
+The session was a real magic-link sign-in. **No ceremony was driven to
+completion and no exploit was written** — the missing check was the defect.
+`authenticators` remained 0 rows throughout; probe sessions deleted.
+
+**`register_finish` was deliberately left requiring no session**, and the
+reasoning is the cycle's, not the architect's: a bare *does-a-session-exist*
+check would be **worse than none**, because `complete_auth` signs the caller in
+as the *challenge's* subject, so a second independently-valid session could
+complete someone else's pending registration and be signed in as them. Doing it
+correctly means comparing the finishing session against the challenge's bound
+subject, which is a design decision and not a P0 fix's to improvise.
+**The `Content-Type` control added to that route closes the matching hole**: an
+attacker who gets a victim's browser to POST `finish` with the attacker's
+pending handle would have the victim signed in as the attacker — session
+fixation — and a cross-site form cannot send `application/json` while a
+cross-site `fetch` with it preflights.
+
+**After this fix `registration::start`'s `None` branch has no production
+caller** (its only remaining callers are two `core` tests). An RFC 166 fact,
+recorded, not acted on.
+
+**§5's gate question stays open and unbuilt**: *does every handler that writes
+security state authenticate the subject it writes it for?* Nothing in the
+thirteen gates asks it.
+
 ## 1. Summary
 
 `registration::start(rp, user_id: Option<String>, …)` uses the `user_id` it is
