@@ -50,11 +50,36 @@ classifier, its census, and live captures for those three consumers — recorded
 as a correction in RFC 160 §4.11, with the systemic half **accepted 2026-11-03
 as RFC 171** and scheduled after this release.
 
+**Cycle 2b SHIPPED to `main` in `3df23cd`** (not yet released). One `||` on the
+`Conflict` arm, the doc comment's four-class census replaced by all twelve
+extended codes with a reason each, and **no code change anywhere else**: RFC 160
+had already migrated `tenancy/memberships.rs`'s three `add_*_membership` sites to
+the shared classifier, so fixing the classifier repaired all ten paths at once.
+Reviewed and re-verified live by the architect: **201 then 409** on a duplicate
+client id with the plain-text body *"a client with that id already exists"*, and
+a pre-existing composite-key membership `POST`ed to `api_v1` answering **409**
+`{"error":"conflict"}` where it answered 500 before.
+
+**The invitation arm is witnessed by the audit chain**, which is stronger than
+the report argued: `membership_added` for the probe user on the probe tenant
+(seq 232) stands 54 seconds before `invitation_accepted` for the same user and
+the same tenant (seq 237), with every `previous_hash`/`chain_hash` link
+contiguous from 231 to 237. The duplicate was therefore real and the acceptance
+reached `accept_invitation` only through `Err(PortError::Conflict) => {}` — had
+the user not already been a member, the capture would have proved only that the
+flow completed. **One miss, and it was the architect's:** the handoff asked for a
+screen test on a branch `plain_text_error_body_is_used_verbatim` already covered,
+so the new test documents rather than guards; the cross-crate property it cannot
+see (the 409 body is plain text) is witnessed by the live capture instead.
+
 **Status.** Accepted — approved by the owner 2026-09-24. **Cycle 1 (+ C1-141)
 shipped v0.85.0**, 2026-10-25: the API, `token_auth_method` enforcement and the
-integrator chapter. **Stays in `accepted/` — cycle 2 is outstanding**: the
-console screen (§4.1). Moving it to `done/` would assert a completion the tree
-does not have.
+integrator chapter. **Cycle 2 (`357c7f6`) and cycle 2b (`3df23cd`) complete
+§4.1's console screen** and are on `main`, unreleased. **Moves to `done/` at the
+0.92.0 cut, not before** — the screen, its CSRF control and its 409 are each
+`observed` live rather than `reviewed`, so RFC 000 §22.2 is satisfied, but a
+release this RFC's completion depends on has not been cut and `done/` would
+assert a tree state that does not exist yet.
 
 **§13 discharged 2026-10-30 by RFC 159 (v0.89.2)** — its six unregistered
 `page_json` handlers (`alerts`, `audit`, `audit_chain`, `config`, `cost`,
