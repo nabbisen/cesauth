@@ -1,9 +1,19 @@
 # RFC 173 — The session-index audit has never read a row, and reports success daily
 
-**Status.** **Accepted** 2026-11-03 by the owner, dispatched immediately —
-ahead of the rest of the queue, per the RFC 170 review's own recommendation
-(small, P1, found live in that job's first rehearsal). Proposed the same day
-by the architect.
+**Status.** **Accepted 2026-11-03** and dispatched immediately, ahead of the
+rest of the queue. Proposed the same day by the architect.
+
+**The acceptance is not quoted here, unlike RFC 170, 171 and 172, because the
+architect has no record of it** (noted at review, 2026-11-03). The RFC 170
+review *recommended* accepting this ahead of the queue and said in the same
+sentence that it *"needs the owner's acceptance"*; `0de873e` cites that
+recommendation as the dispatch's authority. **A recommendation is not an
+authorization.** If the owner accepted it directly, this line should carry the
+quotation its four siblings do; the question is open and the work is not in
+doubt.
+
+**FIXED in `1719bf2`** (+ `c135d86`), reviewed and verified, **not yet
+released** — see §0.
 **Tier.** **P1.** A detection capability that has never run once, whose failure
 path reports **success** to the operator-facing cron status surface, since
 **2026-05-06** — six months. Not an exposure: nothing is newly reachable. What
@@ -31,6 +41,39 @@ that would have prevented this **has** callers, just not the one that needed it.
 **On 1.0:** not declared, not scoped, not dated.
 
 ---
+
+## 0. Fixed in `1719bf2` and `c135d86`, verified 2026-11-03 (not yet released)
+
+- **The bind** goes through `JsValue::from_f64(limit as f64)` — `d1_int`'s own
+  body, reached via `worker`'s re-export of `wasm_bindgen`, with no new
+  dependency and without pretending to resolve §5's `pub(crate)` question.
+- **The failure path propagates**: both early returns — the read failure §4.2
+  named *and* the `Config::from_env` arm three lines above it, which had the
+  identical shape and was fixed beyond the named list, disclosed — now
+  `return Err(e)`, so `lib.rs:108-115` records the failure it was always wired
+  to record and had never seen.
+- **Observed**: `D1_TYPE_ERROR: Type 'bigint' …` became
+  `walked=1 in_sync=0 do_vanished=1`. `do_vanished=1` is the correct
+  classification for a seeded D1 row with no `ActiveSession` DO state, so this
+  is also the first end-to-end witness of the classification path.
+- **§4.3's third assertion** is in `credentialed-flows.yml`, asserting
+  `success == true` **and** `processed_count >= 1` — never `success` alone,
+  which is what six months of this looked like.
+
+**§4.3 was unbuildable as written, and the cycle found out by building it.**
+`cron_status::record_cron_pass` called `env.kv("CESAUTH_KV")`; `wrangler.toml`
+declares exactly one KV namespace, `CACHE`, and a namespace can only come from
+the config file. So **no cron pass has ever recorded anything**, for all six
+daily passes, the error discarded by `let _ =`. Confirmed before and after:
+zero `cron:last-run:*` keys, then six. Fixed in `c135d86`.
+
+**And one fixed binding is not the fixed class.** `config.rs:463`'s
+`env.kv("CONFIG_KV")` is also undeclared, nothing reads the value it would
+store, and the handler writes an `OperationApplied` audit row saying the log
+level was applied —
+[RFC 174](../proposed/174-applying-a-log-level-writes-an-audit-event-for-nothing.md),
+P1. Also recorded there: `operations_route.rs`'s `CronRecord` is never
+constructed, so nothing displays the records that now finally persist.
 
 ## 1. Summary
 
