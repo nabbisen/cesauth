@@ -47,7 +47,8 @@ uniqueness constraint — and **ten shipped paths branch on it**: six written
 invitation `pending` with no acceptance record and no audit row, permanently,
 because the next retry fails identically. Cycle 2b therefore carries the shared
 classifier, its census, and live captures for those three consumers — recorded
-as a correction in RFC 160 §4.11, with the systemic half proposed as RFC 171.
+as a correction in RFC 160 §4.11, with the systemic half **accepted 2026-11-03
+as RFC 171** and scheduled after this release.
 
 **Status.** Accepted — approved by the owner 2026-09-24. **Cycle 1 (+ C1-141)
 shipped v0.85.0**, 2026-10-25: the API, `token_auth_method` enforcement and the

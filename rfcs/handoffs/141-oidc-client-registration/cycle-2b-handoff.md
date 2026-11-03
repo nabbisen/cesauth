@@ -256,9 +256,12 @@ Expect this cycle to cost more than §4's original estimate; the captures in
 
 **The systemic half is not yours.** Why a matched variant with no producer is
 invisible to every gate — and why the in-memory double and the D1 adapter were
-allowed to disagree about a documented error class — is written up as
-`rfcs/proposed/171-the-arm-is-written-and-the-error-is-never-produced.md`. It is
-proposed, not accepted, and nothing in it is in this cycle.
+allowed to disagree about a documented error class — is
+`rfcs/accepted/171-the-arm-is-written-and-the-error-is-never-produced.md`,
+**accepted by the owner 2026-11-03** and scheduled **after 0.92.0** (its
+parity half after RFC 170). **Nothing in it is in this cycle, and its acceptance
+does not widen yours** — if you find yourself wanting to add a census or a check,
+that is RFC 171's work and you should report it, not build it.
 
 ## 12. Stop conditions — these replace §6
 

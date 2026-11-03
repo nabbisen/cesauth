@@ -339,7 +339,7 @@ replaced by the full twelve-code table rather than extended by one line. The
 systemic question — why no gate can see a matched variant that nothing produces,
 and why the in-memory double and the D1 adapter were allowed to disagree about
 this RFC's own error class — is
-[RFC 171](../proposed/171-the-arm-is-written-and-the-error-is-never-produced.md).
+[RFC 171](../accepted/171-the-arm-is-written-and-the-error-is-never-produced.md).
 
 **What §5 should have said as well.** The evidence past the question is how this
 programme finds what its gates cannot — and it found this one too, a cycle

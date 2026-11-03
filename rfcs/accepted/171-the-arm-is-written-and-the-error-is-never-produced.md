@@ -1,8 +1,25 @@
 # RFC 171 — The arm is written, and the error is never produced
 
-**Status.** **Proposed** 2026-11-03 by the architect. **Not scheduled.**
-The immediate repair is already in flight as RFC 141 cycle 2b inside 0.92.0;
-this RFC is the systemic half and needs the owner's acceptance.
+**Status.** **Accepted** 2026-11-03 by the owner (*"RFC 171 is accepted."*).
+Proposed the same day by the architect, reviewing the dev team's RFC 141
+cycle 2b stop.
+
+**Scheduled in two parts, because the two halves do not cost the same.**
+**§3 Q1 — the producer question: after 0.92.0.** It reads source and needs
+nothing this project does not already have, and it is the half that would have
+caught all ten of §2.1's paths. **Its census is a stage, not a release** — the
+number it returns decides the check's shape, so it runs first and on its own,
+the same discipline as RFC 166 §3.
+**§3 Q2 — the parity question: after RFC 170**, which builds the only
+environment it can run in. It is the half that would have caught the *cause*.
+
+**Not merged with RFC 166 §3's census, deliberately.** They scan the same tree
+with the same machinery and ask opposite questions — *does this definition have
+a caller* against *does this matched variant have a producer* — and §2.3 is the
+reason conflating them would lose one of the two.
+
+**Not dispatched.** 0.92.0's cut is pending, and the repair this RFC generalises
+is in flight inside it as RFC 141 cycle 2b. Nothing here is in 0.92.0.
 **Tier.** **P1.** Ten shipped code paths branch on an error their producer
 cannot produce — six written operator messages that cannot be displayed, three
 public-API responses with the wrong status, and one idempotency arm whose
@@ -12,7 +29,7 @@ nothing new, and a check that cannot run without the CI capability RFC 170
 builds.
 **Touches.** `scripts/`, `docs/src/expert/contributing.md`, and — for the second
 half only — `.github/workflows/`. No product code: the product fix is cycle 2b's.
-**Depends on.** [RFC 170](../accepted/170-no-gate-can-drive-a-credentialed-flow.md)
+**Depends on.** [RFC 170](170-no-gate-can-drive-a-credentialed-flow.md)
 for the second half. §4 says why, and why that is not an excuse to ship the
 first half alone.
 **Found by.** The architect, 2026-11-03, reviewing the dev team's RFC 141
@@ -21,10 +38,10 @@ was that the classifier is wrong for the whole schema, and the reason nobody
 noticed is a different defect from the one being fixed.
 **Relates to.** [RFC 160](../done/160-every-constraint-failure-is-a-conflict.md)
 (the classifier this corrects),
-[RFC 166](../accepted/166-reachability-stops-at-the-crate-boundary.md) (the dual
+[RFC 166](166-reachability-stops-at-the-crate-boundary.md) (the dual
 question — see §2.3), [RFC 153](../done/153-an-invitation-grants-nothing.md)
 (whose completion ordering this silently defeats),
-[RFC 141](../accepted/141-oidc-client-registration.md) (the cycle that found it).
+[RFC 141](141-oidc-client-registration.md) (the cycle that found it).
 
 **On 1.0:** not declared, not scoped, not dated.
 
