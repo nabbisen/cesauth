@@ -883,19 +883,30 @@ fi
 # not gawk's strtonum() -- no script in this repo relies on a gawk
 # extension today) even though CI's awk is gawk in practice.
 #
-# Eleven pairs are checked: the four semantic tokens (--success/
-# --warning/--danger/--info) against their own --*-bg partner, in both
-# the :root block and the dark-mode override (8 pairs); and the three
-# scope badge tokens (--scope-system/--scope-tenancy/--scope-tenant)
-# against white, the background `admin/frame.rs`'s `.scope-badge` rule
-# actually renders them on as foreground text (3 pairs). Three more
-# tokens -- the scope badges' own dark-mode override -- are declared
-# out rather than silently skipped: see design_tokens.rs's module doc
-# for why "white" is not an honest claim about what they render on.
-# `unclassified` must be 0, the same discipline E4/E6/E7 use.
+# RFC 176 §6.1b: a gate reading only design_tokens.rs was green while
+# templates/chrome.rs -- consumed by the magic-link-sent page, the TOTP
+# enroll/verify/recovery-codes pages, and generic error pages, all real
+# end-user surfaces -- carried the pre-176 values untouched. Same shape
+# as §3's own finding about axe, recurring inside the fix for it. Both
+# files are parsed now.
+#
+# Nineteen pairs are checked: `design_tokens.rs`'s four semantic tokens
+# (--success/--warning/--danger/--info) against their own --*-bg
+# partner, light and dark (8 pairs); `chrome.rs`'s own copy of the same
+# four, same shape, no scope tokens (8 pairs, chrome.rs has none per
+# design_tokens.rs's own module doc -- "End-user UI has no scope
+# badge"); and `design_tokens.rs`'s three scope badge tokens
+# (--scope-system/--scope-tenancy/--scope-tenant) against white, the
+# background `admin/frame.rs`'s `.scope-badge` rule actually renders
+# them on as foreground text (3 pairs). Three more tokens -- the scope
+# badges' own dark-mode override -- are declared out rather than
+# silently skipped: see design_tokens.rs's module doc for why "white"
+# is not an honest claim about what they render on. `unclassified` must
+# be 0, the same discipline E4/E6/E7 use.
 # ---------------------------------------------------------------------------
 
 DESIGN_TOKENS_RS="${REPO_ROOT}/crates/frontend/src/design_tokens.rs"
+CHROME_RS="${REPO_ROOT}/crates/frontend/src/templates/chrome.rs"
 CONTRAST_THRESHOLD=7.0
 
 declare -a CONTRAST_DECLARED_OUT=(
@@ -932,12 +943,16 @@ contrast_results=$(awk '
         darker  = (l1 > l2) ? l2 : l1
         return (lighter + 0.05) / (darker + 0.05)
     }
+    # Matches both `r##"..."##;` (design_tokens.rs, pre-escaped for
+    # format!() argument position) and `r#"..."#;` (chrome.rs, consumed
+    # as a plain value) -- the two constants use different raw-string
+    # hash counts, not different token-line shapes.
     {
-        if (match($0, /^pub const ([A-Za-z_]+): &str = r##"/, m)) {
+        if (match($0, /^pub const ([A-Za-z_]+): &str = r#+"/, m)) {
             constname = m[1]; indark = 0; next
         }
         if (constname == "") next
-        if ($0 ~ /"##;/) { constname = ""; next }
+        if ($0 ~ /"#+;/) { constname = ""; next }
         if ($0 ~ /@media \(prefers-color-scheme: dark\)/) { indark = 1; next }
         if (match($0, /--([a-z0-9-]+):[ \t]*#([0-9a-fA-F]{6});/, m2)) {
             val[constname ":" indark ":" m2[1]] = tolower(m2[2])
@@ -945,17 +960,22 @@ contrast_results=$(awk '
     }
     END {
         split("success warning danger info", names, " ")
-        for (i = 1; i <= 4; i++) {
-            n = names[i]
-            fg = val["DESIGN_TOKENS_FMT:0:" n]; bg = val["DESIGN_TOKENS_FMT:0:" n "-bg"]
-            if (fg == "" || bg == "") { print "light-" n "\tUNPARSED\t" fg "\t" bg; continue }
-            print "light-" n "\t" contrast(fg, bg) "\t#" fg "\t#" bg
-        }
-        for (i = 1; i <= 4; i++) {
-            n = names[i]
-            fg = val["DESIGN_TOKENS_FMT:1:" n]; bg = val["DESIGN_TOKENS_FMT:1:" n "-bg"]
-            if (fg == "" || bg == "") { print "dark-" n "\tUNPARSED\t" fg "\t" bg; continue }
-            print "dark-" n "\t" contrast(fg, bg) "\t#" fg "\t#" bg
+        split("DESIGN_TOKENS_FMT BASE_CSS", consts, " ")
+        split("design_tokens.rs chrome.rs", labels, " ")
+        for (c = 1; c <= 2; c++) {
+            cn = consts[c]; lbl = labels[c]
+            for (i = 1; i <= 4; i++) {
+                n = names[i]
+                fg = val[cn ":0:" n]; bg = val[cn ":0:" n "-bg"]
+                if (fg == "" || bg == "") { print lbl " light-" n "\tUNPARSED\t" fg "\t" bg; continue }
+                print lbl " light-" n "\t" contrast(fg, bg) "\t#" fg "\t#" bg
+            }
+            for (i = 1; i <= 4; i++) {
+                n = names[i]
+                fg = val[cn ":1:" n]; bg = val[cn ":1:" n "-bg"]
+                if (fg == "" || bg == "") { print lbl " dark-" n "\tUNPARSED\t" fg "\t" bg; continue }
+                print lbl " dark-" n "\t" contrast(fg, bg) "\t#" fg "\t#" bg
+            }
         }
         split("scope-system scope-tenancy scope-tenant", snames, " ")
         for (i = 1; i <= 3; i++) {
@@ -965,9 +985,9 @@ contrast_results=$(awk '
             print n " (light) vs white\t" contrast(fg, "ffffff") "\t#" fg "\t#ffffff"
         }
     }
-' "$DESIGN_TOKENS_RS")
+' "$DESIGN_TOKENS_RS" "$CHROME_RS")
 
-contrast_scanned=14
+contrast_scanned=22
 contrast_checked=0
 contrast_declared_count=${#CONTRAST_DECLARED_OUT[@]}
 contrast_unclassified=0

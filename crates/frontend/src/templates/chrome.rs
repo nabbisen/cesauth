@@ -16,41 +16,43 @@ pub const BASE_CSS: &str = r#"
   --err: #a6261d;
 
   /* v0.31.0: state tokens. Used by .flash--*, .badge--*, button.danger,
-   * button.warning. Color values are derived from the v0.31.0 UI/UX
-   * review materials (PNG #2 / #11) and tested for WCAG AA contrast
-   * against --bg. Each foreground token is paired with a soft
+   * button.warning. Each foreground token is paired with a soft
    * background variant for flash/banner regions.
+   *
+   * RFC 176 §6.1b: every pair reaches AAA (7:1) against its own -bg,
+   * not just AA -- same values design_tokens.rs's admin-frame copy
+   * already uses (§6.1), since the -bg partners here are byte-identical
+   * to that file's and the two never needed to differ. Hue/saturation
+   * preserved, only lightness moved; dark mode moves the background,
+   * not the foreground.
    *
    * IMPORTANT: never rely on color alone — every state has a
    * companion icon and text label per WCAG 1.4.1 (Use of Color).
    * The .flash and .badge templates emit these. */
-  --success:    #1f9d55;
+  --success:    #125d32;
   --success-bg: #e8f5e9;
-  --warning:    #b76e00;
+  --warning:    #7a4a00;
   --warning-bg: #fff7e6;
-  --danger:     #c92a2a;
+  --danger:     #9b2020;
   --danger-bg:  #fdecea;
-  --info:       #1864ab;
+  --info:       #14548f;
   --info-bg:    #e7f5ff;
 }
 
-/* Dark-mode overrides. Light bg variants would wash out on a dark
- * canvas, so we shift to muted dark tints with the same hue family.
- * Foreground tokens get a brightness boost for contrast against the
- * dark canvas. Tested informally against macOS Dark Mode and Firefox
- * dark theme; if the deployment renders against an unusual canvas
- * (e.g., true #000), the legibility floor is still acceptable
+/* Dark-mode overrides. Tested informally against macOS Dark Mode and
+ * Firefox dark theme; if the deployment renders against an unusual
+ * canvas (e.g., true #000), the legibility floor is still acceptable
  * because each state pairs color with text + icon. */
 @media (prefers-color-scheme: dark) {
   :root {
     --success:    #4ade80;
-    --success-bg: #14532d;
+    --success-bg: #0f3d21;
     --warning:    #fbbf24;
-    --warning-bg: #78350f;
+    --warning-bg: #5d290c;
     --danger:     #f87171;
-    --danger-bg:  #7f1d1d;
+    --danger-bg:  #1c0606;
     --info:       #60a5fa;
-    --info-bg:    #1e3a8a;
+    --info-bg:    #0b1634;
   }
 }
 

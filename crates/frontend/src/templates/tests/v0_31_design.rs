@@ -62,10 +62,11 @@ fn base_css_includes_dark_mode_overrides() {
     let html = error_page("t", "d");
     assert!(html.contains("@media (prefers-color-scheme: dark)"),
         "BASE_CSS must include dark-mode @media block");
-    // Dark variant for --success-bg is a deep green (#14532d)
-    // per the v0.31.0 plan. Pin one value to detect drift.
-    assert!(html.contains("#14532d"),
-        "BASE_CSS dark mode must override --success-bg to #14532d");
+    // Dark variant for --success-bg is a deep green (#0f3d21, RFC 176
+    // §6.1b -- darkened from #14532d so --success itself reaches AAA
+    // against it). Pin one value to detect drift.
+    assert!(html.contains("#0f3d21"),
+        "BASE_CSS dark mode must override --success-bg to #0f3d21");
 }
 
 #[test]
