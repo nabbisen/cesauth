@@ -164,6 +164,23 @@ still small; the gate for it is not**, and 0.92.2's credentialed-flows job
 already holds the pieces a signed-in browser path would need. Dispatched as
 *report rather than build* if it proves more than small.
 
+## 5.2 Correction, 2026-11-04: §1's sizes were browser defaults, not a design
+
+§1's table reports 13.33 px text and 17–21 px controls as measurements of this
+product's typography and targets. **They are measurements of Chrome's defaults.**
+The CSR pages ship **no stylesheet at all** — 0 author rules, body font
+`"Times New Roman"`, `h1` at the default 32 px, and six class names
+(`login-page`, `login-card`, `sr-only`, `btn-primary`, `btn-passkey`, `muted`)
+that nothing styles. See
+[RFC 178](../proposed/178-the-end-user-app-ships-no-stylesheet.md).
+
+**The findings in §2 and §3 stand unchanged** — focus order and heading order
+are properties of the markup, not of CSS, and the reorder fixed a real defect.
+**What does not stand is reading §1's numbers as evidence about a design.**
+RFC 176 §6.3's control-height floor still wants doing, but it wants doing *in a
+stylesheet that does not yet exist*, which is RFC 178's question and not a
+retrofit across templates.
+
 ## 6. What this RFC does not claim
 
 - **No user has reported any of this.** Nobody has deployed this tree.
