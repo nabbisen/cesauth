@@ -2206,19 +2206,65 @@ e7_sink_set() {
 }
 E7_SINK_NAMES="$(printf '%b' "$e7_conversion_sinks" | cut -f1 | grep -v '^$' || true) $(printf '%b\n' "$e7_port_error_response_sink" | cut -f1) unwrap_storage"
 
+# The two shapes RFC 171 §3 Q1's own census drew and the exemptions
+# review asked restored: `written` (a distinct outcome the caller can
+# never reach -- a reader notices the wrong thing happening) vs
+# `chokepoint` (the missing variant only ever passes through the
+# SHARED, ~50-site generic dispatcher -- port_error_response/
+# unwrap_storage -- which was never engineered for this one caller and
+# promised it nothing). A bespoke `impl From<PortError> for X`
+# conversion (ClientOpError, AuthFailure, ...) IS caller/domain-specific
+# -- it exists to let exactly that caller's own match arms distinguish
+# outcomes -- so a missing variant explained ONLY by one of those, or
+# by a literal `PortError::X` the caller wrote directly, is `written`.
+# e7_fn_matched_set therefore returns "<generic>|||<bespoke>" instead
+# of one merged set, so the caller can tell which bucket a missing
+# variant actually came from.
+E7_GENERIC_SINKS="unwrap_storage $(printf '%b\n' "$e7_port_error_response_sink" | cut -f1)"
+
 e7_fn_matched_set() {
-  local body="$1"
-  local sigline variants s set2
+  local body="$1" propagates="${2:-0}"
+  local sigline direct generic bespoke s set2 g is_generic gset bset
   sigline=$(printf '%s\n' "$body" | head -5 | tr '\n' ' ')
-  variants=$(printf '%s\n' "$body" | e7_distinct_variants | tr '\n' ' ')
+  # `RECEIVER.method(...).await?` discharges the error immediately,
+  # before anything after it runs at all -- whatever `PortError::X`
+  # text appears later in this scope is examining the UNWRAPPED SUCCESS
+  # value (an Option, a status field, ...), not this call's own error
+  # path, so it must not be read as a literal match on this call.
+  # Found live: crates/core/src/tenancy/service.rs::create_organization
+  # writes `match tenants.get(tenant_id).await? { Some(_) => return
+  # Err(PortError::Conflict), None => return Err(PortError::NotFound)
+  # }` -- both are fresh errors synthesised from the tenant's status
+  # field on a SUCCESSFUL lookup, not from TenantRepository::get's own
+  # error path, which the leading `?` already discharged. The sink
+  # check below (keyed to the enclosing function's own return type)
+  # still applies on a propagating call -- `?` still invokes that
+  # type's own `From<PortError>` -- only the literal-text scan is
+  # unsafe here.
+  if [ "$propagates" = "1" ]; then
+    direct=""
+  else
+    direct=$(printf '%s\n' "$body" | e7_distinct_variants | tr '\n' ' ')
+  fi
+  generic=""
+  bespoke="$direct"
   for s in $E7_SINK_NAMES; do
     if printf '%s' "$body" | grep -q "${s}::from(\|: ${s} = \|${s}(" \
        || printf '%s' "$sigline" | grep -q "${s}>"; then
       set2=$(e7_sink_set "$s")
-      [ -n "$set2" ] && variants="${variants} $(printf '%s' "$set2" | tr ',' ' ')"
+      [ -z "$set2" ] && continue
+      is_generic=0
+      for g in $E7_GENERIC_SINKS; do [ "$g" = "$s" ] && is_generic=1; done
+      if [ "$is_generic" -eq 1 ]; then
+        generic="${generic} $(printf '%s' "$set2" | tr ',' ' ')"
+      else
+        bespoke="${bespoke} $(printf '%s' "$set2" | tr ',' ' ')"
+      fi
     fi
   done
-  printf '%s\n' $variants | sort -u | tr '\n' ',' | sed 's/,$//'
+  gset=$(printf '%s\n' $generic | grep -v '^$' | sort -u | tr '\n' ',' | sed 's/,$//' || true)
+  bset=$(printf '%s\n' $bespoke | grep -v '^$' | sort -u | tr '\n' ',' | sed 's/,$//' || true)
+  printf '%s|||%s' "$gset" "$bset"
 }
 
 # Bounded to the specific statement/block containing the call, not the
@@ -2293,7 +2339,8 @@ e7_receiver_names() {
 
 e7_resolve_callers() {
   local trait="$1" method="$2" struct="$3"
-  local candidates f fns fn body scopes scope ms sigline result="" receivers receiver_pat
+  local candidates f fns fn body scopes scope ms sigline receivers receiver_pat propagates
+  local result_g="" result_b="" g_part b_part gset bset
   candidates=$(printf '%s\n' "$E7_CORE_BACKEND_FILES" | xargs grep -lE "[:<,[:space:]]${trait}[>,[:space:]]|${struct}::new\(" 2>/dev/null || true)
   for f in $candidates; do
     fns=$(grep -oE '^[ \t]{0,4}(pub[ \t]+)?(async[ \t]+)?fn[ \t]+[A-Za-z0-9_]+' "$f" | sed -E 's/.*fn[ \t]+//' | sort -u || true)
@@ -2310,8 +2357,12 @@ e7_resolve_callers() {
       while IFS= read -r line; do
         if [ "$line" = "---SCOPE---" ]; then
           if [ -n "$scope" ]; then
-            ms=$(e7_fn_matched_set "$(printf '%s\n%s' "$sigline" "$scope")")
-            [ -n "$ms" ] && result="${result},${ms}"
+            propagates=0
+            printf '%s\n' "$scope" | head -1 | grep -qE '\.await[ \t]*\?' && propagates=1
+            ms=$(e7_fn_matched_set "$(printf '%s\n%s' "$sigline" "$scope")" "$propagates")
+            g_part="${ms%%|||*}"; b_part="${ms#*|||}"
+            [ -n "$g_part" ] && result_g="${result_g},${g_part}"
+            [ -n "$b_part" ] && result_b="${result_b},${b_part}"
           fi
           scope=""
         else
@@ -2320,42 +2371,162 @@ e7_resolve_callers() {
         fi
       done <<< "$scopes"
       if [ -n "$scope" ]; then
-        ms=$(e7_fn_matched_set "$(printf '%s\n%s' "$sigline" "$scope")")
-        [ -n "$ms" ] && result="${result},${ms}"
+        propagates=0
+        printf '%s\n' "$scope" | head -1 | grep -qE '\.await[ \t]*\?' && propagates=1
+        ms=$(e7_fn_matched_set "$(printf '%s\n%s' "$sigline" "$scope")" "$propagates")
+        g_part="${ms%%|||*}"; b_part="${ms#*|||}"
+        [ -n "$g_part" ] && result_g="${result_g},${g_part}"
+        [ -n "$b_part" ] && result_b="${result_b},${b_part}"
       fi
     done
   done
-  printf '%s' "$result" | tr ',' '\n' | grep -v '^$' | sort -u | tr '\n' ',' | sed 's/,$//' || true
+  gset=$(printf '%s' "$result_g" | tr ',' '\n' | grep -v '^$' | sort -u | tr '\n' ',' | sed 's/,$//' || true)
+  bset=$(printf '%s' "$result_b" | tr ',' '\n' | grep -v '^$' | sort -u | tr '\n' ',' | sed 's/,$//' || true)
+  printf '%s|||%s' "$gset" "$bset"
 }
 
+# ── E7's two exemption lists (RFC 171 §3 Q1 exemptions review) ──────────
+#
+# `e6ab206`'s check was built exactly as specified -- "build the check"
+# and "do not fix anything the check finds," with no exemption
+# mechanism named -- and that combination can only produce a red
+# release gate forever, which blocks every cut. The project's own
+# answer already exists: E6_BEARER_LEGACY_EXEMPT ships E6 with 18
+# known-unfixed rows, named, dated, reasoned, staleness-checked, under
+# a comment saying the list must shrink as each is actually fixed.
+# Copied here, not its absence.
+#
+# The 31 DEFECTs are not one population -- the review found they
+# collapse two shapes the census (§5.4) deliberately kept apart:
+#
+#   `written`    -- the caller has a DISTINCT outcome for a variant its
+#                    adapter cannot produce, and that outcome was
+#                    engineered FOR THIS CALLER specifically: a literal
+#                    `PortError::X` match it wrote itself, or a bespoke
+#                    `impl From<PortError> for X` conversion that exists
+#                    to let exactly this caller's domain distinguish
+#                    outcomes (ClientOpError's Conflict vs NotFound, a
+#                    real 409 vs a real 404). A reader notices the wrong
+#                    thing happening.
+#   `chokepoint` -- every missing variant passes ONLY through the
+#                    shared, ~50-call-site generic dispatcher
+#                    (port_error_response / its unwrap_storage alias),
+#                    which exists for OTHER callers' genuine needs and
+#                    was never engineered for this one. Nothing was
+#                    promised here, so nothing distinct is lost.
+#
+# This is checked per missing variant, not by counting how many
+# variants a caller matches (the review's own 5/26 by "matches all
+# five" was named as a proxy, not the test): a missing variant backed
+# by a bespoke sink or a literal match makes the whole method
+# `written`; a method whose missing variants are ALL explained by the
+# generic dispatcher is `chokepoint`.
+#
+# Exempting a name here means "known, not fixed, sized for later" --
+# never "the check is wrong." Both lists are keyed by `Trait::method`
+# and staleness-checked (RFC 165 §3): an entry matching no DEFECT this
+# run is stale and fails the build, the same as a fixed-and-forgotten
+# E6 row. A DEFECT found OUTSIDE both lists also fails the build --
+# that is the whole point of naming them, not widening them silently.
+
+# `written` -- should shrink first: each is a caller promising an
+# outcome (via ClientOpError's bespoke conversion) it cannot deliver.
+# Found 2026-11-04, RFC 171 §3 Q1's check (commit e6ab206); sized
+# individually per RFC 171 §4, RFC 175 the precedent for how one gets
+# handled.
+E7_WRITTEN_EXEMPT="ClientRepository::find
+ClientRepository::list
+ClientRepository::update
+ClientRepository::set_secret_hash
+ClientRepository::delete"
+
+# `chokepoint` -- the shared dispatcher residual the census left open
+# (~50 call sites across 7 files, 3 traced); this check now enumerates
+# it fully. Each caller's missing variants are explained only by
+# port_error_response/unwrap_storage, which exists for other callers'
+# genuine needs and promises this one nothing -- no distinct outcome
+# is lost. Found 2026-11-04, RFC 171 §3 Q1's check (commit e6ab206).
+E7_CHOKEPOINT_EXEMPT="RoleAssignmentRepository::create
+RoleAssignmentRepository::delete
+RoleAssignmentRepository::list_for_user
+PlanRepository::get
+SubscriptionRepository::current_for_tenant
+SubscriptionRepository::set_plan
+SubscriptionRepository::set_status
+SubscriptionHistoryRepository::list_for_subscription
+TenantRepository::get
+TenantRepository::list_active
+TenantRepository::set_status
+TenantRepository::update_display_name
+OrganizationRepository::get
+OrganizationRepository::list_for_tenant
+OrganizationRepository::set_status
+OrganizationRepository::update_display_name
+GroupRepository::delete
+MembershipRepository::add_tenant_membership
+MembershipRepository::remove_tenant_membership
+MembershipRepository::list_tenant_members
+MembershipRepository::add_organization_membership
+MembershipRepository::remove_organization_membership
+MembershipRepository::list_organization_members
+MembershipRepository::add_group_membership
+MembershipRepository::remove_group_membership
+MembershipRepository::list_group_members"
+
 e7_resolved=0
-e7_defect=0
+e7_written=0
+e7_chokepoint=0
 e7_no_caller=0
 e7_defect_report=""
+e7_written_matched=""
+e7_chokepoint_matched=""
 
 while IFS=$'\t' read -r trait method producer; do
   [ -z "$trait" ] && continue
   struct=$(printf '%b' "$e7_struct_names" | awk -F'\t' -v t="$trait" '$1==t{print $2; exit}')
-  caller=$(e7_resolve_callers "$trait" "$method" "$struct")
-  missing=""
+  both=$(e7_resolve_callers "$trait" "$method" "$struct")
+  generic="${both%%|||*}"; bespoke="${both#*|||}"
+  caller=$(printf '%s\n%s\n' "$generic" "$bespoke" | tr ',' '\n' | grep -v '^$' | sort -u | tr '\n' ',' | sed 's/,$//' || true)
+  missing="" missing_bespoke=""
   if [ -n "$caller" ]; then
     while IFS= read -r v; do
       [ -z "$v" ] && continue
       case ",${producer}," in
         *",${v},"*) ;;
-        *) missing="${missing}${v} " ;;
+        *)
+          missing="${missing}${v} "
+          case ",${bespoke}," in
+            *",${v},"*) missing_bespoke="${missing_bespoke}${v} " ;;
+          esac
+          ;;
       esac
     done <<< "$(printf '%s' "$caller" | tr ',' '\n')"
   fi
   if [ -n "$missing" ]; then
-    e7_defect=$((e7_defect + 1))
-    e7_defect_report="${e7_defect_report}${trait}::${method} -- producer {${producer}}, caller matches {${caller}}, missing: ${missing}\n"
+    key="${trait}::${method}"
+    if [ -n "$missing_bespoke" ]; then
+      e7_written=$((e7_written + 1))
+      if printf '%s\n' "$E7_WRITTEN_EXEMPT" | grep -Fxq "$key"; then
+        e7_written_matched="${e7_written_matched}${key}\n"
+      else
+        e7_defect_report="${e7_defect_report}[written, unexempted] ${trait}::${method} -- producer {${producer}}, caller matches {${caller}}, missing: ${missing}\n"
+      fi
+    else
+      e7_chokepoint=$((e7_chokepoint + 1))
+      if printf '%s\n' "$E7_CHOKEPOINT_EXEMPT" | grep -Fxq "$key"; then
+        e7_chokepoint_matched="${e7_chokepoint_matched}${key}\n"
+      else
+        e7_defect_report="${e7_defect_report}[chokepoint, unexempted] ${trait}::${method} -- producer {${producer}}, caller matches {${caller}}, missing: ${missing}\n"
+      fi
+    fi
   elif [ -n "$caller" ]; then
     e7_resolved=$((e7_resolved + 1))
   else
     e7_no_caller=$((e7_no_caller + 1))
   fi
 done <<< "$(printf '%b' "$e7_producer_sets")"
+
+e7_defect=$((e7_written + e7_chokepoint))
 
 if [ "$((e7_resolved + e7_defect + e7_no_caller))" -ne "$e7_total" ]; then
   echo "❌  E7 coverage arithmetic does not close: ${e7_total} methods !=" \
@@ -2367,15 +2538,35 @@ fi
 
 if [ -n "$e7_defect_report" ]; then
   echo "❌  A caller matches a PortError variant its production adapter" \
-       "cannot produce (RFC 171 §3 Q1):" >&2
+       "cannot produce, and it is not a named, dated entry in" \
+       "E7_WRITTEN_EXEMPT or E7_CHOKEPOINT_EXEMPT (RFC 171 §3 Q1):" >&2
   printf '%b' "$e7_defect_report" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line" >&2; done
   echo "" >&2
   echo "    Either the adapter is missing a classifier it should use" >&2
   echo "    (classify_insert_err, for a real UNIQUE/PRIMARY KEY column)," >&2
-  echo "    or the caller's match arm is dead -- each is its own sizing" >&2
-  echo "    decision (RFC 171 §4); do not fix it here, report it." >&2
+  echo "    the caller's match arm is dead, or this is a genuinely new" >&2
+  echo "    finding that needs its own named, dated exemption entry --" >&2
+  echo "    each is its own sizing decision (RFC 171 §4); do not fix it" >&2
+  echo "    here, name it." >&2
   exit_code=1
 fi
+
+for name in E7_WRITTEN_EXEMPT E7_CHOKEPOINT_EXEMPT; do
+  case "$name" in
+    E7_WRITTEN_EXEMPT)    stale=$(exemption_stale_entries "$E7_WRITTEN_EXEMPT" "$(printf '%b' "$e7_written_matched")") ;;
+    E7_CHOKEPOINT_EXEMPT) stale=$(exemption_stale_entries "$E7_CHOKEPOINT_EXEMPT" "$(printf '%b' "$e7_chokepoint_matched")") ;;
+  esac
+  if [ -n "$stale" ]; then
+    echo "❌  ${name} entr(y|ies) matching NO DEFECT this run (stale):" >&2
+    printf '%s\n' "$stale" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line" >&2; done
+    echo "" >&2
+    echo "    The method behind this entry was fixed, its classification" >&2
+    echo "    changed, or it no longer exists -- remove it from ${name}" >&2
+    echo "    above, rather than leaving a pre-authorised exemption" >&2
+    echo "    nobody is reviewing." >&2
+    exit_code=1
+  fi
+done
 
 # Staleness, same discipline as every other registry in this file: a
 # producer-helper that matched nothing this run is a pre-authorised
@@ -2401,7 +2592,8 @@ fi
 
 echo "ℹ️   E7 coverage: scanned ${e7_total} port method(s) across" \
      "${e7_trait_count} PortResult-returning trait(s) -- ${e7_resolved}" \
-     "resolved, ${e7_defect} DEFECT, ${e7_no_caller} no_caller" \
+     "resolved, ${e7_defect} DEFECT (${e7_written} written + ${e7_chokepoint}" \
+     "chokepoint, all exempted-by-name), ${e7_no_caller} no_caller" \
      "(${e7_resolved} + ${e7_defect} + ${e7_no_caller} = ${e7_total})"
 
 if [ "$exit_code" -eq 0 ]; then
