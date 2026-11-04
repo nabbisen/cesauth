@@ -863,4 +863,147 @@ if [[ "$release_failed" -eq 1 ]]; then
     exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# RFC 176 §6.1 — colour contrast gate.
+#
+# e2e/specs/accessibility.spec.ts runs axe over two pages (/ and /login),
+# so the tokens actually failing contrast -- rendered in admin/operator
+# flash banners, badges and callouts -- are invisible to that gate (same
+# shape as RFC 166's finding: a gate whose coverage is narrower than the
+# claim a reader takes from it). This is pure arithmetic over the token
+# table itself instead, so it needs no browser and runs on every push.
+#
+# Parses design_tokens.rs ITSELF (never a transcription of it -- a gate
+# reading its own copy of the thing it checks is a failure mode this
+# project keeps finding) and recomputes the WCAG relative-luminance
+# contrast ratio for every semantic pair (RFC 176 §2's reasoning: AAA
+# 7:1, not AA 4.5:1, because contrast sensitivity declines with age).
+#
+# Hex parsing is POSIX-safe (an index() lookup over "0123456789abcdef",
+# not gawk's strtonum() -- no script in this repo relies on a gawk
+# extension today) even though CI's awk is gawk in practice.
+#
+# Eleven pairs are checked: the four semantic tokens (--success/
+# --warning/--danger/--info) against their own --*-bg partner, in both
+# the :root block and the dark-mode override (8 pairs); and the three
+# scope badge tokens (--scope-system/--scope-tenancy/--scope-tenant)
+# against white, the background `admin/frame.rs`'s `.scope-badge` rule
+# actually renders them on as foreground text (3 pairs). Three more
+# tokens -- the scope badges' own dark-mode override -- are declared
+# out rather than silently skipped: see design_tokens.rs's module doc
+# for why "white" is not an honest claim about what they render on.
+# `unclassified` must be 0, the same discipline E4/E6/E7 use.
+# ---------------------------------------------------------------------------
+
+DESIGN_TOKENS_RS="${REPO_ROOT}/crates/frontend/src/design_tokens.rs"
+CONTRAST_THRESHOLD=7.0
+
+declare -a CONTRAST_DECLARED_OUT=(
+    "scope-system (dark)	admin/frame.rs's .scope-badge background has no dark-mode override of its own, so there is no real background this override renders on that a check against white could honestly claim -- see design_tokens.rs's module doc"
+    "scope-tenancy (dark)	same reason as scope-system (dark)"
+    "scope-tenant (dark)	same reason as scope-system (dark)"
+)
+
+contrast_results=$(awk '
+    function hex2dec(h,   i, n, c, v) {
+        h = tolower(h)
+        n = 0
+        for (i = 1; i <= length(h); i++) {
+            c = substr(h, i, 1)
+            v = index("0123456789abcdef", c) - 1
+            n = n * 16 + v
+        }
+        return n
+    }
+    function lin(c) {
+        c = c / 255.0
+        if (c <= 0.03928) return c / 12.92
+        return ((c + 0.055) / 1.055) ^ 2.4
+    }
+    function luminance(hex,   r, g, b) {
+        r = hex2dec(substr(hex, 1, 2))
+        g = hex2dec(substr(hex, 3, 2))
+        b = hex2dec(substr(hex, 5, 2))
+        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+    }
+    function contrast(h1, h2,   l1, l2, lighter, darker) {
+        l1 = luminance(h1); l2 = luminance(h2)
+        lighter = (l1 > l2) ? l1 : l2
+        darker  = (l1 > l2) ? l2 : l1
+        return (lighter + 0.05) / (darker + 0.05)
+    }
+    {
+        if (match($0, /^pub const ([A-Za-z_]+): &str = r##"/, m)) {
+            constname = m[1]; indark = 0; next
+        }
+        if (constname == "") next
+        if ($0 ~ /"##;/) { constname = ""; next }
+        if ($0 ~ /@media \(prefers-color-scheme: dark\)/) { indark = 1; next }
+        if (match($0, /--([a-z0-9-]+):[ \t]*#([0-9a-fA-F]{6});/, m2)) {
+            val[constname ":" indark ":" m2[1]] = tolower(m2[2])
+        }
+    }
+    END {
+        split("success warning danger info", names, " ")
+        for (i = 1; i <= 4; i++) {
+            n = names[i]
+            fg = val["DESIGN_TOKENS_FMT:0:" n]; bg = val["DESIGN_TOKENS_FMT:0:" n "-bg"]
+            if (fg == "" || bg == "") { print "light-" n "\tUNPARSED\t" fg "\t" bg; continue }
+            print "light-" n "\t" contrast(fg, bg) "\t#" fg "\t#" bg
+        }
+        for (i = 1; i <= 4; i++) {
+            n = names[i]
+            fg = val["DESIGN_TOKENS_FMT:1:" n]; bg = val["DESIGN_TOKENS_FMT:1:" n "-bg"]
+            if (fg == "" || bg == "") { print "dark-" n "\tUNPARSED\t" fg "\t" bg; continue }
+            print "dark-" n "\t" contrast(fg, bg) "\t#" fg "\t#" bg
+        }
+        split("scope-system scope-tenancy scope-tenant", snames, " ")
+        for (i = 1; i <= 3; i++) {
+            n = snames[i]
+            fg = val["SCOPE_TOKENS_FMT:0:" n]
+            if (fg == "") { print n " (light) vs white\tUNPARSED\t" fg "\t#ffffff"; continue }
+            print n " (light) vs white\t" contrast(fg, "ffffff") "\t#" fg "\t#ffffff"
+        }
+    }
+' "$DESIGN_TOKENS_RS")
+
+contrast_scanned=14
+contrast_checked=0
+contrast_declared_count=${#CONTRAST_DECLARED_OUT[@]}
+contrast_unclassified=0
+contrast_violations=""
+
+while IFS=$'\t' read -r pair ratio fg bg; do
+    [[ -z "$pair" ]] && continue
+    if [[ "$ratio" == "UNPARSED" ]]; then
+        contrast_unclassified=$((contrast_unclassified + 1))
+        contrast_violations="${contrast_violations}${pair}: could not parse a hex value for this pair out of design_tokens.rs (fg=${fg:-?} bg=${bg:-?})\n"
+        continue
+    fi
+    contrast_checked=$((contrast_checked + 1))
+    if (( $(awk -v r="$ratio" -v t="$CONTRAST_THRESHOLD" 'BEGIN { print (r < t) }') )); then
+        contrast_violations="${contrast_violations}${pair}: ${fg} on ${bg} is ${ratio}:1, below ${CONTRAST_THRESHOLD}:1\n"
+    fi
+done <<< "$contrast_results"
+
+if [[ "$contrast_scanned" -ne "$((contrast_checked + contrast_declared_count + contrast_unclassified))" ]]; then
+    echo "drift-scan: BROKEN -- contrast gate arithmetic does not close:" >&2
+    echo "  ${contrast_scanned} scanned != ${contrast_checked} checked +" >&2
+    echo "  ${contrast_declared_count} declared out + ${contrast_unclassified} unclassified." >&2
+    exit 2
+fi
+
+violation_count=$(printf '%b' "$contrast_violations" | grep -c . || true)
+
+echo "ℹ️   colour contrast: scanned ${contrast_scanned} token(s) -- ${contrast_checked}" \
+     "checked against ${CONTRAST_THRESHOLD}:1 (AAA), ${contrast_declared_count} declared" \
+     "out, ${contrast_unclassified} unclassified -- ${violation_count} below threshold"
+
+if [[ -n "$contrast_violations" ]]; then
+    echo ""
+    echo "colour pair(s) below ${CONTRAST_THRESHOLD}:1:"
+    printf '%b' "$contrast_violations" | while IFS= read -r line; do [[ -n "$line" ]] && echo "    $line"; done
+    exit 1
+fi
+
 echo "drift-scan: clean — no stale phrases detected."
