@@ -1955,6 +1955,455 @@ echo "ℹ️   E6 coverage: scanned ${e6_scanned} mutating row(s) repo-wide -- $
      "${e6_unclassified} unclassified. Distinct CSRF field name(s) in use:" \
      "${e6_distinct_field_count} ($(printf '%s' "$e6_distinct_fields" | tr '\n' ',' | sed 's/,$//'))"
 
+# ── E7 (RFC 171 §3 Q1): for every PortError variant a caller matches,
+#    can the production adapter behind that call return it? ─────────────
+#
+# The census (rfcs/handoffs/171-.../q1-census.md) is this check's own
+# specification -- §6 is the shape below, §5 is the expected findings,
+# §3's tables are the data this reproduces from source every run rather
+# than carrying forward as committed per-method rows (RFC 165 §3's own
+# lesson: a per-method table nobody re-derives is a list waiting to go
+# stale the way E4/E6's own exemption lists once did).
+#
+# Population: every `pub trait` under crates/core/src whose methods
+# return PortResult<T> -- not "a trait the adapters implement" (the
+# census's first attempt at that rule needed a judgement call for
+# TurnstileVerifier, whose one implementation lives in cesauth-backend,
+# not either adapter crate). Checked per method, not per trait: of 38
+# `pub trait` definitions, 36 have EVERY method return PortResult<T>;
+# the other two (MagicLinkMailer, ImportSink) use a different error
+# vocabulary entirely and are out of Q1's scope by construction.
+E7_CORE_SRC="$REPO_ROOT/crates/core/src"
+
+e7_population=$(
+  find "$E7_CORE_SRC" -name '*.rs' | sort | while read -r f; do
+    awk -v file="$f" '
+      /^pub trait [A-Za-z0-9_]+/ {
+        match($0, /pub trait [A-Za-z0-9_]+/)
+        traitname = substr($0, RSTART+10, RLENGTH-10)
+        depth = 0; started = 0; buf = ""
+      }
+      traitname != "" {
+        buf = buf $0 "\n"
+        depth += gsub(/{/, "{"); depth -= gsub(/}/, "}")
+        if (index($0, "{") > 0) started = 1
+        if (started && depth == 0) {
+          n = split(buf, lines, "\n")
+          for (i = 1; i <= n; i++) {
+            line = lines[i]
+            if (match(line, /fn [A-Za-z0-9_]+/)) {
+              mname = substr(line, RSTART+3, RLENGTH-3)
+              sig = line; j = i
+              while (index(sig, ";") == 0 && j < n) { j++; sig = sig " " lines[j] }
+              if (sig ~ /PortResult</) { print traitname "\t" mname }
+            }
+          }
+          traitname = ""; buf = ""
+        }
+      }
+    ' "$f"
+  done
+)
+e7_total=$(printf '%s\n' "$e7_population" | grep -c . || true)
+e7_trait_count=$(printf '%s\n' "$e7_population" | cut -f1 | sort -u | grep -c . || true)
+
+# Production implementer: exactly one file under either adapter crate or
+# cesauth-backend (TurnstileVerifier's own exception) implements each
+# trait. More or fewer than one is this check's own stop condition --
+# RFC 171 §3 Q1's own census rule, a stable textual anchor or a reported
+# failure, never a guess.
+e7_impl_unresolved=0
+e7_impl_files=""
+e7_struct_names=""
+while IFS= read -r trait; do
+  [ -z "$trait" ] && continue
+  matches=$(grep -rlE "impl ${trait} for " "$REPO_ROOT/crates/adapter-cloudflare/src" "$REPO_ROOT/crates/backend/src" --include='*.rs' 2>/dev/null || true)
+  n=$(printf '%s\n' "$matches" | grep -c . || true)
+  if [ "$n" -ne 1 ]; then
+    echo "❌  E7: trait ${trait} has ${n} implementation(s) matching" \
+         "\"impl ${trait} for \" under adapter-cloudflare/backend (want" \
+         "exactly 1) -- report this rather than guessing which to use." >&2
+    e7_impl_unresolved=$((e7_impl_unresolved + 1))
+    continue
+  fi
+  f="$matches"
+  struct=$(grep -oE "impl ${trait} for [A-Za-z0-9_]+" "$f" | head -1 | sed -E "s/impl ${trait} for //")
+  e7_impl_files="${e7_impl_files}${trait}\t${f}\n"
+  e7_struct_names="${e7_struct_names}${trait}\t${struct}\n"
+done <<< "$(printf '%s\n' "$e7_population" | cut -f1 | sort -u)"
+
+if [ "$e7_impl_unresolved" -gt 0 ]; then
+  exit_code=1
+fi
+
+# Extracts an impl-block method's body (indented, never `pub` -- trait
+# methods are visible through the trait, not their own keyword), bounded
+# from its `async fn`/`fn` line to the matching close brace.
+e7_method_body() {
+  awk -v want="$2" '
+    match($0, /^[ \t]*(pub[ \t]+)?(async[ \t]+)?fn[ \t]+[A-Za-z0-9_]+/) {
+      line = $0
+      sub(/^[ \t]*(pub[ \t]+)?(async[ \t]+)?fn[ \t]+/, "", line)
+      match(line, /^[A-Za-z0-9_]+/)
+      cur = substr(line, RSTART, RLENGTH)
+      in_target = (cur == want)
+      if (in_target) { depth = 0; started = 0 }
+    }
+    in_target {
+      print $0
+      depth += gsub(/{/, "{"); depth -= gsub(/}/, "}")
+      if (index($0, "{") > 0) started = 1
+      if (started && depth == 0) in_target = 0
+    }
+  ' "$1" 2>/dev/null
+}
+
+# Producer-helper registry (census §6.2): a helper call does not
+# literally spell a PortError variant where it is CALLED -- only inside
+# its own definition, which the calling method never shows. Small,
+# hand-curated (the census's own census hit exactly this -- "the number
+# I am not quoting" -- so this stays a short, named, verified list, not
+# a per-method table), staleness-checked below: if a helper here is
+# never called by any producer method this run, the entry is stale.
+e7_producer_helper_variants() {
+  case "$1" in
+    run_err)              echo "Unavailable" ;;
+    classify_insert_err)  echo "Unavailable,Conflict,NotFound" ;;
+    *) echo "" ;;
+  esac
+}
+# classify_insert_message is NOT its own registry entry: it is
+# classify_insert_err's own internal delegate (repo.rs calls
+# classify_insert_message(&e.to_string()) from inside
+# classify_insert_err's own body) -- no producer method body ever
+# spells "classify_insert_message(" directly, so listing it here
+# would always be stale by construction, not a real finding.
+E7_PRODUCER_HELPERS="run_err
+classify_insert_err"
+e7_helper_matched=""
+
+e7_producer_sets=""
+while IFS=$'\t' read -r trait method; do
+  [ -z "$trait" ] && continue
+  file=$(printf '%b' "$e7_impl_files" | awk -F'\t' -v t="$trait" '$1==t{print $2; exit}')
+  [ -z "$file" ] && continue
+  body=$(e7_method_body "$file" "$method")
+  variants=""
+  for v in NotFound Conflict PreconditionFailed Serialization Unavailable; do
+    printf '%s' "$body" | grep -q "PortError::${v}" && variants="${variants} ${v}"
+  done
+  for h in $E7_PRODUCER_HELPERS; do
+    if printf '%s' "$body" | grep -q "${h}("; then
+      variants="${variants} $(e7_producer_helper_variants "$h" | tr ',' ' ')"
+      e7_helper_matched="${e7_helper_matched}${h}\n"
+    fi
+  done
+  # Three ad-hoc `contains("UNIQUE")` matcher sites named in census
+  # §5.1 -- no shared function to call, a bare inline string check,
+  # resolved to its own measured producible set rather than guessed:
+  # D1's message text reads "UNIQUE constraint failed" for both
+  # SQLITE_CONSTRAINT_UNIQUE and _PRIMARYKEY on these tables.
+  if printf '%s' "$body" | grep -q 'contains("UNIQUE"'; then
+    variants="${variants} Conflict Unavailable"
+  fi
+  sorted=$(printf '%s\n' $variants | sort -u | tr '\n' ',' | sed 's/,$//')
+  e7_producer_sets="${e7_producer_sets}${trait}\t${method}\t${sorted}\n"
+done <<< "$e7_population"
+
+# Sink registry (census §6.1): a function/conversion whose OWN body is
+# the authoritative place a PortError variant becomes "matched" for
+# every call routed through it. The three `impl From<PortError> for X`
+# conversions are discovered fresh every run (RFC 171's own lesson: a
+# registry that stops matching is the failure mode this whole RFC is
+# about) -- not hand-maintained, so a fourth one added later needs no
+# edit here. `port_error_response` is likewise discovered, by its own
+# signature shape (a function taking a bare PortError). `unwrap_storage`
+# is the one hand-curated alias: its signature takes PortResult<T>, not
+# PortError, so the same discovery cannot find it, and its own body
+# (crates/backend/src/routes/api_v1/quota.rs) just forwards to
+# port_error_response -- verified below every run, not assumed once.
+#
+# A variant OR'd together with another on the SAME match arm
+# (ClientOpError's `PreconditionFailed | Unavailable | Serialization =>
+# Internal`) is not distinctly matched -- no code path depends on
+# telling it apart from its arm-mates. Only a variant on its own arm
+# counts (found live: the naive "every literal variant" reading falsely
+# flagged ClientRepository::create for PreconditionFailed, which its
+# real match arm merges with two others into one identical outcome).
+e7_distinct_variants() {
+  awk '
+    # ok_or(PortError::X) operates on an Option, not a Result -- it
+    # synthesises a fresh Err(X) from the port call own Ok(None); the
+    # adapter never produced X at all. Confirmed false positive without
+    # this exclusion: BucketSafetyRepository::get only ever returns
+    # {Serialization, Unavailable}; its one caller writes
+    # safety.get(...).await?.ok_or(PortError::NotFound)? -- NotFound
+    # there is manufactured from a legitimate Ok(None).
+    /ok_or\([ \t]*PortError::/ { next }
+    { n = gsub(/PortError::[A-Za-z]+/, "&", $0); if (n == 0) next
+      line = $0; count = 0; delete seen
+      while (match(line, /PortError::[A-Za-z]+/)) {
+        v = substr(line, RSTART+11, RLENGTH-11)
+        if (!(v in seen)) { seen[v] = 1; count++ }
+        line = substr(line, RSTART+RLENGTH)
+      }
+      if (count == 1) { for (v in seen) print v }
+    }
+  ' | sort -u
+}
+
+e7_conversion_sinks=""
+while IFS=: read -r file line rest; do
+  [ -z "$file" ] && continue
+  target=$(printf '%s' "$rest" | sed -E 's/.*impl From<PortError> for ([A-Za-z0-9_]+).*/\1/')
+  fromline=$(awk -v start="$line" 'NR>=start && NR<=start+5 && /fn from/ {print NR; exit}' "$file")
+  [ -z "$fromline" ] && continue
+  body=$(awk -v startline="$fromline" '
+    NR < startline { next }
+    { print $0
+      depth += gsub(/{/, "{"); depth -= gsub(/}/, "}")
+      if (index($0, "{") > 0) started = 1
+      if (started && depth == 0) exit
+    }' "$file")
+  set=$(printf '%s' "$body" | e7_distinct_variants | tr '\n' ',' | sed 's/,$//')
+  e7_conversion_sinks="${e7_conversion_sinks}${target}\t${set}\n"
+done <<< "$(grep -rn "impl From<PortError> for " "$E7_CORE_SRC" "$REPO_ROOT/crates/backend/src" --include='*.rs' 2>/dev/null || true)"
+
+e7_port_error_response_sink=""
+while IFS=: read -r file line rest; do
+  [ -z "$file" ] && continue
+  fname=$(printf '%s' "$rest" | sed -E 's/.*fn ([A-Za-z0-9_]+)\(.*/\1/')
+  body=$(awk -v startline="$line" '
+    NR < startline { next }
+    { print $0
+      depth += gsub(/{/, "{"); depth -= gsub(/}/, "}")
+      if (index($0, "{") > 0) started = 1
+      if (started && depth == 0) exit
+    }' "$file")
+  set=$(printf '%s' "$body" | e7_distinct_variants | tr '\n' ',' | sed 's/,$//')
+  e7_port_error_response_sink="${fname}\t${set}"
+done <<< "$(grep -rnE 'fn [A-Za-z0-9_]+\([a-z_]+: *(cesauth_core::ports::)?PortError\)' "$E7_CORE_SRC" "$REPO_ROOT/crates/backend/src" --include='*.rs' 2>/dev/null | grep -v 'fn from(' || true)"
+
+E7_UNWRAP_STORAGE="$REPO_ROOT/crates/backend/src/routes/api_v1/quota.rs"
+e7_unwrap_storage_stale=1
+if [ -f "$E7_UNWRAP_STORAGE" ] && grep -q "fn unwrap_storage" "$E7_UNWRAP_STORAGE" \
+   && awk '/fn unwrap_storage/{f=1} f && /port_error_response\(/{found=1} f && /^}/{exit} END{exit !found}' "$E7_UNWRAP_STORAGE"; then
+  e7_unwrap_storage_stale=0
+fi
+
+e7_sink_set() {
+  case "$1" in
+    unwrap_storage)
+      if [ "$e7_unwrap_storage_stale" -eq 0 ]; then
+        printf '%b\n' "$e7_port_error_response_sink" | cut -f2 | head -1
+      fi
+      ;;
+    *)
+      { printf '%b' "$e7_conversion_sinks"; printf '%b\n' "$e7_port_error_response_sink"; } \
+        | awk -F'\t' -v n="$1" '$1==n{print $2; exit}'
+      ;;
+  esac
+}
+E7_SINK_NAMES="$(printf '%b' "$e7_conversion_sinks" | cut -f1 | grep -v '^$' || true) $(printf '%b\n' "$e7_port_error_response_sink" | cut -f1) unwrap_storage"
+
+e7_fn_matched_set() {
+  local body="$1"
+  local sigline variants s set2
+  sigline=$(printf '%s\n' "$body" | head -5 | tr '\n' ' ')
+  variants=$(printf '%s\n' "$body" | e7_distinct_variants | tr '\n' ' ')
+  for s in $E7_SINK_NAMES; do
+    if printf '%s' "$body" | grep -q "${s}::from(\|: ${s} = \|${s}(" \
+       || printf '%s' "$sigline" | grep -q "${s}>"; then
+      set2=$(e7_sink_set "$s")
+      [ -n "$set2" ] && variants="${variants} $(printf '%s' "$set2" | tr ',' ' ')"
+    fi
+  done
+  printf '%s\n' $variants | sort -u | tr '\n' ',' | sed 's/,$//'
+}
+
+# Bounded to the specific statement/block containing the call, not the
+# whole function -- a function calling more than one method of a trait
+# (or another trait entirely) must not have a LATER, unrelated match
+# credited to an EARLIER call whose own result went somewhere else
+# (found live: crates/core/src/deletion.rs's schedule_deletion calls
+# both find_pending_by_user, feeding an `if let Ok(Some(_))`, and
+# create, whose own Conflict arm is textually later in the same
+# function -- the whole-function reading wrongly credited Conflict to
+# find_pending_by_user too). A call whose own result is `let _ =`
+# discarded contributes nothing, matching this project's own established
+# "a dropped Result is not a caller" reading used throughout the census.
+e7_call_site_scopes() {
+  local body="$1" method="$2" receivers="$3"
+  awk -v method="$method" -v receivers="$receivers" '
+    { lines[NR] = $0 }
+    END {
+      pat = "(" receivers ")\\." method "\\("
+      for (i = 1; i <= NR; i++) {
+        if (lines[i] ~ pat && lines[i] !~ /let _ =/) {
+          depth = 0; j = i; cap = i + 20; scope = ""
+          while (j <= NR && j <= cap) {
+            scope = scope lines[j] "\n"
+            depth += gsub(/{/, "{", lines[j]); depth -= gsub(/}/, "}", lines[j])
+            if (depth <= 0 && index(lines[j], ";") > 0) { j++; break }
+            j++
+          }
+          print "---SCOPE---"; printf "%s", scope
+        }
+      }
+    }
+  ' <<< "$body"
+}
+
+E7_CORE_BACKEND_FILES=$(find "$E7_CORE_SRC" "$REPO_ROOT/crates/backend/src" -name '*.rs')
+
+# A candidate FILE matching ${trait}/${struct} somewhere does not mean
+# every `.method(` in it is a call on an instance of this trait -- a
+# file routinely constructs several different repositories side by
+# side (`let tenants = CloudflareTenantRepository::new(...); let orgs
+# = CloudflareOrganizationRepository::new(...);`) and both expose a
+# `get`/`create`/... of their own. Without binding the match to the
+# actual receiver, a call on the WRONG repository (same method name,
+# different trait) gets credited to this one -- found live:
+# TenantRepository::get was picking up organizations.rs's `orgs.get(`
+# (via port_error_response) even though that function never calls
+# `tenants.get(` at all. Three receiver shapes, all seen in this
+# codebase: (1) a local `let NAME = Struct::new(...)` binding; (2) a
+# generic bound `<T: Trait>` paired with a parameter typed `&T` (the
+# service-layer style, e.g. `fn soft_delete_tenant<T: TenantRepository>
+# (tenants: &T, ...)`); (3) a direct `name: &dyn Trait` / `&impl Trait`
+# parameter. A function matching none of these is not treated as a
+# caller of this trait at all (RFC 165's "under-reporting is the safer
+# failure mode" -- skip it rather than fall back to an unscoped,
+# receiver-blind match).
+e7_receiver_names() {
+  local body="$1" trait="$2" struct="$3"
+  local sig_block generic names=""
+  sig_block=$(awk '{print} /\{/{exit}' <<< "$body")
+  names="${names} $(grep -oE "let[ \t]+[A-Za-z0-9_]+[ \t]*(:[^=]+)?=[ \t]*${struct}::new\(" <<< "$body" \
+    | sed -E 's/^let[ \t]+([A-Za-z0-9_]+).*/\1/' | tr '\n' ' ')"
+  generic=$(grep -oE "[A-Za-z0-9_]+[ \t]*:[ \t]*${trait}\b" <<< "$sig_block" | head -1 | sed -E 's/^([A-Za-z0-9_]+).*/\1/')
+  if [ -n "$generic" ]; then
+    names="${names} $(grep -oE "[A-Za-z0-9_]+[ \t]*:[ \t]*&?${generic}\b" <<< "$sig_block" \
+      | sed -E 's/^([A-Za-z0-9_]+).*/\1/' | tr '\n' ' ')"
+  fi
+  names="${names} $(grep -oE "[A-Za-z0-9_]+[ \t]*:[ \t]*&?(dyn|impl)[ \t]+${trait}\b" <<< "$sig_block" \
+    | sed -E 's/^([A-Za-z0-9_]+).*/\1/' | tr '\n' ' ')"
+  printf '%s\n' $names | grep -v '^$' | sort -u || true
+}
+
+e7_resolve_callers() {
+  local trait="$1" method="$2" struct="$3"
+  local candidates f fns fn body scopes scope ms sigline result="" receivers receiver_pat
+  candidates=$(printf '%s\n' "$E7_CORE_BACKEND_FILES" | xargs grep -lE "[:<,[:space:]]${trait}[>,[:space:]]|${struct}::new\(" 2>/dev/null || true)
+  for f in $candidates; do
+    fns=$(grep -oE '^[ \t]{0,4}(pub[ \t]+)?(async[ \t]+)?fn[ \t]+[A-Za-z0-9_]+' "$f" | sed -E 's/.*fn[ \t]+//' | sort -u || true)
+    for fn in $fns; do
+      body=$(e7_method_body "$f" "$fn")
+      [ -z "$body" ] && continue
+      receivers=$(e7_receiver_names "$body" "$trait" "$struct")
+      [ -z "$receivers" ] && continue
+      receiver_pat=$(printf '%s' "$receivers" | tr '\n' '|' | sed 's/|$//')
+      scopes=$(e7_call_site_scopes "$body" "$method" "$receiver_pat")
+      [ -z "$scopes" ] && continue
+      sigline=$(printf '%s\n' "$body" | head -5)
+      scope=""
+      while IFS= read -r line; do
+        if [ "$line" = "---SCOPE---" ]; then
+          if [ -n "$scope" ]; then
+            ms=$(e7_fn_matched_set "$(printf '%s\n%s' "$sigline" "$scope")")
+            [ -n "$ms" ] && result="${result},${ms}"
+          fi
+          scope=""
+        else
+          scope="${scope}${line}
+"
+        fi
+      done <<< "$scopes"
+      if [ -n "$scope" ]; then
+        ms=$(e7_fn_matched_set "$(printf '%s\n%s' "$sigline" "$scope")")
+        [ -n "$ms" ] && result="${result},${ms}"
+      fi
+    done
+  done
+  printf '%s' "$result" | tr ',' '\n' | grep -v '^$' | sort -u | tr '\n' ',' | sed 's/,$//' || true
+}
+
+e7_resolved=0
+e7_defect=0
+e7_no_caller=0
+e7_defect_report=""
+
+while IFS=$'\t' read -r trait method producer; do
+  [ -z "$trait" ] && continue
+  struct=$(printf '%b' "$e7_struct_names" | awk -F'\t' -v t="$trait" '$1==t{print $2; exit}')
+  caller=$(e7_resolve_callers "$trait" "$method" "$struct")
+  missing=""
+  if [ -n "$caller" ]; then
+    while IFS= read -r v; do
+      [ -z "$v" ] && continue
+      case ",${producer}," in
+        *",${v},"*) ;;
+        *) missing="${missing}${v} " ;;
+      esac
+    done <<< "$(printf '%s' "$caller" | tr ',' '\n')"
+  fi
+  if [ -n "$missing" ]; then
+    e7_defect=$((e7_defect + 1))
+    e7_defect_report="${e7_defect_report}${trait}::${method} -- producer {${producer}}, caller matches {${caller}}, missing: ${missing}\n"
+  elif [ -n "$caller" ]; then
+    e7_resolved=$((e7_resolved + 1))
+  else
+    e7_no_caller=$((e7_no_caller + 1))
+  fi
+done <<< "$(printf '%b' "$e7_producer_sets")"
+
+if [ "$((e7_resolved + e7_defect + e7_no_caller))" -ne "$e7_total" ]; then
+  echo "❌  E7 coverage arithmetic does not close: ${e7_total} methods !=" \
+       "${e7_resolved} resolved + ${e7_defect} DEFECT + ${e7_no_caller}" \
+       "no_caller -- this is a bug in the check itself, not a finding" \
+       "about the backend." >&2
+  exit_code=1
+fi
+
+if [ -n "$e7_defect_report" ]; then
+  echo "❌  A caller matches a PortError variant its production adapter" \
+       "cannot produce (RFC 171 §3 Q1):" >&2
+  printf '%b' "$e7_defect_report" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line" >&2; done
+  echo "" >&2
+  echo "    Either the adapter is missing a classifier it should use" >&2
+  echo "    (classify_insert_err, for a real UNIQUE/PRIMARY KEY column)," >&2
+  echo "    or the caller's match arm is dead -- each is its own sizing" >&2
+  echo "    decision (RFC 171 §4); do not fix it here, report it." >&2
+  exit_code=1
+fi
+
+# Staleness, same discipline as every other registry in this file: a
+# producer-helper that matched nothing this run is a pre-authorised
+# entry nobody is reviewing any more.
+e7_helper_stale=$(exemption_stale_entries "$E7_PRODUCER_HELPERS" "$(printf '%b' "$e7_helper_matched")")
+if [ -n "$e7_helper_stale" ]; then
+  echo "❌  E7 producer-helper registry entr(y|ies) matching NO producer" \
+       "method this run (stale):" >&2
+  printf '%s\n' "$e7_helper_stale" | while IFS= read -r line; do [ -n "$line" ] && echo "    $line" >&2; done
+  echo "" >&2
+  echo "    The helper was renamed or is no longer called -- remove it" >&2
+  echo "    from E7_PRODUCER_HELPERS, rather than leaving a stale entry." >&2
+  exit_code=1
+fi
+
+if [ "$e7_unwrap_storage_stale" -ne 0 ]; then
+  echo "❌  E7's unwrap_storage alias no longer holds: its own body" \
+       "(crates/backend/src/routes/api_v1/quota.rs) must call" \
+       "port_error_response( directly, verified every run rather than" \
+       "assumed once -- it no longer does, or the file moved." >&2
+  exit_code=1
+fi
+
+echo "ℹ️   E7 coverage: scanned ${e7_total} port method(s) across" \
+     "${e7_trait_count} PortResult-returning trait(s) -- ${e7_resolved}" \
+     "resolved, ${e7_defect} DEFECT, ${e7_no_caller} no_caller" \
+     "(${e7_resolved} + ${e7_defect} + ${e7_no_caller} = ${e7_total})"
+
 if [ "$exit_code" -eq 0 ]; then
   echo "✅  All ${registered_count} routes are documented in route-contracts.md, and every" \
        "handler-shaped fn in routes/ is reachable from lib.rs"
