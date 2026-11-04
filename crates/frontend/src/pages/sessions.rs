@@ -77,43 +77,53 @@ fn SessionsView(resp: SessionsResponse) -> impl IntoView {
                 <a href="/me/security">"← Security centre"</a>
             </p>
 
-            // ── Session table ──────────────────────────────────────────
-            <table>
-                <thead>
-                    <tr>
-                        <th scope="col">"Device / method"</th>
-                        <th scope="col">"Signed in"</th>
-                        <th scope="col">"Last seen"</th>
-                        <th scope="col"><span class="sr-only">"Actions"</span></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <For
-                        each=move || resp.sessions.clone()
-                        key=|s| s.session_id.clone()
-                        children=move |s| {
-                            let token = csrf.clone();
-                            view! { <SessionRow item=s csrf=token /> }
-                        }
-                    />
-                </tbody>
-            </table>
+            // RFC 177 §4.2: the page had one h1 and no h2 at all over the
+            // table and bulk action below -- no landmark between them for
+            // a screen-reader or zoomed user. This is the honest single
+            // section the page actually has; it is not split further
+            // because the bulk action acts on the same list the table
+            // shows, not a separate concern.
+            <section aria-labelledby="sessions-list-heading">
+                <h2 id="sessions-list-heading">"Sessions"</h2>
 
-            // ── Bulk revoke ────────────────────────────────────────────
-            {if has_others {
-                view! {
-                    <form method="POST" action="/me/security/sessions/revoke-others">
-                        <input type="hidden" name="csrf" value=csrf_bulk />
-                        <button type="submit" class="btn-danger">
-                            "Sign out all other sessions"
-                        </button>
-                    </form>
-                }.into_any()
-            } else {
-                view! {
-                    <p class="muted">"No other active sessions."</p>
-                }.into_any()
-            }}
+                // ── Session table ──────────────────────────────────────
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">"Device / method"</th>
+                            <th scope="col">"Signed in"</th>
+                            <th scope="col">"Last seen"</th>
+                            <th scope="col"><span class="sr-only">"Actions"</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <For
+                            each=move || resp.sessions.clone()
+                            key=|s| s.session_id.clone()
+                            children=move |s| {
+                                let token = csrf.clone();
+                                view! { <SessionRow item=s csrf=token /> }
+                            }
+                        />
+                    </tbody>
+                </table>
+
+                // ── Bulk revoke ──────────────────────────────────────────
+                {if has_others {
+                    view! {
+                        <form method="POST" action="/me/security/sessions/revoke-others">
+                            <input type="hidden" name="csrf" value=csrf_bulk />
+                            <button type="submit" class="btn-danger">
+                                "Sign out all other sessions"
+                            </button>
+                        </form>
+                    }.into_any()
+                } else {
+                    view! {
+                        <p class="muted">"No other active sessions."</p>
+                    }.into_any()
+                }}
+            </section>
         </div>
     }
 }

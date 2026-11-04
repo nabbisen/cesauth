@@ -81,8 +81,14 @@ fn SecurityCenterView(state: SecurityCenterState) -> impl IntoView {
         <div class="security-status">
             <h1>"Security"</h1>
 
-            // ── Delete account / pending deletion (RFC 147 cycle 2 D11;
-            //    rewritten RFC 149 §2/§4/§5) ───────────────────────────
+            // ── Pending deletion (RFC 149 §2/§4/§5) ─────────────────────
+            // RFC 177 §4.1: stays at the top, deliberately, even though
+            // every other destructive control moved last -- a scheduled
+            // deletion is the most important fact about the account
+            // when it is true, and a user who already requested it
+            // needs to find the cancel action quickly. Burying it last
+            // would be its own defect. The trigger section (below,
+            // "Delete account") only renders when nothing is pending.
             {
                 let csrf = state.csrf_token.clone();
                 match state.pending_deletion_scheduled_at {
@@ -102,25 +108,7 @@ fn SecurityCenterView(state: SecurityCenterState) -> impl IntoView {
                             </form>
                         </section>
                     }.into_any(),
-                    None => view! {
-                        <section aria-labelledby="delete-account-heading">
-                            <h2 id="delete-account-heading">"Delete account"</h2>
-                            <p>
-                                "Deleting your account removes your sign-in credentials and \
-                                 tenancy memberships after a "
-                                {DELETION_GRACE_PERIOD_DAYS}
-                                "-day grace period, during which you can cancel the request \
-                                 from this page. Once the grace period ends the deletion is \
-                                 carried out, and nothing in cesauth can reverse it."
-                            </p>
-                            <form method="POST" action="/me/security/delete-account/request">
-                                <input type="hidden" name="csrf" value=csrf.clone() />
-                                <button type="submit" class="btn-danger">
-                                    "Request account deletion"
-                                </button>
-                            </form>
-                        </section>
-                    }.into_any(),
+                    None => view! { <></> }.into_any(),
                 }
             }
 
@@ -186,6 +174,37 @@ fn SecurityCenterView(state: SecurityCenterState) -> impl IntoView {
                     }.into_any(),
                 }}
             </section>
+
+            // ── Delete account (RFC 147 cycle 2 D11; rewritten RFC 149
+            //    §2/§4/§5) ──────────────────────────────────────────────
+            // RFC 177 §4.1: moved last -- constructive controls first,
+            // destructive last. Only renders when nothing is already
+            // pending (the section above covers that case).
+            {
+                let csrf = state.csrf_token.clone();
+                match state.pending_deletion_scheduled_at {
+                    Some(_) => view! { <></> }.into_any(),
+                    None => view! {
+                        <section aria-labelledby="delete-account-heading">
+                            <h2 id="delete-account-heading">"Delete account"</h2>
+                            <p>
+                                "Deleting your account removes your sign-in credentials and \
+                                 tenancy memberships after a "
+                                {DELETION_GRACE_PERIOD_DAYS}
+                                "-day grace period, during which you can cancel the request \
+                                 from this page. Once the grace period ends the deletion is \
+                                 carried out, and nothing in cesauth can reverse it."
+                            </p>
+                            <form method="POST" action="/me/security/delete-account/request">
+                                <input type="hidden" name="csrf" value=csrf.clone() />
+                                <button type="submit" class="btn-danger">
+                                    "Request account deletion"
+                                </button>
+                            </form>
+                        </section>
+                    }.into_any(),
+                }
+            }
 
             // ── Actions ──────────────────────────────────────────────────
             <section>
