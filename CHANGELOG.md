@@ -14,11 +14,19 @@ changes will always be called out here.
 
 ## Older releases
 
-**v0.87.x and earlier are in [`docs/changelog-archive/`](docs/changelog-archive/README.md)**,
-split by minor range and never edited after creation. This file keeps the most
-recent **five** minor versions (0.88–0.92) under the ~80 KB budget RFC 028 set,
-enforced by `scripts/changelog-archive-split.sh`, which refuses to split a file
-already under budget.
+**v0.88.x and earlier are in [`docs/changelog-archive/`](docs/changelog-archive/README.md)**,
+split by minor range and never edited after creation. This file holds
+**0.89–0.92 at 78 KB** of the ~80 KB budget RFC 028 set, enforced by
+`scripts/changelog-archive-split.sh`.
+
+**RFC 028's two rules are now in open conflict, and the byte rule was the one
+followed** (2026-11-04, at the 0.92.5 cut). The budget fired at 82 KB, so 0.88
+was archived — which leaves **four** minor series against the rule that says
+five. Shorter entries were tried first and measured: 0.92.4's entry was 2,879 B,
+half the recent average, and still left zero headroom. **The byte rule has a
+script behind it and the five-minor rule has nothing, so the enforced rule won
+and the unenforced one is recorded as broken.** Which rule should give is the
+owner's to settle; see `ROADMAP.md`.
 
 **RFC 152 half D (2026-11-03) ran the split.** At the 0.92.0 cut this file held
 eight minors (0.85–0.92) at 79 KB of the 80 KB budget — under budget, so the
@@ -31,6 +39,49 @@ same way the 2026-10-31 split found them — fixed by hand again here, not
 re-fixed in the script, which is its own change with its own verification.
 
 ---
+
+## [0.92.5] - 2026-11-04
+
+**Patch.** A gate. **No Worker code changed** — the bundle moves by 49 bytes, which is the version string reaching the wasm through symbol mangling and nothing else.
+
+**E7** in `scripts/route-contracts-check.sh` answers RFC 171's producer
+question on every push: **a method's caller-matched `PortError` set must be a
+subset of what its production adapter can actually return.** Before this, a
+handler could branch on an error nothing produced and every gate stayed green —
+which is how six operator messages, three API status codes and an invitation
+acceptance were lost (RFC 160 §4.11), and how an admin token could report itself
+disabled when it was not (RFC 175).
+
+- **`156 = 8 resolved + 31 DEFECT + 117 no_caller`**, recomputed from source
+  every run; no committed data file.
+- **The 31 are two shapes, kept apart**: **5 `written`** — a caller with a
+  distinct outcome for a variant the adapter cannot produce — and **26
+  `chokepoint`**, where the only match comes from a shared dispatcher arm that
+  maps the variant identically, so no outcome is lost. Both exempted by name,
+  dated, staleness-checked; **a new `written` defect fails the build**, and so
+  does an entry that stops matching.
+- The check caught two of its own design defects during the cycle: a
+  receiver-blind match that credited one trait's calls to another, and a
+  registry entry stale on its first run.
+
+**Archive split** — `CHANGELOG.md` crossed RFC 028's 80 KB guard, so 0.88 is
+archived. **That leaves four minor series against the rule that says five**, and
+the two rules are now in open conflict; the byte rule is the one with a script
+behind it, so it is the one followed. Recorded for the owner to settle.
+
+### Release figures
+
+- Host tests **1,675** / 0 failed / 4 ignored / 12 lines; `migration_chain`
+  **35**; 192 routes; E4 `216 = 192 + 24 + 0`; E6 `92 = 83 + 9 + 0`; **E7
+  `156 = 8 + 31 + 117`**; Playwright **20**; `runtime-smoke-check` passed.
+- Bundle, `wrangler deploy --dry-run --outdir bundled/`, **gzip 1.15 default**:
+  **888,939 B** (878,238 wasm + 10,701 `shim.js`), raw 2,433,318 + 61,887.
+  `sha256 adeae02e31e16aae81cf1175a3a1ba86907dbb9899b11b4ecf2652b5100396e0` and
+  `974430800e7db0fdc18f68d17c738b7cd87076d256a1455489b4827b23d0d20f`. Against
+  0.92.4's **888,890 B**: **+49 B**, which is the version string itself — the
+  workspace version reaches the wasm through symbol mangling, which is why this
+  project measures the bundle *after* the bump (0.89.4's own case was 70 bytes).
+  **No Worker code changed in this release.**
 
 ## [0.92.4] - 2026-11-04
 
@@ -1383,87 +1434,4 @@ that contradicted its own chapters.
   returned as a value and recorded in the `tenant_created` audit detail, not
   propagated as an error. A config-load failure on that path cannot turn the
   created tenant into a `500` either.
-
-## [0.88.1] - 2026-10-29
-
-### Twenty-nine unreachable handlers removed, and a guard against more — RFC 157
-
-### Removed
-
-- **Twenty-nine request handlers that no route pointed at.** Each was a `.json`
-  companion sitting beside a registered form handler, with no registration of
-  its own, reachable by nothing, fetched by nothing, and — for all but a few —
-  not even exercised by a test. They had accumulated because nothing failed
-  when one was added: the router does not notice a handler it was never told
-  about.
-
-  Deleting them was a decision, not a default. Every client-rendered admin page
-  was read first to establish whether any of them fetches the endpoint in
-  question; two such pages do fetch a form companion, and both of those
-  companions are registered and were left alone.
-
-### Added
-
-- **`unused_imports` and `unused_variables` are now build errors in the Worker
-  crate**, as a crate-level attribute rather than a CI flag — so a local build
-  enforces exactly what CI does, and the setting travels with the source rather
-  than living in a workflow file. A deliberately narrow pair: the wider
-  "deny all warnings" remains rejected, because it would make every future
-  toolchain's new lint a release-blocking failure.
-
-### Fixed
-
-- The import leftovers the previous cycles' work had made redundant. These had
-  been kept on purpose: while the pages they belonged to were still broken,
-  the compiler's complaints about them were the clearest evidence of what was
-  wrong. That evidence stopped being needed when the pages were fixed in
-  v0.86.1 and v0.86.2, and the reason for keeping them had outlived the rule.
-
----
-
-## [0.88.0] - 2026-10-29
-
-### An invitation now grants what it offers — RFC 153
-
-### Added
-
-- **Accepting an invitation places you in the tenant that invited you, with
-  the role it named.** Neither had ever happened. An invitation recorded an
-  email, a tenant and a role, sent a link, and applied none of it: the
-  invitation was marked accepted *before* any account existed, with a
-  placeholder in place of a user id; the identifier meant to carry the
-  invitation forward was read nowhere; the role was read exactly once, into an
-  audit message; and registration always placed the new user in the default
-  tenant. The flow now creates the user in the invitation's tenant, grants the
-  membership with the invitation's role, records the real user id, and emits
-  the audit event — **in that order**, so a failure at any step leaves the
-  invitation usable instead of consuming it.
-- **A user who abandons the flow is no longer locked out of their own
-  invitation.** Previously the first submission consumed it, so returning later
-  produced *"Already accepted. Please sign in"* to someone with no account, and
-  only a fresh invitation from an administrator could recover it.
-- **Invitations can be revoked.** `POST /admin/t/:slug/invitations/:id/revoke`,
-  with the invitations page listing what is pending and a per-row control. The
-  revoked state has been described by the schema since invitations shipped and
-  nothing could produce it.
-- An invited email that **already has an account** now gains the membership and
-  role too, rather than signing in and silently receiving neither. Their own
-  home tenant is left as it was.
-
-### Fixed
-
-- **The page that begins acceptance redirected to a URL that does not answer.**
-  It sent the browser to a `GET` of an endpoint registered only for `POST`, so
-  the invitee landed on a 404 — the flow was dead one step earlier than its
-  own design described. It now renders the next step directly.
-- Two administrative forms — add a member, grant a user-scoped role — returned
-  403 for every tenant but one, because they require the target user to belong
-  to the tenant and nothing could place a user in one. They succeed for an
-  invited user now.
-- Values interpolated into the invitation-acceptance page are escaped. The
-  page's own policy already prevented scripts from running, so this was markup
-  injection rather than a scripting hole, available only to someone who can
-  already issue invitations.
-
----
 

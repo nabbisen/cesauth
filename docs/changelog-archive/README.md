@@ -16,10 +16,20 @@ budget (~80 KB for CHANGELOG.md, ~40 KB for ROADMAP.md).
 | [`CHANGELOG-0.70-to-0.79.md`](CHANGELOG-0.70-to-0.79.md) | v0.70.0 – v0.79.7 |
 | [`CHANGELOG-0.80-to-0.84.md`](CHANGELOG-0.80-to-0.84.md) | v0.80.0 – v0.84.3 |
 | [`CHANGELOG-0.85-to-0.87.md`](CHANGELOG-0.85-to-0.87.md) | v0.85.0 – v0.87.1 |
+| [`CHANGELOG-0.88-to-0.88.md`](CHANGELOG-0.88-to-0.88.md) | v0.88.0 – v0.88.1 |
 
-Current releases (**v0.88.0 and newer**) are in the root
+Current releases (**v0.89.0 and newer**) are in the root
 [`CHANGELOG.md`](../../CHANGELOG.md).
 
+> **2026-11-04, the 0.92.5 cut**: 0.88 archived because the byte budget fired
+> at 82 KB — the first split driven by the budget rather than by neglect. It
+> leaves **four** minor series in the root file against RFC 028's rule that says
+> five, **so the two rules are now in open conflict and the one with a script
+> behind it won.** Shorter entries were tried and measured first (0.92.4's was
+> 2,879 B, half the recent average) and still left zero headroom. The script's
+> two defects reproduced again: this table was not updated and a duplicate
+> "Older releases" section was appended. Both fixed by hand, again.
+>
 > The four v0.50–v0.84 files were added 2026-10-31, in one pass. The policy
 > below had not been applied since v0.49, so the root file had reached **318 KB
 > against its own ~80 KB budget** — forty minor versions inline instead of five.

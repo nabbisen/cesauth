@@ -1,8 +1,20 @@
 # RFC 176 — The UI is measurably hard for older eyes, and the a11y gate cannot see it
 
-**Status.** **Proposed** 2026-11-04 by the architect, answering the owner's
-question about layout, typography and colour for older users. **Not scheduled.
-Needs the owner's acceptance.**
+**Status.** **Accepted** 2026-11-04 by the owner (*"RFC 176 is Accepted."*).
+Proposed the same day by the architect, answering the owner's question about
+layout, typography and colour for older users.
+
+**Scheduled in the order §6 gives, because the parts do not cost the same.**
+**§6.1 — the five failing colour pairs and the contrast gate: dispatched
+2026-11-04, patch**, the next cut after 0.92.5. It is token edits plus
+arithmetic, it needs no browser, and it is the only part that closes a class
+rather than a list.
+**§6.2 + §6.3 — typography tokens and the control-height floor: a minor**, and
+not yet dispatched. They change the size of visible text and the shape of every
+control across the product, and they introduce a token system that does not
+exist — added capability, not a fix, whatever the motivation.
+**§6's last paragraph — the layout and user-flow half — stays unsized**, on
+purpose, until the real screens have been driven.
 **Tier.** **P2.** Nothing is broken and nothing is exposed. The product is
 measurably harder to read and to hit than it should be for the audience the
 owner named, and **the gate that is supposed to catch this passes** — because it
