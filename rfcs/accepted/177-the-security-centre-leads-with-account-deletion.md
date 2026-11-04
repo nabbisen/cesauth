@@ -1,8 +1,21 @@
 # RFC 177 — The security centre leads with account deletion, and other things only the running screens show
 
-**Status.** **Proposed** 2026-11-04 by the architect, completing the half of the
-owner's frontend question that RFC 176 §6 deliberately left unsized. **Not
-scheduled. Needs the owner's acceptance.**
+**Status.** **Accepted** 2026-11-04 by the owner (*"Accepted."*). Proposed the
+same day by the architect, completing the half of the owner's frontend question
+that RFC 176 §6 deliberately left unsized.
+
+**§4.1, §4.2 and §5 dispatched 2026-11-04 as a patch.** §4.3's measurement
+belongs to RFC 176 §6.3's minor and is not re-dispatched here.
+
+**§4.4 is still open, and acceptance did not close it** — unlike RFC 174 §3,
+this RFC offered two options and **picked neither**, so there was nothing in it
+for an acceptance to carry. The question stands: does `/login`'s passkey button
+move behind the email path until registration exists, or does registration get
+built and the order stand?
+
+**And §5 understated its own cost.** See §5.1: the browser suite is
+anonymous-only — `PUBLIC_ROUTES = ['/', '/login']` — so the one assertion §5
+asks for needs a signed-in session the suite has no path to.
 **Tier.** **P2**, with one item arguing for higher: the most destructive control
 an end user has is the **first** thing they read and the **first** thing they
 reach by keyboard on `/me/security`. Nothing is exposed and nothing is broken;
@@ -129,6 +142,27 @@ arriving again.
 **Cannot**: whether an ordering is *good*. A gate can pin a decision once taken;
 it cannot take it. §4.1's ordering should be asserted, §4.4's should not be
 asserted until the owner has chosen.
+
+## 5.1 Correction, 2026-11-04, before dispatch: §5's "one assertion" is not one assertion
+
+§5 called the ordering gate *"one Playwright assertion over the real page [that]
+runs in the existing suite."* **It does not run in the existing suite**, and
+checking before dispatching is what found it:
+
+- `e2e/specs/support.ts` exports `PUBLIC_ROUTES = ['/', '/login']` and **no
+  spec signs in** — the only `magic-link` mention in the suite is a comment
+  explaining that the route is POST-only.
+- `/me/security` **302s without a session**, so the assertion needs a
+  credentialed browser context the suite cannot currently produce.
+- And **neither `pages/security_center.rs` nor `pages/sessions.rs` has a single
+  `#[test]`**, so there is no host-test surface to pin the ordering in either.
+
+**This is the same finding as RFC 176 §3 from the other side**: the browser
+gate's coverage is two anonymous pages, which is why it sees neither the colour
+tokens nor the focus order of any screen behind a login. **The ordering fix is
+still small; the gate for it is not**, and 0.92.2's credentialed-flows job
+already holds the pieces a signed-in browser path would need. Dispatched as
+*report rather than build* if it proves more than small.
 
 ## 6. What this RFC does not claim
 
