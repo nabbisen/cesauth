@@ -32,6 +32,54 @@ re-fixed in the script, which is its own change with its own verification.
 
 ---
 
+## [0.92.4] - 2026-11-04
+
+**Patch.** Two adapter call sites on the admin-token surface — RFC 175, found by
+RFC 171's producer census on its first use, in a trait that RFC never examined.
+
+- **`disable` now asks whether the `UPDATE` matched a row.** D1's `run()`
+  succeeds on zero rows, so disabling an id that does not exist or is already
+  disabled used to return success **and write `AdminTokenDisabled` into the
+  hash-chained audit log** for an action that did not happen. The handler's
+  `Err(PortError::NotFound) => 404 "unknown token"` arm was already written and
+  could never fire; it now does. Verified live, all three cases: a nonexistent
+  id **404**, a real live token **303** with `disabled_at` genuinely set, the
+  same token again **404** — and **zero** audit rows for the 404s against one
+  for the real disable, not two.
+- **`create` now classifies its INSERT failure** via `classify_insert_err`
+  instead of plain `run_err`, so the *"token hash collision"* retry arm written
+  for `admin_tokens.token_hash`'s real `UNIQUE` constraint is reachable.
+  Astronomically unlikely to fire — the plaintext is server-minted and 256-bit —
+  and fixed because a known-dead arm teaches the next reader the wrong lesson.
+- **Not an exposure, and the severity was corrected during review.** No live
+  token ever stayed valid while the caller was told otherwise, and probing the
+  route showed it is bearer-header-only with **no console affordance at all** —
+  `GET /admin/console/tokens` renders no form and never mentions `/disable`. The
+  reachable caller is a script or direct API client, so the RFC's own **P1
+  became P2**, and its claim that an operator could reach this from a stale list
+  page was withdrawn.
+- **`create_user_bound` has the identical gap and was left alone**, disclosed
+  rather than folded in: it belongs with RFC 171's other classifier-adoption
+  findings.
+
+### Release figures
+
+- Bundle after the version bump, `wrangler deploy --dry-run --outdir bundled/`,
+  **gzip 1.15 at its default level**: **888,890 B** (878,192 wasm + 10,698
+  `shim.js`), raw 2,433,462 + 61,887.
+  `sha256 6bb48d8f475185b47bf5f0ab6908b27aebbd61b431e58b849c8490c24ddec7d0` and
+  `61162129fb9909d7d877d4858a60ee6d143bf23959a8a468a60966da84093ad0`.
+  Against 0.92.3's **888,787 B**: **+103 B**.
+- Host tests **1,675** / 0 failed / 4 ignored / 12 lines (unchanged — this file
+  needs `worker::Env` and has no host-testable surface); `migration_chain`
+  **35**; **192 routes**, E6 `92 = 83 + 9 + 0`; Playwright **20**;
+  `runtime-smoke-check` passed.
+
+**Entry deliberately short.** `CHANGELOG.md` is near RFC 028's 80 KB guard while
+already holding the five minor series its other rule wants, and recent entries
+ran 5–7 KB because the architect duplicated RFC detail into them. The detail
+lives in the RFCs; this is the first entry written to that correction.
+
 ## [0.92.3] - 2026-11-03
 
 **Patch.** Nothing gains capability and nothing an operator could reach changes
