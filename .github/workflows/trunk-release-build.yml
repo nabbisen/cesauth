@@ -75,3 +75,22 @@ jobs:
               && echo "OK      $f" \
               || { echo "MISSING $f — leptos_shell.rs's constants no longer match what Trunk emits" >&2; exit 1; }
           done
+
+      # RFC 178 §4: the check above only ever lists the files
+      # leptos_shell.rs's own consts name -- none of which is a
+      # stylesheet, because nothing in the shell or in Trunk's template
+      # (crates/frontend/index.html) asks for one. A gate built only from
+      # "what is there" cannot notice "what is not", which is exactly how
+      # this project shipped with no CSS at all without any gate saying
+      # so. Checked by category, not by name -- naming a specific
+      # expected filename would mean deciding how the stylesheet gets
+      # wired, which is RFC 178 §3's open question, not this gate's.
+      - name: Assert dist/assets/ contains at least one stylesheet
+        run: |
+          set -euo pipefail
+          if compgen -G "crates/frontend/dist/assets/*.css" > /dev/null; then
+            echo "OK      $(ls crates/frontend/dist/assets/*.css)"
+          else
+            echo "MISSING no .css file in crates/frontend/dist/assets/ -- the end-user SPA ships no stylesheet (RFC 178)" >&2
+            exit 1
+          fi

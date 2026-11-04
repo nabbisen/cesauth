@@ -172,7 +172,7 @@ The CSR pages ship **no stylesheet at all** — 0 author rules, body font
 `"Times New Roman"`, `h1` at the default 32 px, and six class names
 (`login-page`, `login-card`, `sr-only`, `btn-primary`, `btn-passkey`, `muted`)
 that nothing styles. See
-[RFC 178](../proposed/178-the-end-user-app-ships-no-stylesheet.md).
+[RFC 178](../accepted/178-the-end-user-app-ships-no-stylesheet.md).
 
 **The findings in §2 and §3 stand unchanged** — focus order and heading order
 are properties of the markup, not of CSS, and the reorder fixed a real defect.

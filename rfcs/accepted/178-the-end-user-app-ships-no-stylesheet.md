@@ -1,7 +1,14 @@
 # RFC 178 — The end-user app ships no stylesheet, and renders in Times New Roman
 
-**Status.** **Proposed** 2026-11-04 by the architect, found while reviewing
-RFC 176 §6.1b. **Not scheduled. Needs the owner's acceptance.**
+**Status.** **Accepted 2026-11-04.** Proposed the same day by the architect,
+found while reviewing RFC 176 §6.1b. **Not quoted here**, same shape as
+RFC 173/175: the owner's message named this file directly with `Follow:`
+and no separate handoff, which this project's standing precedent treats as
+real-time authorization — but it is not a literal "accepted" quotation, and
+if one exists elsewhere this line should carry it. **§3's central question
+— restoration or deferred-honesty-fix — is still open and this acceptance
+does not answer it**; only §4's two gates, named as actionable "today,
+whatever the answer," are dispatched by this acceptance.
 **Tier.** **P1** for the question the owner asked. Nothing is exposed and
 nothing errors. **The product's primary user-facing surface has no CSS at all**:
 `/login` renders in **Times New Roman** at browser defaults, and six
