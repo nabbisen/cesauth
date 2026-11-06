@@ -32,6 +32,50 @@ RFC 141 §10.2 (declared but never wired).
 
 ---
 
+## 0. Correction, 2026-11-07: this was already on record, twice, and the contribution is the gate
+
+**§3 asks "was the stylesheet lost, or deferred?" The repository already
+answered it before this RFC was written**, and the architect did not read it.
+
+`rfcs/done/135-wasm-under-csp.md` §4:
+
+> **Not styling.** The CSR app renders unstyled with CSP removed. That is
+> because **no stylesheet exists** — not in Trunk's template, not in
+> `dist/assets/` — and the design tokens in `design_tokens.rs` are consumed only
+> by the three server-rendered frames; the Leptos `App` never injects them.
+> **Presentation wiring is RFC 131 R3.**
+
+`rfcs/accepted/131-mockup-adoption-strategy.md`:
+
+> **Axe reports zero violations on a page with no CSS**, so contrast,
+> focus-visible styling and target size are untested by construction rather than
+> passing. **The meaningful accessibility result is the one after R3.**
+
+**Those two paragraphs contain §1's measurement, §2's two-rendering-paths
+explanation, RFC 176 §3's "the gate only sees two pages", and RFC 177 §1's
+sizes — and they identify the owner.** §1–§5 below stand as measurement and are
+left as written; what does not stand is their framing as discovery.
+
+**So this RFC's contribution is §4's gates, not its finding.** RFC 135 recorded
+the gap in prose and nothing failed because of it for months, which is this
+project's standing diagnosis of itself. **The one consequence neither prior RFC
+names is `sr-only`**: with no stylesheet the class does nothing, so text written
+for screen readers alone is shown to everyone.
+
+**§3 is therefore answered and replaced.** The stylesheet was never lost; it is
+RFC 131 R3's presentation wiring, not yet reached. The decision left to the
+owner is narrower and better posed: **does R3's position in the queue still
+hold**, now that the gap is gated and visible.
+
+**And §4's gates are red on `main` as built** (`dd64ee2`: `Browser tests` and
+`Trunk release build` both failing), correctly, because the condition is true.
+Since the gap is owned by an unbuilt programme slice rather than a short cycle,
+red-until-fixed would freeze every release. Resolved by the architect
+2026-11-07 with the `E6_BEARER_LEGACY_EXEMPT` pattern — one dated, named,
+staleness-checked exemption for the Playwright gate, and "reported, not
+enforced" (RFC 142's own precedent) for the trunk step — so the gap is reported
+on every run and the exemption cannot outlive it.
+
 ## 1. Measured in Chromium against a running server
 
 `GET /login`, after the Leptos app mounts:
