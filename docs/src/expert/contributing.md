@@ -309,8 +309,14 @@ headings.
 
 ### Choosing the version level
 
-The question is **what kind of change this is**, not what part of the tree it
-touched:
+**The default is a minor** (RFC 181, 2026-11-07). The next release is
+`X.Y+1.0` unless someone argues, in the dispatch handoff, that everything in it
+is a fix or internal-only and no caller must change anything. **Silence means
+minor.** The table below still says what the words mean; it no longer describes
+a choice made fresh at each cut.
+
+The question, when arguing for a patch, is **what kind of change this is**, not
+what part of the tree it touched:
 
 | Level | Means | In this project |
 |---|---|---|
@@ -341,6 +347,18 @@ was broken; this is new," it is a minor.
 
 A release that mixes fixes and new capability takes the **higher** level.
 
+**The second worked example, 2026-11-07 — the trap above was walked into again,
+six times in seven.** The owner asked why `0.92.7` was not `0.93.0`. Audited
+against the test on this page: `0.92.1` made `POST /webauthn/register/start`
+require a session and a `Content-Type` where it required neither; `0.92.2` added
+`credentialed-flows.yml` (workflows **14 → 15**); `0.92.3` **removed two live
+URLs** (`route-contracts.md` rows **194 → 192**); `0.92.5` added the E7 gate and
+shipped no fix; `0.92.6` and `0.92.7` each mixed a fix with new gates and so
+took the higher level. **Only `0.92.4` was correctly a patch.** The rule on this
+page was already written, already correct and already illustrated by the 0.81.2
+trap — and it still failed, which is why **RFC 181 inverted the default** rather
+than rewording the rule.
+
 ### Every release must satisfy
 
 - A tag exists **and** a CHANGELOG entry exists, for the same version. Neither
@@ -369,8 +387,10 @@ A release that mixes fixes and new capability takes the **higher** level.
   produced.
 - Version bumps require explicit owner confirmation; `1.0.0` requires
   confirmation *and* sufficient test coverage.
-- **The dispatch handoff states the target level and the trigger it hits**
-  (ruling, 2026-10-31). The level is decided at dispatch, not at the cut; what
+- **The dispatch handoff states the target level, and argues for it if it is a
+  patch** (ruling 2026-10-31, amended by **RFC 181** 2026-11-07: minor is the
+  default and needs no trigger; a patch needs the argument). The level is
+  decided at dispatch, not at the cut; what
   this adds is that the *reason* is written where the implementer and the
   reviewer both see it. **"No trigger, therefore a patch" is an argument to be
   made, not a default** — the level table's own test is a judgement, and a

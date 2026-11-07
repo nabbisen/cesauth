@@ -19,11 +19,21 @@ Scope of this document vs. its neighbours:
 -->
 
 **Governing RFC.** `rfcs/accepted/NNN-slug.md` (link it once NNN is real)
-**Target release.** vX.Y.Z — **and why that level:** which changes are fixes,
-                    which add capability. Patch = backwards-compatible fix;
-                    added capability = minor; a mix takes the higher. Decide it
-                    here, not at the cut — see `docs/src/expert/contributing.md`
-                    §Choosing the version level.
+**Target release.** **Minor** — the default (RFC 181). Leave it at minor and
+                    write nothing more.
+                    **To claim a patch instead, the argument goes here** and
+                    must cover BOTH: (a) every change in this release is a fix
+                    or internal-only — nothing is newly possible that was not
+                    before, **a new CI gate or workflow included**; and (b) no
+                    caller must change anything — no removed or renamed URL, no
+                    deleted or newly-required request field, no newly-required
+                    header. A mix of fix and new capability is a minor.
+                    **An empty patch argument is not a patch** — silence means
+                    minor, and that is the safe answer by design, so leaving
+                    this at minor is never the wrong call. Decided here, not at
+                    the cut. See `docs/src/expert/contributing.md`
+                    §Choosing the version level for both worked examples of
+                    getting this wrong (0.81.2, and 0.92.x six times in seven).
 **Prepared by.** Architect · **Implemented by.** Mid-capability model
 **Blocked on.** Nothing / <the open item, and who owns it>
 

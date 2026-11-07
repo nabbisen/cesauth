@@ -4,8 +4,11 @@
 
 **Builds on.** `main` at `5b049b9` — tag **`0.92.7`**. Nothing reverted.
 
-**Target release.** **Minor.** It adds module surface, the same reason R2a was a
-minor in 0.82.0. **Held until `0.92.7` was tagged** so RFC 179's patch could cut
+**Target release.** **Minor** — which is now simply the **default** under
+**RFC 181** (2026-11-07) and needs no argument. It was originally dispatched as
+a minor citing R2a's 0.82.0 precedent; that precedent was challenged in RFC 168
+§6.1 and **is no longer load-bearing** — the level is correct either way, so do
+not relitigate it. **Held until `0.92.7` was tagged** so RFC 179's patch could cut
 at its own level; that tag now exists, so this is live.
 
 **Tier.** **P3.** Nothing is broken by R2b staying unbuilt. This is a

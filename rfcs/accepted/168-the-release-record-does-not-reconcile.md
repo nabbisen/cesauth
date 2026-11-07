@@ -129,7 +129,18 @@ rubric, consistent with its own stated test.
 
 **Ruling: every dispatch handoff names the target level and which of the
 policy's triggers the work hits — and "none, therefore a patch" is an argument
-to be made, not a default.** The level is decided at dispatch, which is
+to be made, not a default.**
+
+> **Superseded in part by [RFC 181](./181-minor-is-the-default-release-level.md)
+> (2026-11-07).** The requirement that the handoff state the level and its
+> reasoning **stands**, and is now a field in `rfcs/handoffs/TEMPLATE.md` rather
+> than only a ruling here — because this ruling was skipped by the architect's
+> own RFC 179 handoff four days after acceptance. What is replaced is the
+> default it guarded: **minor is now the default and needs no trigger; a patch
+> is the claim that must be argued.** RFC 181 §4 also explains why that makes
+> this RFC's own §4.2 check buildable for the first time — "did the minor
+> increase, and if not is there a patch argument" is mechanical, where
+> detecting caller obligation was not. The level is decided at dispatch, which is
 established practice; what is new is that the *reason* is written where the
 implementer and the reviewer both see it, instead of living in the architect's
 head until the cut.
