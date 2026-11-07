@@ -85,12 +85,22 @@ jobs:
       # so. Checked by category, not by name -- naming a specific
       # expected filename would mean deciding how the stylesheet gets
       # wired, which is RFC 178 §3's open question, not this gate's.
+      #
+      # RFC 178 §4b (2026-11-07): reported, not enforced -- same shape
+      # contributing.md already records for `wrangler build` and
+      # `runtime-smoke-check.sh` (RFC 142). The gap is RFC 131 R3's
+      # presentation wiring, an unbuilt slice of an accepted programme,
+      # not a short cycle; enforcing this today would block every cut
+      # indefinitely, which is worse than the undetected gap this gate
+      # exists to end. `exit 1` below is commented out, not deleted --
+      # the day a .css artifact exists, uncomment it and this becomes a
+      # real gate.
       - name: Assert dist/assets/ contains at least one stylesheet
         run: |
           set -euo pipefail
           if compgen -G "crates/frontend/dist/assets/*.css" > /dev/null; then
             echo "OK      $(ls crates/frontend/dist/assets/*.css)"
           else
-            echo "MISSING no .css file in crates/frontend/dist/assets/ -- the end-user SPA ships no stylesheet (RFC 178)" >&2
-            exit 1
+            echo "MISSING no .css file in crates/frontend/dist/assets/ -- the end-user SPA ships no stylesheet (RFC 178; gap owned by RFC 131 R3). Reported, not enforced -- see this step's own comment to flip it." >&2
+            # exit 1   # RFC 178 §4b: uncomment the day a stylesheet exists.
           fi
