@@ -1,9 +1,13 @@
 # RFC 028: CHANGELOG / ROADMAP volume policy — historical archive split, summary-style maintenance
 
-**Status**: Implemented — **partially, and the gap is recorded in §Enforcement
-(2026-10-31) at the end of this file.** Step 5's CI budget check, which this
-RFC specifies in full as runnable bash, was **never built**, and the archive
-went un-run for **forty minor versions**.
+**Status**: Implemented — **partially, and the gaps are recorded in §Enforcement
+(2026-10-31) and §Enforcement note (2026-11-07) at the end of this file.** Step
+5's CI budget check, which this RFC specifies in full as runnable bash, was
+**never built**, and the archive went un-run for **forty minor versions**.
+**Requirement 1's "~5 minor versions" is a stale derived figure, not a rule** —
+the 2026-11-07 note withdraws the claim that it conflicts with the byte budget,
+and directs deleting it along with Step 1's "50-100 KB" claim. **The ROADMAP
+half (Requirement 3 / Step 3) is 4× over budget and has never been checked.**
 **ROADMAP**: Internal repository hygiene — `CHANGELOG.md` (511 KB) and `ROADMAP.md` (211 KB) bloat
 **ADR**: N/A — repository convention; small enough to live inline
 **Severity**: **P2 — both files are large enough to slow editor open, search, and human reading; the recent-history portion most readers want is buried under hundreds of historical lines**
@@ -414,3 +418,102 @@ requires a broken path to stay broken is not what that rule is for.
   version count** — bytes are what caused the pain, the constant already exists
   in both the RFC and the script, and §Background's second complaint ("recent
   history is buried") is largely answered by reverse-chronological order alone.
+
+---
+
+## Enforcement note, 2026-11-07 (the 0.92.6 cut) — the "two conflicting rules" were one rule and one stale derived figure, and this RFC had already said which to gate
+
+**What was recorded, and is withdrawn.** From 2026-11-04 the root `CHANGELOG.md`
+masthead, `docs/changelog-archive/README.md` and a `ROADMAP.md` row all stated
+that this RFC's five-minor rule and its ~80 KB rule were **"in open conflict"**,
+that **the architect's entry length** was the cause, and that **"the byte rule
+has a script behind it … so the enforced rule won and the unenforced one is
+recorded as broken."** Measuring each claim before asking the owner to settle it
+found that **none of the three holds**. All three surfaces are corrected.
+
+### 1. There was never a conflict — the five is derived *inside* the budget rule
+
+Requirement 1, verbatim:
+
+> The root `CHANGELOG.md` is reduced to the most recent **~5 minor versions** (a
+> number large enough to cover most "what shipped recently" queries, **small
+> enough to keep the file under ~80 KB**).
+
+The byte budget is stated as the *reason for* the five, in the same parenthesis.
+That is **one rule and one derived estimate**, not two rules of equal standing.
+Step 2 says the same thing a second way — *"the most recent N minor versions
+inline"*, with a worked example for v0.52.1 — so the figure was always an
+instance, never a constraint. Nothing had to give; a derived number went stale
+in prose while nothing recomputed it.
+
+### 2. The estimate went stale because *cadence* moved, not entry length
+
+Entry length was the variable the 2026-11-04 note blamed, and it has been
+**falling** throughout the project. Mean bytes per entry, per archive file:
+
+| file | entries | minors | **entries/minor** | **B/entry** |
+|---|---|---|---|---|
+| `CHANGELOG-0.31-to-0.40.md` | 10 | 9 | 1.11 | 9,316 |
+| `CHANGELOG-0.41-to-0.49.md` | 9 | 9 | 1.00 | 9,214 |
+| `CHANGELOG-0.50-to-0.59.md` | 15 | 10 | 1.50 | 5,697 |
+| `CHANGELOG-0.70-to-0.79.md` | 29 | 10 | 2.90 | 3,302 |
+| `CHANGELOG-0.85-to-0.87.md` | 8 | 3 | 2.67 | 2,644 |
+| `CHANGELOG-0.88-to-0.88.md` | 2 | 1 | 2.00 | 2,150 |
+| root, 0.89–0.92 (before this cut) | 16 | 4 | **4.00** | 5,064 |
+
+**Releases per minor rose 1.00–1.17 → 2.90 → 4.00.** "Five minors" meant ~5
+entries when this RFC was written and ~20 entries by v0.92. The root's 5,064
+B/entry is the 0.89–0.90 era inside it; the two newest entries were 2,566 and
+2,865 B. The 2026-11-04 note's own experiment — writing 0.92.4 short, at 2,879
+B — therefore could not have worked, and reporting that it "was tried and still
+left zero headroom" read as evidence against the wrong hypothesis.
+
+### 3. "The enforced rule won" was false — neither rule is enforced
+
+`git grep` for the budget across `scripts/`, `.github/workflows/` and `Makefile`
+returns exactly one hit: `scripts/changelog-archive-split.sh`'s own `BUDGET_KB`
+guard, which runs only when a human runs the script. There is **no gate**. The
+byte rule did not win on enforcement; it won because a human noticed the file
+size at a cut and the version count has no such moment.
+
+**This RFC's §Outstanding already said what to do, in these words: "Gate the
+byte budget, not the version count."** It was written 2026-10-31 and **folded
+into RFC 164's cycle**, which shipped in **0.91.2** (2026-11-03) — the `rfcs/`
+link sweep landed, the budget check did not, and nothing recorded that half as
+dropped. §Outstanding also predicted *"the next CHANGELOG split is five minor
+versions away"*; it was **one minor version away** (the 0.92.1 split,
+2026-11-03), and two more have run since (0.88 at 0.92.5, 0.89 at this cut).
+
+### 4. Direction
+
+1. **Delete the "~5 minor versions" figure** from Requirement 1 and Step 2, and
+   the **"50-100 KB range"** claim from Step 1 — the same class of unchecked
+   derived number, now also false (the archive files run 4,301 B to 274,386 B).
+   Replace both with *"the most recent minor series that fit under the budget"*
+   and *"each archive file states its actual range and size in the index"*.
+2. **Build Step 5's check** in `scripts/drift-scan.sh`, beside the release-
+   reconciliation check. Two assertions, not one script: `CHANGELOG.md` ≤ 80 KiB
+   and `ROADMAP.md` ≤ 40 KiB.
+3. **Split down to a floor, not to just under the ceiling.** A split that stops
+   the moment it is legal fires again next release; one that archives whole
+   minor series until the root is ≤ 60 KiB buys several cuts. Applied at this
+   cut: 0.89 archived, root 81,024 → 55,818 B.
+4. **The ROADMAP half must ship exempted, not green.** `ROADMAP.md` is **160,340 B at
+   tag `0.92.5` against its 40,960 B budget** — 3.9× over, the larger breach and the less
+   visible one, since nobody reads its size at a cut. The check therefore lands
+   with the ROADMAP side exempted **by name and dated**, in the
+   `E6_BEARER_LEGACY_EXEMPT` / `KNOWN_NO_STYLESHEET` shape: it reports every
+   run and fails as **stale** once the file comes under budget. Landing it bare
+   would make every cut red, which is the mistake E7 and RFC 178 §4 both made.
+5. **The script's three defects stay unfixed and are still unfixed here** —
+   this split was done by hand and the script was not run. They belong with (2).
+
+**Why this is the shape rather than "raise the budget":** the ~80 KB exists so a
+reader's "what shipped recently" question is answered by the file they open
+first, without scrolling past history. Raising it defers the split and degrades
+that answer; dropping the derived figure costs nothing, because the figure was
+only ever an estimate of the same thing the budget measures directly. **One rule,
+enforced, with every number beside it recomputed rather than asserted** — which
+is the standing lesson of this project's recurring defect, a documented rule with
+no gate, and of this note's own subject: three reader-facing surfaces carried a
+confident account that no one had measured.

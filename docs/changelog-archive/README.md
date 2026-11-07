@@ -17,18 +17,36 @@ budget (~80 KB for CHANGELOG.md, ~40 KB for ROADMAP.md).
 | [`CHANGELOG-0.80-to-0.84.md`](CHANGELOG-0.80-to-0.84.md) | v0.80.0 – v0.84.3 |
 | [`CHANGELOG-0.85-to-0.87.md`](CHANGELOG-0.85-to-0.87.md) | v0.85.0 – v0.87.1 |
 | [`CHANGELOG-0.88-to-0.88.md`](CHANGELOG-0.88-to-0.88.md) | v0.88.0 – v0.88.1 |
+| [`CHANGELOG-0.89-to-0.89.md`](CHANGELOG-0.89-to-0.89.md) | v0.89.0 – v0.89.5 |
 
-Current releases (**v0.89.0 and newer**) are in the root
+Current releases (**v0.90.0 and newer**) are in the root
 [`CHANGELOG.md`](../../CHANGELOG.md).
 
+> **2026-11-07, the 0.92.6 cut**: 0.89 archived (six entries, 25,206 B), taking
+> the root from 81,024 B to 55,818 B. The split now runs **down to a floor**
+> rather than just under the ceiling, so it buys several cuts of headroom
+> instead of firing every release. **The split was done by hand, not by
+> `changelog-archive-split.sh`** — the script was not run, so its two known
+> defects (this table's broken `sed`, the duplicated "Older releases" section)
+> were neither triggered nor fixed and still stand.
+>
+> **Correction to the 0.92.5 note below, which was wrong twice.** It recorded
+> RFC 028's five-minor and ~80 KB rules as "in open conflict" with "the byte
+> rule … enforced" and winning. Measured: the five is *derived from* the budget
+> in Requirement 1's own parenthesis, not asserted beside it, and it went stale
+> because releases per minor rose 1.0 → 2.90 → 4.00; entry size, which the note
+> blamed, has been *falling* (9,316 → 2,150 B/entry). And **neither rule is
+> enforced** — the budget appears nowhere in `scripts/`, `.github/workflows/`
+> or `Makefile` except this directory's own split script, which a human must
+> run. RFC 028 Step 5's CI budget check was specified as runnable bash and
+> never built.
+>
 > **2026-11-04, the 0.92.5 cut**: 0.88 archived because the byte budget fired
 > at 82 KB — the first split driven by the budget rather than by neglect. It
-> leaves **four** minor series in the root file against RFC 028's rule that says
-> five, **so the two rules are now in open conflict and the one with a script
-> behind it won.** Shorter entries were tried and measured first (0.92.4's was
-> 2,879 B, half the recent average) and still left zero headroom. The script's
-> two defects reproduced again: this table was not updated and a duplicate
-> "Older releases" section was appended. Both fixed by hand, again.
+> left **four** minor series in the root file. Shorter entries were tried and
+> measured first (0.92.4's was 2,879 B) and still left zero headroom — the
+> wrong variable, see the correction above. The script's two defects reproduced
+> here too; both fixed by hand.
 >
 > The four v0.50–v0.84 files were added 2026-10-31, in one pass. The policy
 > below had not been applied since v0.49, so the root file had reached **318 KB

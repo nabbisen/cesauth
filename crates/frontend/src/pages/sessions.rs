@@ -84,7 +84,7 @@ fn SessionsView(resp: SessionsResponse) -> impl IntoView {
             // because the bulk action acts on the same list the table
             // shows, not a separate concern.
             <section aria-labelledby="sessions-list-heading">
-                <h2 id="sessions-list-heading">"Sessions"</h2>
+                <h2 id="sessions-list-heading">"Signed-in devices"</h2>
 
                 // ── Session table ──────────────────────────────────────
                 <table>
