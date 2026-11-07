@@ -234,6 +234,34 @@ without RFC 132 §13 q1, which the owner deferred on 2026-09-09.
 **R2b is therefore deferred with q1, not separately delayed.** R2a and R5 do
 not depend on either.
 
+**Correction, 2026-11-07: q1 was answered 2026-09-24 and this paragraph was
+never updated.** RFC 132 §13 q1 reads **ANSWERED** — the owner took the
+architect's full recommendation, and that RFC states *"R3 is no longer
+blocked."* Its answer also supplies what R2b was waiting for: pre-authentication
+surfaces are **server-rendered**, so a Leptos-reactive `LocaleContext` cannot be
+the mechanism for `auth_shell.rs`, which is the conflict this paragraph could
+not resolve. **R2b has stood recorded as blocked for six weeks against a closed
+question**, and on 2026-11-07 the architect cited this stale line to the owner
+as live evidence that R3 had an unanswered two-month-old dependency.
+
+**What actually remains in R2b is not an owner decision**: the catalog merge —
+`cesauth_core::i18n`'s **175** `MessageKey` variants against the mockup's
+**263** — plus whether the extra keys extend the core catalog or are dropped
+with the components that use them. That is a scoping proposal the architect
+owes, and it is queued as one.
+
+**Found at the same time, and not previously recorded anywhere: R2a imported no
+CSS.** Its 0.82.0 changelog entry names only *"a future RFC wires them to real
+data"* as outstanding, so the presentation half went unrecorded. The 17
+primitives in `crates/frontend/src/components/primitives/` carry **52 distinct
+`class=` attributes** and **the repository contains no `.css` file at all** —
+every existing rule is the 209-line `BASE_CSS` string in
+`templates/chrome.rs`, which serves the server-rendered templates only.
+`rfcs/done/135-wasm-under-csp.md` §4's *"presentation wiring is RFC 131 R3's"*,
+repeated twice by the architect in RFC 178, has therefore been describing **a
+missing CSS import as unstarted design work**. R3 does not own it; R2a left it
+behind.
+
 **R3 — Pair screens with data, one at a time.** For each screen: take the
 mockup's presentation, wire it to the production fetch logic that already
 exists in `crates/frontend/src/pages/`, delete the corresponding `format!`
