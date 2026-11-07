@@ -1,6 +1,9 @@
 # RFC 179 — R2a imported the components and left the stylesheet behind
 
-**Status.** **Proposed 2026-11-07** by the architect, after the owner asked
+**Status.** **Accepted 2026-11-07** — the owner's reply was *"RFC 179 and 180
+are accepted."* **Dispatched the same day as a patch**, §4 and §5/§6 in one
+cycle because §4 alone makes the gate vacuous (§5). Proposed 2026-11-07 by the
+architect, after the owner asked
 whether RFC 131 R3's queue position still holds. It does not hold, but not for
 the reason anyone recorded: the missing CSS is **not R3's unstarted design
 work**. It is the half of **R2a** that was never imported, and the file it
@@ -155,15 +158,17 @@ become a **census with a visible numerator** — the house pattern from RFC 159
 §4.5 and the colour-contrast gate: every scanned item checked or named with a
 reason, `unclassified` **0**.
 
-Measured denominator, `grep -rho 'class="[^"]*"'`:
+Measured denominator — **and §10.1 corrects this figure once already**:
 
-| tree | sites | distinct names |
+| source | sites | distinct names |
 |---|---|---|
-| `crates/frontend/src/pages` | 48 | 29 |
-| `crates/frontend/src/components` | 59 | 56 |
-| **union** | **107** | **84** |
+| literal `class="…"` in `pages/` | 48 | 29 |
+| literal `class="…"` in `components/` | 59 | 56 |
+| literal, union | 107 | **84** |
+| **+ names only reachable by resolving §6's computed sites** | 9 | **+12** |
+| **true denominator** | | **96** |
 
-(`view_models` and `icons` carry none.) After §4 the census reads **1 of 84
+(`view_models` and `icons` carry none.) After §4 the census reads **1 of 96
 styled**, and it prints that every run.
 
 ## 6. What the census cannot hold, and why it must ship exempted
@@ -185,10 +190,30 @@ more correct one" failure. The honest shape:
 - literal and resolvable-computed sites → **checked**;
 - the `format!`-with-prop sites → **declared out by name, dated, with a
   reason**, the `E6_BEARER_LEGACY_EXEMPT` / `KNOWN_NO_STYLESHEET` shape;
-- the 83 still-unstyled names → **exempted by name, dated, citing this RFC**,
-  reporting every run, **failing as stale** the moment one gains a rule without
-  leaving the list;
+- the still-unstyled names → **exempted**, dated, citing this RFC, reporting
+  every run, **failing as stale** the moment one gains a rule it is not declared
+  for;
 - `unclassified` must be **0**.
+
+### 6.1 Refinement, 2026-11-07, while writing the handoff: declare the *styled* set, not the exempt one
+
+§6 as accepted said the unstyled names are "exempted **by name**". Writing it out
+showed that is the wrong polarity: **83 hand-maintained entries that must all be
+deleted one at a time** is a list nobody will keep honest, and it inverts on
+every import. Declare the **complement** instead:
+
+- a dated declaration names the selectors the stylesheet is **expected to
+  cover** — after §4 that is `sr-only`, one entry;
+- *not-yet-styled* is **computed** as the remainder, never written down;
+- **one** dated exemption block covers the remainder with its reason (§8's
+  import), so the gap still reports every run with a live numerator;
+- staleness keeps the same teeth, pointing the other way: **a class that has a
+  matching rule but is not in the declared set fails**, naming itself, so a
+  stylesheet cannot grow silently past what has been reviewed.
+
+Same guarantees, one line of maintenance per import instead of 83 deletions.
+**Recorded here rather than only in the handoff** because it changes what §9.4's
+arithmetic means.
 
 **It cannot ship bare.** Landing a census that fails on 83 unstyled names would
 redden every cut, which is the mistake E7 made in 0.92.5 and RFC 178 §4 made
@@ -227,6 +252,45 @@ by both paths** — which also gives RFC 176 §6.2/§6.3 somewhere to live inste
 of colliding later. That design is a separate RFC, sequenced after this one,
 and it is the one of the three that governs the other two.
 
+## 8.1 Found while writing the handoff: the server-rendered half is mostly unstyled too, and nobody has measured it
+
+RFC 178 said the **end-user app** ships no stylesheet. True, and incomplete.
+The **server-rendered** surfaces do have one — `BASE_CSS` — and it covers a
+minority of what they use:
+
+| | measured |
+|---|---|
+| distinct class names used by `admin/`, `tenancy_console/`, `tenant_admin/`, `templates/` | **75** |
+| class selectors `BASE_CSS` actually defines | **22** |
+| of the 75, **styled** | **17** |
+| of the 75, **no rule anywhere** | **58** |
+
+So `btn-primary`, `card`, `data-table`, `badge-ok`, `alert-info` and 53 more
+render unstyled on the operator console today. **This is not RFC 179's scope and
+must not be pulled into it** — it is a third surface with its own measurement,
+its own naming convention and its own stylesheet, and it is dispatched as its
+own ROADMAP row. It is recorded here because §8's token-ownership question
+cannot be answered without it: the consolidation is **three** stylesheets, not
+two.
+
+## 8.2 The root cause of §2.1, stated properly: two names for one behaviour
+
+`BASE_CSS` defines **`.visually-hidden`** at `templates/chrome.rs:184-192` —
+the **same clip-rect rule** this RFC imports under a different name — and the
+server-rendered templates use it and it works (`templates/totp.rs`,
+`admin/audit.rs`). The CSR pages use **`sr-only`**, the mockup's name, whose
+stylesheet was never imported.
+
+So §2.1's six visible elements are not "a missing rule". They are **a surface
+that adopted the mockup's vocabulary without the mockup's stylesheet, beside a
+surface that kept its own vocabulary and its own working rule.** §4's import is
+still the right immediate fix — it closes the defect without renaming markup on
+five pages — but it leaves the project with **two names for one behaviour, in
+two stylesheets**, which is precisely the duplication that made RFC 176 §6.1b
+necessary. **Converging on one name is a §8 deliverable, named here so it cannot
+be rediscovered**, and until it happens neither rule may be changed without the
+other.
+
 ## 9. Acceptance criteria
 
 1. `/assets/`-served stylesheet exists, carrying `.sr-only` **byte-identical**
@@ -235,7 +299,8 @@ and it is the one of the three that governs the other two.
    **verified in a browser**, not inferred from the rule's presence.
 3. `KNOWN_NO_STYLESHEET` is **deleted**, and the spec's assertion is §5's
    census.
-4. The census prints `84 = 1 checked + 83 exempted-by-name + 0 unclassified`
+4. The census prints `96 = 1 declared-and-matching + 95 not-yet-styled
+   (one dated exemption, §6.1) + 0 unclassified`
    (or its then-current arithmetic, recomputed from source, **no committed data
    file**), and reconciles.
 5. Forcing a listed name to gain a rule **fails as stale**, named directly —
@@ -253,9 +318,33 @@ and it is the one of the three that governs the other two.
 | `sr-only` sites | 6, 5 files | `grep -rn "sr-only" crates/frontend/src/` |
 | `.sr-only` rules in repo | **0** | `grep -rn "\.sr-only" .` (excl. `target/`) |
 | `.css` files in repo | **0** | `find . -name "*.css"` (excl. `target/`, `docs/book`, `node_modules`, `dist/`) |
-| distinct class names | **84** | `grep -rho 'class="[^"]*"' pages components \| sed/tr/sort -u` |
+| distinct class names, literal only | **84** | `grep -rho 'class="[^"]*"' pages components \| sed/tr/sort -u` |
+| distinct class names, **true** | **96** | the above ∪ the resolved values of §6's computed sites (§10.1) |
+| server-rendered names vs `BASE_CSS` | **75 used, 17 styled, 58 not** | §8.1; `LC_ALL=C` required, see §10.1 |
 | computed `class=` sites | **9** | `grep -rn 'class=[^"]' pages components` |
 | `BASE_CSS` | 209 lines | `templates/chrome.rs:9-217` |
 | CSP | `style-src 'self'`, no `'unsafe-inline'` | `security_headers.rs:158` |
 | mockup CSS at `df3d9d0` | 50,467 B / 4 files / 326 rule blocks | `crates/ui/assets/*.css` |
 | Worker bundle at `0.92.6` | 888,972 B gzip-default | `wrangler deploy --dry-run`, wasm + `shim.js` |
+
+## 10.1 Corrections to this RFC, 2026-11-07, found while writing its own handoff
+
+Three, all mine, all the same class — a census whose matcher bounded its answer:
+
+1. **"84 distinct class names" was the literal-grep figure, not the
+   denominator.** Resolving §6's computed sites adds **12** names the literal
+   grep cannot see (`alert-info`, `alert-success`, `alert-danger`, `step`,
+   `step-done`, `step-current`, `col-secondary`, `crumb-current`,
+   `density-btn`, `active`, `metric-chip`, `metric-chip-link`). **True: 96.**
+   §5 and §9.4 are corrected. **This is the exact error §6 and the handoff warn
+   the implementer about**, written into the RFC that warns about it.
+2. **There is a third attribute form I had not looked for.** The server-rendered
+   directories write `class=\"…\"` **escaped inside `format!` strings** — 31
+   sites — which `class="[^"]*"` cannot match at all. It does **not** affect
+   this RFC's scope (`pages/` and `components/` have zero escaped sites,
+   verified), but a census reused on those directories without it would silently
+   under-report, and §8.1's figures depend on handling it.
+3. **`comm` on `sort`ed-but-not-`LC_ALL=C`-sorted input returned a wrong
+   partition that still summed correctly** — 15/60 instead of the real 17/58 in
+   §8.1. The sum reconciling is **not** validation of a partition. `LC_ALL=C` is
+   required, and the handoff says so.

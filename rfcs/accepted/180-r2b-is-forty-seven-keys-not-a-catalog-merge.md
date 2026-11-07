@@ -1,6 +1,10 @@
 # RFC 180 — R2b is forty-seven keys, not a catalog merge, and it stopped being blocked on 2026-09-24
 
-**Status.** **Proposed 2026-11-07** by the architect. This is the scoping
+**Status.** **Accepted 2026-11-07** — the owner's reply was *"RFC 179 and 180
+are accepted."* **Not yet dispatched**, and deliberately: it is a **minor**, and
+letting its code reach `main` before RFC 179's patch is cut would force that cut
+to the higher level. Its handoff goes out the day `0.92.7` is tagged. Proposed
+2026-11-07 by the architect. This is the scoping
 proposal RFC 131's R2b correction says is owed. **It replaces a question the
 owner was told he had to answer with a recommendation he only has to accept** —
 measuring R2b's actual surface found it is five times smaller than RFC 131
