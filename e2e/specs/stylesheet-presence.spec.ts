@@ -50,6 +50,22 @@
  * own set operations in JS, which has no locale-sort failure mode, but
  * the lesson generalises: a census number is only as good as its
  * matcher's vocabulary, stated beside the number.
+ *
+ * ## RFC 180 (R2b) update
+ *
+ * R2b's ten imported `components/{shells,nav,domain}` files add 37 new
+ * literal names, plus two more computed sites a literal grep cannot see
+ * (`operator_shell.rs`'s `Environment::class()`, a 3-arm match resolving
+ * to `env-badge`/`production`/`local`; and `is_active()`'s 2-arm
+ * if/else, resolving to `sidebar-link` -- `active` itself was already
+ * resolved via `density_toggle.rs`), both added to
+ * `RESOLVED_COMPUTED_NAMES` above. One more site is caller-supplied and
+ * not statically enumerable (`tenant_admin_shell.rs`'s `<span
+ * class=cls>`, `cls` being half of the `tenant_badge` prop), added to
+ * `DECLARED_OUT_SITES`. No `DECLARED_STYLED` growth -- R2b touches no
+ * CSS (RFC 179 owns that) -- so the new names fall under
+ * `not-yet-styled`: 96 -> 136 = 1 declared-and-matching (`sr-only`,
+ * unchanged) + 135 not-yet-styled + 0 unclassified.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -116,6 +132,14 @@ const RESOLVED_COMPUTED_NAMES: ReadonlyArray<{ names: string[]; site: string }> 
     names: ['metric-chip', 'metric-chip-link'],
     site: 'components/primitives/metric_strip.rs: the tone=None literal fallback, and the literal "metric-chip-link" suffix in the Some(href) branch',
   },
+  {
+    names: ['env-badge', 'production', 'local'],
+    site: 'components/shells/operator_shell.rs: fn class(self) on Environment, 3-arm match (RFC 180 R2b)',
+  },
+  {
+    names: ['sidebar-link'],
+    site: 'components/shells/operator_shell.rs: is_active() closure, and components/shells/tenant_admin_shell.rs:57, same inline if/else pair ("active" itself already resolved above via density_toggle.rs) (RFC 180 R2b)',
+  },
 ];
 
 /**
@@ -127,6 +151,7 @@ const RESOLVED_COMPUTED_NAMES: ReadonlyArray<{ names: string[]; site: string }> 
 const DECLARED_OUT_SITES: readonly string[] = [
   'components/primitives/badge.rs: format!("badge {}", class) -- class is a caller-supplied prop; no <Badge usage exists in scope',
   'components/primitives/metric_strip.rs: format!("metric-chip metric-chip-{t}") -- t is a caller-supplied prop; no <MetricChip usage exists in scope (its literal fallback and literal suffix are resolved above, not here)',
+  'components/shells/tenant_admin_shell.rs:76: <span class=cls>{lbl}</span> -- cls is the first element of the caller-supplied tenant_badge: Option<(String, String)> prop; not statically enumerable (RFC 180 R2b)',
 ];
 
 /**

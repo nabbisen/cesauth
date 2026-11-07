@@ -119,7 +119,23 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         AuditViewerExportButton | AuditViewerNewerLink | AuditViewerOlderLink |
         AuditViewerEmptyState | AuditViewerColTime | AuditViewerColActor |
         AuditViewerColEvent | AuditViewerColReason | AuditViewerColSeq |
-        AuditViewerNoteSchemaTenant
+        AuditViewerNoteSchemaTenant |
+        // RFC 180 (R2b) — dormant CSR component chrome
+        ActionBack | ActionCopy | ActionCopied | ActionSignOut |
+        PoweredBy | Privacy | Terms | Status |
+        EnvironmentProduction | EnvironmentStaging | EnvironmentLocal |
+        OperatorDashboardTitle | InvestigateTitle | OperationsTitle |
+        ConfigTitle | TokensTitle | OidcClientsTitle |
+        LocaleSwitchLabel | ScopeTenant |
+        SidebarGroupMembers | SidebarGroupAccess | SidebarGroupApplications |
+        SidebarGroupSettings | TenantAdminOverview | TenantAdminUsers |
+        TenantAdminOrganizations | TenantAdminGroups | TenantAdminSubscription |
+        RolesCatalogTitle | TenantAuditTitle |
+        RoleAssignPreviewAllowed | RoleAssignPreviewNotAllowed |
+        RoleAssignAuditNotice | AuditorRoleReadOnly |
+        PermissionDeniedTitle | PermissionDeniedBody |
+        StatusSuspended | SuspendedTenantTitle | SuspendedTenantBody |
+        SignInVolumeLast24h | OneTimeRevealNotice
             => {}  // exhaustiveness pin — body is irrelevant
     }
     // Now actually iterate. The list below mirrors the match
@@ -209,6 +225,22 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         AuditViewerEmptyState, AuditViewerColTime, AuditViewerColActor,
         AuditViewerColEvent, AuditViewerColReason, AuditViewerColSeq,
         AuditViewerNoteSchemaTenant,
+        // RFC 180 (R2b)
+        ActionBack, ActionCopy, ActionCopied, ActionSignOut,
+        PoweredBy, Privacy, Terms, Status,
+        EnvironmentProduction, EnvironmentStaging, EnvironmentLocal,
+        OperatorDashboardTitle, InvestigateTitle, OperationsTitle,
+        ConfigTitle, TokensTitle, OidcClientsTitle,
+        LocaleSwitchLabel, ScopeTenant,
+        SidebarGroupMembers, SidebarGroupAccess, SidebarGroupApplications,
+        SidebarGroupSettings, TenantAdminOverview, TenantAdminUsers,
+        TenantAdminOrganizations, TenantAdminGroups, TenantAdminSubscription,
+        RolesCatalogTitle, TenantAuditTitle,
+        RoleAssignPreviewAllowed, RoleAssignPreviewNotAllowed,
+        RoleAssignAuditNotice, AuditorRoleReadOnly,
+        PermissionDeniedTitle, PermissionDeniedBody,
+        StatusSuspended, SuspendedTenantTitle, SuspendedTenantBody,
+        SignInVolumeLast24h, OneTimeRevealNotice,
     ];
     for k in all { f(k); }
 }

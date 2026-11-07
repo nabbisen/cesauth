@@ -22,3 +22,7 @@ pub mod disclosure;
 pub use disclosure::Disclosure;
 pub mod metric_strip;
 pub use metric_strip::{MetricChip, MetricStrip};
+pub mod permission_denied;
+pub use permission_denied::PermissionDenied;
+pub mod suspended_notice;
+pub use suspended_notice::SuspendedNotice;

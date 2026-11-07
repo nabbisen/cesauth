@@ -407,6 +407,55 @@ pub enum MessageKey {
     AuditViewerColSeq,
     AuditViewerNoteSchemaTenant,
     AuditViewerEventAny,
+
+    // ---- RFC 180 (R2b): dormant CSR component chrome imported from the
+    // mockup at df3d9d0 -- operator/tenant-admin shells, role-impact
+    // preview, permission-denied/suspended notices, sign-in volume
+    // chart. Six of the mockup's 47 keys mapped to existing variants
+    // above (AuditTitle, DeletionRequestsTitle, ScopeSystem,
+    // SecurityCentreTitle, SessionsTitle, TenantAdminInvitations); these
+    // 41 are additive. ----
+    ActionBack,
+    ActionCopy,
+    ActionCopied,
+    ActionSignOut,
+    AuditorRoleReadOnly,
+    ConfigTitle,
+    EnvironmentProduction,
+    EnvironmentStaging,
+    EnvironmentLocal,
+    InvestigateTitle,
+    LocaleSwitchLabel,
+    OidcClientsTitle,
+    OneTimeRevealNotice,
+    OperationsTitle,
+    OperatorDashboardTitle,
+    PermissionDeniedTitle,
+    PermissionDeniedBody,
+    PoweredBy,
+    Privacy,
+    Terms,
+    Status,
+    RoleAssignPreviewAllowed,
+    RoleAssignPreviewNotAllowed,
+    RoleAssignAuditNotice,
+    RolesCatalogTitle,
+    ScopeTenant,
+    SidebarGroupMembers,
+    SidebarGroupAccess,
+    SidebarGroupApplications,
+    SidebarGroupSettings,
+    SignInVolumeLast24h,
+    StatusSuspended,
+    SuspendedTenantTitle,
+    SuspendedTenantBody,
+    TenantAdminUsers,
+    TenantAdminOrganizations,
+    TenantAdminGroups,
+    TenantAdminSubscription,
+    TenantAdminOverview,
+    TenantAuditTitle,
+    TokensTitle,
 }
 
 /// Resolve `(key, locale) -> &'static str`. Zero allocation.
@@ -432,6 +481,7 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
         if let Some(s) = lookup_sessions_bulk(&key, locale) { return s; }
         if let Some(s) = lookup_magic_link_totp_pages(&key, locale) { return s; }
         if let Some(s) = lookup_admin(&key, locale) { return s; }
+        if let Some(s) = lookup_r2b(&key, locale) { return s; }
     // Fallback: panic with the key name so missing translations fail loudly
     // during development. In production this path is unreachable if the
     // exhaustive-match test in i18n/tests.rs passes.
@@ -1335,6 +1385,212 @@ fn lookup_admin(key: &MessageKey, locale: Locale) -> Option<&'static str> {
         AuditViewerNoteSchemaTenant => match locale {
             Locale::Ja => "tenant_id 単位での絞り込みは現在のスキーマでは未提供 (RFC 109 §scope amendments)。",
             Locale::En => "Filtering by tenant_id is not yet supported by the schema (RFC 109 §scope amendments).",
+        },
+
+        _ => return None,
+    })
+}
+
+/// RFC 180 (R2b): the dormant CSR component chrome imported from the
+/// mockup at pin `df3d9d0` — operator/tenant-admin shell navigation,
+/// role-impact preview, permission-denied/suspended notices, sign-in
+/// volume chart. None of these components are wired to a route yet
+/// (that is R3); the strings exist so the import can compile against
+/// `cesauth_core::i18n` rather than carrying a second catalog.
+fn lookup_r2b(key: &MessageKey, locale: Locale) -> Option<&'static str> {
+    use MessageKey::*;
+    Some(match key {
+        // ----- generic actions -----
+        ActionBack => match locale {
+            Locale::Ja => "戻る",
+            Locale::En => "Back",
+        },
+        ActionCopy => match locale {
+            Locale::Ja => "コピー",
+            Locale::En => "Copy",
+        },
+        ActionCopied => match locale {
+            Locale::Ja => "コピーしました",
+            Locale::En => "Copied",
+        },
+        ActionSignOut => match locale {
+            Locale::Ja => "サインアウト",
+            Locale::En => "Sign out",
+        },
+
+        // ----- auth shell footer (server-rendered; RFC 180 §4.3) -----
+        PoweredBy => match locale {
+            Locale::Ja => "Cloudflare 上でホスト",
+            Locale::En => "Hosted on Cloudflare",
+        },
+        Privacy => match locale {
+            Locale::Ja => "プライバシー",
+            Locale::En => "Privacy",
+        },
+        Terms => match locale {
+            Locale::Ja => "利用規約",
+            Locale::En => "Terms",
+        },
+        Status => match locale {
+            Locale::Ja => "ステータス",
+            Locale::En => "Status",
+        },
+
+        // ----- operator shell chrome -----
+        EnvironmentProduction => match locale {
+            Locale::Ja => "本番",
+            Locale::En => "Production",
+        },
+        EnvironmentStaging => match locale {
+            Locale::Ja => "ステージング",
+            Locale::En => "Staging",
+        },
+        EnvironmentLocal => match locale {
+            Locale::Ja => "ローカル",
+            Locale::En => "Local dev",
+        },
+        OperatorDashboardTitle => match locale {
+            Locale::Ja => "オペレーターダッシュボード",
+            Locale::En => "Operator dashboard",
+        },
+        InvestigateTitle => match locale {
+            Locale::Ja => "調査",
+            Locale::En => "Investigate",
+        },
+        OperationsTitle => match locale {
+            Locale::Ja => "運用",
+            Locale::En => "Operations",
+        },
+        ConfigTitle => match locale {
+            Locale::Ja => "設定",
+            Locale::En => "Config",
+        },
+        TokensTitle => match locale {
+            Locale::Ja => "管理者トークン",
+            Locale::En => "Admin tokens",
+        },
+        OidcClientsTitle => match locale {
+            Locale::Ja => "OIDCクライアント",
+            Locale::En => "OIDC clients",
+        },
+
+        // ----- locale toggle label. Dormant: the mockup's LocaleToggle
+        // component itself is NOT imported (RFC 180 §5 bars a live
+        // switcher and its reactive context); this is the string alone,
+        // in case a future, non-reactive rendering wants it. -----
+        LocaleSwitchLabel => match locale {
+            Locale::Ja => "言語",
+            Locale::En => "Language",
+        },
+
+        // ----- scope badge (the trap, RFC 180 §4.2: AdminScopeTenant
+        // is parameterised with `{slug}`; this is the bare, unscoped
+        // word the mockup's tenant-switcher button uses beside the
+        // tenant's own display name, not a substitute for it) -----
+        ScopeTenant => match locale {
+            Locale::Ja => "テナント",
+            Locale::En => "Tenant",
+        },
+
+        // ----- tenant-admin sidebar groups and nav items -----
+        SidebarGroupMembers => match locale {
+            Locale::Ja => "メンバー",
+            Locale::En => "Members",
+        },
+        SidebarGroupAccess => match locale {
+            Locale::Ja => "アクセス",
+            Locale::En => "Access",
+        },
+        SidebarGroupApplications => match locale {
+            Locale::Ja => "アプリケーション",
+            Locale::En => "Applications",
+        },
+        SidebarGroupSettings => match locale {
+            Locale::Ja => "テナント設定",
+            Locale::En => "Tenant settings",
+        },
+        TenantAdminOverview => match locale {
+            Locale::Ja => "概要",
+            Locale::En => "Overview",
+        },
+        TenantAdminUsers => match locale {
+            Locale::Ja => "ユーザー",
+            Locale::En => "Users",
+        },
+        TenantAdminOrganizations => match locale {
+            Locale::Ja => "組織",
+            Locale::En => "Organizations",
+        },
+        TenantAdminGroups => match locale {
+            Locale::Ja => "グループ",
+            Locale::En => "Groups",
+        },
+        TenantAdminSubscription => match locale {
+            Locale::Ja => "サブスクリプション",
+            Locale::En => "Subscription",
+        },
+        RolesCatalogTitle => match locale {
+            Locale::Ja => "ロール",
+            Locale::En => "Roles",
+        },
+        // Tenant-scoped audit, distinct from AuditViewerPageTitle's
+        // system-wide /admin/console/audit — a different page, not a
+        // casing variant of the same one.
+        TenantAuditTitle => match locale {
+            Locale::Ja => "監査",
+            Locale::En => "Audit",
+        },
+
+        // ----- role-assignment impact preview -----
+        RoleAssignPreviewAllowed => match locale {
+            Locale::Ja => "この変更後、ユーザーが行えること",
+            Locale::En => "After this change, the user can",
+        },
+        RoleAssignPreviewNotAllowed => match locale {
+            Locale::Ja => "ユーザーが行えないこと",
+            Locale::En => "The user cannot",
+        },
+        RoleAssignAuditNotice => match locale {
+            Locale::Ja => "この変更は監査ログに記録されます。",
+            Locale::En => "This change will be recorded in the audit log.",
+        },
+        AuditorRoleReadOnly => match locale {
+            Locale::Ja => "読み取り専用 — あなたのロールは監査ビューアーです。",
+            Locale::En => "Read-only — your role is Audit viewer.",
+        },
+
+        // ----- permission-denied / suspended-tenant notices -----
+        PermissionDeniedTitle => match locale {
+            Locale::Ja => "アクセスが拒否されました",
+            Locale::En => "Access denied",
+        },
+        PermissionDeniedBody => match locale {
+            Locale::Ja => "このページを表示する権限がありません。正しいテナントにいることと、必要なロールを持っていることを確認してください。",
+            Locale::En => "You do not have permission to view this page. Check that you are in the correct tenant and have the required role.",
+        },
+        StatusSuspended => match locale {
+            Locale::Ja => "停止中",
+            Locale::En => "Suspended",
+        },
+        SuspendedTenantTitle => match locale {
+            Locale::Ja => "テナントが停止されています",
+            Locale::En => "Tenant suspended",
+        },
+        SuspendedTenantBody => match locale {
+            Locale::Ja => "このテナントは停止されています。サインインと管理操作はブロックされています。アクセスを復元するにはプラットフォームオペレーターにお問い合わせください。",
+            Locale::En => "This tenant has been suspended. Sign-in and administrative actions are blocked. Contact a platform operator to restore access.",
+        },
+
+        // ----- sign-in volume sparkline -----
+        SignInVolumeLast24h => match locale {
+            Locale::Ja => "過去24時間",
+            Locale::En => "Last 24 hours",
+        },
+
+        // ----- one-time secret reveal control -----
+        OneTimeRevealNotice => match locale {
+            Locale::Ja => "この値は一度しか表示されません。いまコピーして安全な場所に保管してください。",
+            Locale::En => "This value is shown once. Copy it now and store it safely.",
         },
 
         _ => return None,

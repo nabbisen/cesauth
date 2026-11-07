@@ -48,6 +48,26 @@ use crate::pages::tenant_admin::{
 };
 use crate::pages::totp::{TotpDisable, TotpEnroll};
 
+// ─── Mount-time locale ───────────────────────────────────────────────────────
+
+/// Reads `document.documentElement.lang` once and maps it to a
+/// `Locale` via `Locale::from_primary_subtag` (region/script subtags
+/// stripped, case-insensitive). Plain state, not a reactive context:
+/// RFC 180 §5 bars building a live locale switcher or a reactive
+/// locale context for the R2b shells/components — this only gives a
+/// future caller an initial value to pass into their `locale` props.
+/// Falls back to `Locale::default()` when `lang` is absent or
+/// unrecognised. Not yet called anywhere — the R2b components it
+/// would feed are dormant until R3 wires them to routes.
+pub fn mounted_locale() -> cesauth_core::i18n::Locale {
+    web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.document_element())
+        .and_then(|el| el.get_attribute("lang"))
+        .and_then(|lang| cesauth_core::i18n::Locale::from_primary_subtag(&lang))
+        .unwrap_or_default()
+}
+
 // ─── Root component ──────────────────────────────────────────────────────────
 
 /// Root Leptos component — mounted by `leptos_start()` in `lib.rs`.

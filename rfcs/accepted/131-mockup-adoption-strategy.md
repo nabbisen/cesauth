@@ -250,6 +250,28 @@ as live evidence that R3 had an unanswered two-month-old dependency.
 with the components that use them. That is a scoping proposal the architect
 owes, and it is queued as one.
 
+**Correction, 2026-11-07, writing RFC 180's handoff: the "175" above was
+already stale — core had 171.** Re-counted directly from
+`crates/core/src/i18n/mod.rs`'s `MessageKey` enum rather than trusted from
+this paragraph's own earlier count; not re-derived here why it drifted,
+only that it had. Left standing above as the number this RFC actually
+worked from at the time, per this file's own correction convention.
+
+**R2b shipped, RFC 180, 2026-11-07.** All ten files landed under
+`crates/frontend/src/components/{shells,nav,domain}/`, dormant (R3 still
+wires them to routes). The mockup's locale mechanism (`Msg`, `Locale`,
+`LocaleContext`, `use_locale()`, `LocaleToggle`) was deleted, not
+imported, per this section's own direction — every file resolves
+strings through `cesauth_core::i18n::lookup` via a plain `locale:
+Locale` prop (or, for `OperatorShell`, a hardcoded JA-only lookup per
+ADR-013/RFC 034). The "catalog merge" was 47 distinct keys, not 263: 6
+mapped onto existing `MessageKey` variants, 41 added, 0 dropped,
+0 unresolved — see RFC 180's implementation report for the full table.
+**`permission_denied.rs` and `suspended_notice.rs` — R2a's two
+exclusions, `crates/frontend/src/components/primitives/` — are excluded
+no longer**; both now live in `primitives/` alongside the 17 R2a
+imported in 0.82.0.
+
 **Found at the same time, and not previously recorded anywhere: R2a imported no
 CSS.** Its 0.82.0 changelog entry names only *"a future RFC wires them to real
 data"* as outstanding, so the presentation half went unrecorded. The 17

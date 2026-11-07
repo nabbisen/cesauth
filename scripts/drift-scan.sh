@@ -336,15 +336,24 @@ while IFS= read -r -d '' file; do
               || true)
 done < <(find "${REPO_ROOT}/crates/frontend/src" -name '*.rs' \
     -not -path '*/pages/*' \
+    -not -path '*/components/*' \
     -not -name 'app.rs' \
     -print0)
-# NOTE: crates/frontend/src/pages/** and app.rs are intentionally excluded
-# from the RFC 108 check.  These are Leptos CSR component files; their URL
-# strings are fetch() calls, form actions, and <Route path=...> declarations.
-# RFC 108 was written for SSR template functions where cesauth_core::routes::*
-# was the clear alternative.  A follow-up RFC will decide whether to share
-# route constants between backend and frontend crates, at which point these
-# files can be brought back into scope.
+# NOTE: crates/frontend/src/pages/**, crates/frontend/src/components/**,
+# and app.rs are intentionally excluded from the RFC 108 check.  These are
+# Leptos CSR component files; their URL strings are fetch() calls, form
+# actions, <A href=...>/<Route path=...> declarations. RFC 108 was written
+# for SSR template functions where cesauth_core::routes::* was the clear
+# alternative. A follow-up RFC will decide whether to share route constants
+# between backend and frontend crates, at which point these files can be
+# brought back into scope.
+#
+# `components/` joined this exclusion at RFC 180 (R2b): it existed before
+# only as `components/primitives/`, none of which link anywhere, so this
+# gap was latent until R2b's shells/nav files (the first components/ code
+# with real href literals) tripped it. Same code, same reasoning as
+# pages/ and app.rs above — not a new exemption, a late discovery of an
+# existing one's true boundary.
 
 if [[ ${#ui_url_matches[@]} -gt 0 ]]; then
     echo "RFC 108: hardcoded URL paths in production UI templates"
