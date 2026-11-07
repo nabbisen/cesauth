@@ -1,6 +1,10 @@
 # RFC 168 — The release rules are written and unenforced
 
-**Status.** **Accepted** 2026-10-31. **Patch.** **Sequenced immediately after
+**Status.** **Accepted** 2026-10-31. **Patch.** **Its three checks are still
+unbuilt as of `0.92.7` (2026-11-07), and §Enforcement note records what that
+cost: two misleveled releases in the 0.92.x run, an unwritten minor trigger the
+project has applied in both directions within four days, and §4.2's own ruling
+broken by the architect's RFC 179 handoff.** **Sequenced immediately after
 RFC 164** — both add sections to `scripts/drift-scan.sh`, and these two checks
 guard **every remaining cut** in the authorized sequence, so catching a mistake
 on 0.90.0 is worth more than catching one on 0.93.0. Its §4 rulings are already
@@ -147,3 +151,111 @@ cut cannot.
   matters before a 1.0.
 - Not an audit of anything before 0.18.0, or of the past at all beyond §2.3's
   one measurement establishing that the rule drifts when unwatched.
+
+---
+
+## Enforcement note, 2026-11-07 — the owner asked why seven patches, and two of them were misleveled
+
+**The owner's question**, after `0.92.7` was tagged: *"Why 0.92.7? Why was it
+not 0.93? I do not believe patch versions continue even seven times."*
+
+**Audited against `ROADMAP.md` §Versioning policy, release by release.** The run
+length is not itself the defect — seven internal-only releases would be
+legitimate. **Two of the seven are not internal-only, and both hit a named
+trigger**, so the instinct was correct and nothing in the project caught it,
+because this RFC's three checks were never built.
+
+| release | trigger | level cut | correct |
+|---|---|---|---|
+| 0.92.1 | **caller obligation.** RFC 172 made `POST /webauthn/register/start` resolve its subject from the **session**, where it previously required no cookie, no header and no token, and added `require_json_content_type`. Every existing caller must now hold a session and send the header, or break. | patch | **minor** |
+| 0.92.2 | none | patch | patch |
+| 0.92.3 | **a removed URL**, which §Versioning policy names outright. `POST /admin/console/config/log_level/preview` and `…/apply` were **registered in `lib.rs` at `0.92.2`** (`grep -c` = 2) and are gone at `0.92.3`; `route-contracts.md` rows went **194 → 192**. | patch | **minor** |
+| 0.92.4 | none | patch | patch |
+| 0.92.5 | new blocking CI gate (E7) — **see §6.1** | patch | unresolved |
+| 0.92.6 | new blocking CI gate (colour contrast) — **§6.1** | patch | unresolved |
+| 0.92.7 | new blocking CI gate (census) + a reporting step restored to blocking — **§6.1** | patch | unresolved |
+
+Nothing else moved across the run: `wrangler.toml` vars (**35**) and sections
+(**12**) unchanged, `cesauth-core` `pub mod` (**28**) unchanged, no migration
+added, no route added, no permission slug added.
+
+**0.92.1's available excuse, named and rejected.** Its own entry says *"Exposure
+was none: nobody has deployed this tree."* True, and it is why the defect was
+not an incident — but it is **not in the rubric**, and admitting it would make
+every breaking change a patch until first deployment, which empties the policy
+of content. The policy asks *who must change their code*, not *who has already
+run it*. The mirror-image worked example in §Versioning policy is **exactly this
+shape**: RFC 152 half B changed no document, but *"every scripted caller of
+those 34 `POST` endpoints must start sending a token or break — correctly a
+minor."*
+
+**Why 0.92.1 was misread at the time:** the policy's *"security fixes that
+preserve wire compatibility also count as patch"* clause was applied without
+checking its condition. RFC 172 was a security fix and did **not** preserve wire
+compatibility — it deleted a request field and added two preconditions.
+
+### 6.1 The unwritten trigger, which is the real defect and is the owner's to settle
+
+§Versioning policy's minor triggers are: a new route surface, a new schema
+migration, a new public type or trait in `cesauth-core`, a new permission slug, a
+new operator-visible configuration knob, a renamed/removed URL, and the
+caller-obligation catch-all. **"A new blocking CI gate" is not among them.** Nor
+is "new internal module surface."
+
+But `0.82.0`'s own release note says, verbatim:
+
+> **Minor**, not patch: RFC 134 and RFC 132 are each fixes on their own, but
+> RFC 131 R2a adds new module surface and **RFC 134's smoke gate is new blocking
+> CI capability** — a release mixing levels takes the higher one.
+
+So the project has been applying a trigger **it never wrote down**, and
+**inconsistently**: by it, `0.92.5`, `0.92.6` and `0.92.7` were each a minor,
+because each added a blocking gate. And the architect has already applied it in
+the **opposite** direction on work not yet shipped — **RFC 180 was dispatched
+2026-11-07 as a minor** on exactly the R2a precedent (*"adds module surface"*),
+though it adds no route, no `cesauth-core` type, no knob, and obliges no caller.
+Its ten files land **dormant**; under the written rubric alone it is a **patch**.
+
+**The architect's recommendation: drop the unwritten trigger, keep the single
+written test.** A CI gate and a dormant internal module oblige nobody, and "new
+blocking CI capability" has no meaning to an integrator or operator — the only
+audiences §Versioning policy's catch-all names. Consequences, stated plainly so
+the choice is informed:
+
+- **Drop it** → `0.92.5`–`0.92.7` were correctly patches, `0.92.1` and `0.92.3`
+  remain the only two misses, and **RFC 180 must be re-leveled to a patch before
+  it ships**, making the next cut `0.92.8`.
+- **Write it in** → `0.92.5`–`0.92.7` were misleveled too (five of seven), RFC
+  180 stays a minor, and the next cut is `0.93.0`.
+
+Either way the rubric must say which, because the architect has been deciding it
+silently at dispatch and has now decided it both ways within four days.
+
+### 6.2 This RFC's own §4.2 ruling was broken by the architect, four days after accepting it
+
+§4.2 rules that **every dispatch handoff names the target level and which
+trigger the work hits**, and that *"none, therefore a patch" is an argument to be
+made, not a default.*
+
+- **RFC 179's handoff** (2026-11-07) says only *"**Target release.** **Patch —
+  the next cut.** Number assigned at the cut."* **No trigger named, no argument
+  made** — the default this ruling exists to forbid.
+- **RFC 180's handoff** (2026-11-07) does comply: *"**Minor.** It adds module
+  surface, the same reason R2a was a minor in 0.82.0."* — and §6.1 is now
+  challenging that reason, which is precisely the review the ruling was written
+  to enable. **The ruling worked where it was followed.**
+
+### 6.3 What is not proposed
+
+**Not retagging.** `0.92.1` and `0.92.3` are shipped, signed, immutable
+artifacts; §Versioning policy already settles this class as historical debt
+(*"those releases are immutable artifacts"*), and this RFC is forward-looking at
+the owner's own direction — *"You don't have to be too sensitive on the past
+versions. I care about ruling, workflow and guidelines for the future."* The two
+misses are recorded here and nothing else.
+
+**What is proposed:** build this RFC's three checks, which are still unbuilt
+seven releases later, **plus a fourth it does not currently specify** — a
+URL-set diff against the previous tag. That one is two lines over
+`route-contracts.md` and would have caught `0.92.3` mechanically, without
+judgement: **194 → 192**.
