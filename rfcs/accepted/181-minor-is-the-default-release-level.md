@@ -92,10 +92,17 @@ expiry written down rather than discovering it.
 
 ## 4. What this makes cheap, which was the point of RFC 168
 
-RFC 168 has carried three unbuilt checks since 2026-10-31, through seven
-releases. The reason they stayed unbuilt is that **detecting the old triggers
-mechanically is hard**: "a new route surface", "a new permission slug" and above
-all "caller obligation" are judgements, not greps.
+**Correction, 2026-11-07, before this RFC's own cut: it is one unbuilt check,
+not three.** RFC 168 §3 lists three items, and reading them rather than counting
+them: item 1 (reconciliation, both directions) **is built and running** — it
+shipped with RFC 164 in `0.91.2`, `drift-scan.sh` prints `compared 149 tag(s)
+against 147 CHANGELOG entr(y|ies)`, and §3c records it being fixed during that
+very cut. Item 3 ("both print their population") is a **requirement on** the
+other two, not a check of its own. **Only §3.2's level backstop is unbuilt.**
+
+That one stayed unbuilt because **detecting the old triggers mechanically is
+hard**: "a new route surface", "a new permission slug" and above all "caller
+obligation" are judgements, not greps.
 
 Under this rule the check collapses to something a script can do:
 
@@ -107,6 +114,13 @@ already writing prose — the handoff — and the gate only has to check that th
 prose exists when the number says it must. **That is the first version of this
 check that is actually buildable**, and it is why this RFC is a prerequisite for
 RFC 168's §4.2 check rather than a parallel idea.
+
+**And §3.2's backstop, as specified, would not have caught `0.92.3`.** It tests
+whether a patch *adds* a registered route, a migration or an MSRV bump —
+`0.92.3` **removed** two routes, which no addition-shaped test sees. So the
+URL-**set** diff in §5's deliverables is not a nicety on top of the backstop; it
+covers a direction the backstop is blind to, and it is the only one of the two
+that would have caught the concrete miss that prompted this RFC.
 
 It also retires an argument that should never have reached the owner. Whether
 "a new blocking CI gate" is a minor trigger was **put to the owner on
@@ -145,7 +159,27 @@ no trigger.
   about enforcement debt competing with feature work; the owner declined the
   broader framing, and this RFC is the narrow change that was asked for.
 
-## 7. One interaction, noted not fixed
+## 7. A consequence the architect missed, found when the owner asked whether `0.93.0` was scoped
+
+**Planned scope can no longer be pinned to a predicted version number.** Four
+`ROADMAP.md` rows were keyed to hard future numbers — `0.93.0` (RFC 131 §0
+slices 1–2), `0.94.0` (slices 3–6), and two rows reading "after 0.93.0". That
+convention works only while minors are **rare and planned**, which is exactly
+what this RFC ends: every release now advances the minor, so those labels go
+stale the moment anything else ships first. And something else has: RFC 180 is
+already with the dev team and will cut before RFC 131 §0 is dispatched, so
+`0.93.0` would have been handed to work that row never described.
+
+**Ruling: ROADMAP rows are keyed to sequence and dependency, never to a
+predicted version number** — `after RFC 179`, `after the next cut`, `NEXT`, the
+form most rows already use. A version number is assigned **at the cut**, from
+what actually shipped. The four hard-numbered rows are re-keyed accordingly.
+
+This is the architect's miss, not the owner's question: the rule was written and
+applied without checking what else in the repository depended on minors being
+rare.
+
+## 8. One interaction, noted not fixed
 
 RFC 028 splits the CHANGELOG archive **by minor range**. Under a minor default
 each minor is roughly one release, so archive files will group a handful of
