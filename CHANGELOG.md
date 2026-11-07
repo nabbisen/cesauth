@@ -16,7 +16,7 @@ changes will always be called out here.
 
 **v0.89.x and earlier are in [`docs/changelog-archive/`](docs/changelog-archive/README.md)**,
 split by minor range and never edited after creation. This file holds
-**0.90–0.92 at 63 KB** of the ~80 KB budget RFC 028 set.
+**0.90–0.92 at 69 KB** of the ~80 KB budget RFC 028 set.
 
 **Correction, 2026-11-07, at the 0.92.6 cut: there was never a conflict between
 two rules, and the previous note here was wrong twice.** It said RFC 028's
@@ -50,6 +50,121 @@ rather than just under the ceiling, so it buys several cuts of headroom instead
 of firing again next release. Direction for the rule itself is in RFC 028's
 2026-11-07 note: delete the derived figure, build the gate Step 5 already
 specified.
+
+---
+
+## [0.92.7] - 2026-11-07
+
+**Patch.** Nine lines of imported CSS, and a gate redesigned so importing them
+cannot silence it. **No API behaviour changed**; no route, wire format, schema,
+cookie or permission slug touched.
+
+### Fixed — six elements authored invisible were rendering visible (RFC 179)
+
+The CSR app loaded no author CSS, so `class="sr-only"` did nothing and every
+element relying on it was shown to everyone:
+
+| site | what was visible |
+|---|---|
+| `pages/operator/tenancy.rs:175` | **the operator's CSRF token**, labelled `csrf: ` |
+| `pages/operator/clients.rs:281` | a raw OIDC client id |
+| `pages/operator/clients.rs:350`, `sessions.rs:96`, `tenant_admin/invitations.rs:83` | three table headers meant to be empty columns |
+| `pages/login.rs:114` | a `Passkey sign-in` heading meant for screen readers |
+
+**Not a vulnerability and not reported as one.** A CSRF token authorises nothing
+without the session cookie; the cost is one layer of defence in depth against
+screenshots and screen-sharing, plus five confusion defects. All six verified
+invisible **in a browser** — `getBoundingClientRect()`/`getComputedStyle()`, not
+Playwright's `isVisible()`, which does not detect clip-based hiding.
+
+### Changed — the fix was an import R2a left behind, not design work
+
+RFC 178 attributed the missing stylesheet to **RFC 131 R3**, an unbuilt slice of
+an accepted programme. **That was wrong.** R2a — shipped in **0.82.0** —
+imported 17 primitives, `view_models` and `icons` from the mockup at pin
+`df3d9d0`, ~1,489 LOC, and left the four stylesheets beside them. Its changelog
+entry named one thing outstanding: *"a future RFC wires them to real data."* The
+**data** half. So for fourteen releases the project described a missing file copy
+as unstarted design work.
+
+`crates/frontend/static/base.css` now carries `.sr-only` **verbatim from that
+same pin**, `sha256 42b849b2…e722695`, confirmed byte-identical by `diff`.
+Imported rather than authored on purpose: a hand-written rule would be a second
+presentation source to reconcile later. Served at `/assets/base.css` by the
+path `webauthn.js` already used — **no `Makefile`, `wrangler.toml`, Trunk or CSP
+change**; `style-src 'self'` already permitted it.
+
+**The root cause, stated properly**: `BASE_CSS` already defines
+**`.visually-hidden`** at `templates/chrome.rs:184-192` — the *same* clip-rect
+rule — and the server-rendered templates use it successfully. The CSR pages use
+`sr-only`, the mockup's name. **Two names for one behaviour, one styled and one
+not.** Converging them is deferred, and neither rule may now change without the
+other.
+
+### Changed — the stylesheet gate is a census, because the fix would have silenced it
+
+RFC 178's gate asserted `ruleCount > 0`, which **a stylesheet containing only
+`.sr-only` satisfies.** Landing the import alone would have deleted
+`KNOWN_NO_STYLESHEET` as stale and flipped the gate to quietly passing while 95
+of 96 class names stayed unstyled — trading a check that printed its own gap for
+a green tick proving one rule exists.
+
+- **Census, derived from source every run, no committed data file**:
+  **`96 = 1 declared-and-matching + 95 not-yet-styled + 0 unclassified`**.
+- **96, not 84.** 84 is what a literal `class="…"` grep sees; **nine `class=`
+  sites compute their value in Rust** and contribute 12 names no such grep can
+  find. Two of those constructs take a caller-supplied prop, are **not
+  statically enumerable**, and are declared out by name.
+- **Declares the *styled* set, not the unstyled one** — one entry today. The
+  remainder is computed, so a future import costs one line instead of 83
+  deletions.
+- **Staleness points both ways**: a declared name losing its rule fails as a
+  regression; an undeclared name gaining one fails as unreviewed growth. Both
+  forced and restored.
+- `.github/workflows/trunk-release-build.yml`'s `exit 1` is **restored** — with
+  a stylesheet present, a missing one is a real failure again.
+
+### Known gaps
+
+- **The census overstates the gap by ~3×, and the ambiguous spec was the
+  architect's.** 67 of the 95 unstyled names come from the 17 imported
+  primitives, **every one of which has zero call sites** — so they cannot render
+  at all. Only **29** names are reachable today. A reachability partition is
+  queued; so is dropping a declared-out clause (*"no `<Badge` usage exists"*)
+  that will expire when R3 lands while the exemption stays correct.
+- **The server-rendered half is mostly unstyled too, and had never been
+  measured.** `admin/`, `tenancy_console/`, `tenant_admin/` and `templates/` use
+  **75** distinct class names against the **22** selectors `BASE_CSS` defines —
+  **17 styled, 58 with no rule anywhere.** `btn-primary`, `card`, `data-table`,
+  `badge-ok`, `alert-info` and 53 more. Queued with its own measurement, because
+  these files write `class=\"…\"` escaped inside `format!` strings (31 sites)
+  which the CSR matcher cannot see.
+- **`trunk` cannot be installed on this machine**, so the frontend static
+  asset's size and hash are **unverifiable locally by anyone** and the
+  long-standing `317,718 B` figure has never been independently confirmed. Only
+  CI's `Trunk release build` exercises it. Playwright, the live census and the
+  six-element check are therefore `observed` from the dev team's runs, not
+  `exercised` at review.
+- **Eleven of the book's eighty pages remain absent from `SUMMARY.md`**, and
+  `expert/view-rendering-policy.md` still links twice to one of them. Carried
+  from 0.89.5.
+
+### Bundle
+
+Measured after the version bump, gzip **at its default level** (not `-9`):
+
+| file | raw B | gzip B | sha256 (first 16) |
+|---|---|---|---|
+| `…-index_bg.wasm` | 2,433,590 | 878,371 | `d11c79a9abd2aa4f` |
+| `shim.js` | 61,887 | 10,701 | `d840d5ea14574091` |
+| **Worker total** | | **889,072** | |
+
+**+100 B from 0.92.6's 888,972** — 77 B for the `<link>` line and its comment
+reaching the Worker through `leptos_shell.rs`, the rest the version string.
+`wrangler deploy --dry-run` requires `crates/frontend/dist` to exist; an **empty**
+one was created to measure, which is sound here only because `LEPTOS_JS` and
+`LEPTOS_WASM` are hardcoded consts (`leptos_shell.rs:85-86`) rather than read
+from it. The frontend asset is **not** reported: see *Known gaps*.
 
 ---
 
