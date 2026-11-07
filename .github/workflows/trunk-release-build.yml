@@ -86,21 +86,20 @@ jobs:
       # expected filename would mean deciding how the stylesheet gets
       # wired, which is RFC 178 §3's open question, not this gate's.
       #
-      # RFC 178 §4b (2026-11-07): reported, not enforced -- same shape
-      # contributing.md already records for `wrangler build` and
-      # `runtime-smoke-check.sh` (RFC 142). The gap is RFC 131 R3's
-      # presentation wiring, an unbuilt slice of an accepted programme,
-      # not a short cycle; enforcing this today would block every cut
-      # indefinitely, which is worse than the undetected gap this gate
-      # exists to end. `exit 1` below is commented out, not deleted --
-      # the day a .css artifact exists, uncomment it and this becomes a
-      # real gate.
+      # RFC 178 §4b (2026-11-07) reported this, not enforced, because
+      # the gap was believed to be RFC 131 R3's unbuilt presentation
+      # wiring. RFC 179 corrected that: the missing CSS was R2a's own
+      # unfinished import, nine lines sitting at the same pin R2a
+      # already used, not unbuilt design work. RFC 179 §4 imports them
+      # (crates/frontend/static/base.css) and §9's acceptance criteria
+      # require restoring enforcement here. A MISSING result is a real
+      # regression again, not a known, owned gap.
       - name: Assert dist/assets/ contains at least one stylesheet
         run: |
           set -euo pipefail
           if compgen -G "crates/frontend/dist/assets/*.css" > /dev/null; then
             echo "OK      $(ls crates/frontend/dist/assets/*.css)"
           else
-            echo "MISSING no .css file in crates/frontend/dist/assets/ -- the end-user SPA ships no stylesheet (RFC 178; gap owned by RFC 131 R3). Reported, not enforced -- see this step's own comment to flip it." >&2
-            # exit 1   # RFC 178 §4b: uncomment the day a stylesheet exists.
+            echo "MISSING no .css file in crates/frontend/dist/assets/ -- the end-user SPA ships no stylesheet (RFC 179)." >&2
+            exit 1
           fi

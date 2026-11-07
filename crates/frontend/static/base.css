@@ -1,0 +1,24 @@
+/**
+ * cesauth CSR base stylesheet — crates/frontend/static/base.css
+ *
+ * RFC 179 §4: imported, not authored. Verbatim from the mockup
+ * repository's crates/ui/assets/base.css, lines 86-94, at pin
+ * df3d9d0 (v0.14.0) -- the same commit RFC 131 R2a imported the
+ * components, view_models and icons from in 0.82.0.
+ *
+ * sha256 of this rule (the file's only content): 42b849b2965687a2
+ * 2595f987b30253de3327b49663caeac895d08cfb4e722695
+ *
+ * Do not reformat, "improve", or drop !important: these elements
+ * carry other classes, and a later components.css import (RFC 179
+ * §8, not this cycle) must not be able to un-hide them.
+ */
+.sr-only {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
+}

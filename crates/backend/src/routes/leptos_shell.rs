@@ -117,6 +117,8 @@ pub async fn leptos_html_shell(
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>{title}</title>
+  <!-- RFC 179 §4: imported, not authored -- see crates/frontend/static/base.css's own header for provenance. Static asset, not a Trunk output, so no LEPTOS_* const. -->
+  <link rel="stylesheet" href="/assets/base.css"/>
   <!-- Prefetch the WASM binary so it arrives before the JS loader asks for it. -->
   <link rel="preload"
         href="/assets/{wasm}"
