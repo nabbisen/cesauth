@@ -887,6 +887,154 @@ if [[ "$release_failed" -eq 1 ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# RFC 168 §3.2, amended by RFC 181 (2026-11-07) -- the level backstop, plus
+# the route-set diff RFC 168 does not itself specify.
+#
+# §3.2 as written: "a patch must not, versus the previous tag, add a
+# registered route, add a migration, or change rust-version." Under RFC 181
+# minor is the default, so a patch is now the exception someone has argued
+# for, and this backstop is the mechanical half of validating that
+# argument -- the argument's own prose is for review, not this script
+# (RFC 168 §6 "Do not").
+#
+# Corrected from the RFC's own text: it must be add OR REMOVE. 0.92.3 was
+# cut as a patch and REMOVED two live URLs -- RFC 168's Enforcement note's
+# own finding, and the reason RFC 181 exists. An addition-only test would
+# not have caught the thing it exists to catch.
+#
+# Computed and reported on EVERY run, at every level, including an
+# ordinary non-release commit -- a check exercised only by the rare patch
+# claim rots silently between claims, this project's single most repeated
+# defect (RFC 168 §3's own finding, point 3). Only a CONTRADICTED patch
+# claim fails the build; everything else prints and falls through.
+#
+# RFC 182's lesson applied from the start: every reader below is either a
+# file read via `$(<file)`/a file argument, or fed a pipe from a real
+# command into a non-`-q`, non-`-m`, non-`head` reader (reads to EOF, no
+# early exit, no SIGPIPE risk) -- never `cmd | grep -q`/`| head`/
+# `| awk '...exit'`.
+# ---------------------------------------------------------------------------
+
+LEVEL_LIB_RS="${REPO_ROOT}/crates/backend/src/lib.rs"
+LEVEL_CARGO_TOML="${REPO_ROOT}/Cargo.toml"
+
+# Echoes every "METHOD path" pair registered in lib.rs, sorted and
+# de-duplicated, one per line. $1: a git ref to read it from ("" for the
+# working tree). Keyed on method+path, not path alone (§4.1): a path
+# surviving one method's removal while losing another is invisible if
+# path alone is the key.
+level_route_pairs() {
+    local ref="$1" content
+    if [[ -z "$ref" ]]; then
+        content=$(<"$LEVEL_LIB_RS")
+    else
+        content=$(git -C "$REPO_ROOT" show "${ref}:crates/backend/src/lib.rs" 2>/dev/null) || return 1
+    fi
+    grep -oE '\.(get|post|put|delete|patch)_async *\( *"[^"]+"' <<< "$content" \
+        | sed -E 's/\.([a-z]+)_async *\( *"(.*)"/\1 \2/' | LC_ALL=C sort -u
+}
+
+level_tag_list_clean=$(grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' <<< "$release_tag_list" | LC_ALL=C sort -V)
+level_latest_tag=$(tail -1 <<< "$level_tag_list_clean")
+
+if [[ -z "$level_latest_tag" ]]; then
+    echo "drift-scan: BROKEN -- no clean X.Y.Z tag found; the level backstop" >&2
+    echo "  needs a previous tag to compare the working tree against." >&2
+    exit 2
+fi
+
+level_current_version="$release_workspace_version"
+
+IFS='.' read -r level_cur_maj level_cur_min level_cur_pat <<< "$level_current_version"
+IFS='.' read -r level_tag_maj level_tag_min level_tag_pat <<< "$level_latest_tag"
+
+if (( level_cur_maj != level_tag_maj )); then
+    level_category="unexpected"
+elif (( level_cur_min > level_tag_min )); then
+    level_category="minor"
+elif (( level_cur_min < level_tag_min )); then
+    level_category="unexpected"
+elif (( level_cur_pat > level_tag_pat )); then
+    level_category="patch_claim"
+elif (( level_cur_pat < level_tag_pat )); then
+    level_category="unexpected"
+else
+    level_category="no_release"
+fi
+
+level_current_routes=$(level_route_pairs "")
+if ! level_tag_routes=$(level_route_pairs "$level_latest_tag"); then
+    echo "drift-scan: BROKEN -- could not read crates/backend/src/lib.rs at tag" >&2
+    echo "  ${level_latest_tag} via git show." >&2
+    exit 2
+fi
+
+# RFC 179 §10.1's lesson, applied here before it bites rather than after:
+# `level_route_pairs` sorts with `LC_ALL=C`; `comm` validates its two inputs'
+# order against the shell's OWN active locale unless told otherwise, and
+# the two disagree for at least one real pair of tags in this repo's own
+# history (found verifying this exact line against 0.92.2 -> 0.92.3, which
+# does not sort identically under `LC_ALL=C` and this machine's default
+# locale) -- `comm` then refuses with "not in sorted order" rather than
+# silently misordering. `LC_ALL=C` is required, not cosmetic.
+level_routes_added=$(LC_ALL=C comm -23 <(printf '%s\n' "$level_current_routes") <(printf '%s\n' "$level_tag_routes"))
+level_routes_removed=$(LC_ALL=C comm -13 <(printf '%s\n' "$level_current_routes") <(printf '%s\n' "$level_tag_routes"))
+level_routes_added_count=$(grep -c . <<< "$level_routes_added" || true)
+level_routes_removed_count=$(grep -c . <<< "$level_routes_removed" || true)
+level_route_pair_count=$(grep -c . <<< "$level_current_routes" || true)
+
+echo "ℹ️   route surface vs ${level_latest_tag}: ${level_route_pair_count} pairs --" \
+     "${level_routes_added_count} added, ${level_routes_removed_count} removed"
+
+case "$level_category" in
+    minor)
+        echo "ℹ️   level backstop: ${level_current_version} is a minor over" \
+             "${level_latest_tag} -- nothing to validate"
+        ;;
+    no_release)
+        echo "ℹ️   level backstop: ${level_current_version} equals the latest tag" \
+             "(${level_latest_tag}) -- not a release commit"
+        ;;
+    unexpected)
+        echo "❌  level backstop: ${level_current_version} versus latest tag" \
+             "${level_latest_tag} is not a shape this project has (a major bump," \
+             "or a version below the latest tag) -- not guessing, reporting" >&2
+        exit 1
+        ;;
+    patch_claim)
+        echo "ℹ️   level backstop: ${level_current_version} is a PATCH claim over" \
+             "${level_latest_tag} -- validating routes, migrations, rust-version"
+
+        level_migrations_now=$(git -C "$REPO_ROOT" ls-tree -r --name-only HEAD -- migrations | grep -c . || true)
+        level_migrations_tag=$(git -C "$REPO_ROOT" ls-tree -r --name-only "$level_latest_tag" -- migrations | grep -c . || true)
+
+        level_rust_version_now=$(grep -oE 'rust-version[[:space:]]*=[[:space:]]*"[^"]+"' "$LEVEL_CARGO_TOML")
+        level_rust_version_tag=$(git -C "$REPO_ROOT" show "${level_latest_tag}:Cargo.toml" 2>/dev/null \
+            | grep -oE 'rust-version[[:space:]]*=[[:space:]]*"[^"]+"')
+
+        level_violations=""
+        if [[ "$level_routes_added_count" -ne 0 || "$level_routes_removed_count" -ne 0 ]]; then
+            level_violations="${level_violations}route set changed (${level_routes_added_count} added, ${level_routes_removed_count} removed) versus ${level_latest_tag} -- a patch must not add OR remove a registered route\n"
+        fi
+        if [[ "$level_migrations_now" -ne "$level_migrations_tag" ]]; then
+            level_violations="${level_violations}migration count changed (${level_migrations_tag} -> ${level_migrations_now}) versus ${level_latest_tag} -- a patch must not add a migration\n"
+        fi
+        if [[ "$level_rust_version_now" != "$level_rust_version_tag" ]]; then
+            level_violations="${level_violations}rust-version changed (${level_rust_version_tag} -> ${level_rust_version_now}) versus ${level_latest_tag} -- an MSRV bump is a minor (RFC 168 §4.1)\n"
+        fi
+
+        if [[ -n "$level_violations" ]]; then
+            echo "❌  PATCH claim ${level_current_version} contradicted versus ${level_latest_tag}:" >&2
+            printf '%b' "$level_violations" | while IFS= read -r line; do [[ -n "$line" ]] && echo "    $line" >&2; done
+            echo "" >&2
+            echo "    Re-level to minor (RFC 181's default), or show why the change does" >&2
+            echo "    not actually add caller obligation." >&2
+            exit 1
+        fi
+        ;;
+esac
+
+# ---------------------------------------------------------------------------
 # RFC 176 §6.1 — colour contrast gate.
 #
 # e2e/specs/accessibility.spec.ts runs axe over two pages (/ and /login),
