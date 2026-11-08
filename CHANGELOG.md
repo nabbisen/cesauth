@@ -61,11 +61,14 @@ section Step 3 says to archive, is 3.3%.
 
 ## [0.93.0] - 2026-11-08
 
-**Minor.** Two things: **RFC 181 inverts how release levels are decided**, and
+**Minor.** Three things: **RFC 181 inverts how release levels are decided**,
 **RFC 180 finishes RFC 131 R2b** — a programme slice that had been recorded as
 blocked for six weeks against a question answered on 2026-09-24. No route, wire
 format, schema, cookie or permission slug changed; the ten imported components
 are **dormant** and reach no browser.
+
+and **a `pipefail`/SIGPIPE defect in both release gates was found while running
+this very cut's evidence — it held the tag until fixed.**
 
 **This is the first release cut under RFC 181's default**, and it is a minor
 because that is now the default, not because a trigger was found.
@@ -159,6 +162,65 @@ is 0**.
 
 **RFC 131's own figures were stale and are corrected**: core had **171** keys,
 not the "175" the R2 split recorded.
+
+### Fixed — both release gates turned a match into a miss, and two checks could pass while a violation existed
+
+**Found while running this release's own gates, and it held the tag.**
+`drift-scan.sh` returned **one clean run in five** on an unchanged tree, with two
+*different* false failures — `deployment/production.md` reported as a broken link
+though it exists and is listed in `SUMMARY.md:88`, and tag `0.33.0` reported as
+undocumented though it is at `CHANGELOG-0.31-to-0.40.md:1682`.
+`route-contracts-check.sh` exited **141 — SIGPIPE — three times of three**,
+stopping right after its E6 line, **so E7's census had not actually run since the
+machine's load rose.**
+
+**The mechanism.** Both scripts open `set -euo pipefail`. In
+
+```bash
+if printf '%s
+' "$list" | grep -Fxq "$needle"; then
+```
+
+`grep -q` exits **0 on its first match**, the writer is killed by SIGPIPE, and
+`pipefail` gives the *pipeline* that status — 141 — so the `if` takes the false
+branch. **A real match is reported as a miss.** A 200,000-line list with the
+needle first reports "not found" **40 times out of 40**; at 148 entries the list
+fits the 64 KiB pipe buffer and usually works, which is why these gates had been
+green for a week and flapped only at load average **134**. The same shape applies
+to `| head` and — **a form the dispatching handoff failed to include** — an
+`awk` script with its own `exit`, which was 4 further sites.
+
+**Two of the affected checks could report clean while a violation existed**, both
+found by the implementer auditing consumer logic rather than pipeline shape, and
+**neither in the architect's own sample**:
+
+- **`drift-scan.sh`'s link-integrity per-file gate** read
+  `printf … | grep -Fxq "$rel" || continue`. On a match→miss it skipped that
+  file's entire link scan, **with no counter recording the skip** — a broken link
+  in that file would simply not be reported. `docs_link_scanned -eq 0` only
+  catches every file being skipped, not one.
+- **`route-contracts-check.sh`'s E7 caller-attribution chain**, four sites. A
+  match→miss that shrinks what a *caller* demonstrably handles means the dropped
+  variant is **never evaluated** against the producer — and in the worst case a
+  method with a real, unexempted DEFECT is reclassified into the non-failing
+  `no_caller` bucket. Producer-side misses are the opposite and only ever add
+  false DEFECTs.
+
+**The fix is plumbing, not logic**: every vulnerable pipe becomes a `<<<`
+here-string, which has no writer process to kill; where the writer is a real
+command and a pipe is unavoidable, `|| true` on the whole assignment keeps the
+already-captured value. `grep -q <<< "$var"` and `grep -qE … "$file"` forms were
+already safe and were left alone. **No check's matching logic and no exemption
+list changed, and no reported figure moved** — E7 still reads
+`156 = 8 + 31 + 117`, identical to the figure independently reproduced before the
+fix.
+
+**Verified**: `drift-scan.sh` **20/20 exit 0** (12 idle, 8 under deliberate
+load); `route-contracts-check.sh` exit 0 with **byte-identical output across
+runs**, all seven `ℹ️` lines and the closing `✅` restored. **Not claimed**:
+whether either false-pass site ever hid a real violation in a past run. By
+construction those runs left no record, and that retrospective question is its
+own cycle.
 
 ### Known gaps
 
