@@ -18,6 +18,21 @@
 # The check is intentionally simple: it does NOT validate the content of
 # each row — that is a code-review responsibility.  It only enforces that
 # no registered route is absent from the table.
+#
+# RFC 182: with `pipefail` (below), piping a large variable into a reader
+# that can exit before reading all of it -- `grep -q`/`grep -*q`, `head`,
+# or an `awk` script with its own `exit` -- risks SIGPIPE on the writer.
+# Under load, the writer can be scheduled late enough to still be writing
+# when the reader is done, and pipefail then reports the pipeline as
+# failed (128+13=141) even though the reader's own match succeeded: a
+# real match silently reported as a miss (or, for a bare, unguarded
+# `var=$(... | head ...)`, the whole script aborting on a false
+# failure). Fixed throughout this file by feeding such readers a
+# here-string (`<<<`) instead of a pipe, which has no writer process to
+# kill, or by appending `|| true` to a bare assignment whose pipe ends
+# in `head`/an exiting `awk`. New checks in this file should follow the
+# same rule rather than reintroduce a `cmd | grep -q`/`| head`/
+# `| awk '...{exit}'` pipe.
 
 set -euo pipefail
 
@@ -158,7 +173,7 @@ exemption_stale_entries() {
   local list="$1" matched="$2"
   while IFS= read -r entry; do
     [ -z "$entry" ] && continue
-    if ! printf '%s\n' "$matched" | grep -Fxq "$entry"; then
+    if ! grep -Fxq "$entry" <<< "$matched"; then
       echo "$entry"
     fi
   done <<< "$list"
@@ -395,7 +410,7 @@ while IFS= read -r route; do
   e3_scanned=$((e3_scanned + 1))
   m="${route%% *}"
   p="${route#* }"
-  handler=$(printf '%s\n' "$route_handlers" | awk -F'\t' -v m="$m" -v p="$p" '$1==m && $2==p {print $3; exit}')
+  handler=$(awk -F'\t' -v m="$m" -v p="$p" '$1==m && $2==p {print $3; exit}' <<< "$route_handlers") || true
   if [ -z "$handler" ]; then
     continue  # no handler resolved (shouldn't happen; the earlier missing/extra diff already covers registration)
   fi
@@ -1019,7 +1034,7 @@ done < <(e4_all_defs)
 e4_named_stale=""
 while IFS= read -r entry; do
   [ -z "$entry" ] && continue
-  if ! printf '%b' "$e4_named_matched" | grep -Fxq "$entry"; then
+  if ! grep -Fxq "$entry" <<< "$(printf '%b' "$e4_named_matched")"; then
     e4_named_stale="${e4_named_stale}${entry}\n"
   fi
 done <<< "$NAMED_NON_HANDLERS"
@@ -1565,7 +1580,7 @@ e6_file_for_qualified() {
   fi
   if [ -f "$direct" ]; then
     local reexport leaf real
-    reexport=$(grep -oE "pub use [A-Za-z0-9_]+::[A-Za-z0-9_]+ as ${fn};" "$direct" | head -1)
+    reexport=$(grep -oE "pub use [A-Za-z0-9_]+::[A-Za-z0-9_]+ as ${fn};" "$direct" | head -1) || true
     if [ -n "$reexport" ]; then
       leaf=$(echo "$reexport" | sed -E 's/pub use ([A-Za-z0-9_]+)::.*/\1/')
       real=$(echo "$reexport" | sed -E 's/.*::([A-Za-z0-9_]+) as .*/\1/')
@@ -1591,7 +1606,7 @@ e6_file_for_qualified() {
   # became `required (Content-Type)` claims this cycle.
   if [ -f "$direct" ] && grep -qE "pub use [A-Za-z0-9_]+::\{[^}]*\\b${fn}\\b[^}]*\\};" "$direct"; then
     local brace_leaf="$direct"
-    leaf=$(grep -oE "pub use [A-Za-z0-9_]+::\{[^}]*\\b${fn}\\b[^}]*\\};" "$brace_leaf" | head -1 | sed -E 's/pub use ([A-Za-z0-9_]+)::.*/\1/')
+    leaf=$(grep -oE "pub use [A-Za-z0-9_]+::\{[^}]*\\b${fn}\\b[^}]*\\};" "$brace_leaf" | head -1 | sed -E 's/pub use ([A-Za-z0-9_]+)::.*/\1/') || true
     local braced="$REPO_ROOT/crates/backend/src/routes/${modpath//::/\/}/${leaf}.rs"
     if [ -f "$braced" ] && grep -qE "fn ${fn}[<(]" "$braced"; then
       printf '%s\t%s\n' "$braced" "$fn"
@@ -1668,7 +1683,7 @@ e6_fn_body() {
 e6_resolve_body() {
   local file="$1" fn="$2" body decide_fn
   body=$(e6_fn_body "$file" "$fn")
-  decide_fn=$(printf '%s\n' "$body" | grep -oE 'decide_[A-Za-z0-9_]+\(' | head -1 | sed -E 's/\($//')
+  decide_fn=$(grep -oE 'decide_[A-Za-z0-9_]+\(' <<< "$body" | head -1 | sed -E 's/\($//') || true
   if [ -n "$decide_fn" ]; then
     body="${body}
 $(e6_fn_body "$file" "$decide_fn")"
@@ -1679,9 +1694,9 @@ $(e6_fn_body "$file" "$decide_fn")"
 e6_field_name_for() {
   local file="$1" fn="$2" name body
   body=$(e6_fn_body "$file" "$fn")
-  name=$(printf '%s\n' "$body" | grep -oE '\.get\("csrf[A-Za-z0-9_]*"\)' | head -1 | sed -E 's/.*"(.*)".*/\1/')
-  if [ -z "$name" ] && printf '%s\n' "$body" | grep -q 'verify_csrf('; then
-    name=$(grep -oE '\.get\("csrf[A-Za-z0-9_]*"\)' "$COMMON_RS" | head -1 | sed -E 's/.*"(.*)".*/\1/')
+  name=$(grep -oE '\.get\("csrf[A-Za-z0-9_]*"\)' <<< "$body" | head -1 | sed -E 's/.*"(.*)".*/\1/') || true
+  if [ -z "$name" ] && grep -q 'verify_csrf(' <<< "$body"; then
+    name=$(grep -oE '\.get\("csrf[A-Za-z0-9_]*"\)' "$COMMON_RS" | head -1 | sed -E 's/.*"(.*)".*/\1/') || true
   fi
   echo "$name"
 }
@@ -1788,7 +1803,7 @@ while IFS=$'\t' read -r method path csrf_cell; do
       ;;
     "N/A (bearer)") kind="bearer" ;;
     *)
-      if printf '%s\n' "$E6_DECLARED_NO_CHECK" | grep -Fxq "$csrf_cell"; then
+      if grep -Fxq "$csrf_cell" <<< "$E6_DECLARED_NO_CHECK"; then
         e6_declared=$((e6_declared + 1))
         e6_declared_matched="${e6_declared_matched}${csrf_cell}\n"
         continue
@@ -1817,7 +1832,7 @@ while IFS=$'\t' read -r method path csrf_cell; do
 
   if [ "$kind" = "bearer" ]; then
     exempt_key="${method} ${path}"
-    if printf '%s\n' "$E6_BEARER_LEGACY_EXEMPT" | grep -Fxq "$exempt_key"; then
+    if grep -Fxq "$exempt_key" <<< "$E6_BEARER_LEGACY_EXEMPT"; then
       e6_exempted=$((e6_exempted + 1))
       e6_exempt_matched="${e6_exempt_matched}${exempt_key}\n"
       continue
@@ -1831,15 +1846,15 @@ while IFS=$'\t' read -r method path csrf_cell; do
   else
     case "$kind" in
       plain)
-        printf '%s\n' "$body" | grep -qE 'csrf::verify\(|verify_csrf\(' && ok=1 || reason="does not call csrf::verify"
+        grep -qE 'csrf::verify\(|verify_csrf\(' <<< "$body" && ok=1 || reason="does not call csrf::verify"
         ;;
       mechanism)
         needle=$(e6_mechanism_check "$mech")
         if [ -z "$needle" ]; then
           reason="unknown mechanism name \"${mech}\" -- add it to e6_mechanism_check"
         elif [ "$needle" = "STANDARD" ]; then
-          printf '%s\n' "$body" | grep -qE 'csrf::verify\(|verify_csrf\(' && ok=1 || reason="does not call csrf::verify"
-        elif printf '%s\n' "$body" | grep -qE "$needle"; then
+          grep -qE 'csrf::verify\(|verify_csrf\(' <<< "$body" && ok=1 || reason="does not call csrf::verify"
+        elif grep -qE "$needle" <<< "$body"; then
           ok=1
         else
           reason="does not call the control named \"${mech}\""
@@ -1849,7 +1864,7 @@ while IFS=$'\t' read -r method path csrf_cell; do
         bearer_pattern='resolve_from_request_header_only\(|resolve_or_respond_header_only\('
         bearer_alt=$(e6_bearer_alt_check "$qualified")
         [ -n "$bearer_alt" ] && bearer_pattern="${bearer_pattern}|${bearer_alt}"
-        printf '%s\n' "$body" | grep -qE "$bearer_pattern" \
+        grep -qE "$bearer_pattern" <<< "$body" \
           && ok=1 || reason="resolves via a cookie-accepting path, not the header-only resolver (or a named alternate) its N/A (bearer) cell claims"
         ;;
     esac
@@ -1908,7 +1923,7 @@ fi
 e6_exempt_stale=""
 while IFS= read -r entry; do
   [ -z "$entry" ] && continue
-  if ! printf '%b' "$e6_exempt_matched" | grep -Fxq "$entry"; then
+  if ! grep -Fxq "$entry" <<< "$(printf '%b' "$e6_exempt_matched")"; then
     e6_exempt_stale="${e6_exempt_stale}${entry}\n"
   fi
 done <<< "$E6_BEARER_LEGACY_EXEMPT"
@@ -1930,7 +1945,7 @@ fi
 e6_declared_stale=""
 while IFS= read -r entry; do
   [ -z "$entry" ] && continue
-  if ! printf '%b' "$e6_declared_matched" | grep -Fxq "$entry"; then
+  if ! grep -Fxq "$entry" <<< "$(printf '%b' "$e6_declared_matched")"; then
     e6_declared_stale="${e6_declared_stale}${entry}\n"
   fi
 done <<< "$E6_DECLARED_NO_CHECK"
@@ -2027,7 +2042,7 @@ while IFS= read -r trait; do
     continue
   fi
   f="$matches"
-  struct=$(grep -oE "impl ${trait} for [A-Za-z0-9_]+" "$f" | head -1 | sed -E "s/impl ${trait} for //")
+  struct=$(grep -oE "impl ${trait} for [A-Za-z0-9_]+" "$f" | head -1 | sed -E "s/impl ${trait} for //") || true
   e7_impl_files="${e7_impl_files}${trait}\t${f}\n"
   e7_struct_names="${e7_struct_names}${trait}\t${struct}\n"
 done <<< "$(printf '%s\n' "$e7_population" | cut -f1 | sort -u)"
@@ -2085,15 +2100,15 @@ e7_helper_matched=""
 e7_producer_sets=""
 while IFS=$'\t' read -r trait method; do
   [ -z "$trait" ] && continue
-  file=$(printf '%b' "$e7_impl_files" | awk -F'\t' -v t="$trait" '$1==t{print $2; exit}')
+  file=$(awk -F'\t' -v t="$trait" '$1==t{print $2; exit}' <<< "$(printf '%b' "$e7_impl_files")") || true
   [ -z "$file" ] && continue
   body=$(e7_method_body "$file" "$method")
   variants=""
   for v in NotFound Conflict PreconditionFailed Serialization Unavailable; do
-    printf '%s' "$body" | grep -q "PortError::${v}" && variants="${variants} ${v}"
+    grep -q "PortError::${v}" <<< "$body" && variants="${variants} ${v}"
   done
   for h in $E7_PRODUCER_HELPERS; do
-    if printf '%s' "$body" | grep -q "${h}("; then
+    if grep -q "${h}(" <<< "$body"; then
       variants="${variants} $(e7_producer_helper_variants "$h" | tr ',' ' ')"
       e7_helper_matched="${e7_helper_matched}${h}\n"
     fi
@@ -2103,7 +2118,7 @@ while IFS=$'\t' read -r trait method; do
   # resolved to its own measured producible set rather than guessed:
   # D1's message text reads "UNIQUE constraint failed" for both
   # SQLITE_CONSTRAINT_UNIQUE and _PRIMARYKEY on these tables.
-  if printf '%s' "$body" | grep -q 'contains("UNIQUE"'; then
+  if grep -q 'contains("UNIQUE"' <<< "$body"; then
     variants="${variants} Conflict Unavailable"
   fi
   sorted=$(printf '%s\n' $variants | sort -u | tr '\n' ',' | sed 's/,$//')
@@ -2195,12 +2210,12 @@ e7_sink_set() {
   case "$1" in
     unwrap_storage)
       if [ "$e7_unwrap_storage_stale" -eq 0 ]; then
-        printf '%b\n' "$e7_port_error_response_sink" | cut -f2 | head -1
+        printf '%b\n' "$e7_port_error_response_sink" | cut -f2 | head -1 || true
       fi
       ;;
     *)
       { printf '%b' "$e7_conversion_sinks"; printf '%b\n' "$e7_port_error_response_sink"; } \
-        | awk -F'\t' -v n="$1" '$1==n{print $2; exit}'
+        | awk -F'\t' -v n="$1" '$1==n{print $2; exit}' || true
       ;;
   esac
 }
@@ -2225,7 +2240,7 @@ E7_GENERIC_SINKS="unwrap_storage $(printf '%b\n' "$e7_port_error_response_sink" 
 e7_fn_matched_set() {
   local body="$1" propagates="${2:-0}"
   local sigline direct generic bespoke s set2 g is_generic gset bset
-  sigline=$(printf '%s\n' "$body" | head -5 | tr '\n' ' ')
+  sigline=$(head -5 <<< "$body" | tr '\n' ' ') || true
   # `RECEIVER.method(...).await?` discharges the error immediately,
   # before anything after it runs at all -- whatever `PortError::X`
   # text appears later in this scope is examining the UNWRAPPED SUCCESS
@@ -2249,8 +2264,8 @@ e7_fn_matched_set() {
   generic=""
   bespoke="$direct"
   for s in $E7_SINK_NAMES; do
-    if printf '%s' "$body" | grep -q "${s}::from(\|: ${s} = \|${s}(" \
-       || printf '%s' "$sigline" | grep -q "${s}>"; then
+    if grep -q "${s}::from(\|: ${s} = \|${s}(" <<< "$body" \
+       || grep -q "${s}>" <<< "$sigline"; then
       set2=$(e7_sink_set "$s")
       [ -z "$set2" ] && continue
       is_generic=0
@@ -2327,7 +2342,7 @@ e7_receiver_names() {
   sig_block=$(awk '{print} /\{/{exit}' <<< "$body")
   names="${names} $(grep -oE "let[ \t]+[A-Za-z0-9_]+[ \t]*(:[^=]+)?=[ \t]*${struct}::new\(" <<< "$body" \
     | sed -E 's/^let[ \t]+([A-Za-z0-9_]+).*/\1/' | tr '\n' ' ')"
-  generic=$(grep -oE "[A-Za-z0-9_]+[ \t]*:[ \t]*${trait}\b" <<< "$sig_block" | head -1 | sed -E 's/^([A-Za-z0-9_]+).*/\1/')
+  generic=$(grep -oE "[A-Za-z0-9_]+[ \t]*:[ \t]*${trait}\b" <<< "$sig_block" | head -1 | sed -E 's/^([A-Za-z0-9_]+).*/\1/') || true
   if [ -n "$generic" ]; then
     names="${names} $(grep -oE "[A-Za-z0-9_]+[ \t]*:[ \t]*&?${generic}\b" <<< "$sig_block" \
       | sed -E 's/^([A-Za-z0-9_]+).*/\1/' | tr '\n' ' ')"
@@ -2352,13 +2367,13 @@ e7_resolve_callers() {
       receiver_pat=$(printf '%s' "$receivers" | tr '\n' '|' | sed 's/|$//')
       scopes=$(e7_call_site_scopes "$body" "$method" "$receiver_pat")
       [ -z "$scopes" ] && continue
-      sigline=$(printf '%s\n' "$body" | head -5)
+      sigline=$(head -5 <<< "$body") || true
       scope=""
       while IFS= read -r line; do
         if [ "$line" = "---SCOPE---" ]; then
           if [ -n "$scope" ]; then
             propagates=0
-            printf '%s\n' "$scope" | head -1 | grep -qE '\.await[ \t]*\?' && propagates=1
+            head -1 <<< "$scope" | grep -qE '\.await[ \t]*\?' && propagates=1
             ms=$(e7_fn_matched_set "$(printf '%s\n%s' "$sigline" "$scope")" "$propagates")
             g_part="${ms%%|||*}"; b_part="${ms#*|||}"
             [ -n "$g_part" ] && result_g="${result_g},${g_part}"
@@ -2372,7 +2387,7 @@ e7_resolve_callers() {
       done <<< "$scopes"
       if [ -n "$scope" ]; then
         propagates=0
-        printf '%s\n' "$scope" | head -1 | grep -qE '\.await[ \t]*\?' && propagates=1
+        head -1 <<< "$scope" | grep -qE '\.await[ \t]*\?' && propagates=1
         ms=$(e7_fn_matched_set "$(printf '%s\n%s' "$sigline" "$scope")" "$propagates")
         g_part="${ms%%|||*}"; b_part="${ms#*|||}"
         [ -n "$g_part" ] && result_g="${result_g},${g_part}"
@@ -2483,7 +2498,7 @@ e7_chokepoint_matched=""
 
 while IFS=$'\t' read -r trait method producer; do
   [ -z "$trait" ] && continue
-  struct=$(printf '%b' "$e7_struct_names" | awk -F'\t' -v t="$trait" '$1==t{print $2; exit}')
+  struct=$(awk -F'\t' -v t="$trait" '$1==t{print $2; exit}' <<< "$(printf '%b' "$e7_struct_names")") || true
   both=$(e7_resolve_callers "$trait" "$method" "$struct")
   generic="${both%%|||*}"; bespoke="${both#*|||}"
   caller=$(printf '%s\n%s\n' "$generic" "$bespoke" | tr ',' '\n' | grep -v '^$' | sort -u | tr '\n' ',' | sed 's/,$//' || true)
@@ -2506,14 +2521,14 @@ while IFS=$'\t' read -r trait method producer; do
     key="${trait}::${method}"
     if [ -n "$missing_bespoke" ]; then
       e7_written=$((e7_written + 1))
-      if printf '%s\n' "$E7_WRITTEN_EXEMPT" | grep -Fxq "$key"; then
+      if grep -Fxq "$key" <<< "$E7_WRITTEN_EXEMPT"; then
         e7_written_matched="${e7_written_matched}${key}\n"
       else
         e7_defect_report="${e7_defect_report}[written, unexempted] ${trait}::${method} -- producer {${producer}}, caller matches {${caller}}, missing: ${missing}\n"
       fi
     else
       e7_chokepoint=$((e7_chokepoint + 1))
-      if printf '%s\n' "$E7_CHOKEPOINT_EXEMPT" | grep -Fxq "$key"; then
+      if grep -Fxq "$key" <<< "$E7_CHOKEPOINT_EXEMPT"; then
         e7_chokepoint_matched="${e7_chokepoint_matched}${key}\n"
       else
         e7_defect_report="${e7_defect_report}[chokepoint, unexempted] ${trait}::${method} -- producer {${producer}}, caller matches {${caller}}, missing: ${missing}\n"

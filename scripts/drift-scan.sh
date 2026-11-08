@@ -14,6 +14,19 @@
 # Usage:
 #   ./scripts/drift-scan.sh           # exit 0 = clean, exit 1 = stale phrases found
 #   ./scripts/drift-scan.sh --verbose # print every matched line (not just files)
+#
+# RFC 182: with `pipefail` (below), piping a large variable into a reader
+# that can exit before reading all of it -- `grep -q`/`grep -*q`, `head`,
+# or an `awk` script with its own `exit` -- risks SIGPIPE on the writer.
+# Under load, the writer can be scheduled late enough to still be writing
+# when the reader is done, and pipefail then reports the pipeline as
+# failed (128+13=141) even though the reader's own match succeeded: a
+# real match silently reported as a miss. Fixed throughout this file by
+# feeding such readers a here-string (`<<<`) instead of a pipe, which has
+# no writer process to kill, or by appending `|| true` to a bare
+# assignment whose pipe ends in `head`. New checks in this file should
+# follow the same rule rather than reintroduce a `cmd | grep -q`/`| head`
+# pipe.
 set -euo pipefail
 
 VERBOSE=0
@@ -421,7 +434,7 @@ docs_declared_matched=""
 while IFS= read -r -d '' file; do
     rel="${file#${DOCS_SRC}/}"
     docs_scanned=$((docs_scanned + 1))
-    if printf '%s\n' "$docs_inbook_set" | grep -Fxq "$rel"; then
+    if grep -Fxq "$rel" <<< "$docs_inbook_set"; then
         docs_inbook_count=$((docs_inbook_count + 1))
         continue
     fi
@@ -470,7 +483,7 @@ fi
 docs_declared_stale=""
 for entry in "${DOCS_DECLARED_OUT[@]}"; do
     decl_path="${entry%%$'\t'*}"
-    if ! printf '%b' "$docs_declared_matched" | grep -Fxq "$decl_path"; then
+    if ! grep -Fxq "$decl_path" <<< "$(printf '%b' "$docs_declared_matched")"; then
         docs_declared_stale="${docs_declared_stale}${decl_path}\n"
     fi
 done
@@ -512,7 +525,7 @@ docs_link_broken=""
 
 while IFS= read -r -d '' file; do
     rel="${file#${DOCS_SRC}/}"
-    printf '%s\n' "$docs_inbook_set" | grep -Fxq "$rel" || continue
+    grep -Fxq "$rel" <<< "$docs_inbook_set" || continue
     dir=$(dirname "$file")
     while IFS= read -r target; do
         [[ -z "$target" ]] && continue
@@ -537,7 +550,7 @@ while IFS= read -r -d '' file; do
             ..*) docs_link_outside=$((docs_link_outside + 1)); continue ;;  # outside docs/src -- out of scope
         esac
         docs_link_scanned=$((docs_link_scanned + 1))
-        if ! printf '%s\n' "$docs_inbook_set" | grep -Fxq "$resolved"; then
+        if ! grep -Fxq "$resolved" <<< "$docs_inbook_set"; then
             docs_link_broken="${docs_link_broken}${rel} -> ${resolved}\n"
         fi
     done < <(tr '\n' ' ' < "$file" | grep -oE '\]\([^)]+\.md(#[^)]*)?\)' | sed -E 's/^\]\(//; s/\)$//')
@@ -689,7 +702,7 @@ fi
 rfcs_link_declared_stale=""
 for entry in "${RFCS_LINK_DECLARED_OUT[@]}"; do
     decl_key="${entry%%$'\t'*}"
-    if ! printf '%b' "$rfcs_link_declared_matched" | grep -Fxq "$decl_key"; then
+    if ! grep -Fxq "$decl_key" <<< "$(printf '%b' "$rfcs_link_declared_matched")"; then
         rfcs_link_declared_stale="${rfcs_link_declared_stale}${decl_key}\n"
     fi
 done
@@ -759,7 +772,7 @@ release_b_matched=""
 while IFS= read -r tag; do
     [[ -z "$tag" ]] && continue
     release_tags_compared=$((release_tags_compared + 1))
-    if ! printf '%s\n' "$release_entry_list" | grep -Fxq "$tag"; then
+    if ! grep -Fxq "$tag" <<< "$release_entry_list"; then
         exempted=0
         for entry in "${RELEASE_RECORD_EXEMPT[@]}"; do
             IFS=$'\t' read -r dir ver _ <<< "$entry"
@@ -773,7 +786,8 @@ while IFS= read -r tag; do
     fi
 done <<< "$release_tag_list"
 
-release_workspace_version=$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([0-9][0-9.]*\)".*/\1/p' "${REPO_ROOT}/Cargo.toml" | head -1)
+mapfile -t release_workspace_version_lines < <(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([0-9][0-9.]*\)".*/\1/p' "${REPO_ROOT}/Cargo.toml")
+release_workspace_version="${release_workspace_version_lines[0]:-}"
 if [[ -z "$release_workspace_version" ]]; then
     echo "drift-scan: BROKEN -- could not read [workspace.package] version from" >&2
     echo "  Cargo.toml; the in-flight-release arm below would silently stop" >&2
@@ -785,7 +799,7 @@ release_b_in_flight=""
 while IFS= read -r entry_ver; do
     [[ -z "$entry_ver" ]] && continue
     release_entries_compared=$((release_entries_compared + 1))
-    if ! printf '%s\n' "$release_tag_list" | grep -Fxq "$entry_ver"; then
+    if ! grep -Fxq "$entry_ver" <<< "$release_tag_list"; then
         exempted=0
         # The release being cut right now is documented and not yet tagged, by
         # construction: the entry is written in the very commit the tag will
@@ -851,9 +865,9 @@ release_exempt_stale=""
 for entry in "${RELEASE_RECORD_EXEMPT[@]}"; do
     IFS=$'\t' read -r dir ver _ <<< "$entry"
     if [[ "$dir" == "tagged-never-documented" ]]; then
-        printf '%b' "$release_a_matched" | grep -Fxq "$ver" || release_exempt_stale="${release_exempt_stale}${dir}: ${ver}\n"
+        grep -Fxq "$ver" <<< "$(printf '%b' "$release_a_matched")" || release_exempt_stale="${release_exempt_stale}${dir}: ${ver}\n"
     else
-        printf '%b' "$release_b_matched" | grep -Fxq "$ver" || release_exempt_stale="${release_exempt_stale}${dir}: ${ver}\n"
+        grep -Fxq "$ver" <<< "$(printf '%b' "$release_b_matched")" || release_exempt_stale="${release_exempt_stale}${dir}: ${ver}\n"
     fi
 done
 
