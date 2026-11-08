@@ -18,10 +18,19 @@ budget (~80 KB for CHANGELOG.md, ~40 KB for ROADMAP.md).
 | [`CHANGELOG-0.85-to-0.87.md`](CHANGELOG-0.85-to-0.87.md) | v0.85.0 – v0.87.1 |
 | [`CHANGELOG-0.88-to-0.88.md`](CHANGELOG-0.88-to-0.88.md) | v0.88.0 – v0.88.1 |
 | [`CHANGELOG-0.89-to-0.89.md`](CHANGELOG-0.89-to-0.89.md) | v0.89.0 – v0.89.5 |
+| [`CHANGELOG-0.90-to-0.91.md`](CHANGELOG-0.90-to-0.91.md) | v0.90.0 – v0.91.2 |
 
-Current releases (**v0.90.0 and newer**) are in the root
+Current releases (**v0.92.0 and newer**) are in the root
 [`CHANGELOG.md`](../../CHANGELOG.md).
 
+> **2026-11-08, the 0.93.0 cut**: 0.90 and 0.91 archived (four entries), root
+> 79,233 → **56,005 B**. Reconciled: 23,228 B out of the root, 23,206 B into the
+> archive, the 22-byte difference being the `---` separator this file replaces
+> with its own header. Split **to a floor**: headroom went from 2,687 B — one
+> entry from breaching — to 25,915 B. Done by hand again; the script was not
+> run, so its two known defects (this table's broken `sed`, the duplicated
+> "Older releases" section) were neither triggered nor fixed and still stand.
+>
 > **2026-11-07, the 0.92.6 cut**: 0.89 archived (six entries, 25,206 B), taking
 > the root from 81,024 B to 55,818 B. The split now runs **down to a floor**
 > rather than just under the ceiling, so it buys several cuts of headroom
