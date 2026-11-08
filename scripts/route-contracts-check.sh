@@ -53,6 +53,22 @@ if [ ! -f "$CONTRACTS_MD" ]; then
   exit 2
 fi
 
+# RFC 168 patch-method-gap cycle: the HTTP methods a route registration
+# can use, as one constant every site below reads, rather than the
+# literal `(get|post|put|delete)`/`(GET|POST|PUT|DELETE)`/`!= "POST" &&
+# != "PUT" && != "DELETE"` this file had copied **nine** separate times
+# (the dispatching handoff found and named six; sweeping for every
+# shape of the same vocabulary -- lowercase regex, uppercase regex, and
+# a chained `!=` -- found three more it did not). All nine existed
+# because the vocabulary was never shared in the first place -- `patch`
+# was added to Worker routing with `.patch_async(` and every one of
+# these nine copies independently failed to notice, so two live PATCH
+# routes were invisible to every check in this file that starts from a
+# method keyword. Adding the next method this project registers with
+# needs exactly one edit, here (`ROUTE_METHODS`, and its derived
+# `ROUTE_METHODS_UPPER`/`ROUTE_METHODS_MUTATING_UPPER` below).
+ROUTE_METHODS='get|post|put|delete|patch'
+
 # RFC 159 cycle 3 (§4.4): every extractor below that scans lib.rs for a
 # registration or a `routes::` call reads THIS, not the raw file --
 # "a line whose first non-whitespace is `//` is not a registration" made
@@ -69,22 +85,24 @@ fi
 LIB_RS_LIVE=$(grep -v '^[[:space:]]*//' "$LIB_RS")
 
 # ── extract registered routes from lib.rs ────────────────────────────
-# Pattern: .(get|post|put|delete)_async("/path/...",
+# Pattern: .(get|post|put|delete|patch)_async("/path/...",
 # We normalise to uppercase METHOD + PATH, strip trailing spaces.
 
 registered=$(
   printf '%s\n' "$LIB_RS_LIVE" |
-  grep -E '\.(get|post|put|delete)_async\s*\("' |
-  sed -E 's/.*\.(get|post|put|delete)_async\s*\("([^"]+)".*/\U\1\E \2/' |
+  grep -E "\\.(${ROUTE_METHODS})_async\\s*\\(\"" |
+  sed -E "s/.*\\.(${ROUTE_METHODS})_async\\s*\\(\"([^\"]+)\".*/\\U\\1\\E \\2/" |
   sort -u
 )
 
 # ── extract documented routes from contracts table ────────────────────
 # Pattern: | GET | /path | ... (markdown table rows in any section)
 
+ROUTE_METHODS_UPPER=$(tr '[:lower:]' '[:upper:]' <<< "$ROUTE_METHODS")
+
 documented=$(
-  grep -E '^\|\s*(GET|POST|PUT|DELETE)\s+\|' "$CONTRACTS_MD" |
-  sed -E 's/^\|\s*(GET|POST|PUT|DELETE)\s+\|\s*`([^`]+)`.*/\1 \2/' |
+  grep -E "^\\|\\s*(${ROUTE_METHODS_UPPER})\\s+\\|" "$CONTRACTS_MD" |
+  sed -E "s/^\\|\\s*(${ROUTE_METHODS_UPPER})\\s+\\|\\s*\`([^\`]+)\`.*/\\1 \\2/" |
   sort -u
 )
 
@@ -130,8 +148,9 @@ fi
 # exactly the failure mode a "✅ All 0 routes documented" empty-input pass
 # once had (RFC 125 T5).
 bad_rendering=$(
-  awk -F'|' '
-    /^\|[[:space:]]*(GET|POST|PUT|DELETE)[[:space:]]*\|/ {
+  awk -F'|' -v methods="$ROUTE_METHODS_UPPER" '
+    BEGIN { re_row = "^\\|[[:space:]]*(" methods ")[[:space:]]*\\|" }
+    $0 ~ re_row {
       method = $2; gsub(/^[ \t]+|[ \t]+$/, "", method)
       path   = $3; gsub(/^[ \t]+`|`[ \t]*$/, "", path)
       rendering = $7; gsub(/^[ \t]+|[ \t]+$/, "", rendering)
@@ -367,13 +386,13 @@ fn_body_has_shell() {
 # lib.rs. Flattens the router chain so a registration whose closure body
 # spans multiple lines (the common case) is still one record.
 route_handlers=$(
-  awk '
-    BEGIN { chunk=""; method=""; path=""; started=0 }
-    /\.(get|post|put|delete)_async[[:space:]]*\(/ {
+  awk -v methods="$ROUTE_METHODS" '
+    BEGIN { chunk=""; method=""; path=""; started=0; re_start = "\\.(" methods ")_async[[:space:]]*\\(" }
+    $0 ~ re_start {
       if (started) print method "\t" path "\t" chunk
       started=1
       chunk=$0
-      if (match($0, /\.(get|post|put|delete)_async/)) {
+      if (match($0, ("\\.(" methods ")_async"))) {
         m = substr($0, RSTART+1, RLENGTH-1); gsub(/_async/, "", m); method = toupper(m)
       }
       if (match($0, /"[^"]+"/)) path = substr($0, RSTART+1, RLENGTH-2)
@@ -390,8 +409,9 @@ route_handlers=$(
 
 # server-declared (method, path) pairs from route-contracts.md.
 server_routes=$(
-  awk -F'|' '
-    /^\|[[:space:]]*(GET|POST|PUT|DELETE)[[:space:]]*\|/ {
+  awk -F'|' -v methods="$ROUTE_METHODS_UPPER" '
+    BEGIN { re_row = "^\\|[[:space:]]*(" methods ")[[:space:]]*\\|" }
+    $0 ~ re_row {
       method = $2; gsub(/^[ \t]+|[ \t]+$/, "", method)
       path   = $3; gsub(/^[ \t]+`|`[ \t]*$/, "", path)
       rendering = $7; gsub(/^[ \t]+|[ \t]+$/, "", rendering)
@@ -1485,7 +1505,7 @@ DELETE /api/v1/role_assignments/:id"
 # -- same `routes::[A-Za-z0-9_:]+\(` pattern it always matched on, same
 # shared `LIB_RS_LIVE`, now searched across the window from the matching
 # registration line up to (not including) the next `.{get,post,put,
-# delete}_async(` line, instead of requiring both on one line.
+# delete,patch}_async(` line, instead of requiring both on one line.
 #
 # RFC 152 half D (2026-11-03): the registration-line match used to be
 # `index($0, ".${method}_async(")` -- a literal substring, no space
@@ -1510,8 +1530,8 @@ e6_qualified_handler_for() {
   # survive. Built as a literal awk string instead, where `\\` is
   # awk's own string escape for one backslash, so the backslash reaches
   # the regex engine intact.
-  awk -v method="$method" -v n2="\"${path}\"" '
-    BEGIN { collecting = 0; re1 = "\\." method "_async[ ]*\\(" }
+  awk -v method="$method" -v n2="\"${path}\"" -v methods="$ROUTE_METHODS" '
+    BEGIN { collecting = 0; re1 = "\\." method "_async[ ]*\\("; re_next = "\\.(" methods ")_async[ ]*\\(" }
     function emit() {
       if (match($0, /routes::[A-Za-z0-9_:]+\(/)) {
         s = substr($0, RSTART, RLENGTH)
@@ -1523,7 +1543,7 @@ e6_qualified_handler_for() {
     }
     {
       if (collecting) {
-        if ($0 ~ /\.(get|post|put|delete)_async[ ]*\(/) { exit }
+        if ($0 ~ re_next) { exit }
         if (emit()) exit
         next
       }
@@ -1767,10 +1787,13 @@ N/A (SameSite=Strict)
 N/A (no ambient credential, no state change)
 N/A (no ambient credential)"
 
-e6_rows=$(awk -F'|' '
+ROUTE_METHODS_MUTATING_UPPER=$(sed -E 's/^GET\|?//' <<< "$ROUTE_METHODS_UPPER")
+
+e6_rows=$(awk -F'|' -v mutating="$ROUTE_METHODS_MUTATING_UPPER" '
+  BEGIN { re_mutating = "^(" mutating ")$" }
   /^\|/ {
     method = $2; gsub(/^[ \t]+|[ \t]+$/, "", method)
-    if (method != "POST" && method != "PUT" && method != "DELETE") next
+    if (method !~ re_mutating) next
     path = $3; gsub(/^[ \t]+|[ \t]+$/, "", path); gsub(/`/, "", path)
     csrf = $9; gsub(/^[ \t]+|[ \t]+$/, "", csrf)
     print method "\t" path "\t" csrf

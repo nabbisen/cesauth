@@ -241,10 +241,12 @@ because the routes *are* registered; E5 cannot see them because a form
 | POST | `/api/v1/tenants` | System admin (bearer) | `tenant_created` (+ `user_tenant_assigned` when the owner's home tenant was the default, RFC 158) | JSON | n/a | n/a | N/A (bearer) |
 | GET | `/api/v1/tenants` | System admin (bearer) | none | JSON | n/a | n/a | N/A (bearer) |
 | GET | `/api/v1/tenants/:tid` | System admin (bearer) | none | JSON | n/a | n/a | N/A (bearer) |
+| PATCH | `/api/v1/tenants/:tid` | System admin (bearer) | `tenant_updated` | JSON | n/a | n/a | N/A (bearer) |
 | POST | `/api/v1/tenants/:tid/status` | System admin (bearer) | `tenant_status_changed` | JSON | n/a | n/a | N/A (bearer) |
 | POST | `/api/v1/tenants/:tid/organizations` | System admin (bearer) | `organization_created` | JSON | n/a | n/a | N/A (bearer) |
 | GET | `/api/v1/tenants/:tid/organizations` | System admin (bearer) | none | JSON | n/a | n/a | N/A (bearer) |
 | GET | `/api/v1/tenants/:tid/organizations/:oid` | System admin (bearer) | none | JSON | n/a | n/a | N/A (bearer) |
+| PATCH | `/api/v1/tenants/:tid/organizations/:oid` | System admin (bearer) | `organization_updated` | JSON | n/a | n/a | N/A (bearer) |
 | POST | `/api/v1/tenants/:tid/organizations/:oid/status` | System admin (bearer) | `organization_status_changed` | JSON | n/a | n/a | N/A (bearer) |
 | POST | `/api/v1/tenants/:tid/groups` | System admin (bearer) | `group_created` | JSON | n/a | n/a | N/A (bearer) |
 | GET | `/api/v1/tenants/:tid/groups` | System admin (bearer) | none | JSON | n/a | n/a | N/A (bearer) |
