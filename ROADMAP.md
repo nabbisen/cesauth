@@ -667,6 +667,13 @@ stage, the `/admin/tenancy/*` half of RFC 161's condition, and RFCs 110a, 112,
      it).
   Category D (recorded, no RFC): broad Verus, Flux-as-default,
   UI typestate, policy-engine migration — per strategy §12.
+  **Verus became locally available 2026-11-09** (`0.2026.07.27.31579f0`,
+  owner-installed, upgrade intended). **It unblocks nothing on record**:
+  Verus is Category D by strategy §12, and RFC 124 — the only
+  formal-methods RFC — is a **Kani + TLA+** pilot that names Verus as
+  out of scope (*"No Verus, no Flux, no whole-module proofs"*). Moving
+  Verus out of Category D is a strategy decision and the owner's.
+  Recorded so availability is not later mistaken for a cleared blocker.
 
 - ✅ **v0.67.0 — RFC 105 + 106 (UI/UX finishing — design tokens + Security Center i18n).**
   RFC 105: admin / tenant_admin / tenancy_console frame design-token unification —
