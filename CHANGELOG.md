@@ -59,6 +59,156 @@ section Step 3 says to archive, is 3.3%.
 
 ---
 
+## [0.94.0] - 2026-11-09
+
+**Minor** — RFC 181's default. **The last unbuilt check of RFC 168 now exists**,
+and building it found **two live API routes that no gate could see**. No wire
+format, schema, cookie or permission slug changed; two routes gained
+documentation they should always have had.
+
+### Added — the level backstop, and a route-surface census on every run (RFC 168 §3.2)
+
+`scripts/drift-scan.sh` gained the last of RFC 168's checks, accepted
+2026-10-31 and unbuilt for eight releases. **Correcting this project's own
+earlier record: it was one unbuilt check, not three** — §3's item 1
+(reconciliation) shipped with RFC 164 in 0.91.2, and item 3 is a requirement on
+the other two rather than a check of its own.
+
+**RFC 181 changed what it is for.** Minor is now the default, so a patch is an
+*argued exception*, and the backstop is the mechanical half of validating that
+claim — the claim that was wrong six times in seven across `0.92.x`. Four
+shapes, derived from `[workspace.package] version` against the highest existing
+tag rather than asserted:
+
+| | |
+|---|---|
+| **minor** | prints, passes — nothing to validate |
+| **patch claim** | asserts, versus the previous tag, that the registered route set, the migration count and `rust-version` are **unchanged** |
+| **not a release commit** | version equals the latest tag; prints, passes |
+| **anything else** | a major bump or a version below the latest tag: **reports and fails**, rather than guessing |
+
+**§3.2's own text says a patch must not "add" a route. It must be add *or*
+remove**: `0.92.3` was cut as a patch and **removed** two live URLs, which no
+addition-only test sees — the single concrete miss that prompted RFC 181. The
+regression is part of the check's evidence: pointed at `0.92.2` → `0.92.3` it
+reports `2 removed` and fails.
+
+**It computes and reports on every run and fails only on a contradicted patch
+claim.** That is deliberate: patch claims are now rare, and a check that only
+executes on an exception rots between exceptions — this project's single most
+repeated defect.
+
+**And a census, every run, at every level**:
+
+```
+ℹ️   route surface vs 0.93.0: 194 pairs -- 0 added, 0 removed
+```
+
+Keyed on **method+path** (194 pairs), not path (150) — otherwise a removed
+method on a surviving path is invisible. No gate had ever told a cut what it did
+to the route surface.
+
+### Fixed — two live routes that no gate could see (nine sites, not six)
+
+Building the census surfaced a **192 vs 194** disagreement between the two
+scripts. It was not two definitions. **`route-contracts-check.sh` matched
+`(get|post|put|delete)_async` and never `patch`**, while
+`crates/backend/src/lib.rs` registers:
+
+```
+101 .get_async   87 .post_async   7 .delete_async   2 .patch_async   1 .put_async
+```
+
+So **`PATCH /api/v1/tenants/:tid` and
+`PATCH /api/v1/tenants/:tid/organizations/:oid` were live, registered and
+undocumented** — and the gate whose entire job is *"every registered route is
+documented"* could not match them. Its `✅ All 192 routes are documented` was
+true only of the 192 it could see.
+
+**Not a race like RFC 182 — a matcher-vocabulary gap**, and it existed in
+**nine** places, not the six the dispatching handoff named. The three the
+architect's own search missed:
+
+- the **documented**-route extraction and two census filters, written
+  `(GET|POST|PUT|DELETE)` **uppercase** against the markdown table — the search
+  looked only for the lowercase `_async` shape;
+- E6's mutating-row filter, written
+  **`method != "POST" && method != "PUT" && method != "DELETE"`** — a `!=`
+  chain, which **no regex-pattern search can find.**
+
+All nine now read one shared `ROUTE_METHODS` constant and its two derived forms,
+so the next method this project adds is one edit.
+
+**Two consequences were inferred from the code and then refuted by
+measurement**, rather than left as plausible: the E4 chunk builder really did
+fold `.patch_async` lines onto the preceding route's chunk, and an `awk`
+terminator really did over-run past them — but **all 194 registered pairs run
+through the old and new resolver diff to zero differences**, and E4's census is
+byte-identical, because its figures come from scanning `pub async fn`
+definitions rather than lib.rs, and both affected rows are `Rendering: n/a`.
+
+### Changed — `E6_BEARER_LEGACY_EXEMPT` grows from 18 to 20, and the finding it tracks grows with it
+
+With `patch` in the vocabulary, E6 immediately reported both new routes as not
+backing their `N/A (bearer)` claim, and the gate failed. **It was left failing
+and reported rather than quieted.**
+
+This is **not a new defect.** Both handlers open with
+`require(AdminAction::ManageTenancy, …)`, and `api_v1::auth::require` resolves
+through `admin_auth::resolve_or_respond` — header **or** the
+`__Host-cesauth_admin` cookie — which is character-for-character the condition
+the 18 existing entries are listed for. Their documentation rows claim
+`N/A (bearer)` exactly as their `POST` and `DELETE` siblings do, and only two
+distinct CSRF cell values exist across all 31 `api_v1` rows, so **no more
+accurate cell was available**: the rows are right and the control is wrong.
+
+They were **invisible, not newly broken**, so both join the list, dated, with
+that reasoning at the call site. **The finding is not retired** — RFC 152 half C
+owns the fix, which now covers **twenty** routes rather than eighteen, and the
+list's staleness check still fails on any entry that stops matching.
+
+`E6` now reads **`94 = 85 claims (65 resolved, 0 unresolved, 20 exempted) + 9
+declared + 0 unclassified`**, and **both scripts now agree on 194**.
+
+### Known gaps
+
+- **Twenty `api_v1` routes claim `N/A (bearer)` and resolve through a
+  cookie-accepting path.** RFC 152 half C's finding, now complete rather than
+  eighteen-twentieths visible. Not exploitable on its own — the claim is about
+  which resolver backs the row, not about a missing control — and it is tracked,
+  dated and staleness-checked.
+- **The route-surface census reads `lib.rs` only.** A route registered anywhere
+  else would be invisible to it, exactly as `PATCH` was to the other script.
+- **`trunk` cannot be installed on this machine**, so the frontend static asset
+  and the browser suite remain unverifiable locally; only CI's
+  `Trunk release build` exercises them, and the `317,718 B` asset figure has
+  still never been independently confirmed.
+- **`ROADMAP.md` is ~187 KB against RFC 028's 40,960 B budget**, with
+  `## Planned (0.x)` at 93% of the file while `## Shipped` — the section RFC 028
+  Step 3 says to archive — is 3%.
+- **Eleven of the book's eighty pages remain absent from `SUMMARY.md`.** Carried
+  from 0.89.5.
+
+### Bundle
+
+Measured after the version bump, gzip **at its default level** (not `-9`):
+
+| file | raw B | gzip B | sha256 (first 16) |
+|---|---|---|---|
+| `…-index_bg.wasm` | 2,436,797 | 879,482 | `72ddadcbcaef5919` |
+| `shim.js` | 61,887 | 10,700 | `486dad37486fd16c` |
+| **Worker total** | | **890,182** | |
+
+**−144 B from `0.93.0`'s 890,326.** Nothing this cycle changed reaches the
+Worker — the release touched a shell script, a markdown table and
+`route-contracts.md` — so the delta is the version string's own compression
+effect, and **no further attribution is claimed for it.** `wrangler deploy
+--dry-run` requires `crates/frontend/dist` to exist; an **empty** one was
+created to measure, sound here only because `LEPTOS_JS` and `LEPTOS_WASM` are
+hardcoded consts (`leptos_shell.rs:85-86`).
+
+---
+
 ## [0.93.0] - 2026-11-08
 
 **Minor.** Three things: **RFC 181 inverts how release levels are decided**,
