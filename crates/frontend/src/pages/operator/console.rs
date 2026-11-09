@@ -64,21 +64,6 @@ pub fn ConsoleOperations() -> impl IntoView {
     }
 }
 
-// ─── Audit (/admin/console/audit) ───────────────────────────────────────────
-
-/// 監査ログブラウザ (`/admin/console/audit`)
-#[component]
-pub fn ConsoleAudit() -> impl IntoView {
-    view! {
-        <main lang="ja">
-            <h1>"監査ログ"</h1>
-            <p><a href="/admin/console">"← コンソール"</a></p>
-            <p>"検索・表示機能は未実装です(RFC 161)。本番環境でのログ照会には"
-               <code>"wrangler d1 execute --remote"</code>" を使用してください。"</p>
-        </main>
-    }
-}
-
 // ─── Tokens (/admin/console/tokens) ─────────────────────────────────────────
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

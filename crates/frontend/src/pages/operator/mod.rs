@@ -6,6 +6,7 @@
 //!
 //! 移行: v0.79.7 で完了。
 
+pub mod audit;
 pub mod clients;
 pub mod console;
 pub mod tenancy;

@@ -156,12 +156,19 @@ pub enum EventKind {
     AdminClientDeleted,
     // Admin console (v0.3.0)
     AdminLoginFailed,
-    /// **RFC 154.** Intentionally unemitted: a decision not to audit, not a
-    /// gap. Every *mutating* admin-console action already has its own
-    /// specific event (`AdminClientUpdated`, `AdminThresholdUpdated`, etc.);
-    /// a page-view event for the console's read-only pages would be a
-    /// high-volume row that records navigation, not an action, and nothing
-    /// downstream consumes "an admin looked at a page" as a signal.
+    /// **RFC 131 §0 slice 1 (2026-11-09) reverses RFC 154's own
+    /// classification of this variant as "intentionally unemitted... a
+    /// decision not to audit, not a gap."** RFC 154 argued a page-view
+    /// event for the console's read-only pages would be high-volume
+    /// navigation noise nothing downstream consumes. RFC 161 §6.3 later
+    /// found the opposite: `shell()` once gated this with an audit write
+    /// before `580eeba` dropped it, so its absence is a regression in a
+    /// control that existed, not a design this project chose fresh —
+    /// and "who viewed the highest-privilege console page" is exactly
+    /// the kind of signal RFC 045's finding class says a missing record
+    /// hides. Emitted by `routes::admin::console::audit::page` only —
+    /// once per shell navigation, not once per `.json` filter/pager
+    /// re-fetch of the same view.
     AdminConsoleViewed,
     AdminBucketSafetyVerified,
     AdminBucketSafetyChanged,

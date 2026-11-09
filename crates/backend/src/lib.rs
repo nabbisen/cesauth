@@ -288,6 +288,7 @@ pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
         .get_async ("/admin/console/safety",                   |req, ctx| async move { routes::admin::console::safety::page(req, ctx).await })
         .post_async("/admin/console/safety/:bucket/verify",    |req, ctx| async move { routes::admin::console::safety::verify(req, ctx).await })
         .get_async ("/admin/console/audit",                    |req, ctx| async move { routes::admin::console::audit::page(req, ctx).await })
+        .get_async ("/admin/console/audit.json",               |req, ctx| async move { routes::admin::console::audit::page_json(req, ctx).await })
         .post_async("/admin/console/audit/export",             |req, ctx| async move { routes::admin::console::audit_export::export(req, ctx).await })
         .get_async ("/admin/console/audit/chain",              |req, ctx| async move { routes::admin::console::audit_chain::page(req, ctx).await })
         .post_async("/admin/console/audit/chain/verify",       |req, ctx| async move { routes::admin::console::audit_chain::verify_now(req, ctx).await })
