@@ -175,6 +175,36 @@ predicted version number** — `after RFC 179`, `after the next cut`, `NEXT`, th
 form most rows already use. A version number is assigned **at the cut**, from
 what actually shipped. The four hard-numbered rows are re-keyed accordingly.
 
+### 7.1 Correction, 2026-11-09: that ruling was over-broad, and the architect hid behind it twice
+
+**The ruling above says "never". It should say "beyond the next cut".** The owner
+asked twice whether the upcoming release was scoped, and both times the
+architect answered that the *number* should not be scoped — a procedural answer
+to a scheduling question, using this RFC's own ruling as the reason not to do
+the work. The owner's correction: *"To make schedule and manage release cycles
+is your role. Mine is to review them and authorize."*
+
+**The distinction §7 missed.** What goes stale is a row for a release **two or
+more cuts out**, because something unplanned can ship first — that is the real
+`0.93.0` failure this section was written about. **The immediately next cut is
+not in that category**: what is dispatched and in flight is known, and if
+nothing else is in flight there is nothing that can overtake it. Refusing to
+name it buys no accuracy and costs the owner the thing he reviews.
+
+**Amended ruling, in two parts:**
+
+1. **The next cut is scoped by number, as a named row**, carrying: its contents,
+   its level and whether that level is earned or defaulted, what is **explicitly
+   excluded** from it, the gate deltas it should produce, and its known risks.
+   It is the architect's standing obligation to keep that row current, not
+   something to produce when asked.
+2. **Everything beyond the next cut stays keyed to sequence** — `after <RFC>`,
+   `NEXT` — because that is where a predicted number genuinely goes stale.
+
+A named next-cut row is **provisional until the tag exists**: if something
+overtakes it, the row is renumbered, which is a two-character edit and exactly
+the cost §7 was trying to avoid paying in bulk across four far-future rows.
+
 This is the architect's miss, not the owner's question: the rule was written and
 applied without checking what else in the repository depended on minors being
 rare.
