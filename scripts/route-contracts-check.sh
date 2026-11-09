@@ -1468,6 +1468,23 @@ e6_bearer_alt_check() {
 # stops matching (because the route was fixed, renamed, or removed)
 # is caught by the same "scanned-but-never-matched" discipline as
 # NAMED_NON_HANDLERS's own stale-entry check below, not silently kept.
+#
+# Two entries added 2026-11-09, at the cut that taught this script to see
+# `PATCH`: `PATCH /api/v1/tenants/:tid` and
+# `PATCH /api/v1/tenants/:tid/organizations/:oid`. They are NOT a new
+# defect. Both handlers (`api_v1::tenants::update`,
+# `api_v1::organizations::update`) open with
+# `require(AdminAction::ManageTenancy, ...)`, and `api_v1::auth::require`
+# resolves through `admin_auth::resolve_or_respond` -- header OR the
+# `__Host-cesauth_admin` cookie -- which is character-for-character the
+# condition the 18 entries above are listed for, and their
+# `route-contracts.md` rows claim `N/A (bearer)` exactly as their POST and
+# DELETE siblings do. They were invisible to this check until the method
+# vocabulary was fixed, not newly broken: the implementer found the
+# violation, left it failing, and reported it rather than quieting it, per
+# the dispatching handoff. Adding them here COMPLETES a census that was
+# blind, and does not retire the finding -- RFC 152 half C owns the fix for
+# all twenty, and these two shrink with the rest.
 E6_BEARER_LEGACY_EXEMPT="POST /admin/users
 DELETE /admin/sessions/:id
 POST /api/v1/tenants
@@ -1485,7 +1502,9 @@ DELETE /api/v1/tenants/:tid/memberships/:uid
 DELETE /api/v1/organizations/:oid/memberships/:uid
 DELETE /api/v1/groups/:gid
 DELETE /api/v1/groups/:gid/memberships/:uid
-DELETE /api/v1/role_assignments/:id"
+DELETE /api/v1/role_assignments/:id
+PATCH /api/v1/tenants/:tid
+PATCH /api/v1/tenants/:tid/organizations/:oid"
 
 # Echoes the `routes::a::b::fn` call inside the `.{method}_async("$2", ...)`
 # registration for method $1 (lowercase). Half B's version of this
