@@ -1,6 +1,12 @@
 # RFC 183 — Verus narrow pilot: one proof obligation on the TOTP truncation
 
-**Status.** **Proposed 2026-11-09.** The owner installed Verus locally
+**Status.** **Accepted 2026-11-09** — the owner's reply was *"RFC 183 is
+accepted."* **Handoff deliberately HELD until `0.95.0` is tagged**: slice 1 is
+with the dev team now, and this RFC's code (a `verification/` directory and a
+drift check in `drift-scan.sh`) landing on `main` first would put work into
+`0.95.0` that the scope the owner reviewed does not describe — the same hold
+RFC 180 took until `0.92.7` existed. Proposed 2026-11-09. The owner installed
+Verus locally
 (`0.2026.07.27.31579f0`) and, told that moving it out of Category D was a
 strategy decision, replied *"Agreed with your suggestion"* — the suggestion
 being **a narrow pilot with a named target and RFC 124's time-boxed
