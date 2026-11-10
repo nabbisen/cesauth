@@ -36,11 +36,28 @@ use crate::{audit as waudit, audit::EventKind, csrf, require_system_admin};
 /// layer down. `export_audit`'s own `.take(max_rows)` still bounds the
 /// exported file to `max_rows` rows regardless of the `+1` — it only
 /// changes whether the true/false that follows is correct.
+///
+/// RFC 131 §0 slice 2, round 3 §2. Two more edge cases in the same
+/// shape, both low severity and both closed because they're the third
+/// instance of it in this one function:
+///
+/// - A floor of 1. An explicit `limit=0` (no caller sends this today)
+///   previously resolved to `Some(0)` — an empty export whose
+///   `truncated = 0 > max_rows` is `false`, an empty file claiming
+///   completeness, the same lie this function exists to stop telling.
+/// - `u32::try_from(..).unwrap_or(u32::MAX)` rather than `as`. The `as`
+///   cast wraps on overflow instead of saturating: `max_rows =
+///   u32::MAX` made `saturating_add(1)` (correct on the `usize` side)
+///   wrap back down to `0` on the cast to `u32`, and `max_rows = 2^32`
+///   wrapped to `1` — an absurd admin-configured ceiling silently
+///   becoming the one value (`0` or `1`) this function must never
+///   return.
 fn resolve_export_limit(form_limit: Option<&str>, max_rows: usize) -> Option<u32> {
-    form_limit
+    let limit = form_limit
         .and_then(|s| s.parse::<u32>().ok())
         .map(|n| n.min(10_000))
-        .or_else(|| Some(max_rows.saturating_add(1) as u32))
+        .unwrap_or_else(|| u32::try_from(max_rows.saturating_add(1)).unwrap_or(u32::MAX));
+    Some(limit.max(1))
 }
 
 pub async fn export<D>(mut req: Request, ctx: RouteContext<D>) -> worker::Result<Response> {
@@ -196,5 +213,15 @@ mod tests {
         let rows_available_over_the_cap = 50;
         let returned = rows_available_over_the_cap.min(query_limit);
         assert!(returned > max_rows, "over the cap must report truncated");
+    }
+
+    #[test]
+    fn explicit_zero_limit_floors_to_one() {
+        assert_eq!(resolve_export_limit(Some("0"), 10_000), Some(1));
+    }
+
+    #[test]
+    fn an_absurd_max_rows_does_not_wrap_to_zero_or_one() {
+        assert_eq!(resolve_export_limit(None, u32::MAX as usize), Some(u32::MAX));
     }
 }

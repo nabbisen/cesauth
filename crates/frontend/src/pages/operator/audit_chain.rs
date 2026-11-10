@@ -20,6 +20,17 @@
 //! so the browser reloads the component and it refetches on mount. That
 //! is the intended flow per this slice's handoff, not a defect to work
 //! around with a client-side re-fetch after the POST.
+//!
+//! **RFC 131 §0 slice 2, round 3: localized into the register every
+//! other `pages/operator/` component uses.** The reference template
+//! (`admin/audit_chain.rs`) is hardcoded English, and round 1 copied
+//! that register verbatim instead of translating it — the slice's own
+//! handoff explicitly forbade this ("do not translate the template's
+//! English into the component; write the Japanese the stub already
+//! uses as its register"), and both the implementation and the review
+//! missed it until round 3. `chain_hash` and `seq` stay in English
+//! deliberately — identifiers from the data/API, not prose, the same
+//! carve-out slice 1 made for `Export CSV`/`Export JSONL`.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -71,22 +82,24 @@ fn error_message(error: &str) -> &'static str {
 
 /// Mirrors `admin/audit_chain.rs::render_summary`'s badge match exactly —
 /// five states, in the same order. `(valid, first_mismatch, checkpoint_match)`.
+/// Japanese since round 3 (§1); `seq` stays as the identifier, not
+/// translated.
 fn badge_html(valid: Option<bool>, first_mismatch: Option<i64>, checkpoint_match: Option<bool>) -> String {
     match (valid, first_mismatch, checkpoint_match) {
         (None, _, _) => {
-            r##"<span class="badge">no runs yet</span>"##.to_owned()
+            r##"<span class="badge">検証未実行</span>"##.to_owned()
         }
         (Some(true), _, _) => {
-            r##"<span class="badge badge--success">✓ chain valid</span>"##.to_owned()
+            r##"<span class="badge badge--success">✓ チェーン正常</span>"##.to_owned()
         }
         (Some(false), Some(seq), _) => {
-            format!(r##"<span class="badge badge--danger">⛔ tamper detected at seq={seq}</span>"##)
+            format!(r##"<span class="badge badge--danger">⛔ seq={seq} で改ざんを検出</span>"##)
         }
         (Some(false), None, Some(false)) => {
-            r##"<span class="badge badge--danger">⛔ chain history mismatch (checkpoint disagrees with current head)</span>"##.to_owned()
+            r##"<span class="badge badge--danger">⛔ チェーン履歴の不一致（チェックポイントが現在の先頭と一致しません）</span>"##.to_owned()
         }
         (Some(false), None, _) => {
-            r##"<span class="badge badge--danger">⛔ verification failed</span>"##.to_owned()
+            r##"<span class="badge badge--danger">⛔ 検証失敗</span>"##.to_owned()
         }
     }
 }
@@ -103,13 +116,14 @@ fn badge_html(valid: Option<bool>, first_mismatch: Option<i64>, checkpoint_match
 /// store that is not cold at all, the old label said it was. Telling the
 /// two apart needs `checkpoint_seq` alongside `checkpoint_match`, which
 /// the old function had available in its caller but never consulted for
-/// this label.
+/// this label. Japanese since round 3 (§1); `seq` stays as the
+/// identifier, not translated.
 fn consistency_badge(checkpoint_seq: Option<i64>, checkpoint_match: Option<bool>) -> &'static str {
     match (checkpoint_seq, checkpoint_match) {
-        (_, Some(true))  => r##"<span class="badge badge--success">✓ matches current row at seq</span>"##,
-        (_, Some(false)) => r##"<span class="badge badge--danger">✗ does NOT match current row at seq (rewrite)</span>"##,
-        (None, None)      => r##"<span class="badge">cold start — no cross-check</span>"##,
-        (Some(_), None)   => r##"<span class="badge">not applicable — last run was a full re-walk, which always skips the cross-check</span>"##,
+        (_, Some(true))  => r##"<span class="badge badge--success">✓ seq の現在行と一致</span>"##,
+        (_, Some(false)) => r##"<span class="badge badge--danger">✗ seq の現在行と不一致（書き換えの疑い）</span>"##,
+        (None, None)      => r##"<span class="badge">初回実行 — 照合なし</span>"##,
+        (Some(_), None)   => r##"<span class="badge">対象外 — 直前の実行は全体再検証のため照合をスキップしています</span>"##,
     }
 }
 
@@ -178,49 +192,49 @@ pub fn ConsoleAuditChain() -> impl IntoView {
 
                     view! {
                         // ── summary ──────────────────────────────────────
-                        <section aria-label="Verification status">
-                            <h2>"Status"</h2>
+                        <section aria-label="検証状況">
+                            <h2>"検証状況"</h2>
                             <table>
-                                <tr><th scope="row">"Status"</th><td inner_html=badge></td></tr>
-                                <tr><th scope="row">"Current chain length"</th><td><code>{current_chain_length}</code>" rows (genesis + events)"</td></tr>
-                                <tr><th scope="row">"Last verification"</th><td>{last_run_at}</td></tr>
-                                <tr><th scope="row">"Rows walked in last run"</th><td><code>{rows_walked}</code></td></tr>
+                                <tr><th scope="row">"ステータス"</th><td inner_html=badge></td></tr>
+                                <tr><th scope="row">"現在のチェーン長"</th><td><code>{current_chain_length}</code>" 行（起点行を含む）"</td></tr>
+                                <tr><th scope="row">"最終検証日時"</th><td>{last_run_at}</td></tr>
+                                <tr><th scope="row">"直前の検証で走査した行数"</th><td><code>{rows_walked}</code></td></tr>
                             </table>
                             <Show when=move || growth_hint>
-                                <p class="note">"⏳ New audit events have been appended since the last verification. The next daily cron at 04:00 UTC will walk them; you can also trigger a full re-verify below."</p>
+                                <p class="note">"⏳ 前回の検証後に新しい監査イベントが追加されています。次回のcron（毎日04:00 UTC）がこれらを検証しますが、下の操作でいつでも全体を再検証できます。"</p>
                             </Show>
                         </section>
 
                         // ── checkpoint ───────────────────────────────────
                         {if checkpoint_seq.is_none() {
                             view! {
-                                <section aria-label="Checkpoint">
-                                    <h2>"Checkpoint"</h2>
-                                    <div class="empty">"No successful verification has completed yet. The first daily cron run will produce a checkpoint."</div>
+                                <section aria-label="チェックポイント">
+                                    <h2>"チェックポイント"</h2>
+                                    <div class="empty">"検証が一度も正常に完了していません。最初の日次cron実行でチェックポイントが作成されます。"</div>
                                 </section>
                             }.into_any()
                         } else {
                             view! {
-                                <section aria-label="Checkpoint">
-                                    <h2>"Checkpoint"</h2>
-                                    <p class="note">"The verifier records the chain head after each successful run. The next run cross-checks the recorded chain_hash against the current row at the same seq — a mismatch indicates wholesale-rewrite tampering."</p>
+                                <section aria-label="チェックポイント">
+                                    <h2>"チェックポイント"</h2>
+                                    <p class="note">"検証処理は、正常に完了するたびにチェーンの先頭位置を記録します。次回の実行では、記録された chain_hash を同じ seq の現在の行と照合します — 一致しない場合はチェーン全体の書き換えによる改ざんを示します。"</p>
                                     <table>
-                                        <tr><th scope="row">"Last verified seq"</th><td><code>{checkpoint_seq.unwrap_or_default()}</code></td></tr>
-                                        <tr><th scope="row">"Recorded chain_hash"</th><td><code>{checkpoint_hash.clone()}</code></td></tr>
-                                        <tr><th scope="row">"Recorded at"</th><td>{checkpoint_at.clone()}</td></tr>
-                                        <tr><th scope="row">"Consistency"</th><td inner_html=consistency></td></tr>
+                                        <tr><th scope="row">"最終検証済み seq"</th><td><code>{checkpoint_seq.unwrap_or_default()}</code></td></tr>
+                                        <tr><th scope="row">"記録された chain_hash"</th><td><code>{checkpoint_hash.clone()}</code></td></tr>
+                                        <tr><th scope="row">"記録日時"</th><td>{checkpoint_at.clone()}</td></tr>
+                                        <tr><th scope="row">"整合性"</th><td inner_html=consistency></td></tr>
                                     </table>
                                 </section>
                             }.into_any()
                         }}
 
                         // ── verify-now form ──────────────────────────────
-                        <section aria-label="Trigger verification">
-                            <h2>"Trigger verification"</h2>
-                            <p class="note">"Run a full re-verification right now. Walks the chain from the genesis row, ignoring the existing checkpoint. On success the checkpoint is replaced with the new head. Use after a deploy or whenever you want immediate confirmation."</p>
+                        <section aria-label="検証を実行">
+                            <h2>"検証を実行"</h2>
+                            <p class="note">"今すぐ全体を再検証します。既存のチェックポイントを無視して起点行からチェーン全体を走査します。成功すると、チェックポイントは新しい先頭位置に置き換わります。デプロイ後や、即時に状態を確認したいときに使用してください。"</p>
                             <form method="post" action="/admin/console/audit/chain/verify">
                                 <input type="hidden" name="csrf" value=csrf />
-                                <button type="submit" class="warning">"Verify chain now (full re-walk)"</button>
+                                <button type="submit" class="warning">"今すぐ検証する（全体再検証）"</button>
                             </form>
                         </section>
                     }
@@ -262,38 +276,38 @@ mod tests {
 
     #[test]
     fn no_runs_yet_badge() {
-        assert!(badge_html(None, None, None).contains("no runs yet"));
+        assert!(badge_html(None, None, None).contains("検証未実行"));
     }
 
     #[test]
     fn valid_chain_badge() {
-        assert!(badge_html(Some(true), None, Some(true)).contains("✓ chain valid"));
+        assert!(badge_html(Some(true), None, Some(true)).contains("✓ チェーン正常"));
     }
 
     #[test]
     fn tamper_at_seq_badge() {
         let html = badge_html(Some(false), Some(17), None);
-        assert!(html.contains("tamper detected at seq=17"));
+        assert!(html.contains("seq=17 で改ざんを検出"));
         assert!(html.contains("badge--danger"));
     }
 
     #[test]
     fn chain_history_mismatch_badge() {
         let html = badge_html(Some(false), None, Some(false));
-        assert!(html.contains("chain history mismatch"));
+        assert!(html.contains("チェーン履歴の不一致"));
         assert!(html.contains("badge--danger"));
     }
 
     #[test]
     fn verification_failed_badge() {
         let html = badge_html(Some(false), None, None);
-        assert!(html.contains("verification failed"));
+        assert!(html.contains("検証失敗"));
         assert!(html.contains("badge--danger"));
     }
 
     #[test]
     fn consistency_cold_start_no_checkpoint_at_all() {
-        assert!(consistency_badge(None, None).contains("cold start"));
+        assert!(consistency_badge(None, None).contains("初回実行"));
     }
 
     #[test]
@@ -302,20 +316,20 @@ mod tests {
         // a checkpoint exists (268 on the live instance tested), but the
         // last run was a full re-walk, which always skips the cross-check.
         let html = consistency_badge(Some(268), None);
-        assert!(html.contains("not applicable"));
-        assert!(!html.contains("cold start"),
-            "a checkpoint that exists must never be described as cold");
+        assert!(html.contains("対象外"));
+        assert!(!html.contains("初回実行"),
+            "a checkpoint that exists must never be described as a cold start");
     }
 
     #[test]
     fn consistency_match() {
-        assert!(consistency_badge(Some(42), Some(true)).contains("matches current row at seq"));
+        assert!(consistency_badge(Some(42), Some(true)).contains("seq の現在行と一致"));
     }
 
     #[test]
     fn consistency_mismatch() {
         let html = consistency_badge(Some(42), Some(false));
-        assert!(html.contains("does NOT match"));
+        assert!(html.contains("不一致"));
         assert!(html.contains("badge--danger"));
     }
 }
