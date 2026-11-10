@@ -19,10 +19,18 @@ budget (~80 KB for CHANGELOG.md, ~40 KB for ROADMAP.md).
 | [`CHANGELOG-0.88-to-0.88.md`](CHANGELOG-0.88-to-0.88.md) | v0.88.0 – v0.88.1 |
 | [`CHANGELOG-0.89-to-0.89.md`](CHANGELOG-0.89-to-0.89.md) | v0.89.0 – v0.89.5 |
 | [`CHANGELOG-0.90-to-0.91.md`](CHANGELOG-0.90-to-0.91.md) | v0.90.0 – v0.91.2 |
+| [`CHANGELOG-0.92-to-0.92.md`](CHANGELOG-0.92-to-0.92.md) | v0.92.0 – v0.92.7 |
 
-Current releases (**v0.92.0 and newer**) are in the root
+Current releases (**v0.93.0 and newer**) are in the root
 [`CHANGELOG.md`](../../CHANGELOG.md).
 
+> **2026-11-10, the 0.95.0 cut**: 0.92 archived (eight entries), root
+> 74,482 → **30,034 B**. Reconciled: 44,448 B out, 44,443 B in, the 5-byte
+> difference being the `---` separator this file replaces with its own header;
+> the moved entries diff byte-identical against tag `0.94.0`. Headroom went from
+> 7,438 B — one entry from breaching — to 51,886 B. Done by hand again; the
+> script was not run, so its two known defects still stand.
+>
 > **2026-11-08, the 0.93.0 cut**: 0.90 and 0.91 archived (four entries), root
 > 79,233 → **56,005 B**. Reconciled: 23,228 B out of the root, 23,206 B into the
 > archive, the 22-byte difference being the `---` separator this file replaces
