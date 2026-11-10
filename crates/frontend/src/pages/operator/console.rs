@@ -145,13 +145,3 @@ pub fn ConsoleConfig() -> impl IntoView {
     </main> }
 }
 
-/// 監査チェーン (`/admin/console/audit/chain`)
-#[component]
-pub fn ConsoleAuditChain() -> impl IntoView {
-    view! { <main lang="ja">
-        <h1>"監査チェーン検証"</h1>
-        <p><a href="/admin/console/audit">"← 監査ログ"</a></p>
-        <p>"検証状況の表示画面は未実装です(RFC 161)。日次cronによる検証と"
-           "再検証自体は動作していますが、このページから実行する手段はありません。"</p>
-    </main> }
-}

@@ -96,7 +96,8 @@ code-review responsibility.
 | POST | `/admin/console/audit/export` | System admin | `audit_exported` | CSV/JSONL download | n/a | CSRF | required |
 | GET | `/admin/console/audit` | System admin | `admin_console_viewed` | `ConsoleAudit` (RFC 131 §0 slice 1) | client | n/a | N/A (GET) |
 | GET | `/admin/console/audit.json` | System admin | none | JSON (`entries`, `csrf_token`, `older_cursor`, `has_newer`) | n/a | n/a | N/A (GET) |
-| GET | `/admin/console/audit/chain` | System admin | none | placeholder — RFC 161 | client | n/a | N/A (GET) |
+| GET | `/admin/console/audit/chain` | System admin | `admin_console_viewed` | `ConsoleAuditChain` (RFC 131 §0 slice 2) | client | n/a | N/A (GET) |
+| GET | `/admin/console/audit/chain.json` | System admin | none | JSON (`AuditChainStatus` fields + `csrf_token`) | n/a | n/a | N/A (GET) |
 | POST | `/admin/console/audit/chain/verify` | System admin | `audit_chain_verified` | redirect | client | n/a | required |
 | GET | `/admin/console/config` | System admin | none | placeholder — RFC 161 | client | n/a | N/A (GET) |
 | POST | `/admin/console/config/:bucket/preview` | System admin (bearer) | none | config preview | client | n/a | N/A (bearer) |

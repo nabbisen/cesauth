@@ -25,7 +25,18 @@
 //! gap in the 545-line specification, invisible until this slice
 //! actually drives the form (see the implementation report's parity
 //! table, "export form" row).
+//!
+//! **The export form also carries `since`/`until` as of RFC 131 §0
+//! slice 2 deliverable B.** It previously sent only `csrf`/`subject`/
+//! `event` — the operator's date-range filter (`from_v`/`to_v`) was
+//! silently dropped on export, so "narrow to a period, then export"
+//! downloaded everything with nothing on screen saying so. Converted
+//! via [`parse_rfc3339_to_unix`] (the same RFC 3339 → Unix-seconds
+//! helper the `.json` query already uses) rather than a second parser;
+//! an empty or unparseable input omits the field, matching how an
+//! unset filter is already treated.
 
+use cesauth_core::admin::service::audit_pagination::parse_rfc3339_to_unix;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
@@ -241,12 +252,19 @@ pub fn ConsoleAudit() -> impl IntoView {
                 </form>
             </section>
 
-            // ── render_export_form (csrf field added — see module doc) ──
+            // ── render_export_form (csrf field added — see module doc;
+            // since/until added RFC 131 §0 slice 2 deliverable B — the
+            // operator's date-range filter was silently dropped on export,
+            // see this slice's handoff §4) ──
             <section aria-label="export">
                 <form method="post" action="/admin/console/audit/export" style="margin-top:8px">
                     <input type="hidden" name="csrf"    prop:value=move || csrf.get() />
                     <input type="hidden" name="subject" prop:value=move || actor_v.get() />
                     <input type="hidden" name="event"   prop:value=move || event_v.get() />
+                    {move || parse_rfc3339_to_unix(&from_v.get())
+                        .map(|secs| view! { <input type="hidden" name="since" value=secs.to_string() /> })}
+                    {move || parse_rfc3339_to_unix(&to_v.get())
+                        .map(|secs| view! { <input type="hidden" name="until" value=secs.to_string() /> })}
                     <button type="submit" name="format" value="csv" class="secondary" style="margin-right:4px">"Export CSV"</button>
                     <button type="submit" name="format" value="jsonl" class="secondary">"Export JSONL"</button>
                 </form>

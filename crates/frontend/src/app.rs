@@ -29,9 +29,10 @@ use leptos_router::path;
 use crate::pages::login::Login;
 use crate::pages::operator::{
     audit::ConsoleAudit,
+    audit_chain::ConsoleAuditChain,
     clients::ConsoleClients,
     console::{
-        ConsoleAlerts, ConsoleAuditChain, ConsoleConfig,
+        ConsoleAlerts, ConsoleConfig,
         ConsoleCost, ConsoleOperations, ConsoleOverview, ConsoleSafety,
         ConsoleTokens,
     },

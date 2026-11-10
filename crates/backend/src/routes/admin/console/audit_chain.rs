@@ -1,16 +1,35 @@
 //! `GET /admin/console/audit/chain` — chain verification status.
+//! `GET /admin/console/audit/chain.json` — the status as JSON
+//! (RFC 131 §0 slice 2).
 //! `POST /admin/console/audit/chain/verify` — operator-triggered
 //! full re-verification.
 //!
 //! Phase 2 of ADR-010 (v0.33.0). The cron at 04:00 UTC runs an
 //! incremental verification daily and writes the outcome to the
-//! KV checkpoint store. **`GET /admin/console/audit/chain` serves the
-//! Leptos shell only** — rendering that outcome and a button for an
-//! immediate full re-walk is the part this doc used to claim and the
-//! handler doesn't do. See RFC 161.
+//! KV checkpoint store. `read_status` assembles that outcome;
+//! until this slice it had no caller at all — `cargo check`
+//! printed `function read_status is never used` since `580eeba`.
+//!
+//! Both GET handlers call [`auth::ensure_role_allows`] with
+//! `AdminAction::ViewConsole` (RFC 161 §6.3's first dropped
+//! control — same reasoning as slice 1's `audit.rs`). `page`
+//! additionally writes `EventKind::AdminConsoleViewed`
+//! (RFC 161 §6.3's second control, best-effort — a failed write
+//! must not block the render). `page_json` does not write one:
+//! `page` already recorded this navigation, and a re-fetch from
+//! the component (e.g. after verify-now's redirect) is continued
+//! use of an already-recorded view, same discipline as slice 1's
+//! `audit.json`.
+//!
+//! **Deliberately not routed through `operator_json_api::shell`**,
+//! for both GET handlers — that helper discards the resolved
+//! principal and has no role-check/audit-write hook; widening its
+//! contract would land on the other five not-yet-built consoles
+//! too, unreviewed. See slice 1's `audit.rs:16-21`, whose reasoning
+//! carries unchanged.
 //!
 //! `POST /admin/console/audit/chain/verify` is real and unaffected by
-//! the above, and the rest of this comment describes it:
+//! the above:
 //!
 //! The chain status is read-only so any role with
 //! `AdminAction::ViewConsole` is allowed. The verify-now button
@@ -29,11 +48,53 @@ use cesauth_core::ports::audit_chain::AuditChainCheckpointStore;
 use time::OffsetDateTime;
 use worker::{Request, Response, Result, RouteContext};
 
+use crate::audit::{self, EventKind};
 use crate::csrf;
+use crate::require_system_admin;
 use crate::routes::admin::auth;
 
+// -------------------------------------------------------------------------
+// GET /admin/console/audit/chain
+// -------------------------------------------------------------------------
+
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::shell(&req, &ctx, "監査チェーン — cesauth").await
+    require_system_admin!(req, ctx, principal, AdminAction::ViewConsole);
+
+    // Best-effort, same discipline as slice 1's `audit.rs::page` —
+    // the operator already has the data; losing the record of
+    // having looked is the lesser failure.
+    audit::write_owned(&ctx.env, EventKind::AdminConsoleViewed, Some(principal.id.clone()), None, None)
+        .await.ok();
+
+    crate::routes::leptos_shell::leptos_html_shell(&req, &ctx.env, "監査チェーン — cesauth", "ja").await
+}
+
+// -------------------------------------------------------------------------
+// GET /admin/console/audit/chain.json
+// -------------------------------------------------------------------------
+
+pub async fn page_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    require_system_admin!(req, ctx, _principal, AdminAction::ViewConsole);
+
+    let status = match read_status(&ctx.env).await {
+        Ok(s)  => s,
+        Err(e) => return Response::error(format!("chain status read failed: {e}"), 500),
+    };
+
+    let csrf_token = csrf::mint()
+        .map_err(|_| worker::Error::RustError("csrf rng failed".into()))?;
+    let set_cookie = csrf::set_cookie_header(&csrf_token);
+
+    let mut payload = serde_json::to_value(&status)
+        .map_err(|e| worker::Error::RustError(format!("chain status serialize failed: {e}")))?;
+    if let serde_json::Value::Object(ref mut map) = payload {
+        map.insert("csrf_token".to_owned(), serde_json::Value::String(csrf_token));
+    }
+
+    let mut resp = Response::from_json(&payload)?;
+    resp.headers_mut().append("set-cookie", &set_cookie).ok();
+    resp.headers_mut().set("cache-control", "no-store").ok();
+    Ok(resp)
 }
 
 pub async fn verify_now<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
