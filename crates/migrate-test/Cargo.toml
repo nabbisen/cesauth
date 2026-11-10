@@ -15,5 +15,5 @@ authors                 = { workspace = true }
 # an in-memory database and assert structural invariants.
 
 [dev-dependencies]
-rusqlite                    = { version = "0.32", features = ["bundled"] }
+rusqlite                    = { version = "0.41", features = ["bundled"] }
 cesauth-core                = { workspace = true }
