@@ -151,3 +151,70 @@ four questions are answered in writing with a verdict.
 **Abandoned, with that recorded as the result, if** the toolchain cannot build
 the harness within the box, or if the drift check cannot be made to work.
 Neither is a reason to extend the box.
+
+---
+
+## 8. Outcome — ran 2026-11-10, reviewed the same day, `e124e4b`
+
+**Verdict: reject Verus for this class. The comparative half is open, not
+settled.** Report `.git-exclude/review-request/183-verus-pilot-report.md`,
+review `.git-exclude/reviewed/183-verus-pilot-review.md`.
+
+**Both obligations hold.** `verus verification/totp_truncation.rs` →
+`3 verified, 0 errors` in 0.42s, at the owner's own installed
+`0.2026.07.27.31579f0`. Neither obligation follows from the masks alone;
+both needed an explicit `by (bit_vector)` lemma, placed outside the marked
+region so the region stays byte-identical to production. No production code
+was touched — `git diff 0.95.0..HEAD -- crates/core/src/totp.rs` is **0
+bytes** — and the copy's marked region matches `totp.rs:253-257` with both
+sides at sha256 `27017c36256f6371…`.
+
+**The proof is not vacuous, and this is what proves it, not the count.**
+Weakening `& 0x7f` to `& 0xff` fails the **postcondition**; weakening
+`& 0x0f` to `& 0x1f` fails a **bounds precondition** — one failure per
+obligation, reproduced independently at review. **The `3 verified, 0 errors`
+string does not itself witness obligation 2**: deleting the `ensures`
+entirely still prints `3 verified, 0 errors`, because the count is *(number
+of `by (bit_vector)` blocks) + 1 for the function body*. Anyone citing this
+pilot should cite the weakening pair, not the 3.
+
+**§4's drift check was built, and fails loud in both directions.** Forced
+one-character divergence → **exit 1** naming both files and printing both
+blocks; production's anchor line broken → **exit 2** reporting `found 0`
+rather than skipping silently. It is text-only by construction: it cannot
+know whether anyone re-ran Verus, and it compares only the marked region, so
+it would not notice a deleted postcondition. Both limits are recorded on the
+ROADMAP row that will decide the file's fate.
+
+**§5 Q2's cost, corrected at review** — the report's own figures understated
+it by about a quarter, in the direction that *strengthens* the rejection:
+
+| | reported | actual |
+|---|---|---|
+| `verification/totp_truncation.rs` | 42 lines | **51** (44 non-blank, 20 non-blank-non-comment) |
+| `verification/README.md` | 45 lines | **52** |
+| `scripts/drift-scan.sh` added | ~65 lines | **85** |
+| total | 152 | **188** |
+
+Engaged time ~2–2.5 hours against a five-working-day box.
+
+**§5 Q3 is unanswered, not answered negatively.**
+`cargo install --locked kani-verifier` was refused outright by the
+implementer's sandbox policy; they reasoned in its place, per §7's own
+fallback, and flagged honestly that a focused Kani harness would plausibly
+still want the truncation step factored into its own `#[cfg(kani)]`-gated fn
+to keep the model checker out of `hmac::Hmac<Sha1>`, with **no measured
+number** for the state-space cost. So **"prefer Kani" is this RFC's
+hypothesis, not its finding.** A ROADMAP row carries the trial, and either
+outcome deletes `verification/` and this RFC's drift check.
+
+**§5 Q4 remains open by design.** Whether `verus!{}`/`vstd` compile for
+`wasm32-unknown-unknown` under the *normal* toolchain was not tested, because
+testing it would have required the production change §2 forbids. It is moot
+if Kani wins and decisive if in-production annotation is ever revisited.
+
+**What this pilot actually bought**: not a bug — none was expected, and §3
+said so — but the knowledge that Verus's cost for this class is a permanent
+out-of-workspace copy plus 85 lines of gate that can only police the *text*,
+with the re-run left to a human because §6 keeps Verus out of CI. That is
+what the rejection rests on.

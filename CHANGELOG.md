@@ -16,7 +16,9 @@ changes will always be called out here.
 
 **v0.92.x and earlier are in [`docs/changelog-archive/`](docs/changelog-archive/README.md)**,
 split by minor range and never edited after creation. This file holds
-**0.90–0.92 at 69 KB** of the ~80 KB budget RFC 028 set.
+**0.93 and later**, 34 KB of the ~80 KB budget RFC 028 set — the 0.92 split at
+the 0.95.0 cut took it from 74,482 B to 30,034 B, split to a floor rather than to
+just under the ceiling.
 
 **Correction, 2026-11-07, at the 0.92.6 cut: there was never a conflict between
 two rules, and the previous note here was wrong twice.** It said RFC 028's
@@ -56,6 +58,97 @@ derived "~5 minor versions" figure, and build the gate Step 5 already specified.
 **That note's §4 also records that RFC 028's diagnosis of `ROADMAP.md` is
 wrong** — `## Planned (0.x)` is 93.3% of that file while `## Shipped`, the
 section Step 3 says to archive, is 3.3%.
+
+---
+
+## [0.96.0] - 2026-11-10
+
+**Minor by default, not earned** (RFC 181) — nothing newly possible, no route,
+type, knob or caller obligation moved. A patch argument was available for both
+halves and deliberately not made. **This release ships an assurance experiment
+whose verdict is "do not adopt", and a security advisory cleared the day it
+appeared.**
+
+### Added — RFC 183's Verus pilot, and its rejection
+
+**A machine-checked proof of RFC 4226's dynamic truncation, over all 2^160
+HMAC-SHA1 outputs** — `verification/totp_truncation.rs`, verified with
+[Verus](https://github.com/verus-lang/verus) `0.2026.07.27.31579f0`:
+
+- **`offset + 3 < 20`** — no index in `compute_code` can panic. It sits on the
+  live MFA path (`routes/me/totp/verify.rs:343`), once per skew step, so a panic
+  there would 500 every TOTP verification.
+- **`bin_code < 2^31`** — the invariant `& 0x7f` exists to establish, stated
+  nowhere in the code until now.
+
+Neither follows from the masks alone; both needed an explicit
+`by (bit_vector)` lemma. **No production code changed** — `crates/core/src/totp.rs`
+has zero bytes of diff since `0.95.0`. The three RFC 6238 vector tests that
+previously covered this could only ever sample the space.
+
+**`scripts/drift-scan.sh` gained one check**, because the proof is about a
+*copy*: Verus needs its own `verus!{}` toolchain and cannot see through
+`hmac`/`sha1`. A copy that drifts verifies fiction, and this project already
+paid for that class once (RFC 171 Q1's dead match arm with a green suite). The
+check byte-compares the copy's marked region against `totp.rs:253-257` and fails
+loud both ways: **exit 1** on divergence, printing both blocks; **exit 2** if
+production's anchor line moves at all, rather than skipping silently.
+
+**The verdict is reject, and a clean rejection was always a legitimate outcome
+of this pilot** — RFC 183 §5 said so before it ran. Verus worked, in 0.42
+seconds. What it costs is a permanent out-of-workspace copy plus 85 lines of
+gate that can police only the *text*, with the re-verification left to a human
+because Verus is deliberately **not** in CI. The assurance decays the moment
+someone edits the copy and does not re-run it, and nothing can notice.
+
+**Two things recorded so nobody cites this pilot wrongly:**
+
+- **`3 verified, 0 errors` does not witness the second obligation.** Delete the
+  `ensures` and it still prints `3 verified, 0 errors`, because the count is
+  *(number of `by (bit_vector)` blocks) + 1 for the function body*. What
+  witnesses both obligations is weakening the masks: `& 0x7f` → `& 0xff` fails
+  the postcondition, `& 0x0f` → `& 0x1f` fails a bounds precondition.
+- **"Prefer Kani" is a hypothesis, not a finding.** `kani-verifier`'s install
+  was refused outright by the implementer's sandbox policy, so nothing
+  comparative was measured. The trial is scheduled, and either outcome deletes
+  `verification/` and this check.
+
+### Security — RUSTSEC-2026-0459 cleared the day it reddened CI
+
+`rusqlite 0.32 → 0.41.1`, lifting `libsqlite3-sys 0.30.1 → 0.39.1` past the
+advisory's `>= 0.39.0` requirement — C SQLite **CVE-2026-119375**.
+
+**No cut caused it**: the advisory database updated `2026-11-09 17:13 UTC`,
+which is why `0.94.0` was 14/14 green and `0.95.0`'s `audit` and `Cargo deny`
+jobs went red against identical dependency code.
+
+**Not exploitable here, for two independent reasons, each verified rather than
+assumed** — and fixed properly anyway rather than exempted:
+
+1. `cargo tree -i libsqlite3-sys` reaches it **only** through `rusqlite` under
+   `cesauth-migrate-test`'s **dev-dependencies**. It is in no Worker build and
+   no shipped artifact; the Worker uses D1, not a linked SQLite.
+2. The advisory's own precondition is *"a process that opens a database file,
+   with its `-wal`, that a less trusted party could have written"*, and
+   `migrate-test` runs the migration chain against an **in-memory** database.
+   No file, no WAL.
+
+`cargo update -p libsqlite3-sys` alone could not reach the fixed version (0.32
+pins 0.30.x) and `rusqlite 0.37` only reached 0.35.0, so the bump had to go to
+0.41.1.
+
+**The artifact does move, by 67 B** (893,600 → 893,667), because
+`thiserror 2.0.18 → 2.0.21` rides along as a workspace dependency. Disclosed
+rather than described as artifact-neutral.
+
+### Gates
+
+Host tests **1,687 / 0 / 4** across 12 `test result:` lines, unchanged.
+`migration_chain` **35**. `route-contracts-check.sh` exit 0, **all 195 routes
+documented**, every sub-figure identical to `0.95.0`. Route-surface census
+**195 pairs — 0 added, 0 removed**, which is the independent confirmation that
+`verification/` reaches no build: it carries no `Cargo.toml`, so unlike `fuzz/`
+it is not a package at all and needs no workspace `exclude`. mdbook **82 pages**.
 
 ---
 
