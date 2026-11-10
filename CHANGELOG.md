@@ -16,7 +16,7 @@ changes will always be called out here.
 
 **v0.92.x and earlier are in [`docs/changelog-archive/`](docs/changelog-archive/README.md)**,
 split by minor range and never edited after creation. This file holds
-**0.93 and later**, 34 KB of the ~80 KB budget RFC 028 set — the 0.92 split at
+**0.93 and later**, 40 KB of the ~80 KB budget RFC 028 set — the 0.92 split at
 the 0.95.0 cut took it from 74,482 B to 30,034 B, split to a floor rather than to
 just under the ceiling.
 
@@ -58,6 +58,111 @@ derived "~5 minor versions" figure, and build the gate Step 5 already specified.
 **That note's §4 also records that RFC 028's diagnosis of `ROADMAP.md` is
 wrong** — `## Planned (0.x)` is 93.3% of that file while `## Shipped`, the
 section Step 3 says to archive, is 3.3%.
+
+---
+
+## [0.97.0] - 2026-11-11
+
+**Minor, earned** — it adds `GET /admin/console/audit/chain.json`, a new route
+surface. **An operator can see whether the audit log's hash chain verifies, and
+trigger a re-verification, from the console.** And the audit export now gives
+them what they asked for: **it had been dropping the date range they set, and
+returning 50 rows out of 276 while recording that nothing was dropped.**
+
+### Added — chain status (RFC 131 §0 slice 2, the second of six)
+
+`GET /admin/console/audit/chain` served the Leptos shell and nothing else, with
+a CSR stub that said so honestly. Behind it, `read_status` — 30 lines of
+finished data assembly — had **no caller at all**, and `cargo check` had printed
+`function read_status is never used` on every build since `580eeba`.
+
+- **`GET /admin/console/audit/chain.json`** — the new route, calling that
+  function. `AuditChainStatus` already derived `Serialize`.
+- **A CSR component** replacing the stub: verification status, checkpoint, the
+  growth hint, and the verify-now form. All **five** status badges and all
+  **three** checkpoint-consistency states are pure functions, individually
+  host-tested — four of the five badges are how an operator learns the audit log
+  was tampered with.
+- **`POST /admin/console/audit/chain/verify` has a caller for the first time.**
+  The route has been live, CSRF-verified and role-checked for releases, and
+  **nothing in the workspace posted to it.** Exercised now against a genuinely
+  empty D1 (checkpoint created from nothing) and against a 268-row chain
+  (checkpoint moved 211 → 268, full re-walk inside the Worker's budget).
+- **RFC 161 §6.3's two controls restored** on the page handler, as slice 1 did:
+  the `ViewConsole` role check and the `AdminConsoleViewed` audit write.
+
+### Fixed — the audit export silently returned 50 rows and recorded that it had not
+
+Found by reading the implementation report's own evidence table, which called 50
+*"the export's own default row cap"*. **That cap is 10,000.**
+
+The chain: the handler read `limit` from the form; no export form has ever sent
+one; `AuditQuery`'s derived `Default` left it `None`; and
+`CloudflareAuditQuerySource::search` then applied its own `DEFAULT_LIMIT = 50`
+— a constant documented as *"default page size for the admin overview"*. Then
+`export_audit` computed `truncated = rows.len() > max_rows`, i.e. `50 > 10_000`,
+and so **set no truncation header and wrote `truncated=false` into the audit
+record**.
+
+**An operator exporting a 276-row log received 50 rows, in a file that looked
+complete, with an audit record asserting nothing was dropped.** True since
+v0.71.0 and unreachable until 0.95.0 rendered the first working export form.
+
+Fixed in the handler, so the ceiling lives in one place. The default is
+`max_rows + 1`, **not** `max_rows`: `export_audit` detects truncation by seeing
+one row past the ceiling, so capping the query at exactly the ceiling would have
+left `truncated` permanently false — the same lie one layer down. Now: 276 rows
+with `truncated=false`, and `AUDIT_EXPORT_MAX_ROWS=5` gives 5 rows with the
+header set and the record agreeing. **That truncation path had never run.**
+
+`limit=0` no longer resolves to an empty export, and the ceiling's `as u32` cast
+saturates instead of wrapping.
+
+### Fixed — the export dropped the date range the operator set
+
+The CSR export form sent `csrf`, `subject` and `event`; the handler reads
+`since` and `until`. So narrowing to a period, seeing that table and clicking
+**Export CSV** downloaded everything, with nothing on screen saying the period
+had been dropped — and the export's own audit record built its `filter=` string
+from the event alone, so the record did not show it either.
+
+Both fields are now sent, converted through the same `parse_rfc3339_to_unix`
+the `.json` query already uses, so the screen and the export compute identical
+bounds from identical input.
+
+**RFC 131 slice 1's parity table claimed this form carried "the same four hidden
+fields plus `csrf`".** It did not, and the claim was accepted at review.
+
+### Fixed — "cold start" was shown on a chain that was not cold
+
+After a verify-now, the checkpoint badge read *"cold start — no cross-check"* on
+a store with 268 rows and a fresh checkpoint. `checkpoint_consistent: None` has
+two causes — no checkpoint has ever existed, or one exists and the last run was
+a full re-walk, which `core::audit::verifier` skips the cross-check on **by
+design**. The verifier was right; the label conflated them. It now distinguishes
+them using `checkpoint_seq`, which was in the same payload all along.
+
+The server-rendered template has the identical bug and is not touched; this is a
+deliberate improvement over the specification, as slice 1's `csrf` field was.
+
+### Fixed — the chain-status screen was Japanese at the edges and English in the middle
+
+Surfaced by the implementer after the fact: **8 Japanese literals against 44
+multi-word English ones.** Japanese covered only the chrome — title, back-link,
+loading, errors — while every badge, table header, section heading and the
+verify-now copy was English, carried over from the server-rendered template. The
+screen is now in the same register as every other console page (**47** Japanese
+literals; no operator-facing English prose), with `chain_hash` and `seq` left in
+English as data identifiers.
+
+### Gates
+
+Host tests **1,710 / 0 / 4** across 12 `test result:` lines (**+23**).
+`route-contracts-check.sh` exit 0, **all 196 routes documented**, E4
+**218 = 194 (183+11) + 24 + 0**, E5 **19**, E3/GATE_42/NONCE/E6/E7 unchanged.
+Route-surface census **196 pairs — 1 added, 0 removed**, the pre-stated delta
+met exactly. `migration_chain` **35**. mdbook **82 pages**. **Backend dead-code
+warnings 8 → 7**: `read_status` has a caller at last.
 
 ---
 
