@@ -1197,4 +1197,89 @@ if [[ -n "$contrast_violations" ]]; then
     exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# RFC 183 — Verus narrow pilot: drift check between the proof copy and
+# production.
+#
+# `verification/totp_truncation.rs` is a COPY of `crates/core/src/totp.rs`'s
+# dynamic-truncation block, because Verus needs its own `verus!{}`-annotated
+# toolchain and cannot verify the real `compute_code` (it goes through
+# `hmac`/`sha1`, external crates Verus does not understand). RFC 183 §4's own
+# finding: a copy that drifts from production verifies fiction, the same
+# class of mistake RFC 171 Q1 already paid for once (a caller matching a
+# `PortError` the real adapter could never produce, with a green suite).
+#
+# Byte-comparison of the five extracted statements -- this does not need to
+# understand Rust, only that the two blocks of text are identical. No
+# production code change: the five lines in totp.rs are matched by their own
+# existing, unmodified content (`let offset = ...` through the `bin_code`
+# expression), not by a marker comment added to production. The copy DOES
+# carry `BEGIN`/`END` marker comments -- that file is not production code,
+# and the markers are what let this check find the block without also
+# matching the verus! lemmas or `fn main` around it.
+#
+# RFC 182's rule applies: every reader below is a file argument or a
+# here-string, never a pipe into `grep -q`/`head`/`awk '...exit'`.
+# ---------------------------------------------------------------------------
+
+VERUS_COPY="${REPO_ROOT}/verification/totp_truncation.rs"
+TOTP_RS="${REPO_ROOT}/crates/core/src/totp.rs"
+
+if [[ -f "$VERUS_COPY" ]]; then
+    if [[ ! -f "$TOTP_RS" ]]; then
+        echo "drift-scan: BROKEN -- ${VERUS_COPY} exists but ${TOTP_RS} does not;" >&2
+        echo "  the RFC 183 pilot's drift check has nothing to compare against." >&2
+        exit 2
+    fi
+
+    # The copy's own marked region -- exact text, including indentation,
+    # between (not including) its BEGIN/END marker-comment lines.
+    verus_block=$(awk '
+        /RFC 183 drift-check region: BEGIN/ { capturing = 1; next }
+        /RFC 183 drift-check region: END/   { capturing = 0 }
+        capturing { print }
+    ' "$VERUS_COPY")
+
+    # Production's own five lines, found by their own existing content --
+    # the `let offset = ...` line this block has always started with,
+    # plus the four lines of the `bin_code` expression that follow it.
+    # `grep -n` reads the file directly (a file argument, not a pipe); its
+    # output is captured whole via `mapfile`, never piped into a reader
+    # that could exit early (RFC 182) -- and an array length check catches
+    # "zero matches" and "more than one match" as the same kind of error,
+    # rather than a `head -1` silently picking the first of an ambiguous set.
+    mapfile -t offset_line_matches < <(grep -n '^    let offset = (result\[19\] & 0x0f) as usize;$' "$TOTP_RS")
+    if [[ "${#offset_line_matches[@]}" -ne 1 ]]; then
+        echo "❌  RFC 183 pilot drift check: expected exactly one line in" >&2
+        echo "    ${TOTP_RS} matching the truncation block's anchor, found" >&2
+        echo "    ${#offset_line_matches[@]} -- compute_code's offset/bin_code lines moved," >&2
+        echo "    were reworded, or were deleted. Re-point this check at wherever" >&2
+        echo "    the block now lives, or re-derive it from scratch." >&2
+        exit 2
+    fi
+    offset_line="${offset_line_matches[0]%%:*}"
+    totp_block=$(sed -n "${offset_line},$((offset_line + 4))p" "$TOTP_RS")
+
+    if [[ "$verus_block" == "$totp_block" ]]; then
+        echo "ℹ️   RFC 183 pilot: verification/totp_truncation.rs's marked region" \
+             "matches crates/core/src/totp.rs:${offset_line}-$((offset_line + 4))" \
+             "byte-for-byte -- the proof is about the code that actually runs"
+    else
+        echo "❌  RFC 183 pilot: verification/totp_truncation.rs has DRIFTED from" >&2
+        echo "    crates/core/src/totp.rs:${offset_line}-$((offset_line + 4)) -- the Verus" >&2
+        echo "    proof is no longer about the code that runs in production." >&2
+        echo "" >&2
+        echo "    verification/totp_truncation.rs's marked region:" >&2
+        printf '%s\n' "$verus_block" | while IFS= read -r line; do echo "      $line" >&2; done
+        echo "" >&2
+        echo "    crates/core/src/totp.rs:${offset_line}-$((offset_line + 4)):" >&2
+        printf '%s\n' "$totp_block" | while IFS= read -r line; do echo "      $line" >&2; done
+        echo "" >&2
+        echo "    Update verification/totp_truncation.rs's marked region to match" >&2
+        echo "    production exactly, then re-run Verus by hand -- a passing proof" >&2
+        echo "    about the OLD text is not evidence about the NEW text." >&2
+        exit 1
+    fi
+fi
+
 echo "drift-scan: clean — no stale phrases detected."
