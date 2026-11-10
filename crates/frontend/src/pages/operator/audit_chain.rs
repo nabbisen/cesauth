@@ -91,12 +91,25 @@ fn badge_html(valid: Option<bool>, first_mismatch: Option<i64>, checkpoint_match
     }
 }
 
-/// Mirrors `admin/audit_chain.rs::render_checkpoint`'s consistency match.
-fn consistency_badge(checkpoint_match: Option<bool>) -> &'static str {
-    match checkpoint_match {
-        Some(true)  => r##"<span class="badge badge--success">✓ matches current row at seq</span>"##,
-        Some(false) => r##"<span class="badge badge--danger">✗ does NOT match current row at seq (rewrite)</span>"##,
-        None        => r##"<span class="badge">cold start — no cross-check</span>"##,
+/// RFC 131 §0 slice 2 follow-up §2 — a deliberate improvement over
+/// `admin/audit_chain.rs::render_checkpoint`'s consistency match, which
+/// has the same bug: `last_run_checkpoint_match: None` has two distinct
+/// causes it conflated into one label. True cold start is no checkpoint
+/// has ever been recorded (`checkpoint_seq.is_none()`). But a full
+/// re-walk — which is all `verify_now` ever does — deliberately skips
+/// the cross-check even when a checkpoint already exists
+/// (`cesauth_core::audit::verifier`'s own comment on
+/// `checkpoint_consistent: None`), so after pressing "verify now" on a
+/// store that is not cold at all, the old label said it was. Telling the
+/// two apart needs `checkpoint_seq` alongside `checkpoint_match`, which
+/// the old function had available in its caller but never consulted for
+/// this label.
+fn consistency_badge(checkpoint_seq: Option<i64>, checkpoint_match: Option<bool>) -> &'static str {
+    match (checkpoint_seq, checkpoint_match) {
+        (_, Some(true))  => r##"<span class="badge badge--success">✓ matches current row at seq</span>"##,
+        (_, Some(false)) => r##"<span class="badge badge--danger">✗ does NOT match current row at seq (rewrite)</span>"##,
+        (None, None)      => r##"<span class="badge">cold start — no cross-check</span>"##,
+        (Some(_), None)   => r##"<span class="badge">not applicable — last run was a full re-walk, which always skips the cross-check</span>"##,
     }
 }
 
@@ -160,7 +173,7 @@ pub fn ConsoleAuditChain() -> impl IntoView {
                     let checkpoint_at     = s.checkpoint_at
                         .map(cesauth_core::util::format_unix_as_iso8601)
                         .unwrap_or_else(|| "—".to_owned());
-                    let consistency = consistency_badge(s.last_run_checkpoint_match);
+                    let consistency = consistency_badge(checkpoint_seq, s.last_run_checkpoint_match);
                     let csrf = s.csrf_token.clone();
 
                     view! {
@@ -279,18 +292,29 @@ mod tests {
     }
 
     #[test]
-    fn consistency_cold_start() {
-        assert!(consistency_badge(None).contains("cold start"));
+    fn consistency_cold_start_no_checkpoint_at_all() {
+        assert!(consistency_badge(None, None).contains("cold start"));
+    }
+
+    #[test]
+    fn consistency_not_applicable_after_a_full_rewalk_with_an_existing_checkpoint() {
+        // RFC 131 §0 slice 2 follow-up §2 — the defect this slice fixes:
+        // a checkpoint exists (268 on the live instance tested), but the
+        // last run was a full re-walk, which always skips the cross-check.
+        let html = consistency_badge(Some(268), None);
+        assert!(html.contains("not applicable"));
+        assert!(!html.contains("cold start"),
+            "a checkpoint that exists must never be described as cold");
     }
 
     #[test]
     fn consistency_match() {
-        assert!(consistency_badge(Some(true)).contains("matches current row at seq"));
+        assert!(consistency_badge(Some(42), Some(true)).contains("matches current row at seq"));
     }
 
     #[test]
     fn consistency_mismatch() {
-        let html = consistency_badge(Some(false));
+        let html = consistency_badge(Some(42), Some(false));
         assert!(html.contains("does NOT match"));
         assert!(html.contains("badge--danger"));
     }
