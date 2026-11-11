@@ -432,8 +432,10 @@ pub enum MessageKey {
     AuditViewerEventAny,
     /// **RFC 185 §5.3 screen 1.** The nav link from the audit viewer to
     /// the chain-verification status screen. `Locale::En` reuses the
-    /// old server template's own wording for this exact link
-    /// (`admin/audit.rs::render_nav`) rather than inventing new copy.
+    /// old server template's own wording for this exact link rather
+    /// than inventing new copy: `render_nav` in the 545-line
+    /// `crates/frontend/src/admin/audit.rs`, **deleted in the same cut**
+    /// — `git show 2ea2758:crates/frontend/src/admin/audit.rs`.
     AuditViewerChainLink,
 
     // ---- RFC 180 (R2b): dormant CSR component chrome imported from the

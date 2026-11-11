@@ -61,6 +61,84 @@ section Step 3 says to archive, is 3.3%.
 
 ---
 
+## [0.100.0] - 2026-11-11
+
+**Minor** — the audit viewer is **the first screen in this project whose language
+follows the request**. RFC 185 §5.3 screen 1, two rounds, both reviewed and
+accepted.
+
+### Added — locale negotiation, reaching a screen for the first time
+
+`GET /admin/console/audit` calls `resolve_locale` instead of passing a hardcoded
+`Locale::Ja`, and `mounted_locale()` — written, tested, and uncalled since it was
+added — **has its first caller**. An `Accept-Language: en` operator gets the
+screen in English, a `ja` operator in Japanese, and a request with no header
+falls through to the default.
+
+**Driven over real HTTP**, not inferred from a compile: a `wrangler dev --local`
+instance with migrations applied, three `curl -v` requests, all three `200 OK` —
+`en` → `<html lang="en">` and `Audit log — cesauth`; `ja` and header-absent →
+`<html lang="ja">` and `監査ログ — cesauth`.
+
+**Both `lang` attributes move together.** The screen also carried
+`<main lang="ja">`, and an element-level `lang` overrides the document for its
+whole subtree — so flipping only `<html lang>` would have served a document
+claiming English with every word still announced as Japanese, strictly worse
+than the truthful literal 0.99.0 preserved. There is no build-time signal for
+getting that wrong.
+
+### Changed — 24 literals onto the catalog, and three labels corrected
+
+All 24 of the screen's hardcoded Japanese literals now resolve through
+`lookup(MessageKey, Locale)`. **Eighteen of them reuse keys that already
+existed** — written in both locales for this exact screen, and still called by
+the server template it replaced.
+
+Three labels revert to that template's wording, each on its own evidence.
+`時刻` becomes `時刻 (UTC)`: a timestamp column with no unit, against RFC 111's
+own UTC presentation policy. `詳細` becomes `Reason` and `イベント` becomes
+`Event`, because the export CSV the operator downloads **from that same screen**
+writes `seq,timestamp,kind,subject,client,reason` — two columns had been renamed
+away from the file's own headers, in one commit, with no record. A fourth,
+`"Seq"` → `"seq"`, followed at review for the same reason.
+
+Five new keys, three of them deliberately **screen-neutral** — `FetchLoading`,
+`FetchFailed`, `FetchUnauthorized`. Those strings are already hardcoded in three
+to five operator screens, and scoping them to this one would have forced each
+later conversion to add the same sentence to the catalog's duplicate-text
+exception list under a new name. That list exists for concepts legitimately
+shared between surfaces, not to excuse duplication.
+
+### Removed — the 545-line template, once parity was measured
+
+`crates/frontend/src/admin/audit.rs` and its `pub use` are gone. The deletion was
+**held back a round**: the first parity measurement came out **17 of 18**, because
+one column header still bypassed the catalog. That bar was met rather than
+relaxed, and the second measurement reads 18 of 18.
+
+The deletion is evidenced, not asserted: host tests fall by exactly **12**, the
+deleted module's own test count. Had anything outside that file depended on
+`audit_page`, the build would have failed to compile rather than quietly passing.
+
+### Gates
+
+Host tests **1,711 / 0 / 4** across 12 `test result:` lines — **+1** for the new
+locale test, **−12** for the deleted module, net −11 from 0.99.0's 1,722.
+`route-contracts-check.sh` exit 0, **197 routes**, every figure unchanged: the
+deleted template was never route-registered. Route surface **197 pairs, 0 added,
+0 removed**. `drift-scan.sh` clean, 10 sections; the i18n ceiling scans **104**
+files, **15** hit, and `pages/operator/audit.rs` is pinned at **0**.
+`cargo check` warnings unchanged at 8 (frontend) and 1 (core).
+
+**Known limit of that ceiling, stated because the number reads stronger than it
+is**: the matcher sees Japanese in any literal, but English only where a literal
+is a standalone `view!` text child. A `0` therefore means "no Japanese, and no
+standalone English" — not "fully converted". This screen demonstrated it: the
+`"Seq"` header shared its line with its own tags and the gate read the file as
+clean while it was still there.
+
+---
+
 ## [0.99.0] - 2026-11-11
 
 **Minor** — it adds a new CI gate, which changes what a contributor must satisfy
