@@ -1,6 +1,17 @@
-//! 監査ログブラウザ (`/admin/console/audit`) — RFC 131 §0 slice 1.
+//! Audit log browser (`/admin/console/audit`) — RFC 131 §0 slice 1,
+//! converted to a negotiated locale by RFC 185 §5.3 screen 1.
 //!
-//! ADR-013 準拠: 日本語のみ。ロケールネゴシエーションなし。
+//! **This is the first screen in the project whose language follows the
+//! request.** `routes/admin/console/audit.rs::page` resolves `Locale`
+//! from `Accept-Language` and emits it as `<html lang>`; this component
+//! reads it back once, at mount, via [`crate::app::mounted_locale`] —
+//! there is no other channel a CSR component has to learn the locale
+//! the server negotiated (D5). `<main lang>` below follows the same
+//! value: an element-level `lang` left at a hardcoded `"ja"` would win
+//! over `<html lang>` for this component's entire subtree and silently
+//! defeat the whole conversion (RFC 185 §5.3 handoff, D4) — there is no
+//! build-time signal for that mistake, only a grep for the attribute
+//! itself finding nothing hardcoded (§9 assertion 2).
 //!
 //! Reproduces the pre-`580eeba` server-rendered viewer
 //! (`crates/frontend/src/admin/audit.rs`'s `audit_page`, 545 lines, no
@@ -37,9 +48,12 @@
 //! unset filter is already treated.
 
 use cesauth_core::admin::service::audit_pagination::parse_rfc3339_to_unix;
+use cesauth_core::i18n::{lookup, Locale, MessageKey};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
+
+use crate::app::mounted_locale;
 
 // ─── Data shapes ────────────────────────────────────────────────────────────
 
@@ -75,11 +89,11 @@ fn classify_status(status: u16) -> Result<(), String> {
     }
 }
 
-fn error_message(error: &str) -> &'static str {
+fn error_message(error: &str, locale: Locale) -> &'static str {
     if error == "unauthorized" {
-        "権限がありません。再度サインインしてください。"
+        lookup(MessageKey::FetchUnauthorized, locale)
     } else {
-        "読み込みに失敗しました。再読み込みしてください。"
+        lookup(MessageKey::FetchFailed, locale)
     }
 }
 
@@ -129,9 +143,14 @@ async fn fetch_audit(query: &str) -> Result<AuditResponse, String> {
 
 // ─── Top-level page component ──────────────────────────────────────────────
 
-/// 監査ログブラウザ (`/admin/console/audit`)
+/// Audit log browser (`/admin/console/audit`)
 #[component]
 pub fn ConsoleAudit() -> impl IntoView {
+    // RFC 185 §5.3 screen 1, D5: read once, at mount, not a reactive
+    // signal or context (RFC 180 §5 still bars a reactive locale
+    // context) — plain state passed down to every lookup() call below.
+    let locale = mounted_locale();
+
     let actor_v = RwSignal::new(String::new());
     let event_v = RwSignal::new(String::new());
     let from_v  = RwSignal::new(String::new());
@@ -187,27 +206,27 @@ pub fn ConsoleAudit() -> impl IntoView {
     };
 
     view! {
-        <main lang="ja" aria-label="監査ログ">
-            <h1>"監査ログ"</h1>
+        <main lang=locale.bcp47() aria-label=lookup(MessageKey::AuditViewerPageTitle, locale)>
+            <h1>{lookup(MessageKey::AuditViewerPageTitle, locale)}</h1>
 
             // ── render_nav ──────────────────────────────────────────────
             <p>
-                <a href="/admin/console">"← コンソール"</a>
+                <a href="/admin/console">{lookup(MessageKey::OperatorConsoleBackLink, locale)}</a>
                 " · "
-                <a href="/admin/console/audit/chain">"チェーン検証状況 →"</a>
+                <a href="/admin/console/audit/chain">{lookup(MessageKey::AuditViewerChainLink, locale)}</a>
             </p>
 
             {move || load_error.get().map(|e| view! {
-                <p role="alert">{error_message(&e)}</p>
+                <p role="alert">{error_message(&e, locale)}</p>
             })}
 
             // ── render_filter_form ──────────────────────────────────────
-            <section aria-label="絞り込み">
-                <h2>"絞り込み"</h2>
+            <section aria-label=lookup(MessageKey::AuditViewerSectionTitle, locale)>
+                <h2>{lookup(MessageKey::AuditViewerSectionTitle, locale)}</h2>
                 <form on:submit=on_filter_submit>
                     <table>
                         <tr>
-                            <th scope="row"><label for="audit-actor">"実行者"</label></th>
+                            <th scope="row"><label for="audit-actor">{lookup(MessageKey::AuditViewerActorLabel, locale)}</label></th>
                             <td>
                                 <input id="audit-actor" type="text" placeholder="user-id" style="width:100%"
                                     prop:value=move || actor_v.get()
@@ -215,9 +234,9 @@ pub fn ConsoleAudit() -> impl IntoView {
                             </td>
                         </tr>
                         <tr>
-                            <th scope="row"><label for="audit-event">"イベント種別"</label></th>
+                            <th scope="row"><label for="audit-event">{lookup(MessageKey::AuditViewerEventLabel, locale)}</label></th>
                             <td>
-                                <input id="audit-event" type="text" list="audit-event-kinds" placeholder="(すべて)" style="width:100%"
+                                <input id="audit-event" type="text" list="audit-event-kinds" placeholder=lookup(MessageKey::AuditViewerEventAny, locale) style="width:100%"
                                     prop:value=move || event_v.get()
                                     on:input=move |ev| event_v.set(event_target_value(&ev)) />
                                 <datalist id="audit-event-kinds">
@@ -231,14 +250,14 @@ pub fn ConsoleAudit() -> impl IntoView {
                             </td>
                         </tr>
                         <tr>
-                            <th scope="row">"期間 (UTC)"</th>
+                            <th scope="row">{lookup(MessageKey::AuditViewerPeriodLabel, locale)}</th>
                             <td>
-                                <label for="audit-from" class="sr-only">"開始"</label>
+                                <label for="audit-from" class="sr-only">{lookup(MessageKey::AuditViewerFromLabel, locale)}</label>
                                 <input id="audit-from" type="text" placeholder="1970-01-01T00:00:00Z" style="width:14em"
                                     prop:value=move || from_v.get()
                                     on:input=move |ev| from_v.set(event_target_value(&ev)) />
                                 " — "
-                                <label for="audit-to" class="sr-only">"終了"</label>
+                                <label for="audit-to" class="sr-only">{lookup(MessageKey::AuditViewerToLabel, locale)}</label>
                                 <input id="audit-to" type="text" placeholder="1970-01-01T00:00:00Z" style="width:14em"
                                     prop:value=move || to_v.get()
                                     on:input=move |ev| to_v.set(event_target_value(&ev)) />
@@ -246,7 +265,7 @@ pub fn ConsoleAudit() -> impl IntoView {
                         </tr>
                         <tr>
                             <th scope="row"></th>
-                            <td><button type="submit">"絞り込む"</button></td>
+                            <td><button type="submit">{lookup(MessageKey::AuditViewerSubmitButton, locale)}</button></td>
                         </tr>
                     </table>
                 </form>
@@ -265,31 +284,40 @@ pub fn ConsoleAudit() -> impl IntoView {
                         .map(|secs| view! { <input type="hidden" name="since" value=secs.to_string() /> })}
                     {move || parse_rfc3339_to_unix(&to_v.get())
                         .map(|secs| view! { <input type="hidden" name="until" value=secs.to_string() /> })}
+                    // "Export CSV"/"Export JSONL" stay English in both
+                    // locales deliberately — file-format names, not
+                    // natural-language UI (same carve-out as the old
+                    // server template's `render_export_form`).
                     <button type="submit" name="format" value="csv" class="secondary" style="margin-right:4px">"Export CSV"</button>
                     <button type="submit" name="format" value="jsonl" class="secondary">"Export JSONL"</button>
                 </form>
             </section>
 
             // ── render_schema_note ───────────────────────────────────────
-            <p class="note">"tenant_id 単位での絞り込みは現在のスキーマでは未提供 (RFC 109 §scope amendments)。"</p>
+            <p class="note">{lookup(MessageKey::AuditViewerNoteSchemaTenant, locale)}</p>
 
             // ── render_results ───────────────────────────────────────────
             <Show when=move || loading.get()>
-                <p aria-busy="true" aria-live="polite">"読み込み中…"</p>
+                <p aria-busy="true" aria-live="polite">{lookup(MessageKey::FetchLoading, locale)}</p>
             </Show>
             <Show when=move || !loading.get() && load_error.get().is_none()>
                 <Show
                     when=move || !entries.get().is_empty()
-                    fallback=|| view! { <section aria-label="Results"><div class="empty">"条件に合致するイベントはありません。"</div></section> }
+                    fallback=move || view! { <section aria-label="Results"><div class="empty">{lookup(MessageKey::AuditViewerEmptyState, locale)}</div></section> }
                 >
                     <section aria-label="Results">
                         <table>
                             <thead>
                                 <tr>
-                                    <th scope="col" class="num">"時刻"</th>
-                                    <th scope="col">"実行者"</th>
-                                    <th scope="col">"イベント"</th>
-                                    <th scope="col">"詳細"</th>
+                                    <th scope="col" class="num">{lookup(MessageKey::AuditViewerColTime, locale)}</th>
+                                    <th scope="col">{lookup(MessageKey::AuditViewerColActor, locale)}</th>
+                                    <th scope="col">{lookup(MessageKey::AuditViewerColEvent, locale)}</th>
+                                    <th scope="col">{lookup(MessageKey::AuditViewerColReason, locale)}</th>
+                                    // "Seq" stays an identifier, not routed through
+                                    // AuditViewerColSeq: that key's own value is "seq"
+                                    // in both locales, so converting would only be a
+                                    // casing change nothing in this cut's D2/D3 asked
+                                    // for — left alone deliberately, reported, not fixed.
                                     <th scope="col">"Seq"</th>
                                 </tr>
                             </thead>
@@ -318,13 +346,13 @@ pub fn ConsoleAudit() -> impl IntoView {
                 <nav aria-label="pagination">
                     <p>
                         <Show when=move || has_newer.get()>
-                            <a href="#" on:click=on_newer>"← 新しい"</a>
+                            <a href="#" on:click=on_newer>{lookup(MessageKey::AuditViewerNewerLink, locale)}</a>
                         </Show>
                         <Show when=move || has_newer.get() && older_cursor.get().is_some()>
                             " · "
                         </Show>
                         <Show when=move || older_cursor.get().is_some()>
-                            <a href="#" on:click=on_older>"より古い →"</a>
+                            <a href="#" on:click=on_older>{lookup(MessageKey::AuditViewerOlderLink, locale)}</a>
                         </Show>
                     </p>
                 </nav>
@@ -355,12 +383,27 @@ mod tests {
 
     #[test]
     fn unauthorized_error_gets_the_specific_message() {
-        assert_eq!(error_message("unauthorized"), "権限がありません。再度サインインしてください。");
+        assert_eq!(error_message("unauthorized", Locale::Ja), "権限がありません。再度サインインしてください。");
     }
 
     #[test]
     fn any_other_error_gets_the_generic_message() {
-        assert_eq!(error_message("http 500"), "読み込みに失敗しました。再読み込みしてください。");
+        assert_eq!(error_message("http 500", Locale::Ja), "読み込みに失敗しました。再読み込みしてください。");
+    }
+
+    // RFC 185 §5.3 screen 1 — this screen's own build-time proof that
+    // its strings actually come from `lookup(_, locale)` rather than a
+    // locale parameter nothing reads: the two locales must disagree.
+    // The rendered English screen itself is `observed`/`reviewed`, not
+    // `exercised` (no browser here); this is what IS exercised.
+    #[test]
+    fn error_message_follows_the_locale_argument() {
+        assert_eq!(error_message("unauthorized", Locale::En), "You do not have permission. Please sign in again.");
+        assert_eq!(error_message("http 500", Locale::En), "Failed to load. Please reload.");
+        assert_ne!(
+            error_message("unauthorized", Locale::Ja),
+            error_message("unauthorized", Locale::En),
+        );
     }
 
     #[test]

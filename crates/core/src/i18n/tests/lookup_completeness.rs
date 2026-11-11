@@ -122,12 +122,12 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         AuditViewerExportButton | AuditViewerNewerLink | AuditViewerOlderLink |
         AuditViewerEmptyState | AuditViewerColTime | AuditViewerColActor |
         AuditViewerColEvent | AuditViewerColReason | AuditViewerColSeq |
-        AuditViewerNoteSchemaTenant |
+        AuditViewerNoteSchemaTenant | AuditViewerChainLink |
         // RFC 180 (R2b) — dormant CSR component chrome
         ActionBack | ActionCopy | ActionCopied | ActionSignOut |
         PoweredBy | Privacy | Terms | Status |
         EnvironmentProduction | EnvironmentStaging | EnvironmentLocal |
-        OperatorDashboardTitle | InvestigateTitle | OperationsTitle |
+        OperatorDashboardTitle | OperatorConsoleBackLink | InvestigateTitle | OperationsTitle |
         ConfigTitle | TokensTitle | OidcClientsTitle |
         LocaleSwitchLabel | ScopeTenant |
         SidebarGroupMembers | SidebarGroupAccess | SidebarGroupApplications |
@@ -138,7 +138,9 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         RoleAssignAuditNotice | AuditorRoleReadOnly |
         PermissionDeniedTitle | PermissionDeniedBody |
         StatusSuspended | SuspendedTenantTitle | SuspendedTenantBody |
-        SignInVolumeLast24h | OneTimeRevealNotice
+        SignInVolumeLast24h | OneTimeRevealNotice |
+        // RFC 185 §5.3 screen 1 — screen-neutral Fetch* family
+        FetchUnauthorized | FetchFailed | FetchLoading
             => {}  // exhaustiveness pin — body is irrelevant
     }
     // Now actually iterate. The list below mirrors the match
@@ -229,12 +231,12 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         AuditViewerExportButton, AuditViewerNewerLink, AuditViewerOlderLink,
         AuditViewerEmptyState, AuditViewerColTime, AuditViewerColActor,
         AuditViewerColEvent, AuditViewerColReason, AuditViewerColSeq,
-        AuditViewerNoteSchemaTenant,
+        AuditViewerNoteSchemaTenant, AuditViewerChainLink,
         // RFC 180 (R2b)
         ActionBack, ActionCopy, ActionCopied, ActionSignOut,
         PoweredBy, Privacy, Terms, Status,
         EnvironmentProduction, EnvironmentStaging, EnvironmentLocal,
-        OperatorDashboardTitle, InvestigateTitle, OperationsTitle,
+        OperatorDashboardTitle, OperatorConsoleBackLink, InvestigateTitle, OperationsTitle,
         ConfigTitle, TokensTitle, OidcClientsTitle,
         LocaleSwitchLabel, ScopeTenant,
         SidebarGroupMembers, SidebarGroupAccess, SidebarGroupApplications,
@@ -246,6 +248,8 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         PermissionDeniedTitle, PermissionDeniedBody,
         StatusSuspended, SuspendedTenantTitle, SuspendedTenantBody,
         SignInVolumeLast24h, OneTimeRevealNotice,
+        // RFC 185 §5.3 screen 1
+        FetchUnauthorized, FetchFailed, FetchLoading,
     ];
     for k in all { f(k); }
 }

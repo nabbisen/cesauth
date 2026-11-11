@@ -420,6 +420,11 @@ pub enum MessageKey {
     AuditViewerColSeq,
     AuditViewerNoteSchemaTenant,
     AuditViewerEventAny,
+    /// **RFC 185 §5.3 screen 1.** The nav link from the audit viewer to
+    /// the chain-verification status screen. `Locale::En` reuses the
+    /// old server template's own wording for this exact link
+    /// (`admin/audit.rs::render_nav`) rather than inventing new copy.
+    AuditViewerChainLink,
 
     // ---- RFC 180 (R2b): dormant CSR component chrome imported from the
     // mockup at df3d9d0 -- operator/tenant-admin shells, role-impact
@@ -443,6 +448,14 @@ pub enum MessageKey {
     OneTimeRevealNotice,
     OperationsTitle,
     OperatorDashboardTitle,
+    /// **RFC 185 §5.3 screen 1.** Shared "back to console" nav link,
+    /// hardcoded independently in 4 operator pages today (audit.rs is
+    /// the first to use the key). `Locale::Ja` is unchanged from the
+    /// screen's own current wording — reviewed and refused an
+    /// expansion to match `SessionsBackLink`'s register, since
+    /// `SecurityBackLink`/`ErrorPageBackLink` don't share that
+    /// register either, so there is nothing consistent to conform to.
+    OperatorConsoleBackLink,
     PermissionDeniedTitle,
     PermissionDeniedBody,
     PoweredBy,
@@ -469,6 +482,27 @@ pub enum MessageKey {
     TenantAdminOverview,
     TenantAuditTitle,
     TokensTitle,
+
+    // ---- RFC 185 §5.3 screen 1: a screen-neutral `Fetch*` family for a
+    // CSR component's own async-fetch states. Not `Flash*` (those are
+    // post-action, server-issued) and not `Action*` (those are verbs,
+    // not states) -- reviewed and ruled a third family is honest rather
+    // than a forced fit. Each of the three is already hardcoded
+    // independently in multiple operator pages (measured at review:
+    // FetchUnauthorized/FetchFailed in 3 files, FetchLoading in 5); this
+    // cut wires only the audit viewer to them, the other pages keep
+    // their own hardcoded copies until their own conversions. ----
+    /// A fetch returned 401/403. **The Ja wording conflates "no
+    /// permission" with "sign in again"**, which does not actually help
+    /// a signed-in user with an insufficient role — reviewed, and kept
+    /// faithful to what the Ja already says rather than fixed here
+    /// (`ROADMAP.md` carries the defect as its own row).
+    FetchUnauthorized,
+    /// A fetch failed for any other reason (network error, non-2xx,
+    /// parse failure).
+    FetchFailed,
+    /// A fetch is in flight.
+    FetchLoading,
 }
 
 /// Resolve `(key, locale) -> &'static str`. Zero allocation.
@@ -481,10 +515,11 @@ pub enum MessageKey {
 
 /// Resolve `(key, locale) -> &'static str`. Zero allocation.
 ///
-/// Dispatches to one of ten grouped sub-functions (RFC 097) to keep
-/// each group ≤ 150 lines. Every `MessageKey` variant is covered by
-/// exactly one sub-function; the compiler enforces exhaustiveness via
-/// the top-level match in the `inline_tests` module.
+/// Dispatches to one of eleven grouped sub-functions (RFC 097, +1 for
+/// RFC 185's `lookup_fetch`) to keep each group ≤ 150 lines. Every
+/// `MessageKey` variant is covered by exactly one sub-function; the
+/// compiler enforces exhaustiveness via the top-level match in the
+/// `inline_tests` module.
 pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
         if let Some(s) = lookup_flash(&key, locale) { return s; }
         if let Some(s) = lookup_sessions(&key, locale) { return s; }
@@ -495,6 +530,7 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
         if let Some(s) = lookup_magic_link_totp_pages(&key, locale) { return s; }
         if let Some(s) = lookup_admin(&key, locale) { return s; }
         if let Some(s) = lookup_r2b(&key, locale) { return s; }
+        if let Some(s) = lookup_fetch(&key, locale) { return s; }
     // Fallback: panic with the key name so missing translations fail loudly
     // during development. In production this path is unreachable if the
     // exhaustive-match test in i18n/tests.rs passes.
@@ -1408,6 +1444,10 @@ fn lookup_admin(key: &MessageKey, locale: Locale) -> Option<&'static str> {
             Locale::Ja => "tenant_id 単位での絞り込みは現在のスキーマでは未提供 (RFC 109 §scope amendments)。",
             Locale::En => "Filtering by tenant_id is not yet supported by the schema (RFC 109 §scope amendments).",
         },
+        AuditViewerChainLink => match locale {
+            Locale::Ja => "チェーン検証状況 →",
+            Locale::En => "Chain verification status →",
+        },
 
         _ => return None,
     })
@@ -1474,6 +1514,10 @@ fn lookup_r2b(key: &MessageKey, locale: Locale) -> Option<&'static str> {
         OperatorDashboardTitle => match locale {
             Locale::Ja => "オペレーターダッシュボード",
             Locale::En => "Operator dashboard",
+        },
+        OperatorConsoleBackLink => match locale {
+            Locale::Ja => "← コンソール",
+            Locale::En => "← Console",
         },
         InvestigateTitle => match locale {
             Locale::Ja => "調査",
@@ -1613,6 +1657,31 @@ fn lookup_r2b(key: &MessageKey, locale: Locale) -> Option<&'static str> {
         OneTimeRevealNotice => match locale {
             Locale::Ja => "この値は一度しか表示されません。いまコピーして安全な場所に保管してください。",
             Locale::En => "This value is shown once. Copy it now and store it safely.",
+        },
+
+        _ => return None,
+    })
+}
+
+/// RFC 185 §5.3 screen 1 — a screen-neutral `Fetch*` family for a CSR
+/// component's own async-fetch states (401/403, any other failure, in
+/// flight). See the `MessageKey::FetchUnauthorized` doc comment for why
+/// this is a new family rather than `Flash*`/`Action*`.
+#[inline]
+fn lookup_fetch(key: &MessageKey, locale: Locale) -> Option<&'static str> {
+    use MessageKey::*;
+    Some(match key {
+        FetchUnauthorized => match locale {
+            Locale::Ja => "権限がありません。再度サインインしてください。",
+            Locale::En => "You do not have permission. Please sign in again.",
+        },
+        FetchFailed => match locale {
+            Locale::Ja => "読み込みに失敗しました。再読み込みしてください。",
+            Locale::En => "Failed to load. Please reload.",
+        },
+        FetchLoading => match locale {
+            Locale::Ja => "読み込み中…",
+            Locale::En => "Loading…",
         },
 
         _ => return None,

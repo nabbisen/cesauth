@@ -64,7 +64,15 @@ pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     audit::write_owned(&ctx.env, EventKind::AdminConsoleViewed, Some(principal.id.clone()), None, None)
         .await.ok();
 
-    crate::routes::leptos_shell::leptos_html_shell(&req, &ctx.env, "監査ログ — cesauth", cesauth_core::i18n::Locale::Ja).await
+    // RFC 185 §5.3 screen 1 — this is the first route in the project to
+    // negotiate: `resolve_locale` reads `Accept-Language` instead of a
+    // hardcoded `Locale::Ja`. `mounted_locale()` reads this back from
+    // `<html lang>` client-side (D5), which is why the title is composed
+    // from the same catalog key the component itself uses, not a second
+    // hardcoded string.
+    let locale = crate::i18n::resolve_locale(&req);
+    let title = format!("{} — cesauth", cesauth_core::i18n::lookup(cesauth_core::i18n::MessageKey::AuditViewerPageTitle, locale));
+    crate::routes::leptos_shell::leptos_html_shell(&req, &ctx.env, &title, locale).await
 }
 
 // -------------------------------------------------------------------------
