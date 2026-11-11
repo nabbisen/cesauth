@@ -28,23 +28,45 @@
 //! too, unreviewed. See slice 1's `audit.rs:16-21`, whose reasoning
 //! carries unchanged.
 //!
-//! `POST /admin/console/audit/chain/verify` is real and unaffected by
-//! the above:
+//! `POST /admin/console/audit/chain/verify` gates on
+//! `AdminAction::ViewConsole`, same as the two GET handlers — **this
+//! is a write, not a read.** It triggers a full re-walk
+//! (`verify_chain_full`) that persists a fresh
+//! `AuditVerificationResult` and, on success, advances the chain-head
+//! checkpoint. RFC 184 found that premise stated backwards in this
+//! module's own prior doc comment ("a full re-walk is a non-destructive
+//! read operation"): a re-walk writes, and because that write was
+//! unconditional, anyone who could reach this route — `ViewConsole` is
+//! every valid role, `Role::ReadOnly` included — could silently replace
+//! a detected `valid: false` alarm with a clean result and re-baseline
+//! the checkpoint over it, one button press, no confirmation, no
+//! record. `ViewConsole` is kept on this route anyway (RFC 184 §5.5,
+//! owner-accepted): what makes that safe now is not the permission, but
+//! that `cesauth_core::audit::verifier::persist_result` refuses to let
+//! a later run erase an unacknowledged alarm or advance the checkpoint
+//! over one (RFC 184 §3.1/§3.2) — the button can no longer destroy
+//! anything, so gating it no tighter than "may look at this page" is
+//! defensible again. Every invocation is audited
+//! (`EventKind::AdminAuditChainVerified`), which this module's prior
+//! version also did not do despite `route-contracts.md` having claimed
+//! it under the name `audit_chain_verified` since RFC 131 §0 slice 2.
 //!
-//! The chain status is read-only so any role with
-//! `AdminAction::ViewConsole` is allowed. The verify-now button
-//! also gates on `ViewConsole` (no separate permission) because
-//! a full re-walk is a non-destructive read operation that
-//! produces a fresher status; an attacker who triggers it gains
-//! nothing — the result is what the chain says, not what the
-//! attacker says.
+//! `POST /admin/console/audit/chain/acknowledge` is the one route that
+//! CAN clear a standing alarm (RFC 184 §3.3) — it requires
+//! `AdminAction::AcknowledgeTamperAlarm` (Security+, not `ReadOnly`),
+//! matching `VerifyBucketSafety`'s tier: asserting that a tamper
+//! finding has been dealt with is not an inspection, the same
+//! reasoning that action's own doc comment gives. It is a no-op (no
+//! write, no audit event) when there is nothing unacknowledged to
+//! clear, so pressing it twice, or pressing it when the chain is
+//! currently clean, is harmless.
 
 use cesauth_cf::ports::audit::CloudflareAuditEventRepository;
 use cesauth_cf::ports::audit_chain::CloudflareAuditChainCheckpointStore;
 use cesauth_core::admin::types::{AdminAction, AuditChainStatus};
 use cesauth_core::audit::verifier::verify_chain_full;
 use cesauth_core::ports::audit::AuditEventRepository;
-use cesauth_core::ports::audit_chain::AuditChainCheckpointStore;
+use cesauth_core::ports::audit_chain::{AuditChainCheckpointStore, AuditVerificationResult};
 use time::OffsetDateTime;
 use worker::{Request, Response, Result, RouteContext};
 
@@ -127,7 +149,82 @@ pub async fn verify_now<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Res
     // the redirect lands the operator on the status page where
     // they see what happened. A propagated error would just
     // produce a 500 with no useful info.
-    let _ = verify_chain_full(&repo, &checkpoints, now_unix).await;
+    //
+    // RFC 184 §3.4 — audit who triggered this and what it found
+    // (or, if an unacknowledged alarm was already standing, that
+    // the sticky result was returned unchanged rather than the
+    // fresh walk's own verdict — `persist_result` makes that
+    // substitution, not this handler, so the detail below is
+    // accurate either way).
+    if let Ok(result) = verify_chain_full(&repo, &checkpoints, now_unix).await {
+        audit::write_owned(
+            &ctx.env,
+            EventKind::AdminAuditChainVerified,
+            Some(principal.id.clone()),
+            None,
+            Some(format!(
+                "valid={} first_mismatch_seq={:?} rows_walked={}",
+                result.valid, result.first_mismatch_seq, result.rows_walked,
+            )),
+        ).await.ok();
+    }
+
+    let mut resp = Response::empty()?.with_status(302);
+    resp.headers_mut().set("location", "/admin/console/audit/chain").ok();
+    Ok(resp)
+}
+
+// -------------------------------------------------------------------------
+// POST /admin/console/audit/chain/acknowledge
+// -------------------------------------------------------------------------
+
+/// **RFC 184 §3.3.** The only route that can clear a standing tamper
+/// alarm. Requires `AdminAction::AcknowledgeTamperAlarm` — Security+,
+/// not `ReadOnly` — because this is an assertion that a finding has
+/// been dealt with, not an inspection of the chain. A no-op when there
+/// is nothing unacknowledged to clear: no write, no audit event,
+/// idempotent redirect.
+pub async fn acknowledge<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    require_system_admin!(req, ctx, principal, AdminAction::AcknowledgeTamperAlarm);
+
+    let cookie_header = req.headers().get("cookie").ok().flatten().unwrap_or_default();
+    let form = req.form_data().await?;
+    let csrf_form = match form.get("csrf") {
+        Some(worker::FormEntry::Field(v)) => v,
+        _ => String::new(),
+    };
+    let csrf_cookie = csrf::extract_from_cookie_header(&cookie_header).unwrap_or("");
+    if !csrf::verify(&csrf_form, csrf_cookie) {
+        return Response::error("Bad Request", 400);
+    }
+
+    let checkpoints = CloudflareAuditChainCheckpointStore::new(&ctx.env);
+    let current = checkpoints.read_last_result().await
+        .map_err(|e| worker::Error::RustError(format!("checkpoint last_result read failed: {e:?}")))?;
+
+    if let Some(r) = current {
+        if !r.valid && !r.acknowledged {
+            let first_mismatch_seq = r.first_mismatch_seq;
+            let run_at             = r.run_at;
+            let acked = AuditVerificationResult {
+                acknowledged: true,
+                ..r
+            };
+            checkpoints.write_last_result(&acked).await
+                .map_err(|e| worker::Error::RustError(format!("checkpoint last_result write failed: {e:?}")))?;
+
+            audit::write_owned(
+                &ctx.env,
+                EventKind::AdminAuditChainAlarmAcknowledged,
+                Some(principal.id.clone()),
+                None,
+                Some(format!(
+                    "acknowledged_run_at={run_at} first_mismatch_seq={first_mismatch_seq:?}",
+                )),
+            ).await.ok();
+        }
+        // `r.valid` or already `r.acknowledged` — nothing to do.
+    }
 
     let mut resp = Response::empty()?.with_status(302);
     resp.headers_mut().set("location", "/admin/console/audit/chain").ok();
@@ -160,6 +257,7 @@ async fn read_status(env: &worker::Env) -> Result<AuditChainStatus> {
         last_run_valid:            last.as_ref().map(|r| r.valid),
         last_run_first_mismatch:   last.as_ref().and_then(|r| r.first_mismatch_seq),
         last_run_checkpoint_match: last.as_ref().and_then(|r| r.checkpoint_consistent),
+        last_run_acknowledged:     last.as_ref().map(|r| r.acknowledged),
         last_run_rows_walked:      last.as_ref().map(|r| r.rows_walked),
         checkpoint_seq:            cp.as_ref().map(|c| c.last_verified_seq),
         checkpoint_chain_hash:     cp.as_ref().map(|c| c.chain_hash.clone()),

@@ -176,6 +176,15 @@ pub enum AdminAction {
     /// the same class of operation (provisioning a durable, system-wide
     /// resource) as tenant creation, not a security-review action.
     ManageClients,
+
+    /// **RFC 184** — Assert that a detected audit-chain tamper finding
+    /// has been dealt with, clearing the sticky alarm so a later
+    /// verification run may advance the checkpoint again. Same tier as
+    /// `VerifyBucketSafety`: Security+, not `ReadOnly` — this is an
+    /// assertion about the chain's integrity, not an inspection of it,
+    /// and the whole point of RFC 184 is that the weakest role must not
+    /// be able to make this assertion.
+    AcknowledgeTamperAlarm,
 }
 
 // -------------------------------------------------------------------------
@@ -549,6 +558,12 @@ pub struct AuditChainStatus {
     pub last_run_first_mismatch:    Option<i64>,
     pub last_run_checkpoint_match:  Option<bool>,
     pub last_run_rows_walked:       Option<u64>,
+    /// **RFC 184.** `Some(false)` is the state the console must offer
+    /// an acknowledgement control for: a detected mismatch
+    /// (`last_run_valid == Some(false)`) that no operator has yet
+    /// asserted was dealt with. `None` only when `last_run_valid` is
+    /// also `None` (no run has completed yet).
+    pub last_run_acknowledged:      Option<bool>,
 
     /// Chain head as of the last successful verification. None
     /// if no successful run has happened yet.

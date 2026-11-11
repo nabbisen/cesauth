@@ -39,6 +39,18 @@
 //! Both modes write the same `AuditVerificationResult` shape;
 //! the result's `rows_walked` field tells the operator which
 //! mode was used.
+//!
+//! ## Sticky alarms (RFC 184)
+//!
+//! "Write" above is no longer unconditional. An unacknowledged
+//! `valid: false` result does not get silently replaced by a
+//! later run that looks clean, and the checkpoint does not
+//! advance while that alarm stands — a hash-chain mismatch means
+//! rows were altered, not a transient condition a retry clears.
+//! See [`persist_result`] for the exact rule, shared by both
+//! [`verify_chain`] and [`verify_chain_full`]. The only way past
+//! a standing alarm is the operator acknowledgement route
+//! (`POST /admin/console/audit/chain/acknowledge`, worker layer).
 
 use crate::audit::chain::{
     compute_chain_hash, verify_payload_hash, GENESIS_HASH,
@@ -61,11 +73,15 @@ const PAGE_SIZE: u32 = 200;
 /// pages, verifies every link, and on success writes a fresh
 /// checkpoint + result. On failure the checkpoint is NOT
 /// advanced (so the next run retries from the same point); the
-/// result IS written so the admin UI surfaces the alarm.
+/// result IS written so the admin UI surfaces the alarm — unless
+/// an unacknowledged alarm is already standing from a prior run,
+/// in which case a clean-looking `computed` result is withheld;
+/// see [`persist_result`] (RFC 184).
 ///
-/// Returns the result that was written so the caller (cron
-/// handler, admin "verify now" button) can include it in any
-/// log line or response body.
+/// Returns the result that is actually in effect after that rule
+/// is applied — the fresh one, or the standing sticky alarm — so
+/// the caller (cron handler, admin "verify now" button) can
+/// include it in any log line or response body.
 pub async fn verify_chain<R, C>(
     repo:        &R,
     checkpoints: &C,
@@ -112,34 +128,33 @@ where
         first_mismatch_seq:    outcome.first_mismatch,
         checkpoint_consistent,
         rows_walked:           outcome.rows_walked,
+        acknowledged:          false,
     };
 
-    checkpoints.write_last_result(&result).await?;
-
-    // Advance the checkpoint ONLY on success. Detected tampering
-    // means the next run should re-attempt from the same point;
-    // the operator's job is to investigate the alarm before the
-    // chain advances.
-    if result.valid {
-        if let Some(seq) = outcome.last_good {
-            // Find the row at `seq` to get its chain_hash. We
-            // remembered it from the walk; re-fetch is one
-            // round-trip but keeps the walk loop free of
-            // checkpoint-specific bookkeeping.
-            let page = repo.fetch_after_seq(seq - 1, 1).await?;
-            if let Some(row) = page.first().filter(|r| r.seq == seq) {
-                checkpoints.write_checkpoint(&AuditChainCheckpoint {
+    // Resolve the checkpoint this run WOULD advance to, if it is
+    // allowed to. `last_good` absent means the chain is empty or the
+    // verifier didn't walk past the prior checkpoint — don't advance.
+    let new_checkpoint = if result.valid {
+        match outcome.last_good {
+            Some(seq) => {
+                // Find the row at `seq` to get its chain_hash. We
+                // remembered it from the walk; re-fetch is one
+                // round-trip but keeps the walk loop free of
+                // checkpoint-specific bookkeeping.
+                let page = repo.fetch_after_seq(seq - 1, 1).await?;
+                page.first().filter(|r| r.seq == seq).map(|row| AuditChainCheckpoint {
                     last_verified_seq: seq,
                     chain_hash:        row.chain_hash.clone(),
                     verified_at:       now_unix,
-                }).await?;
+                })
             }
+            None => None,
         }
-        // No `last_good` means the chain is empty or the verifier
-        // didn't walk past the prior checkpoint. Don't advance.
-    }
+    } else {
+        None
+    };
 
-    Ok(result)
+    persist_result(checkpoints, result, new_checkpoint).await
 }
 
 /// Run a FULL re-verification, ignoring any prior checkpoint.
@@ -149,7 +164,13 @@ where
 /// Behavior is identical to `verify_chain` except the resume
 /// point is hard-coded to seq=0 and the prior-checkpoint
 /// cross-check is skipped (`checkpoint_consistent: None`).
-/// On success this DOES advance the checkpoint to the new head.
+/// On success this DOES advance the checkpoint to the new head —
+/// unless an unacknowledged alarm is already standing, in which
+/// case neither the result nor the checkpoint is overwritten;
+/// see [`persist_result`] (RFC 184). This is precisely the
+/// wholesale-rewrite case: a full re-walk can look internally
+/// consistent after the chain was rewritten end-to-end, and that
+/// must not be enough to erase a prior tamper finding.
 pub async fn verify_chain_full<R, C>(
     repo:        &R,
     checkpoints: &C,
@@ -168,24 +189,85 @@ where
         first_mismatch_seq:    outcome.first_mismatch,
         checkpoint_consistent: None,
         rows_walked:           outcome.rows_walked,
+        acknowledged:          false,
     };
 
-    checkpoints.write_last_result(&result).await?;
-
-    if result.valid {
-        if let Some(seq) = outcome.last_good {
-            let page = repo.fetch_after_seq(seq - 1, 1).await?;
-            if let Some(row) = page.first().filter(|r| r.seq == seq) {
-                checkpoints.write_checkpoint(&AuditChainCheckpoint {
+    let new_checkpoint = if result.valid {
+        match outcome.last_good {
+            Some(seq) => {
+                let page = repo.fetch_after_seq(seq - 1, 1).await?;
+                page.first().filter(|r| r.seq == seq).map(|row| AuditChainCheckpoint {
                     last_verified_seq: seq,
                     chain_hash:        row.chain_hash.clone(),
                     verified_at:       now_unix,
-                }).await?;
+                })
             }
+            None => None,
         }
+    } else {
+        None
+    };
+
+    persist_result(checkpoints, result, new_checkpoint).await
+}
+
+// ---------------------------------------------------------------------
+// RFC 184 §3.1/§3.2 — sticky alarm persistence, shared by both run modes
+// ---------------------------------------------------------------------
+
+/// Write `computed` as the new last-run result and, if it is valid,
+/// advance the checkpoint to `new_checkpoint` — UNLESS an unacknowledged
+/// `valid: false` result is already standing. In that case neither
+/// write happens and the standing alarm is returned unchanged: a later
+/// run that looks clean must not be able to erase the record of an
+/// earlier tamper finding, and the checkpoint baseline it would move to
+/// must not advance while that finding is unacknowledged. This is what
+/// makes "press verify until the overwritten record says clean" not an
+/// available move (RFC 184 §2).
+///
+/// A later run that is ALSO invalid is NOT blocked here — `computed`
+/// still gets written, `acknowledged: false` and all, so the record
+/// stays current (a fresher `first_mismatch_seq`/`rows_walked`, say).
+/// This is deliberate: it is what lets [`verify_chain`]'s daily cron
+/// keep reporting a genuinely NEW mismatch while an old one sits
+/// unacknowledged, rather than going silent the moment one alarm is
+/// unresolved — a cron that cannot record a new finding would be a
+/// worse defect than the one this function exists to close (the
+/// handoff's own §4 "report before doing it" case for touching this
+/// shared path at all).
+///
+/// Shared by [`verify_chain`] (cron, incremental) and
+/// [`verify_chain_full`] (operator "verify now") rather than living in
+/// either `AuditChainCheckpointStore` adapter: the store's own
+/// `write_last_result`/`write_checkpoint` stay plain last-write-wins
+/// (see that trait's RFC 184 doc note), so the in-memory and
+/// Cloudflare-KV adapters need no change and cannot disagree with each
+/// other about this rule.
+async fn persist_result<C>(
+    checkpoints:    &C,
+    computed:       AuditVerificationResult,
+    new_checkpoint: Option<AuditChainCheckpoint>,
+) -> PortResult<AuditVerificationResult>
+where
+    C: AuditChainCheckpointStore + ?Sized,
+{
+    let prior_result = checkpoints.read_last_result().await?;
+    let sticky_alarm_outstanding =
+        prior_result.as_ref().is_some_and(|r| !r.valid && !r.acknowledged);
+
+    if sticky_alarm_outstanding && computed.valid {
+        return Ok(prior_result.expect(
+            "sticky_alarm_outstanding is only true when prior_result is Some",
+        ));
     }
 
-    Ok(result)
+    checkpoints.write_last_result(&computed).await?;
+    if computed.valid {
+        if let Some(cp) = new_checkpoint {
+            checkpoints.write_checkpoint(&cp).await?;
+        }
+    }
+    Ok(computed)
 }
 
 // ---------------------------------------------------------------------

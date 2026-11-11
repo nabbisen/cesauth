@@ -105,6 +105,21 @@ pub struct AuditVerificationResult {
     /// incremental verification this is usually small (rows
     /// added since the last checkpoint).
     pub rows_walked:            u64,
+    /// **RFC 184 §3.1.** `false` until an operator explicitly
+    /// acknowledges a `valid: false` result via
+    /// `POST /admin/console/audit/chain/acknowledge`. A fresh
+    /// `write_last_result` call always writes `false` here — a
+    /// new finding is a new assertion needing its own
+    /// acknowledgement, even if the slot it occupies had
+    /// previously been acknowledged.
+    ///
+    /// `#[serde(default)]` so a `chain:last_result` KV blob
+    /// written before this field existed deserializes as
+    /// `false` rather than failing — the safe reading, since an
+    /// absent field must never be treated as "already dealt
+    /// with".
+    #[serde(default)]
+    pub acknowledged:           bool,
 }
 
 /// Storage trait for the chain head checkpoint + last
@@ -121,6 +136,12 @@ pub trait AuditChainCheckpointStore {
     /// checkpoint to overwrite an older one — last-write-wins
     /// is fine because the verifier only writes after
     /// successful walks.
+    ///
+    /// **RFC 184.** The store itself still just overwrites —
+    /// last-write-wins, as above. The decision not to CALL this
+    /// method while an unacknowledged tamper alarm is
+    /// outstanding is made by the caller
+    /// (`cesauth_core::audit::verifier`), not enforced here.
     async fn write_checkpoint(&self, cp: &AuditChainCheckpoint) -> PortResult<()>;
 
     /// Read the most-recent verification result (success OR

@@ -29,12 +29,14 @@ use super::types::{
 /// | ManageAdminTokens    |          |          |            | ✓     |
 /// | ViewClients          | ✓        | ✓        | ✓          | ✓     |
 /// | ManageClients        |          |          | ✓          | ✓     |
+/// | AcknowledgeTamperAlarm |        | ✓        | ✓          | ✓     |
 pub fn role_allows(role: Role, action: AdminAction) -> bool {
     match action {
         AdminAction::ViewConsole        => true, // every valid role
 
-        AdminAction::VerifyBucketSafety |
-        AdminAction::RevokeSession      => matches!(role,
+        AdminAction::VerifyBucketSafety      |
+        AdminAction::RevokeSession           |
+        AdminAction::AcknowledgeTamperAlarm  => matches!(role,
             Role::Security | Role::Operations | Role::Super),
 
         AdminAction::EditBucketSafety   |
@@ -307,6 +309,9 @@ mod tests {
         assert!(!role_allows(Role::ReadOnly, AdminAction::ManageTenancy));
         assert!( role_allows(Role::ReadOnly, AdminAction::ViewClients));
         assert!(!role_allows(Role::ReadOnly, AdminAction::ManageClients));
+        // RFC 184 — the whole point: the role whose name promises it
+        // cannot change anything must not be able to make this assertion.
+        assert!(!role_allows(Role::ReadOnly, AdminAction::AcknowledgeTamperAlarm));
     }
 
     #[test]
@@ -317,6 +322,8 @@ mod tests {
         assert!(!role_allows(Role::Security, AdminAction::ManageAdminTokens));
         assert!(!role_allows(Role::Security, AdminAction::ManageTenancy));
         assert!(!role_allows(Role::Security, AdminAction::ManageClients));
+        // RFC 184 — same tier as VerifyBucketSafety, the named precedent.
+        assert!( role_allows(Role::Security, AdminAction::AcknowledgeTamperAlarm));
     }
 
     #[test]
@@ -327,6 +334,7 @@ mod tests {
         assert!( role_allows(Role::Operations, AdminAction::ManageTenancy));
         assert!(!role_allows(Role::Operations, AdminAction::ManageAdminTokens));
         assert!( role_allows(Role::Operations, AdminAction::ManageClients));
+        assert!( role_allows(Role::Operations, AdminAction::AcknowledgeTamperAlarm));
     }
 
     #[test]
@@ -343,6 +351,7 @@ mod tests {
             AdminAction::ManageTenancy,
             AdminAction::ViewClients,
             AdminAction::ManageClients,
+            AdminAction::AcknowledgeTamperAlarm,
         ];
         for action in all_actions {
             assert!(role_allows(Role::Super, action),

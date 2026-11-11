@@ -170,6 +170,22 @@ pub enum EventKind {
     /// once per shell navigation, not once per `.json` filter/pager
     /// re-fetch of the same view.
     AdminConsoleViewed,
+    /// **RFC 184 §3.4.** The operator-triggered full re-walk at
+    /// `POST /admin/console/audit/chain/verify` — who triggered it and
+    /// what it found. Route-contracts.md previously claimed this kind
+    /// under the name `audit_chain_verified` with no `EventKind` behind
+    /// it at all (`verify_now` wrote nothing); this variant is what
+    /// makes that claim true, under the naming convention every other
+    /// `Admin*` variant in this enum already uses.
+    AdminAuditChainVerified,
+    /// **RFC 184 §3.3/§3.4.** An operator asserted that a detected
+    /// tamper finding has been dealt with, via
+    /// `POST /admin/console/audit/chain/acknowledge`. The most
+    /// consequential statement anyone makes in this subsystem — it is
+    /// what lets the checkpoint advance again — so it is the one place
+    /// this fact cannot itself be overwritten by the next button press:
+    /// the audit log is hash-chained and append-only.
+    AdminAuditChainAlarmAcknowledged,
     AdminBucketSafetyVerified,
     AdminBucketSafetyChanged,
     AdminThresholdUpdated,
@@ -445,6 +461,8 @@ impl EventKind {
             Self::AdminClientDeleted           => "admin_client_deleted",
             Self::AdminLoginFailed             => "admin_login_failed",
             Self::AdminConsoleViewed           => "admin_console_viewed",
+            Self::AdminAuditChainVerified      => "admin_audit_chain_verified",
+            Self::AdminAuditChainAlarmAcknowledged => "admin_audit_chain_alarm_acknowledged",
             Self::AdminBucketSafetyVerified    => "admin_bucket_safety_verified",
             Self::AdminBucketSafetyChanged     => "admin_bucket_safety_changed",
             Self::AdminThresholdUpdated        => "admin_threshold_updated",

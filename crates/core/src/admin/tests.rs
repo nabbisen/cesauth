@@ -45,6 +45,7 @@ fn read_only_cannot_change_anything() {
         AdminAction::RevokeSession,
         AdminAction::ManageAdminTokens,
         AdminAction::ManageTenancy,
+        AdminAction::AcknowledgeTamperAlarm,
     ] {
         assert!(!role_allows(Role::ReadOnly, a), "ReadOnly should not be allowed {a:?}");
     }

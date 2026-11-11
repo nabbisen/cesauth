@@ -186,6 +186,7 @@ mod tests {
             last_run_first_mismatch:   None,
             last_run_checkpoint_match: None,
             last_run_rows_walked:      None,
+            last_run_acknowledged:     None,
             checkpoint_seq:            None,
             checkpoint_chain_hash:     None,
             checkpoint_at:             None,

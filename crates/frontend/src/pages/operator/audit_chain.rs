@@ -31,6 +31,14 @@
 //! missed it until round 3. `chain_hash` and `seq` stay in English
 //! deliberately — identifiers from the data/API, not prose, the same
 //! carve-out slice 1 made for `Export CSV`/`Export JSONL`.
+//!
+//! **RFC 184** adds a fifth block between the summary and the
+//! checkpoint: an acknowledgement form, shown only while
+//! `alarm_needs_acknowledgement` is true (a detected mismatch with no
+//! operator assertion yet that it was dealt with). It posts to
+//! `/admin/console/audit/chain/acknowledge`, same CSRF-token-in-hidden-
+//! field shape as the verify-now form below it, and the same
+//! full-page-redirect-drives-the-refetch discipline.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -51,6 +59,8 @@ struct ChainStatusView {
     last_run_checkpoint_match:  Option<bool>,
     #[serde(default)]
     last_run_rows_walked:       Option<u64>,
+    #[serde(default)]
+    last_run_acknowledged:      Option<bool>,
     #[serde(default)]
     checkpoint_seq:             Option<i64>,
     #[serde(default)]
@@ -127,6 +137,15 @@ fn consistency_badge(checkpoint_seq: Option<i64>, checkpoint_match: Option<bool>
     }
 }
 
+/// RFC 184 §3.3 — the console must offer an acknowledgement control
+/// exactly when a detected mismatch has not yet been dealt with.
+/// `acknowledged` is only meaningful alongside `valid: Some(false)`;
+/// any other combination (no run yet, or the chain is currently
+/// valid) has nothing to acknowledge.
+fn alarm_needs_acknowledgement(valid: Option<bool>, acknowledged: Option<bool>) -> bool {
+    valid == Some(false) && acknowledged != Some(true)
+}
+
 // ─── Network calls ─────────────────────────────────────────────────────────
 
 async fn fetch_status() -> Result<ChainStatusView, String> {
@@ -188,7 +207,9 @@ pub fn ConsoleAuditChain() -> impl IntoView {
                         .map(cesauth_core::util::format_unix_as_iso8601)
                         .unwrap_or_else(|| "—".to_owned());
                     let consistency = consistency_badge(checkpoint_seq, s.last_run_checkpoint_match);
-                    let csrf = s.csrf_token.clone();
+                    let needs_ack = alarm_needs_acknowledgement(s.last_run_valid, s.last_run_acknowledged);
+                    let csrf_verify = s.csrf_token.clone();
+                    let csrf_ack    = s.csrf_token.clone();
 
                     view! {
                         // ── summary ──────────────────────────────────────
@@ -204,6 +225,18 @@ pub fn ConsoleAuditChain() -> impl IntoView {
                                 <p class="note">"⏳ 前回の検証後に新しい監査イベントが追加されています。次回のcron（毎日04:00 UTC）がこれらを検証しますが、下の操作でいつでも全体を再検証できます。"</p>
                             </Show>
                         </section>
+
+                        // ── acknowledgement (RFC 184 §3.3) ───────────────
+                        <Show when=move || needs_ack>
+                            <section aria-label="改ざん検出の確認">
+                                <h2>"改ざん検出の確認"</h2>
+                                <p class="note">"この検出はまだ確認されていません。確認するまで、チェックポイントは新しい先頭位置には進みません — 次回以降の検証が内部的には整合していても同じです。確認しても監査ログの記録は消えません。対応が完了してから確認してください。"</p>
+                                <form method="post" action="/admin/console/audit/chain/acknowledge">
+                                    <input type="hidden" name="csrf" value=csrf_ack.clone() />
+                                    <button type="submit" class="warning">"検出を確認済みにする"</button>
+                                </form>
+                            </section>
+                        </Show>
 
                         // ── checkpoint ───────────────────────────────────
                         {if checkpoint_seq.is_none() {
@@ -231,9 +264,9 @@ pub fn ConsoleAuditChain() -> impl IntoView {
                         // ── verify-now form ──────────────────────────────
                         <section aria-label="検証を実行">
                             <h2>"検証を実行"</h2>
-                            <p class="note">"今すぐ全体を再検証します。既存のチェックポイントを無視して起点行からチェーン全体を走査します。成功すると、チェックポイントは新しい先頭位置に置き換わります。デプロイ後や、即時に状態を確認したいときに使用してください。"</p>
+                            <p class="note">"今すぐ全体を再検証します。既存のチェックポイントを無視して起点行からチェーン全体を走査します。成功すると、チェックポイントは新しい先頭位置に置き換わります。デプロイ後や、即時に状態を確認したいときに使用してください。未確認の改ざん検出がある間は、この操作を行ってもチェックポイントは進みません。"</p>
                             <form method="post" action="/admin/console/audit/chain/verify">
-                                <input type="hidden" name="csrf" value=csrf />
+                                <input type="hidden" name="csrf" value=csrf_verify />
                                 <button type="submit" class="warning">"今すぐ検証する（全体再検証）"</button>
                             </form>
                         </section>
@@ -331,5 +364,28 @@ mod tests {
         let html = consistency_badge(Some(42), Some(false));
         assert!(html.contains("不一致"));
         assert!(html.contains("badge--danger"));
+    }
+
+    // ── alarm_needs_acknowledgement (RFC 184 §3.3) ──────────────────────
+
+    #[test]
+    fn an_unacknowledged_mismatch_needs_acknowledgement() {
+        assert!(alarm_needs_acknowledgement(Some(false), Some(false)));
+    }
+
+    #[test]
+    fn an_acknowledged_mismatch_does_not_need_it_again() {
+        assert!(!alarm_needs_acknowledgement(Some(false), Some(true)));
+    }
+
+    #[test]
+    fn a_valid_chain_never_needs_acknowledgement() {
+        assert!(!alarm_needs_acknowledgement(Some(true), Some(false)));
+        assert!(!alarm_needs_acknowledgement(Some(true), None));
+    }
+
+    #[test]
+    fn no_run_yet_needs_no_acknowledgement() {
+        assert!(!alarm_needs_acknowledgement(None, None));
     }
 }

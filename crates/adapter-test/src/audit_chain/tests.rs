@@ -267,3 +267,108 @@ async fn verify_chain_full_walks_from_genesis_regardless_of_checkpoint() {
     assert!(result.checkpoint_consistent.is_none(),
         "full re-verify skips the cross-check");
 }
+
+// =====================================================================
+// Sticky alarms (RFC 184 §3.1/§3.2) — an unacknowledged `valid: false`
+// must survive a later run that would otherwise overwrite it with a
+// clean result, and the checkpoint must not advance while it stands.
+// =====================================================================
+
+#[tokio::test]
+async fn an_unacknowledged_alarm_survives_a_later_full_rewalk_that_looks_clean() {
+    let repo = build_chain(4).await;
+    let checkpoints = InMemoryAuditChainCheckpointStore::new();
+
+    repo.tamper_set_payload(3, r#"{"injected":true}"#);
+    let r1 = verify_chain_full(&repo, &checkpoints, NOW).await.unwrap();
+    assert!(!r1.valid);
+    assert_eq!(r1.first_mismatch_seq, Some(3));
+
+    // The tamper is undone, restoring the row to what its
+    // payload_hash actually attests — the next full re-walk alone
+    // would now report a clean chain. This is the §2 witness: an
+    // operator who presses "verify now" after a chain has been
+    // made internally consistent again must not get a clean bill
+    // of health for free.
+    repo.tamper_set_payload(3, "{}");
+
+    let r2 = verify_chain_full(&repo, &checkpoints, NOW + 1).await.unwrap();
+    assert!(!r2.valid,
+        "the standing alarm must be returned, not the fresh clean-looking result");
+    assert_eq!(r2.first_mismatch_seq, Some(3), "the original finding, unchanged");
+    assert!(!r2.acknowledged);
+    assert!(checkpoints.read_checkpoint().await.unwrap().is_none(),
+        "the checkpoint must not advance while the alarm is unacknowledged");
+}
+
+#[tokio::test]
+async fn the_cron_path_is_sticky_too() {
+    // RFC 184 §3.1 says "any later run", not just the operator's
+    // full re-walk — `verify_chain` (the daily cron) must obey the
+    // same rule.
+    let repo = build_chain(4).await;
+    let checkpoints = InMemoryAuditChainCheckpointStore::new();
+
+    repo.tamper_set_payload(3, r#"{"injected":true}"#);
+    let r1 = verify_chain(&repo, &checkpoints, NOW).await.unwrap();
+    assert!(!r1.valid);
+    // No checkpoint exists yet (the first run was invalid), so the
+    // next incremental run also resumes from seq=0 — same shape as
+    // the full-rewalk case above, reached through the cron entry
+    // point instead.
+    repo.tamper_set_payload(3, "{}");
+
+    let r2 = verify_chain(&repo, &checkpoints, NOW + 1).await.unwrap();
+    assert!(!r2.valid, "cron must not silently clear a standing alarm either");
+    assert_eq!(r2.first_mismatch_seq, Some(3));
+    assert!(checkpoints.read_checkpoint().await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn a_still_invalid_later_run_updates_the_record_instead_of_being_blocked() {
+    // The other half of the rule: stickiness must not make the
+    // cron path go silent about a FRESH mismatch just because an
+    // old one is unacknowledged — only a transition to `valid:
+    // true` is refused.
+    let repo = build_chain(4).await;
+    let checkpoints = InMemoryAuditChainCheckpointStore::new();
+    repo.tamper_set_payload(3, r#"{"injected":true}"#);
+
+    let r1 = verify_chain_full(&repo, &checkpoints, NOW).await.unwrap();
+    assert!(!r1.valid);
+
+    // Nothing is fixed; a later run finds the same tamper again and
+    // must still overwrite the stored record (fresher `run_at`),
+    // not just echo the first run untouched.
+    let r2 = verify_chain_full(&repo, &checkpoints, NOW + 1).await.unwrap();
+    assert!(!r2.valid);
+    assert_eq!(r2.run_at, NOW + 1);
+    let stored = checkpoints.read_last_result().await.unwrap().unwrap();
+    assert_eq!(stored.run_at, NOW + 1,
+        "the record must have moved, not been frozen at the first run's timestamp");
+}
+
+#[tokio::test]
+async fn acknowledging_the_alarm_lets_a_later_clean_run_advance_again() {
+    let repo = build_chain(4).await;
+    let checkpoints = InMemoryAuditChainCheckpointStore::new();
+    repo.tamper_set_payload(3, r#"{"injected":true}"#);
+
+    let r1 = verify_chain_full(&repo, &checkpoints, NOW).await.unwrap();
+    assert!(!r1.valid);
+
+    // Acknowledge, exactly as `POST .../audit/chain/acknowledge`
+    // does: flip the stored result's `acknowledged` flag, nothing
+    // else.
+    let mut acked = checkpoints.read_last_result().await.unwrap().unwrap();
+    acked.acknowledged = true;
+    checkpoints.write_last_result(&acked).await.unwrap();
+
+    repo.tamper_set_payload(3, "{}");
+    let r2 = verify_chain_full(&repo, &checkpoints, NOW + 1).await.unwrap();
+    assert!(r2.valid, "an acknowledged alarm must not block a later clean run");
+    assert!(!r2.acknowledged,
+        "a freshly-written clean result starts unacknowledged — there is nothing to acknowledge, but the field is not left stale from the old record either");
+    assert!(checkpoints.read_checkpoint().await.unwrap().is_some(),
+        "the checkpoint may advance once the standing alarm has been acknowledged");
+}
