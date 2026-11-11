@@ -16,7 +16,7 @@ changes will always be called out here.
 
 **v0.92.x and earlier are in [`docs/changelog-archive/`](docs/changelog-archive/README.md)**,
 split by minor range and never edited after creation. This file holds
-**0.93 and later**, 40 KB of the ~80 KB budget RFC 028 set — the 0.92 split at
+**0.93 and later**, 45 KB of the ~80 KB budget RFC 028 set — the 0.92 split at
 the 0.95.0 cut took it from 74,482 B to 30,034 B, split to a floor rather than to
 just under the ceiling.
 
@@ -58,6 +58,101 @@ derived "~5 minor versions" figure, and build the gate Step 5 already specified.
 **That note's §4 also records that RFC 028's diagnosis of `ROADMAP.md` is
 wrong** — `## Planned (0.x)` is 93.3% of that file while `## Shipped`, the
 section Step 3 says to archive, is 3.3%.
+
+---
+
+## [0.98.0] - 2026-11-11
+
+**Minor, earned** — it adds `POST /admin/console/audit/chain/acknowledge`, a new
+route surface. **A `ReadOnly` admin could erase the audit log's tamper alarm with
+one button press, and nothing recorded that they had.** RFC 184, in full.
+
+### Security — the tamper alarm is no longer erasable
+
+`POST /admin/console/audit/chain/verify` justified gating on
+`AdminAction::ViewConsole` with its own comment: *"a full re-walk is a
+non-destructive read operation … an attacker who triggers it gains nothing."*
+**The reasoning about information was right; the claim about state was false.**
+
+`verify_chain_full` called `write_last_result` **unconditionally** into a single
+slot whose own port documentation says it exists *"so the admin UI surfaces the
+alarm"*, then advanced the checkpoint whenever the fresh walk said `valid`. So:
+
+1. The 04:00 cron detects tampering and stores `valid=false,
+   first_mismatch_seq=N`. The console shows `⛔ seq=N で改ざんを検出`.
+2. Anyone who can open the console presses **Verify chain now**.
+3. If the chain has since been rewritten *consistently* — what a
+   wholesale-rewrite attacker produces, and what the checkpoint cross-check
+   exists to catch — the alarm is overwritten with `valid=true` and the recorded
+   baseline `chain_hash` is replaced.
+
+**And `role_allows` returns true on `ViewConsole` for every role, `ReadOnly`
+included** — the role whose name promises it cannot change anything — while
+`ManageAdminTokens` is `Super`-only.
+
+**Reproduced before it was fixed**, over real HTTP against a freshly-migrated
+local D1 and KV, with tokens minted at `role=read_only` and `role=security`
+through the real route, the tamper applied **directly to the database** below the
+application layer, and the real `__scheduled` cron entry point. The finding
+reproduced exactly.
+
+Now:
+
+- **A detected mismatch is sticky.** An unacknowledged `valid=false` survives any
+  later run. A hash-chain mismatch means rows were altered — it is not a
+  transient condition a retry can clear, so "press until green" is no longer a
+  move. A later run that is **also** invalid still overwrites with fresher
+  numbers, so the cron can always report a *new* mismatch.
+- **No re-baselining over a standing alarm.** The checkpoint does not advance
+  while an unacknowledged alarm is stored, however clean the new walk looks.
+- **Acknowledgement is a separate, tiered, audited act.**
+  `POST /admin/console/audit/chain/acknowledge`, gated on the new
+  `AdminAction::AcknowledgeTamperAlarm` — `Security | Operations | Super`, the
+  same row as `VerifyBucketSafety`, and **not** `ReadOnly`. CSRF required.
+- **Both routes now write audit events.** Previously neither did, while merely
+  *viewing* a console page wrote one.
+
+### Security — a refused clean walk is itself evidence, and it is now recorded
+
+Stopping the erase was not sufficient. **A standing alarm at seq N plus a fresh
+full walk that verifies clean is the signature of a wholesale rewrite**, and the
+first implementation computed that second half and threw it away: the refusal
+returned the stored alarm, so the audit row reported the previous *incremental*
+run's numbers — `rows_walked=1` for a full re-walk of a six-row chain — and
+"the walk found the tamper again" became byte-identical to "the walk found it
+clean and the write was refused".
+
+Both paths now record it. The operator's audit detail carries
+`refused_clean_walk=true` with the fresh walk's own verdict beside the standing
+alarm's. And because the nightly cron has no principal to carry an audit write,
+the refusal is also stamped durably onto the stored record as
+`clean_walk_refused_at`, with an error-level log line for anyone watching live.
+Without that, a rewrite would make every subsequent nightly run compute
+`valid=true` forever and leave no trace at all.
+
+### Fixed — the route's documentation, and a contract claim that was never true
+
+The module comment no longer teaches the next reader that a full re-walk is a
+non-destructive read. And `route-contracts.md` claimed this route emitted audit
+kind `audit_chain_verified`, **an `EventKind` that has never existed**; it now
+names `admin_audit_chain_verified`, which is emitted, with a new row for the
+acknowledge route. That claim was one of **15 of 42** audit kinds in that column
+naming a string the code does not produce — the other 14 are tracked.
+
+### Gates
+
+Host tests **1,721 / 0 / 4** across 12 `test result:` lines (**+11**).
+`route-contracts-check.sh` exit 0, **all 197 routes documented**, E4
+**219 = 195 (184+11) + 24 + 0**, E6 **95 = 86 (66+0+20) + 9 + 0**, E3/GATE_42/
+NONCE/E5/E7 unchanged. Route-surface census **197 pairs — 1 added, 0 removed**,
+the pre-stated delta met exactly. `migration_chain` **35**. mdbook **82 pages**.
+
+### Upgrade note
+
+`AuditVerificationResult` gained two fields, both `#[serde(default)]`. A
+`chain:last_result` blob written by an earlier release has neither, and reads as
+*not acknowledged* with *no refusal recorded* — the only safe reading of silence.
+No migration, no manual step.
 
 ---
 
