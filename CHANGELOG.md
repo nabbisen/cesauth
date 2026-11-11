@@ -61,6 +61,102 @@ section Step 3 says to archive, is 3.3%.
 
 ---
 
+## [0.99.0] - 2026-11-11
+
+**Minor** — it adds a new CI gate, which changes what a contributor must satisfy
+to merge. **Nine documents and a code comment stated an "admin console is
+Japanese-only" policy as settled law; none of them was a check, and the hardcoded
+literal count rose in each of the last three releases with nothing watching it.**
+RFC 185 §5.2, the true half of §5.1, and §5.4.
+
+### Added — a literal gate, so the rule finally has a check
+
+`scripts/drift-scan.sh` gained a tenth section. A natural-language literal in
+`crates/frontend/src/{pages,components,admin,templates,tenancy_console,tenant_admin}`
+is counted per file and compared against a **per-file ceiling that may only go
+down** — 18 entries summing to 210, with **105 files scanned and 16 hit** on the
+shipping tree.
+
+Four conditions fail the build, and **all four were driven**: a file over its
+ceiling (Japanese and English each shown separately); a file **below** its
+ceiling, which must be lowered rather than left as slack; a ceiling naming a file
+that no longer exists; and **a file the matcher hits with no ceiling entry at
+all** — the case a baseline table usually waves through, and the reason a new
+screen arriving with forty literals cannot pass unlisted.
+
+A ceiling rather than an exemption list, because a 210-entry list of literals
+would be edited by the very commits meant to police it. Test code is out of scope
+by construction — 31 of the frontend's Japanese strings are catalog assertions,
+and a gate that fires on those is a gate that gets deleted.
+
+**What the gate does and does not see, stated plainly.** It bounds the **Japanese**
+debt exactly, in any string literal, in all six directories. It bounds the
+**English** debt only where a literal is a standalone `view!` text child — in
+practice `pages/` and `components/`. **English prose inside a `format!` HTML
+template is invisible to it**, which is how the server-rendered directories are
+written. Two further blind spots were found and disclosed rather than regexed
+away: the class-name exclusion drops exactly four literals repo-wide, two of them
+real CSS class names and two of them genuine English sentences in
+`admin/safety.rs` — the whole class, enumerated, not sampled.
+
+### Changed — the shell's locale is a type, not a string
+
+`leptos_html_shell`'s `lang: &str` is now `lang: Locale`. A call site can no
+longer emit a language tag that no catalog locale corresponds to, and the shell's
+emission and `mounted_locale()`'s parse share one vocabulary by construction
+rather than by both happening to spell `"ja"` the same way. Previously a typo in
+any of the ten literals would have produced a silently wrong locale with no
+compile error, no warning and no log line.
+
+All ten call sites and both `shell()` wrappers pass **the locale their content is
+actually written in — values unchanged**.
+
+**`<html lang>` is still not negotiated from the request, and that reverses what
+RFC 185 proposed.** `<html lang>` is a claim about what language the content is
+in. Every CSR surface is monolingual today *and* its literal names that language
+correctly, so negotiating it would make the attribute false for exactly the users
+who stated a preference. The flip belongs to the per-screen conversion, in the
+same commit that gives a screen more than one language to serve. **No screen's
+rendered language changes in this release.**
+
+### Fixed — the two literals that both render and lie
+
+`templates/security_center.rs` hardcoded `aria-label="セッション {sid}"` and
+`templates/totp.rs` hardcoded a save-confirmation legend, both inside functions
+where `locale` is already a parameter and where every neighbouring string goes
+through the catalog. Both are **server-rendered** surfaces, which negotiate: an
+`Accept-Language: en` request received the whole screen in English and these two
+elements in Japanese — announced by a screen reader, invisible on screen. The
+second carried a comment excusing itself (*"end-user route is also fine with short
+literal"*).
+
+Verified as a build-time property: the literals are gone and the new keys resolve
+non-empty in both locales. **Not** verified by rendering either page and listening
+to a screen reader — `trunk` cannot be installed in this environment.
+
+### Fixed — the record
+
+ADR-013's i18n-3 deferral is **closed**. Its own trigger was *"if/when demand
+surfaces"*, and the owner supplied it. It was never a decision that the console
+stays Japanese-only; it was a deferral with an exit condition that stopped being
+quoted somewhere around RFC 072, which calls it a *constitution* and derives a
+permanent `<html lang="ja">` from it — now annotated with its own lineage.
+
+`operator_shell.rs` attributed the locale policy to **RFC 034**, which is
+*introspect handler wiring* and contains no mention of locale. Corrected in
+**two** places, not the one the handoff named.
+
+### Gates
+
+Host tests **1,722 / 0 / 4** across 12 `test result:` lines (**+1**).
+`route-contracts-check.sh` exit 0 with **every** figure unchanged from 0.98.0 —
+197 routes, E3 47, GATE_42 24, NONCE 13, E4 219, E5 19, E6 95, E7 156 — as a
+release that touches no route should leave them. Route surface **197 pairs, 0
+added, 0 removed**. `drift-scan.sh` clean, now 10 sections. `cargo check`
+warnings unchanged at 8 (frontend) and 1 (core).
+
+---
+
 ## [0.98.0] - 2026-11-11
 
 **Minor, earned** — it adds `POST /admin/console/audit/chain/acknowledge`, a new
