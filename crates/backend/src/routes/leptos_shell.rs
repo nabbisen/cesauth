@@ -71,8 +71,8 @@
 //! calling `leptos_html_shell` receive it, and RFC 132's E3 asserts no
 //! `server`-declared route does.
 
+use cesauth_core::i18n::Locale;
 use worker::{Request, Response, Result};
-
 
 /// Asset filenames produced by `trunk build --release --filehash false`
 /// (RFC 130 S2) — deterministic, hyphenated to match the Cargo package
@@ -89,11 +89,22 @@ const LEPTOS_WASM: &str = "cesauth-frontend_bg.wasm";
 ///
 /// Used by `poc_handler` now; will be used by all Leptos-backed route
 /// handlers once screens are migrated in Phase C.
+///
+/// **RFC 185 round 1 T2.** `lang` is a [`Locale`], not a raw `&str`: a
+/// call site can no longer emit a language tag that no catalog locale
+/// corresponds to, and this function's emission and `mounted_locale`'s
+/// parse (`crates/frontend/src/app.rs`) share one vocabulary by
+/// construction rather than by both happening to spell `"ja"` the same
+/// way. **This does not negotiate `<html lang>` from the request** —
+/// every call site below passes the locale its content is actually
+/// written in, unchanged from before this cut (RFC 185 §5.1/D1); the
+/// flip to per-request negotiation belongs to §5.3, per screen, once
+/// that screen's content can honour more than one locale.
 pub async fn leptos_html_shell(
     _req: &Request,
     _env: &worker::Env,
     title: &str,
-    lang: &str,
+    lang: Locale,
 ) -> Result<Response> {
     let csp_nonce = match cesauth_core::security_headers::CspNonce::generate() {
         Ok(n) => n,
@@ -150,7 +161,7 @@ pub async fn leptos_html_shell(
   </script>
 </body>
 </html>"#,
-        lang  = lang,
+        lang  = crate::i18n::locale_str(lang),
         title = title,
         wasm  = LEPTOS_WASM,
         js    = LEPTOS_JS,

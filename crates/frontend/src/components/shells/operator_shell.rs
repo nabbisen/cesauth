@@ -1,4 +1,4 @@
-//! OperatorShell — grouped operator sidebar (RFC 021/018, RFC 028, RFC 034).
+//! OperatorShell — grouped operator sidebar (RFC 021/018, RFC 028).
 //!
 //! Imported from the mockup repository's `src/components/
 //! shells/operator_shell.rs` at pin `df3d9d0` (RFC 180, R2b).
@@ -6,12 +6,25 @@
 //! RFC 028: routes split into /admin/tenancy/* (tenants, users) and
 //!          /admin/console/* (dashboard, audit, investigate, operations,
 //!          tokens, config).
-//! RFC 034: locale policy — operator console is Japanese-only (ADR-013).
-//!          The mockup enforced this with a reactive `LocaleContext::
-//!          provide_fixed(Locale::Ja)`. RFC 180 §5 bars building any
-//!          reactive locale context at all, fixed or not, so this shell
-//!          instead just calls `lookup(_, Locale::Ja)` directly — same
-//!          JA-only result, no context, no signal.
+//!
+//! **Locale policy — ADR-013, amended by RFC 185 (2026-11-11).** This
+//! comment previously cited `rfcs/done/034-introspect-handler-wiring.md`
+//! for "operator console is Japanese-only"; that RFC contains no
+//! mention of locale, Japanese, or ADR-013 at all — RFC 185 §2 found
+//! the wrong citation by checking, which nobody had before. ADR-013's
+//! `## v0.36.0 migration scope` → Out of scope list
+//! is the actual source, and as of RFC 185 the Japanese-only state is
+//! a **starting point for conversion, not a permanent policy**: the
+//! deferral's own trigger ("if/when demand surfaces") has fired.
+//! `const LOCALE: Locale = Locale::Ja` below is unchanged by this —
+//! RFC 185 §5.2/D3 baselines this file's literals rather than
+//! converting them, since `OperatorShell` has zero mount sites (RFC
+//! 179, extended by RFC 185 §3/A7) and converting code nobody renders
+//! would be done blind. The mockup enforced the same JA pin with a
+//! reactive `LocaleContext::provide_fixed(Locale::Ja)`; RFC 180 §5
+//! bars building any reactive locale context at all, fixed or not,
+//! so this shell instead just calls `lookup(_, Locale::Ja)` directly
+//! — same JA-only result, no context, no signal.
 //!
 //! **No mock data**: the mockup hardcoded `UserPill initials="PO"
 //! name="platform-op@example.test"`. RFC 131 §5 bars committing mock
@@ -70,7 +83,9 @@ pub fn OperatorShell(
                     <span class=environment.class()>{env_label}</span>
                 </div>
                 <div class="user-menu">
-                    // RFC 034: no LocaleToggle here — operator console is JA-only.
+                    // No LocaleToggle here (RFC 180 §5 bars the mockup's live
+                    // switcher) — the console stays pinned to Locale::Ja per
+                    // ADR-013 until an RFC 185 §5.3 conversion flips it.
                     <UserPill initials=operator_initials name=operator_name/>
                     <a href="/login" class="btn btn-ghost btn-sm">
                         {lookup(MessageKey::ActionSignOut, LOCALE)}

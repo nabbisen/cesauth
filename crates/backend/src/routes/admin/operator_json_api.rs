@@ -35,7 +35,7 @@ pub async fn shell<D>(
         Ok(a)  => a,
         Err(r) => return Ok(r),
     };
-    crate::routes::leptos_shell::leptos_html_shell(req, &ctx.env, title, "ja").await
+    crate::routes::leptos_shell::leptos_html_shell(req, &ctx.env, title, cesauth_core::i18n::Locale::Ja).await
 }
 
 /// Return `{ csrf_token }` JSON after admin auth check.

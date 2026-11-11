@@ -56,7 +56,7 @@ pub async fn get_handler<D>(req: Request, ctx: RouteContext<D>) -> Result<Respon
         Err(r) => return Ok(r),
     };
     crate::routes::leptos_shell::leptos_html_shell(
-        &req, &ctx.env, "Sessions — cesauth", "en",
+        &req, &ctx.env, "Sessions — cesauth", cesauth_core::i18n::Locale::En,
     ).await
 }
 

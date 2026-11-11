@@ -45,5 +45,5 @@ pub async fn shell<D>(
     ctx: &RouteContext<D>,
     title: &str,
 ) -> Result<Response> {
-    crate::routes::leptos_shell::leptos_html_shell(req, &ctx.env, title, "en").await
+    crate::routes::leptos_shell::leptos_html_shell(req, &ctx.env, title, cesauth_core::i18n::Locale::En).await
 }

@@ -152,7 +152,7 @@ pub async fn get_handler(
         Err(r) => return Ok(r),
     };
     crate::routes::leptos_shell::leptos_html_shell(
-        &req, &env, "Disable two-factor authentication — cesauth", "en",
+        &req, &env, "Disable two-factor authentication — cesauth", cesauth_core::i18n::Locale::En,
     ).await
 }
 

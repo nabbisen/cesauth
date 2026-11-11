@@ -303,8 +303,14 @@ fn render_session_row_for(
         )
     };
 
+    // RFC 185 round 1 T3 — was a hardcoded Japanese literal regardless
+    // of `locale`; this surface negotiates, so an `en` request got the
+    // whole card in English except this one `aria-label`.
+    let aria_label = lookup(MessageKey::SessionsCardAriaLabel, locale)
+        .replace("{sid}", &s.session_id);
+
     format!(
-        r##"<article class="session-card" aria-label="セッション {sid}">
+        r##"<article class="session-card" aria-label="{aria_label}">
   <header>
     <strong>{method}</strong> {badge}
   </header>
@@ -316,7 +322,7 @@ fn render_session_row_for(
   </dl>
   <footer>{action}</footer>
 </article>"##,
-        sid       = escape(&s.session_id),
+        aria_label = escape(&aria_label),
         sid_short = escape(&shorten_id(&s.session_id)),
         method    = escape(method_label),
         badge     = badge,

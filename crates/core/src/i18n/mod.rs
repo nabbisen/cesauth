@@ -187,6 +187,12 @@ pub enum MessageKey {
     SessionsLabelLastSeen,
     SessionsLabelClient,
     SessionsLabelSessionId,
+    /// **RFC 185 round 1 T3.** The session card's own `aria-label`,
+    /// carrying a `{sid}` placeholder the caller substitutes — was a
+    /// hardcoded Japanese literal in `templates/security_center.rs`
+    /// regardless of the negotiated `locale`, the one live mismatch
+    /// RFC 185 §4 found on a server-rendered surface.
+    SessionsCardAriaLabel,
 
     // ---- v0.39.0: login page (`/login`) ----
     LoginTitle,
@@ -318,6 +324,13 @@ pub enum MessageKey {
     TotpRecoveryCodesAlertBody,
     TotpRecoveryCodesBody,
     TotpRecoveryCodesContinue,
+    /// **RFC 185 round 1 T3.** The `<legend class="visually-hidden">`
+    /// for the save-confirmation `<fieldset>` below — was a hardcoded
+    /// Japanese literal in `templates/totp.rs`, excused by a comment
+    /// claiming "end-user route is also fine with short literal". It
+    /// is not: the route negotiates, and a screen reader on an `en`
+    /// request announced this one element in Japanese regardless.
+    TotpRecoverySaveGateLegend,
     /// **RFC 076**: checkbox label for the save-confirmation gate
     TotpRecoverySavedConfirmLabel,
     /// **RFC 076**: button label after confirmation
@@ -638,6 +651,10 @@ fn lookup_sessions(key: &MessageKey, locale: Locale) -> Option<&'static str> {
         SessionsLabelSessionId => match locale {
             Locale::Ja => "セッション ID",
             Locale::En => "Session ID",
+        },
+        SessionsCardAriaLabel => match locale {
+            Locale::Ja => "セッション {sid}",
+            Locale::En => "Session {sid}",
         },
 
         _ => return None,
@@ -1083,6 +1100,11 @@ fn lookup_magic_link_totp_pages(key: &MessageKey, locale: Locale) -> Option<&'st
         TotpRecoveryCodesContinue => match locale {
             Locale::Ja => "保存しました — 続行",
             Locale::En => "I've saved them — continue",
+        },
+        // RFC 185 round 1 T3: the gate's own legend, visually-hidden.
+        TotpRecoverySaveGateLegend => match locale {
+            Locale::Ja => "保存確認",
+            Locale::En => "Save confirmation",
         },
         // RFC 076: save-confirmation gate
         TotpRecoverySavedConfirmLabel => match locale {

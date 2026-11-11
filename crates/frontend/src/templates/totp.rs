@@ -188,7 +188,11 @@ pub fn totp_recovery_codes_page_for(
         alert_strong = escape(lookup(MessageKey::TotpRecoveryCodesAlertStrong, locale)),
         alert_body   = escape(lookup(MessageKey::TotpRecoveryCodesAlertBody,   locale)),
         body_text    = escape(lookup(MessageKey::TotpRecoveryCodesBody,        locale)),
-        gate_legend  = "保存確認",  // admin-side is JA; end-user route is also fine with short literal
+        // RFC 185 round 1 T3 — was a hardcoded Japanese literal
+        // excused by a comment claiming "end-user route is also fine
+        // with short literal"; the route negotiates, so an `en`
+        // request's screen reader announced this legend in Japanese.
+        gate_legend  = escape(lookup(MessageKey::TotpRecoverySaveGateLegend, locale)),
         confirm_label= escape(lookup(MessageKey::TotpRecoverySavedConfirmLabel, locale)),
         proceed_btn  = escape(lookup(MessageKey::TotpRecoveryProceedButton,    locale)),
         codes        = codes_html,

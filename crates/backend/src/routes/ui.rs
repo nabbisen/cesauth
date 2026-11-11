@@ -23,6 +23,6 @@ use worker::{Request, Response, Result, RouteContext};
 /// `Login` component renders the email form and the passkey button.
 pub async fn login<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     crate::routes::leptos_shell::leptos_html_shell(
-        &req, &ctx.env, "Sign in — cesauth", "en",
+        &req, &ctx.env, "Sign in — cesauth", cesauth_core::i18n::Locale::En,
     ).await
 }

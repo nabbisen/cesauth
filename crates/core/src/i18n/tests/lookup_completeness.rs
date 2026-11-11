@@ -38,6 +38,7 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         SessionsAuthMethodAdmin   | SessionsAuthMethodUnknown |
         SessionsLabelSignIn   | SessionsLabelLastSeen |
         SessionsLabelClient   | SessionsLabelSessionId |
+        SessionsCardAriaLabel |
         // v0.39.0 — login
         LoginTitle  | LoginIntro |
         LoginPasskeyHeading  | LoginPasskeyButton  |
@@ -92,6 +93,8 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         SecuritySummaryRecovery | SecuritySummarySessions |
         // RFC 076 — recovery code save gate
         TotpRecoverySavedConfirmLabel | TotpRecoveryProceedButton |
+        // RFC 185 round 1 T3 — the two literals the gate itself fixes
+        TotpRecoverySaveGateLegend |
         // RFC 077 — skip-to-content
         SkipToMainContent |
         // RFC 079 — magic link unavailable notice
@@ -153,6 +156,7 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         SessionsAuthMethodAdmin,   SessionsAuthMethodUnknown,
         SessionsLabelSignIn,   SessionsLabelLastSeen,
         SessionsLabelClient,   SessionsLabelSessionId,
+        SessionsCardAriaLabel,
         LoginTitle,  LoginIntro,
         LoginPasskeyHeading,  LoginPasskeyButton,
         LoginPasskeyJsRequired, LoginPasskeyFailed,
@@ -203,6 +207,7 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         SecuritySummaryPasskeyMagicLink, SecuritySummaryTotpEnabled, SecuritySummaryTotpDisabled,
         SecuritySummaryRecovery, SecuritySummarySessions,
         TotpRecoverySavedConfirmLabel, TotpRecoveryProceedButton,
+        TotpRecoverySaveGateLegend,
         SkipToMainContent,
         TenantInvitePageTitle, TenantInviteSectionTitle, TenantInviteEmailLabel,
         TenantInviteRoleLabel, TenantInviteRoleMember, TenantInviteRoleAdmin,

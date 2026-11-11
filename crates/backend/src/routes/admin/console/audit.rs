@@ -64,7 +64,7 @@ pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     audit::write_owned(&ctx.env, EventKind::AdminConsoleViewed, Some(principal.id.clone()), None, None)
         .await.ok();
 
-    crate::routes::leptos_shell::leptos_html_shell(&req, &ctx.env, "監査ログ — cesauth", "ja").await
+    crate::routes::leptos_shell::leptos_html_shell(&req, &ctx.env, "監査ログ — cesauth", cesauth_core::i18n::Locale::Ja).await
 }
 
 // -------------------------------------------------------------------------

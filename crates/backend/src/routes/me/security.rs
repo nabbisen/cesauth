@@ -67,7 +67,7 @@ pub async fn get_handler(req: Request, env: worker::Env) -> Result<Response> {
     // Return the Leptos HTML shell.  The component fetches state via
     // /me/security.json below.
     crate::routes::leptos_shell::leptos_html_shell(
-        &req, &env, "Security — cesauth", "en",
+        &req, &env, "Security — cesauth", cesauth_core::i18n::Locale::En,
     ).await
 }
 

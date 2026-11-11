@@ -1282,4 +1282,200 @@ if [[ -f "$VERUS_COPY" ]]; then
     fi
 fi
 
+# ---------------------------------------------------------------------------
+# RFC 185 §5.2 — a natural-language literal anywhere in
+# crates/frontend/src/{pages,components,admin,templates,tenancy_console,
+# tenant_admin} fails the build, Japanese AND English (D6) — nine documents
+# plus a code comment have cited an admin-console-is-Japanese-only policy as
+# settled law for years (RFC 185 §2), and none of them was a gate.
+#
+# Matcher N (RFC 185 §4 F1), reproduced verbatim from the handoff's own
+# probe: for each file, truncate at the first `#[cfg(test)]` line and drop
+# comment lines, then count (a) any string literal containing kana/CJK, plus
+# (b) any standalone `view!` text-child literal containing two consecutive
+# ASCII letters, excluding all-lowercase-hyphenated words (CSS class names).
+# D7: test code is excluded by construction (the truncation) AND by path
+# (`*/tests/*`, `tests.rs`) — a standalone tests.rs file has no
+# `#[cfg(test)]` line of its own to truncate at, since it is included
+# conditionally from its parent module.
+#
+# D4/D8: the baseline is a per-file DESCENDING CEILING, not an exemption
+# list — eighteen numbers that may only go down, needing no edit when a
+# literal is deleted and failing loudly when one is added. D5: ceiling slack
+# is a hard failure (a file's real count dropping below its ceiling fails
+# until the ceiling is lowered), same discipline as E6_BEARER_LEGACY_EXEMPT's
+# own staleness rule in route-contracts-check.sh:1961-1979 — copied in spirit
+# here, not literally: E6's rule is existence-based (did this entry match
+# ANY row this run), this one is value-based (does this entry's ceiling
+# equal this run's actual count), because unlike an exemption list a ceiling
+# has a specific number to be stale AT.
+#
+# G1 (RFC 185 round 1 handoff): known matcher limitations, named rather than
+# silently fixed (§7 bars widening the matcher this cut) --
+#   - False negatives, accepted: an English literal that is not a
+#     standalone `view!` text child (an attribute value, a helper's return)
+#     is invisible to clause (b), and clause (a) only ever catches kana/CJK.
+#     The gate therefore bounds the Japanese debt exactly and the English
+#     debt only partially.
+#   - A further false negative found while building this gate, not in the
+#     original RFC's own measurement: `admin/safety.rs`'s two literals
+#     ("all buckets verified within staleness window", "one or more
+#     buckets need re-verification") are genuine English prose that the
+#     class-name-exclusion regex wrongly excludes, because an all-lowercase,
+#     space-separated sentence with no punctuation is indistinguishable
+#     from a CSS class list under `^"[a-z][a-z-]*( [a-z][a-z-]*)*"$`. Not
+#     fixed here, per the same §7 bar -- narrowing the exclusion widens
+#     what clause (b) catches, which is exactly what this cut's matcher is
+#     not allowed to do. `admin/` correctly has no ceiling entry below: its
+#     matcher-visible count really is 0, by construction of the matcher as
+#     specified.
+# ---------------------------------------------------------------------------
+
+I18N_FRONTEND_SRC="${REPO_ROOT}/crates/frontend/src"
+
+# file (relative to crates/frontend/src) <TAB> ceiling. Eighteen rows,
+# reproduced from RFC 185 §4 F1's own measurement; `templates/security_center.rs`
+# and `templates/totp.rs` are 0 here because T3 already deleted their one
+# literal each in this same cut (round 1 §6 T3) -- this table is the
+# POST-T3 state, not the one F1's own table printed before T3 ran.
+declare -a I18N_CEILINGS=(
+    "pages/operator/clients.rs	52"
+    "pages/operator/audit_chain.rs	41"
+    "pages/operator/console.rs	33"
+    "pages/operator/tenancy.rs	27"
+    "pages/operator/audit.rs	24"
+    "pages/security_center.rs	9"
+    "pages/login.rs	3"
+    "pages/sessions.rs	3"
+    "pages/totp.rs	3"
+    "pages/tenant_admin/overview.rs	2"
+    "pages/tenant_admin/invitations.rs	1"
+    "components/primitives/confirm_dialog.rs	4"
+    "components/domain/role_impact.rs	3"
+    "components/primitives/density_toggle.rs	2"
+    "components/shells/tenant_admin_shell.rs	2"
+    "components/shells/operator_shell.rs	1"
+    "templates/security_center.rs	0"
+    "templates/totp.rs	0"
+)
+
+# $1: a file path. Echoes "cjk en" (two integers, space-separated).
+# RFC 182: every `grep | wc -l` below gets `|| true` -- `grep` exits 1 on
+# no match, and under this file's `pipefail`, that is the pipeline's
+# reported status even though `wc -l` (which always reads to EOF and never
+# exits early) itself succeeds. `wc -l` is not a SIGPIPE risk the way
+# `grep -q`/`head` are (it never exits before consuming all input), so the
+# only hazard here is the exit-code one `|| true` already closes.
+i18n_count_literals() {
+    local f="$1" body a b
+    body=$(awk '/^#\[cfg\(test\)\]/{exit} {print}' "$f" | grep -vP '^\s*//' || true)
+    a=$(grep -oP '"[^"]*[\x{3040}-\x{30ff}\x{4e00}-\x{9fff}][^"]*"' <<< "$body" | wc -l || true)
+    b=$(grep -oP '^\s*"[^"]*"\s*$' <<< "$body" \
+        | sed -E 's/^\s*//; s/\s*$//' \
+        | grep -P '[A-Za-z]{2}' \
+        | grep -vP '^"[a-z][a-z-]*( [a-z][a-z-]*)*"$' \
+        | grep -vP '[\x{3040}-\x{30ff}\x{4e00}-\x{9fff}]' \
+        | wc -l || true)
+    echo "$a $b"
+}
+
+i18n_scanned_files=0
+i18n_hit_count=0
+i18n_violations=""
+i18n_ceiling_matched=""
+
+# Every file in scope is scanned, including files whose count is 0 --
+# NOT just files the matcher currently hits. A ceiling entry for a file
+# whose real count has since dropped to 0 would otherwise never be
+# compared against anything (D5's own failure mode, the one this gate
+# exists to close): skipping zero-count files before the ceiling lookup
+# is exactly how a ceiling table silently stops being a gate.
+while IFS= read -r -d '' file; do
+    rel="${file#${I18N_FRONTEND_SRC}/}"
+    i18n_scanned_files=$((i18n_scanned_files + 1))
+    read -r cjk en <<< "$(i18n_count_literals "$file")"
+    total=$((cjk + en))
+    [[ "$total" -gt 0 ]] && i18n_hit_count=$((i18n_hit_count + 1))
+
+    ceiling=""
+    for entry in "${I18N_CEILINGS[@]}"; do
+        IFS=$'\t' read -r crel cceil <<< "$entry"
+        if [[ "$crel" == "$rel" ]]; then
+            ceiling="$cceil"
+            i18n_ceiling_matched="${i18n_ceiling_matched}${crel}\n"
+            break
+        fi
+    done
+
+    if [[ -z "$ceiling" ]]; then
+        if [[ "$total" -gt 0 ]]; then
+            i18n_violations="${i18n_violations}${rel}: ${total} literal(s) (cjk ${cjk} + en ${en}), NO ceiling entry in I18N_CEILINGS -- new file, must be added\n"
+        fi
+        # total == 0 and no ceiling entry: the ordinary, unremarkable case.
+    elif [[ "$total" -gt "$ceiling" ]]; then
+        i18n_violations="${i18n_violations}${rel}: ${total} literal(s) (cjk ${cjk} + en ${en}) EXCEEDS its ceiling of ${ceiling}\n"
+    elif [[ "$total" -lt "$ceiling" ]]; then
+        i18n_violations="${i18n_violations}${rel}: ${total} literal(s) (cjk ${cjk} + en ${en}) is BELOW its ceiling of ${ceiling} (D5) -- lower I18N_CEILINGS to ${total}\n"
+    fi
+done < <(find "${I18N_FRONTEND_SRC}/pages" "${I18N_FRONTEND_SRC}/components" \
+              "${I18N_FRONTEND_SRC}/admin" "${I18N_FRONTEND_SRC}/templates" \
+              "${I18N_FRONTEND_SRC}/tenancy_console" "${I18N_FRONTEND_SRC}/tenant_admin" \
+              -name '*.rs' -not -path '*/tests/*' -not -name 'tests.rs' -print0 2>/dev/null)
+
+if [[ "$i18n_scanned_files" -eq 0 ]]; then
+    echo "drift-scan: BROKEN -- the RFC 185 i18n-ceiling gate scanned ZERO" >&2
+    echo "  files under crates/frontend/src; the scan paths are wrong." >&2
+    exit 2
+fi
+
+# Staleness, the other half: a ceiling entry naming a file no longer found
+# under any of the six scanned directories at all (renamed, moved, or
+# deleted) -- distinct from the above, which catches a file that still
+# exists but whose count no longer matches.
+i18n_ceiling_stale=""
+for entry in "${I18N_CEILINGS[@]}"; do
+    IFS=$'\t' read -r crel _ <<< "$entry"
+    if ! grep -Fxq "$crel" <<< "$(printf '%b' "$i18n_ceiling_matched")"; then
+        i18n_ceiling_stale="${i18n_ceiling_stale}${crel}\n"
+    fi
+done
+
+i18n_violation_count=$(printf '%b' "$i18n_violations" | grep -c . || true)
+i18n_stale_count=$(printf '%b' "$i18n_ceiling_stale" | grep -c . || true)
+
+echo "ℹ️   i18n literal ceiling: scanned ${i18n_scanned_files} file(s) under" \
+     "crates/frontend/src/{pages,components,admin,templates,tenancy_console,tenant_admin}" \
+     "-- ${i18n_hit_count} hit by the matcher, ${#I18N_CEILINGS[@]} ceiling entr(y|ies)," \
+     "${i18n_violation_count} violation(s), ${i18n_stale_count} stale ceiling entr(y|ies)"
+
+i18n_failed=0
+
+if [[ -n "$i18n_violations" ]]; then
+    echo ""
+    echo "RFC 185 §5.2 i18n literal ceiling violation(s):"
+    printf '%b' "$i18n_violations" | while IFS= read -r line; do [[ -n "$line" ]] && echo "    $line"; done
+    echo ""
+    echo "  A file over its ceiling added a hardcoded natural-language literal" \
+       "-- route it through cesauth_core::i18n::lookup(MessageKey, Locale)" \
+       "instead. A file below its ceiling (or a new, unlisted file) needs" \
+       "I18N_CEILINGS in scripts/drift-scan.sh corrected -- never raised" \
+       "(§12), only added or lowered."
+    i18n_failed=1
+fi
+
+if [[ -n "$i18n_ceiling_stale" ]]; then
+    echo ""
+    echo "I18N_CEILINGS entr(y|ies) naming a file NOT found under any scanned" \
+         "crates/frontend/src subdirectory this run (stale):"
+    printf '%b' "$i18n_ceiling_stale" | while IFS= read -r line; do [[ -n "$line" ]] && echo "    $line"; done
+    echo ""
+    echo "  The file behind this entry was renamed, moved, or removed --" \
+         "remove or correct this entry in I18N_CEILINGS above."
+    i18n_failed=1
+fi
+
+if [[ "$i18n_failed" -eq 1 ]]; then
+    exit 1
+fi
+
 echo "drift-scan: clean — no stale phrases detected."

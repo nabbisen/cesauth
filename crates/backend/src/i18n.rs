@@ -96,6 +96,47 @@ pub fn locale_str(locale: Locale) -> &'static str {
     }
 }
 
+#[cfg(test)]
+mod locale_str_tests {
+    use super::*;
+
+    /// **RFC 185 round 1 T4.** `leptos_html_shell` emits
+    /// `locale_str(lang)` into `<html lang="...">`; `mounted_locale()`
+    /// reads that same attribute back through
+    /// `Locale::from_primary_subtag`. The two must agree for every
+    /// `Locale` variant, or a typo in one direction becomes a silent
+    /// locale mismatch at mount with no error anywhere — the defect
+    /// RFC 185 §5.1 (A5) named as the reason `lang` is typed at all.
+    ///
+    /// **Exhaustive by construction, not a hand-written array.** The
+    /// `match` has no wildcard arm, so adding a `Locale` variant
+    /// without an arm here fails this function to compile — the loop
+    /// below drives the match directly rather than iterating a
+    /// separate list that could fall out of sync with it, which is
+    /// the exact shape `crates/core/src/i18n/tests/lookup_completeness.rs`'s
+    /// hand-written `let all = […]` array rotted into (T3's own
+    /// finding: a pin-match and an iteration list, far apart, kept in
+    /// sync by discipline alone). The stronger guarantee that no
+    /// `Locale` variant is ever left untranslated already exists
+    /// independently: every one of `crates/core/src/i18n/mod.rs`'s
+    /// `lookup_*` sub-functions matches `locale` per `MessageKey`
+    /// arm, so a third variant would fail dozens of matches across
+    /// that file the moment it was added, not just this one test.
+    #[test]
+    fn locale_str_round_trips_through_from_primary_subtag_for_every_variant() {
+        for locale in [Locale::Ja, Locale::En] {
+            match locale {
+                Locale::Ja | Locale::En => {}
+            }
+            assert_eq!(
+                Locale::from_primary_subtag(locale_str(locale)),
+                Some(locale),
+                "locale_str({locale:?}) -> from_primary_subtag did not round-trip",
+            );
+        }
+    }
+}
+
 /// Convenience helper: resolve locale from a request and return the BCP-47
 /// string directly (combines `resolve_locale` + `locale_str`).
 pub fn resolve_locale_str(fallback: &'static str) -> &'static str {

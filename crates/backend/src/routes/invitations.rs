@@ -383,7 +383,7 @@ fn urlencoding(s: &str) -> String {
 // ---------------------------------------------------------------------------
 
 pub async fn list<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::leptos_shell::leptos_html_shell(&req, &ctx.env, "Invitations — cesauth", "en").await
+    crate::routes::leptos_shell::leptos_html_shell(&req, &ctx.env, "Invitations — cesauth", cesauth_core::i18n::Locale::En).await
 }
 
 /// **RFC 153.** Before this, the handler read neither `req` nor `ctx` — no

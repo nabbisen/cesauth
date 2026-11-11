@@ -107,3 +107,24 @@ PDF の i18n contract: **"admin console は当面 JA-only"**
 
 `frame_with_flash` は private なので外部 API breakage なし。
 shorthand `*_page` 関数は signature 変更なし。
+
+## Amended 2026-11-11 (RFC 185)
+
+The lineage note below is a record of what RFC 185 found, added after this
+RFC's own implementation — it does not change anything above, which remains
+the accurate account of what this RFC decided and built at the time.
+
+`:75`'s *"admin console は当面 JA-only"* and `:88`'s **"constitution"** were
+quoting ADR-013's `## v0.36.0 migration scope` → Out of scope list — a
+**deferral with its own trigger written into it** ("if/when demand
+surfaces"), not a permanent policy this RFC was free to treat as settled
+law. Calling it a constitution, and deriving `:96`'s *"admin 系 frame は常に
+`<html lang="ja">`"* from it, turned a scope exclusion into a markup rule
+nine documents across this project went on to cite as decided — the pattern
+RFC 185 §2 traced back to its origin. The owner has since stated that
+multilanguage support for the admin console **is required** (2026-11-11),
+closing the i18n-3 deferral this RFC's own "constitution" rested on. This
+RFC's own implementation — `lang` following the negotiated `Locale` on
+every end-user frame — is unaffected and remains correct; only the admin
+frame's unconditional `lang="ja"` is the part RFC 185 reopens, via its own
+§5.3 per-screen conversion track, not by editing this record.
