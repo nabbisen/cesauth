@@ -60,6 +60,16 @@
 //! write, no audit event) when there is nothing unacknowledged to
 //! clear, so pressing it twice, or pressing it when the chain is
 //! currently clean, is harmless.
+//!
+//! **RFC 184 round 2.** `verify_now`'s audit detail used to be built
+//! from `persist_result`'s return value directly — which, on a refusal,
+//! is the standing alarm, not what this press's own walk found. That
+//! made "the walk found the same tamper again" and "the walk found the
+//! chain clean, and the write was refused" produce byte-identical audit
+//! rows, discarding exactly the signature a wholesale rewrite leaves
+//! (a standing alarm plus an independently-clean full walk). The detail
+//! below now reads `outcome.refused_clean_walk` and says so explicitly
+//! when it is `Some`.
 
 use cesauth_cf::ports::audit::CloudflareAuditEventRepository;
 use cesauth_cf::ports::audit_chain::CloudflareAuditChainCheckpointStore;
@@ -150,22 +160,33 @@ pub async fn verify_now<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Res
     // they see what happened. A propagated error would just
     // produce a 500 with no useful info.
     //
-    // RFC 184 §3.4 — audit who triggered this and what it found
-    // (or, if an unacknowledged alarm was already standing, that
-    // the sticky result was returned unchanged rather than the
-    // fresh walk's own verdict — `persist_result` makes that
-    // substitution, not this handler, so the detail below is
-    // accurate either way).
-    if let Ok(result) = verify_chain_full(&repo, &checkpoints, now_unix).await {
+    // RFC 184 round 2 §2 — the audit detail must distinguish "the
+    // walk found the same tamper again" from "the walk found the
+    // chain clean, and the write was refused": a standing alarm
+    // plus an independently-clean full walk is the signature of a
+    // wholesale rewrite, and the two cases used to produce
+    // byte-identical details. `outcome.refused_clean_walk` carries
+    // the fresh verdict `persist_result` threw away everywhere
+    // else, so this handler can say what THIS press actually found.
+    if let Ok(outcome) = verify_chain_full(&repo, &checkpoints, now_unix).await {
+        let detail = match &outcome.refused_clean_walk {
+            None => format!(
+                "valid={} first_mismatch_seq={:?} rows_walked={}",
+                outcome.stored.valid, outcome.stored.first_mismatch_seq, outcome.stored.rows_walked,
+            ),
+            Some(fresh) => format!(
+                "valid={} first_mismatch_seq={:?} rows_walked={} \
+                 refused_clean_walk=true fresh_valid={} fresh_rows_walked={} fresh_chain_length={}",
+                outcome.stored.valid, outcome.stored.first_mismatch_seq, outcome.stored.rows_walked,
+                fresh.valid, fresh.rows_walked, fresh.chain_length,
+            ),
+        };
         audit::write_owned(
             &ctx.env,
             EventKind::AdminAuditChainVerified,
             Some(principal.id.clone()),
             None,
-            Some(format!(
-                "valid={} first_mismatch_seq={:?} rows_walked={}",
-                result.valid, result.first_mismatch_seq, result.rows_walked,
-            )),
+            Some(detail),
         ).await.ok();
     }
 

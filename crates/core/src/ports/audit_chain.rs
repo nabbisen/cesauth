@@ -120,6 +120,24 @@ pub struct AuditVerificationResult {
     /// with".
     #[serde(default)]
     pub acknowledged:           bool,
+    /// **RFC 184 round 2 §2.** Unix-seconds of the most recent run
+    /// whose own walk found the chain clean (`valid: true`) but whose
+    /// write was refused because an unacknowledged alarm was already
+    /// standing — `None` if no such refusal has happened since the
+    /// slot's current occupant was written. `valid`/`first_mismatch_seq`
+    /// above never change because of a refusal; this field exists so a
+    /// refusal is not simply invisible. A fresh, non-refused write
+    /// always sets this back to `None` — it describes something that
+    /// happened to the PREVIOUS occupant of this slot, not the new one.
+    ///
+    /// This is the only durable trace the cron path leaves when a
+    /// nightly re-walk finds the chain clean after a wholesale rewrite:
+    /// the daily cron has no human actor to carry an audit-log write,
+    /// and `lib.rs`'s own cron-pass record stores only whether the run
+    /// completed, not its verdict. `#[serde(default)]` for the same
+    /// pre-release-KV-blob reason as `acknowledged` above.
+    #[serde(default)]
+    pub clean_walk_refused_at:  Option<i64>,
 }
 
 /// Storage trait for the chain head checkpoint + last

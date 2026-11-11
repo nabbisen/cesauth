@@ -26,6 +26,18 @@
 //! Operators reading this handler: the meat is in
 //! `cesauth_core::audit::verifier::verify_chain`. This file is
 //! the env-touching glue.
+//!
+//! **RFC 184 round 2.** This is the one place a refusal has no human
+//! actor to carry an audit-log write — the cron has no principal, and
+//! `cron_status::record_cron_pass` (the caller in `lib.rs`) only stores
+//! whether the run completed, not its verdict. So when
+//! `verify_chain`'s `VerificationOutcome::refused_clean_walk` is
+//! `Some`, this handler logs it at error level too: the one durable
+//! trace across restarts is the `clean_walk_refused_at` timestamp
+//! `persist_result` already stamped onto the stored
+//! `AuditVerificationResult`, but a live `wrangler tail` or the
+//! Cloudflare dashboard's invocation log is what an operator watching
+//! in real time actually sees.
 
 use cesauth_cf::ports::audit::CloudflareAuditEventRepository;
 use cesauth_cf::ports::audit_chain::CloudflareAuditChainCheckpointStore;
@@ -42,7 +54,8 @@ pub async fn run(env: &Env) -> PortResult<()> {
     let checkpoints = CloudflareAuditChainCheckpointStore::new(env);
     let now_unix    = OffsetDateTime::now_utc().unix_timestamp();
 
-    let result = verify_chain(&repo, &checkpoints, now_unix).await?;
+    let outcome = verify_chain(&repo, &checkpoints, now_unix).await?;
+    let result  = &outcome.stored;
 
     if result.valid {
         console_log!(
@@ -56,6 +69,21 @@ pub async fn run(env: &Env) -> PortResult<()> {
         console_error!(
             "audit chain TAMPER DETECTED: first_mismatch_seq={:?}, checkpoint_consistent={:?}, chain_length={}",
             result.first_mismatch_seq, result.checkpoint_consistent, result.chain_length,
+        );
+    }
+
+    // RFC 184 round 2 §2 — the cron's own re-walk found the chain
+    // clean, but an unacknowledged alarm was already standing, so the
+    // write was refused. This is the wholesale-rewrite signature
+    // (standing alarm + independently-clean full walk) and it has no
+    // actor to audit-log it, so it goes to the error-level console
+    // channel instead.
+    if let Some(fresh) = &outcome.refused_clean_walk {
+        console_error!(
+            "audit chain: cron's re-walk found the chain CLEAN (valid={}, rows_walked={}, chain_length={}) \
+             but an unacknowledged alarm is standing (first_mismatch_seq={:?}) — refused to clear it \
+             or advance the checkpoint",
+            fresh.valid, fresh.rows_walked, fresh.chain_length, result.first_mismatch_seq,
         );
     }
 

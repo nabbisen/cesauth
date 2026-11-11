@@ -51,6 +51,24 @@
 //! [`verify_chain`] and [`verify_chain_full`]. The only way past
 //! a standing alarm is the operator acknowledgement route
 //! (`POST /admin/console/audit/chain/acknowledge`, worker layer).
+//!
+//! ## The refusal is itself evidence (RFC 184 round 2)
+//!
+//! A refused write is not nothing: the walk that produced the
+//! refused `valid: true` ran to completion, and "an unacknowledged
+//! alarm stands AND an independent full walk now says the chain is
+//! clean" is precisely the signature of a wholesale rewrite — the
+//! attack this whole mechanism exists to catch. Collapsing that
+//! into the same `AuditVerificationResult` the standing alarm
+//! already produced would make it indistinguishable from "the walk
+//! found the same tamper again," so [`verify_chain`] and
+//! [`verify_chain_full`] now return a [`VerificationOutcome`]: the
+//! stored, authoritative result, AND — only when a refusal
+//! happened — the fresh verdict that was thrown away everywhere
+//! else. The stored result itself also carries a
+//! `clean_walk_refused_at` timestamp (RFC 184 round 2 §2), because
+//! the cron path has no human actor to hand a richer return value
+//! to; see `crates/backend/src/audit_chain_cron.rs`.
 
 use crate::audit::chain::{
     compute_chain_hash, verify_payload_hash, GENESIS_HASH,
@@ -68,6 +86,28 @@ use crate::ports::PortResult;
 /// keeping memory bounded.
 const PAGE_SIZE: u32 = 200;
 
+/// What a verification run actually did (RFC 184 round 2 §2) —
+/// distinguishes "the walk found the chain invalid" from "the walk
+/// found the chain clean, but the write was refused because an
+/// unacknowledged alarm was already standing". Both
+/// [`verify_chain`] and [`verify_chain_full`] return this instead
+/// of a bare [`AuditVerificationResult`].
+#[derive(Debug, Clone)]
+pub struct VerificationOutcome {
+    /// What is now stored, and what the admin console's
+    /// `AuditChainStatus` reads as the alarm. Authoritative for
+    /// `valid`/`first_mismatch_seq`/whether the checkpoint moved —
+    /// a refusal never changes these.
+    pub stored: AuditVerificationResult,
+    /// `Some(fresh)` exactly when THIS run's own walk found the
+    /// chain clean but the write was refused — `fresh` is that
+    /// walk's own verdict (`valid: true`, its own `rows_walked`/
+    /// `chain_length`), computed and then discarded everywhere
+    /// except here. `None` in every other case, including every
+    /// case where `stored` already equals what this run computed.
+    pub refused_clean_walk: Option<AuditVerificationResult>,
+}
+
 /// Run an incremental chain verification. Resumes from the last
 /// checkpoint (or seq=0 if none), walks the chain forward in
 /// pages, verifies every link, and on success writes a fresh
@@ -78,15 +118,17 @@ const PAGE_SIZE: u32 = 200;
 /// in which case a clean-looking `computed` result is withheld;
 /// see [`persist_result`] (RFC 184).
 ///
-/// Returns the result that is actually in effect after that rule
-/// is applied — the fresh one, or the standing sticky alarm — so
-/// the caller (cron handler, admin "verify now" button) can
-/// include it in any log line or response body.
+/// Returns a [`VerificationOutcome`]: the result that is actually
+/// in effect after that rule is applied — the fresh one, or the
+/// standing sticky alarm — plus, if a refusal happened, the fresh
+/// verdict it refused to keep. The caller (cron handler, admin
+/// "verify now" button) can include either in any log line or
+/// response body.
 pub async fn verify_chain<R, C>(
     repo:        &R,
     checkpoints: &C,
     now_unix:    i64,
-) -> PortResult<AuditVerificationResult>
+) -> PortResult<VerificationOutcome>
 where
     R: AuditEventRepository       + ?Sized,
     C: AuditChainCheckpointStore  + ?Sized,
@@ -129,6 +171,7 @@ where
         checkpoint_consistent,
         rows_walked:           outcome.rows_walked,
         acknowledged:          false,
+        clean_walk_refused_at: None,
     };
 
     // Resolve the checkpoint this run WOULD advance to, if it is
@@ -175,7 +218,7 @@ pub async fn verify_chain_full<R, C>(
     repo:        &R,
     checkpoints: &C,
     now_unix:    i64,
-) -> PortResult<AuditVerificationResult>
+) -> PortResult<VerificationOutcome>
 where
     R: AuditEventRepository       + ?Sized,
     C: AuditChainCheckpointStore  + ?Sized,
@@ -190,6 +233,7 @@ where
         checkpoint_consistent: None,
         rows_walked:           outcome.rows_walked,
         acknowledged:          false,
+        clean_walk_refused_at: None,
     };
 
     let new_checkpoint = if result.valid {
@@ -217,24 +261,29 @@ where
 
 /// Write `computed` as the new last-run result and, if it is valid,
 /// advance the checkpoint to `new_checkpoint` — UNLESS an unacknowledged
-/// `valid: false` result is already standing. In that case neither
-/// write happens and the standing alarm is returned unchanged: a later
-/// run that looks clean must not be able to erase the record of an
-/// earlier tamper finding, and the checkpoint baseline it would move to
-/// must not advance while that finding is unacknowledged. This is what
-/// makes "press verify until the overwritten record says clean" not an
-/// available move (RFC 184 §2).
+/// `valid: false` result is already standing. In that case the write is
+/// refused: the stored alarm is updated only to stamp
+/// `clean_walk_refused_at` (RFC 184 round 2 §2) and re-written as-is,
+/// `valid`/`first_mismatch_seq` untouched, and the checkpoint does not
+/// advance. This is what makes "press verify until the overwritten
+/// record says clean" not an available move (RFC 184 §2) — AND what
+/// keeps the refusal from being silent (round 2 §1): the caller gets
+/// `computed` back as [`VerificationOutcome::refused_clean_walk`], the
+/// fresh verdict that was thrown away, so it can say what THIS run
+/// found even though nothing it found took effect.
 ///
 /// A later run that is ALSO invalid is NOT blocked here — `computed`
-/// still gets written, `acknowledged: false` and all, so the record
-/// stays current (a fresher `first_mismatch_seq`/`rows_walked`, say).
-/// This is deliberate: it is what lets [`verify_chain`]'s daily cron
-/// keep reporting a genuinely NEW mismatch while an old one sits
-/// unacknowledged, rather than going silent the moment one alarm is
-/// unresolved — a cron that cannot record a new finding would be a
-/// worse defect than the one this function exists to close (the
-/// handoff's own §4 "report before doing it" case for touching this
-/// shared path at all).
+/// still gets written, `acknowledged: false` and `clean_walk_refused_at:
+/// None` and all, so the record stays current (a fresher
+/// `first_mismatch_seq`/`rows_walked`, say) and any earlier refusal
+/// marker is cleared along with it — it described the previous
+/// occupant of the slot, not this one. This is deliberate: it is what
+/// lets [`verify_chain`]'s daily cron keep reporting a genuinely NEW
+/// mismatch while an old one sits unacknowledged, rather than going
+/// silent the moment one alarm is unresolved — a cron that cannot
+/// record a new finding would be a worse defect than the one this
+/// function exists to close (the handoff's own §4 "report before doing
+/// it" case for touching this shared path at all).
 ///
 /// Shared by [`verify_chain`] (cron, incremental) and
 /// [`verify_chain_full`] (operator "verify now") rather than living in
@@ -247,7 +296,7 @@ async fn persist_result<C>(
     checkpoints:    &C,
     computed:       AuditVerificationResult,
     new_checkpoint: Option<AuditChainCheckpoint>,
-) -> PortResult<AuditVerificationResult>
+) -> PortResult<VerificationOutcome>
 where
     C: AuditChainCheckpointStore + ?Sized,
 {
@@ -256,9 +305,18 @@ where
         prior_result.as_ref().is_some_and(|r| !r.valid && !r.acknowledged);
 
     if sticky_alarm_outstanding && computed.valid {
-        return Ok(prior_result.expect(
+        let alarm = prior_result.expect(
             "sticky_alarm_outstanding is only true when prior_result is Some",
-        ));
+        );
+        let stamped = AuditVerificationResult {
+            clean_walk_refused_at: Some(computed.run_at),
+            ..alarm
+        };
+        checkpoints.write_last_result(&stamped).await?;
+        return Ok(VerificationOutcome {
+            stored:             stamped,
+            refused_clean_walk: Some(computed),
+        });
     }
 
     checkpoints.write_last_result(&computed).await?;
@@ -267,7 +325,7 @@ where
             checkpoints.write_checkpoint(&cp).await?;
         }
     }
-    Ok(computed)
+    Ok(VerificationOutcome { stored: computed, refused_clean_walk: None })
 }
 
 // ---------------------------------------------------------------------
