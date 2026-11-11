@@ -43,9 +43,9 @@ const DEFAULT_LIMIT: u32 = 100;
 /// field. `None` for a key not in that format, which keeps pagination
 /// safe — the `older_cursor` is simply omitted rather than built from
 /// a wrong value. Duplicated from the pre-`580eeba` server-rendered
-/// viewer (`crates/frontend/src/admin/audit.rs`, not deleted this
-/// slice — see §2 of the handoff) rather than shared across crates for
-/// a two-line helper.
+/// viewer (`admin/audit.rs`'s own `parse_seq_from_key` — deleted at
+/// RFC 185 §5.3 screen 1 round 2, last present at commit `2ea2758`)
+/// rather than shared across crates for a two-line helper.
 fn parse_seq_from_key(key: &str) -> Option<i64> {
     key.strip_prefix("seq=").and_then(|s| s.parse::<i64>().ok())
 }

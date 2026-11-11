@@ -22,7 +22,6 @@
 //!     …" phrasing) and programmatic (aria-label) cues.
 
 pub mod alerts;
-pub mod audit;
 pub mod audit_chain;
 pub mod config;
 pub mod config_edit;
@@ -34,7 +33,6 @@ pub mod safety;
 pub mod tokens;
 
 pub use alerts::alerts_page;
-pub use audit::audit_page;
 pub use audit_chain::audit_chain_status_page;
 pub use config::config_page;
 pub use config_edit::{confirm_page as config_confirm_page, edit_form as config_edit_form};

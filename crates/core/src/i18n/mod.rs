@@ -417,6 +417,16 @@ pub enum MessageKey {
     AuditViewerColActor,
     AuditViewerColEvent,
     AuditViewerColReason,
+    /// **RFC 185 §5.3 screen 1, round 2 — the fourth D2 entry.** Wired
+    /// into the CSR screen at review, which had previously left this
+    /// column hardcoded as `"Seq"` on the theory that it names an
+    /// identifier rather than a label. It is a label: the old template
+    /// rendered it through this key, and the field it names is `seq`
+    /// (lowercase) in the export CSV header
+    /// (`crates/core/src/admin/service/audit_export.rs:95`) — the same
+    /// kind of evidence as D2's other three reversions. The value
+    /// itself is unchanged (`"seq"` in both locales); only the screen's
+    /// own hardcoded `"Seq"` moved to it.
     AuditViewerColSeq,
     AuditViewerNoteSchemaTenant,
     AuditViewerEventAny,

@@ -13,29 +13,29 @@
 //! build-time signal for that mistake, only a grep for the attribute
 //! itself finding nothing hardcoded (§9 assertion 2).
 //!
-//! Reproduces the pre-`580eeba` server-rendered viewer
-//! (`crates/frontend/src/admin/audit.rs`'s `audit_page`, 545 lines, no
-//! caller — deliberately **not deleted** this slice, see this slice's
-//! own handoff §2) as a CSR component against the new
-//! `GET /admin/console/audit.json`. Six sections, same order:
-//! nav, filter form, export form, schema note, results table, pager.
+//! Reproduces the pre-`580eeba` server-rendered viewer (`admin/audit.rs`'s
+//! `audit_page`, 545 lines, no caller — **deleted at RFC 185 §5.3 screen
+//! 1 round 2**, once measured parity closed the gap round 1 found; last
+//! present at commit `2ea2758`, `git show 2ea2758:crates/frontend/src/admin/audit.rs`)
+//! as a CSR component against `GET /admin/console/audit.json`. Six
+//! sections, same order: nav, filter form, export form, schema note,
+//! results table, pager.
 //!
-//! **Stickiness is architectural here, not reconstructed.** The
+//! **Stickiness is architectural here, not reconstructed.** The old
 //! server-rendered version round-tripped the filter state through the
 //! URL query string so a fresh request could re-fill the form; this
 //! component keeps the filter inputs as local signals that the fetch
 //! never resets, so "sticky after submit" falls out of the CSR model
 //! for free — no URL-encoding helper needed (`audit_page`'s own
-//! `encode_query_string`/`build_filter_url*` have no counterpart here).
+//! `encode_query_string`/`build_filter_url*` had no counterpart here).
 //!
 //! **The export form carries a `csrf` hidden field; `audit_page`'s
 //! never did.** `POST /admin/console/audit/export` requires one
 //! (`crate::csrf::verify` against the `__Host-cesauth-csrf` cookie,
-//! `audit_export.rs:34`), and the reference implementation's own
-//! `render_export_form` has no csrf parameter to embed one with — a
-//! gap in the 545-line specification, invisible until this slice
-//! actually drives the form (see the implementation report's parity
-//! table, "export form" row).
+//! `audit_export.rs:34`), and the old template's own `render_export_form`
+//! had no csrf parameter to embed one with — a gap in the 545-line
+//! specification, invisible until this slice actually drove the form
+//! (see the implementation report's parity table, "export form" row).
 //!
 //! **The export form also carries `since`/`until` as of RFC 131 §0
 //! slice 2 deliverable B.** It previously sent only `csrf`/`subject`/
@@ -98,9 +98,9 @@ fn error_message(error: &str, locale: Locale) -> &'static str {
 }
 
 /// Build the `audit.json` query string from the current filter + cursor
-/// state. Empty fields are omitted, matching `audit_page`'s own
-/// `build_filter_url`'s behaviour (an unset filter is absent, not sent
-/// as an empty-string match).
+/// state. Empty fields are omitted, matching the old template's
+/// `audit_page::build_filter_url`'s behaviour (an unset filter is
+/// absent, not sent as an empty-string match).
 fn build_query(actor: &str, event: &str, from: &str, to: &str, cursor: Option<&str>) -> String {
     let mut parts: Vec<String> = Vec::new();
     if !actor.is_empty() { parts.push(format!("actor={}", urlencode(actor))); }
@@ -116,8 +116,8 @@ fn build_query(actor: &str, event: &str, from: &str, to: &str, cursor: Option<&s
 }
 
 /// Percent-encode the bytes a filter value or cursor can contain.
-/// Same restricted safe-set `audit_page`'s own `encode_query_string`
-/// uses (alphanumerics, `-_.~:+`); anything else is hex-encoded.
+/// Same restricted safe-set the old template's `audit_page::encode_query_string`
+/// used (alphanumerics, `-_.~:+`); anything else is hex-encoded.
 fn urlencode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.as_bytes() {
@@ -313,12 +313,7 @@ pub fn ConsoleAudit() -> impl IntoView {
                                     <th scope="col">{lookup(MessageKey::AuditViewerColActor, locale)}</th>
                                     <th scope="col">{lookup(MessageKey::AuditViewerColEvent, locale)}</th>
                                     <th scope="col">{lookup(MessageKey::AuditViewerColReason, locale)}</th>
-                                    // "Seq" stays an identifier, not routed through
-                                    // AuditViewerColSeq: that key's own value is "seq"
-                                    // in both locales, so converting would only be a
-                                    // casing change nothing in this cut's D2/D3 asked
-                                    // for — left alone deliberately, reported, not fixed.
-                                    <th scope="col">"Seq"</th>
+                                    <th scope="col">{lookup(MessageKey::AuditViewerColSeq, locale)}</th>
                                 </tr>
                             </thead>
                             <tbody>
