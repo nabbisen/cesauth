@@ -61,6 +61,113 @@ section Step 3 says to archive, is 3.3%.
 
 ---
 
+## [0.101.0] - 2026-11-12
+
+**Minor** — a new gate condition changes what a contributor must satisfy to
+merge. RFC 185 §5.2 round 2, two rounds, both reviewed and accepted. **The i18n
+gate's zero now means something, and widening it found Japanese that had been
+rendering unconverted since 0.97.0.**
+
+### Fixed — the gate was certifying files it could not see
+
+`0.99.0` shipped a gate that counted hardcoded literals per file against a
+ceiling. `0.100.0` then demonstrated its blind spot: `<th scope="col">"Seq"</th>`
+sat on a screen the gate scored `cjk 0 + en 0`, because the old rule required a
+literal to be the entire trimmed content of its line.
+
+The matcher is now a **two-mode lexer** distinguishing a Leptos `view!` quoted
+text child from a server-side raw-string HTML fragment, because those hold text
+in structurally different ways and need different defences. The result is
+**1,013 counted literals against the previous rule's 210** — and the
+discrimination kills the obvious false positive *structurally* rather than by an
+exclusion list: Rust generics like `-> Result<` are never wrapped in quotes, so
+requiring quotes in the Rust-literal mode makes them unmatchable. Zero of the
+1,013 hits contain a `<` at all.
+
+**Three previously invisible shapes now count.** A quoted text node sharing its
+line with its own tags (150 hits — the `"Seq"` class). A text node spanning
+several source lines, which is the dominant shape of the confirmation prose in
+the tenant and tenancy form templates. And **CJK inside a raw-string HTML
+template**, which closes a claim this project made and had wrong.
+
+### Fixed — the Japanese skip links, and nine badges nobody could see
+
+**`0.99.0`'s CHANGELOG and its tag message both claimed the gate bounded the
+Japanese debt *"exactly, in any string literal"*. It did not.**
+
+Three server frames — `admin/frame.rs`, `tenancy_console/frame.rs`,
+`tenant_admin/frame.rs` — each render
+`<a href="#main" class="skip-link">メインコンテンツへスキップ</a>` inside a
+raw-string HTML template, where the quotes in `href` and `class` break the
+`"[^"]*CJK[^"]*"` match. A skip link is an accessibility affordance, so this was
+not a cosmetic miss.
+
+Widening it then found a site nobody predicted: **the chain-status screen holds
+nine hardcoded Japanese strings in raw-string HTML** —
+`r##"<span class="badge">検証未実行</span>"##` and eight more status badges, at
+`pages/operator/audit_chain.rs`. That is a CSR screen, not a server template,
+and those badges have been rendering unconverted since `0.97.0` shipped, through
+two reviews that counted that file's Japanese with the very matcher which could
+not see them.
+
+**All of it is counted. None of it is converted** — that is the next screens'
+work, and this release deliberately changes no rendered text.
+
+### Changed — the ceiling table, rebaselined
+
+**70 entries, 68 files hit.** Every file that moved, moved up: the measurement
+changed, not the tree, and no literal was added or converted here. Three new
+false-positive classes surfaced while implementing the cross-line join and were
+fixed at the source — `<script>`, `<style>` and `<pre>` bodies are stripped,
+since code and preformatted content are never prose by HTML's own semantics.
+Inline `<code>` was deliberately **not** stripped, because doing so would have
+silently reversed a decision review had just taken.
+
+### Gates
+
+Host tests **1,711 / 0 / 4** across 12 `test result:` lines — **unchanged**, as a
+release touching one shell script must leave them.
+`route-contracts-check.sh` exit 0, **197 routes**, every figure identical.
+`drift-scan.sh` clean: **104 files scanned, 68 hit, 70 ceiling entries, 0
+violations, 0 stale.** `cargo check` warnings unchanged at 8 (frontend) and 1
+(core).
+
+**What the gate still does not see, because the number reads stronger than it
+is**: a tag's own attribute value, in either language — a CJK `aria-label=` would
+escape exactly as an English one does, for the same mechanical reason that an
+attribute lives inside a tag's angle brackets and is not a text node — and, in
+Rust-literal mode, an all-lowercase unpunctuated sentence, indistinguishable
+from a CSS class list by shape alone. **A ceiling of 0 is still not a synonym
+for "converted".**
+
+### Measurement note — a bundle delta is not what this project has been reporting
+
+Worker bundle **899,904 B** gzip at default level (889,204 wasm + 10,700
+shim.js), sha256 `4d1a50c22917c598` / `3054bf5b78fd04ea` — **900,733 → 899,904,
+a decrease of 829 B on a release whose only compiled-input change is the version
+string.**
+
+That is not an anomaly to wave at, so it was run down. The build **is**
+deterministic: two consecutive builds of this tree are byte-identical, and
+`cf34d37`'s tree rebuilt in an isolated worktree reproduces `0.100.0`'s recorded
+figure exactly, sha included. And `git diff cf34d37 -- crates/ Cargo.toml
+Cargo.lock` shows **nothing under `crates/`** — only `0.100.0` → `0.101.0`.
+
+The decisive test: `cf34d37`'s tree **with only the version string changed**
+builds a wasm **byte-identical** to this release's, sha `4d1a50c22917c598`. So a
+seven-character, same-length version string moves the gzipped artifact by
+**829 B**, in this instance downward.
+
+**The consequence for the record**: a bundle delta below roughly a kilobyte
+cannot be attributed to a release's code without controlling for the version
+string, and tag messages in this project have been attributing deltas of exactly
+that size. The `0.96.0` entry put this effect at **+16 B**; it is two orders of
+magnitude larger than that. The control is cheap and is now known — rebuild the
+previous tag's tree with the new version string and diff against *that*, not
+against the previous tag's published number.
+
+---
+
 ## [0.100.0] - 2026-11-11
 
 **Minor** — the audit viewer is **the first screen in this project whose language

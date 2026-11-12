@@ -133,9 +133,21 @@ reuse them:
 
 The full gate set as runnable commands with output redirection:
 
+**Quote these commands literally in the handoff. Never write "the full set from
+RFC NNN's §10, unchanged".** A cross-reference to a command is an invitation to
+substitute one: RFC 185's gate-widening round did exactly that, running
+`cargo test --workspace` instead, which is **not** a superset — it adds the
+migrate and end-to-end binaries while silently dropping everything behind
+`--features cesauth-frontend/csr`, including the test the previous cut had just
+added. The numbers came out *larger* while covering *less*, and re-measuring the
+baseline with the substituted command made both figures agree and hid the gap.
+**The canonical host-test command is this one, and it is 12 `test result:`
+lines:**
+
 ```sh
-cargo test -p cesauth-core -p cesauth-adapter-test \
-           -p cesauth-migrate-test -p cesauth-frontend  > evidence/cargo-test.log 2>&1
+cargo test -p cesauth-core -p cesauth-adapter-test -p cesauth-frontend \
+           -p cesauth-backend -p cesauth-adapter-cloudflare \
+           --features cesauth-frontend/csr         > evidence/cargo-test.log 2>&1
 cargo check -p cesauth-backend --target wasm32-unknown-unknown > evidence/wasm32-check.log 2>&1
 cargo check -p cesauth-frontend --features csr --target wasm32-unknown-unknown > evidence/csr-check.log 2>&1
 cargo clippy -p cesauth-core -p cesauth-adapter-test -p cesauth-migrate-test \
