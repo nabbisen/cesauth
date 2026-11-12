@@ -168,9 +168,20 @@ by construction — 31 of the frontend's Japanese strings are catalog assertions
 and a gate that fires on those is a gate that gets deleted.
 
 **What the gate does and does not see, stated plainly.** It bounds the **Japanese**
-debt exactly, in any string literal, in all six directories. It bounds the
+debt in any *quoted Rust* string literal, in all six directories. It bounds the
 **English** debt only where a literal is a standalone `view!` text child — in
-practice `pages/` and `components/`. **English prose inside a `format!` HTML
+practice `pages/` and `components/`.
+
+**Correction, 2026-11-12.** This paragraph originally claimed the gate bounds the
+Japanese debt *"exactly, in any string literal"*. **It does not**, and the
+counter-examples were found while widening the matcher for 0.101.0:
+`admin/frame.rs:219`, `tenancy_console/frame.rs:171` and
+`tenant_admin/frame.rs:213` each render
+`<a href="#main" class="skip-link">メインコンテンツへスキップ</a>` inside a
+raw-string HTML template, and clause (a) scores **0** on all three — the quotes
+in `href="#main"` and `class="skip-link"` break the `"[^"]*CJK[^"]*"` match. Three
+rendered Japanese strings, on three server frames, and a skip link is an
+accessibility affordance. The 0.101.0 cut closes it. **English prose inside a `format!` HTML
 template is invisible to it**, which is how the server-rendered directories are
 written. Two further blind spots were found and disclosed rather than regexed
 away: the class-name exclusion drops exactly four literals repo-wide, two of them
