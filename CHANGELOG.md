@@ -106,9 +106,28 @@ Widening it then found a site nobody predicted: **the chain-status screen holds
 nine hardcoded Japanese strings in raw-string HTML** —
 `r##"<span class="badge">検証未実行</span>"##` and eight more status badges, at
 `pages/operator/audit_chain.rs`. That is a CSR screen, not a server template,
-and those badges have been rendering unconverted since `0.97.0` shipped, through
-two reviews that counted that file's Japanese with the very matcher which could
-not see them.
+and **those badges have been rendering unconverted since `0.97.0` shipped.**
+
+**Correction, 2026-11-12, to this entry and to this release's tag message.**
+Both originally said the nine badges were *invisible* to clause (a) and that
+nobody could see them. **Clause (a) saw all nine** — as *markup fragments*.
+Each badge is its own short raw string ending just after `</span>`, so
+`"[^"]*CJK[^"]*"` spans from the quote closing `class="badge"` to the raw
+string's own terminator and matches, angle brackets included. The genuinely
+invisible case is the other one, which stands: the **three frames'** skip links,
+where clause (a) really does score 0, because those raw strings continue past
+the text with further quoted attributes so no fragment match ever closes. Two
+cases were conflated and the wrong one was written down. **What survives is the
+substantive claim** — the badges were unconverted for four releases — and
+"counted as a markup fragment" is a poor kind of seen.
+
+**And the totals in this entry overcount.** Where both clauses reach the same
+literal — CJK inside a short raw-string fragment, or a quoted node carrying both
+scripts — it is counted twice. On the chain-status screen the ceiling reads 55
+for **41** distinct literals. **The gate is unaffected as a gate**: adding a
+literal raises its file's count, removing one lowers it, and converting a file
+drives it to 0, so it stays monotonic and the ceilings keep their force. `1,013`
+is a count of matches, not of distinct strings, and should be read as such.
 
 **All of it is counted. None of it is converted** — that is the next screens'
 work, and this release deliberately changes no rendered text.
