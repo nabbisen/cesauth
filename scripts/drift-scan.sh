@@ -1386,7 +1386,6 @@ I18N_FRONTEND_SRC="${REPO_ROOT}/crates/frontend/src"
 # 0 under the new matcher too, their text is 100% `lookup()` interpolation.
 declare -a I18N_CEILINGS=(
     "admin/alerts.rs	10"
-    "admin/audit_chain.rs	27"
     "admin/config_edit.rs	27"
     "admin/config.rs	27"
     "admin/cost.rs	12"
@@ -1403,7 +1402,7 @@ declare -a I18N_CEILINGS=(
     "components/shells/operator_shell.rs	7"
     "components/shells/tenant_admin_shell.rs	3"
     "pages/login.rs	8"
-    "pages/operator/audit_chain.rs	55"
+    "pages/operator/audit_chain.rs	0"
     "pages/operator/audit.rs	2"
     "pages/operator/clients.rs	60"
     "pages/operator/console.rs	44"

@@ -438,6 +438,94 @@ pub enum MessageKey {
     /// — `git show 2ea2758:crates/frontend/src/admin/audit.rs`.
     AuditViewerChainLink,
 
+    // ---- RFC 185 §5.3 screen 2: the chain-status screen
+    // (`/admin/console/audit/chain`). G1 reviewed and approved
+    // (`.git-exclude/reviewed/185-slice3-screen2-g1-decision.md`); every
+    // value below is exactly what that review signed off on, including
+    // the one wording change it required
+    // (`AuditChainStatusNoRuns`'s En). `chain_hash` and `seq` stay
+    // lowercase and untranslated in both locales throughout this
+    // family — identifiers from the data/API, not prose, the same
+    // carve-out screen 1 made for `Export CSV`/`Export JSONL`. ----
+    AuditChainPageTitle,
+    AuditChainHeading,
+    AuditChainNavBack,
+    /// Status badge, five-arm match (`badge_html`/`render_summary`'s own
+    /// five states) — "no runs yet". **En reviewed and changed from "No
+    /// runs yet" to "Not yet verified"**: it renders as the value of a
+    /// row whose own label already says "Status", where "No runs yet"
+    /// invites "runs of what?" while the Ja (`検証未実行`) says plainly
+    /// that verification has not run — the English should not need the
+    /// surrounding table to disambiguate it when the Japanese doesn't.
+    AuditChainStatusNoRuns,
+    AuditChainStatusValid,
+    /// Carries `{seq}`, substituted at the call site via
+    /// `.replace("{seq}", &seq.to_string())` — `SessionsCardAriaLabel`'s
+    /// own `{sid}` convention.
+    AuditChainStatusTamperAtSeq,
+    AuditChainStatusHistoryMismatch,
+    AuditChainStatusVerificationFailed,
+    AuditChainConsistencyMatch,
+    /// **En says "(rewrite suspected)", not the old template's flat
+    /// "(rewrite)" — reviewed and confirmed, reasoning generalised
+    /// beyond this one string**: `疑い` means suspicion, and a
+    /// `chain_hash` mismatch at the recorded `seq` proves the row
+    /// changed, not why — corruption and a botched migration produce
+    /// the identical signal. "(rewrite)" asserts a cause the check
+    /// cannot establish; this reports the finding instead. On a
+    /// security surface, overstating certainty is the worse error.
+    AuditChainConsistencyMismatch,
+    /// Genuine cold start — no checkpoint has ever existed
+    /// (`checkpoint_seq.is_none()`). Split from `NotApplicable` below as
+    /// the `0.97.0` bug fix this component's own module doc describes;
+    /// the old template's single `None` arm conflated the two, and had
+    /// only `"cold start — no cross-check"` for both, so there is no
+    /// 1:1 old English to copy for either — both are translated fresh
+    /// from the live Ja.
+    AuditChainConsistencyColdStart,
+    /// A checkpoint already exists, but the last run was a full
+    /// re-walk, which always skips the cross-check — distinct from
+    /// `ColdStart` above; see that variant's doc for why both are new.
+    AuditChainConsistencyNotApplicable,
+    AuditChainSummaryTitle,
+    AuditChainColChainLength,
+    /// Trailing text after `<code>{current_chain_length}</code>` —
+    /// **keeps its leading space**, which is load-bearing for the
+    /// rendered gap between the number and the unit; not a stray space
+    /// to clean up.
+    AuditChainChainLengthUnit,
+    AuditChainColLastVerification,
+    AuditChainColRowsWalked,
+    AuditChainGrowthHint,
+    /// RFC 184 §3.3 — postdates the old template entirely (it has no
+    /// acknowledgement concept at all), so this and the next two keys
+    /// are translated fresh from the live Ja, not copied from anywhere.
+    AuditChainAckTitle,
+    /// **The sentence that matters most on this screen** (reviewed): "do
+    /// not erase the audit log record" is the exact misunderstanding
+    /// `0.98.0` existed to prevent.
+    AuditChainAckNote,
+    AuditChainAckButton,
+    /// Serves the section `aria-label` and the `<h2>` in **both**
+    /// branches of the empty/populated checkpoint split — one key,
+    /// three call sites.
+    AuditChainCheckpointTitle,
+    AuditChainCheckpointEmpty,
+    AuditChainCheckpointNote,
+    AuditChainColLastVerifiedSeq,
+    AuditChainColRecordedChainHash,
+    AuditChainColRecordedAt,
+    AuditChainColConsistency,
+    AuditChainVerifyTitle,
+    /// The first four sentences are the old template's own
+    /// `render_verify_form` wording, reused directly (same condition,
+    /// same mechanism). **The fifth sentence has no old-template
+    /// source** — RFC 184's `persist_result` refusal behaviour
+    /// postdates it — and is written fresh from the live Ja's own added
+    /// sentence.
+    AuditChainVerifyNote,
+    AuditChainVerifyButton,
+
     // ---- RFC 180 (R2b): dormant CSR component chrome imported from the
     // mockup at df3d9d0 -- operator/tenant-admin shells, role-impact
     // preview, permission-denied/suspended notices, sign-in volume
@@ -527,8 +615,12 @@ pub enum MessageKey {
 
 /// Resolve `(key, locale) -> &'static str`. Zero allocation.
 ///
-/// Dispatches to one of eleven grouped sub-functions (RFC 097, +1 for
-/// RFC 185's `lookup_fetch`) to keep each group ≤ 150 lines. Every
+/// Dispatches to one of twelve grouped sub-functions (RFC 097, +1 for
+/// RFC 185's `lookup_fetch`, +1 for `lookup_audit_chain`) to keep each
+/// group ≤ 150 lines (two groups have grown past that since — `lookup_admin`
+/// and `lookup_r2b` — rather than being split retroactively; a new feature
+/// gets a new group, an existing one is not torn apart for this reason
+/// alone). Every
 /// `MessageKey` variant is covered by exactly one sub-function; the
 /// compiler enforces exhaustiveness via the top-level match in the
 /// `inline_tests` module.
@@ -543,6 +635,7 @@ pub fn lookup(key: MessageKey, locale: Locale) -> &'static str {
         if let Some(s) = lookup_admin(&key, locale) { return s; }
         if let Some(s) = lookup_r2b(&key, locale) { return s; }
         if let Some(s) = lookup_fetch(&key, locale) { return s; }
+        if let Some(s) = lookup_audit_chain(&key, locale) { return s; }
     // Fallback: panic with the key name so missing translations fail loudly
     // during development. In production this path is unreachable if the
     // exhaustive-match test in i18n/tests.rs passes.
@@ -1388,9 +1481,16 @@ fn lookup_admin(key: &MessageKey, locale: Locale) -> Option<&'static str> {
             Locale::Ja => "絞り込み",
             Locale::En => "Filters",
         },
+        // RFC 185 decision 1 (`.git-exclude/reviewed/three-decisions-2026-11-12.md`):
+        // "Actor" asserts agency that is false for cron-emitted
+        // (AnonymousExpired) and admin-on-behalf (DeletionExecuted/
+        // DeletionCancelled) event kinds, where this column holds the
+        // AFFECTED user, not whoever acted. "Subject" is honest for all
+        // three shapes. The key names are unchanged (a rename is churn
+        // with no reader) -- only the values move.
         AuditViewerActorLabel => match locale {
-            Locale::Ja => "Actor (部分一致)",
-            Locale::En => "Actor (substring)",
+            Locale::Ja => "Subject (部分一致)",
+            Locale::En => "Subject (substring)",
         },
         AuditViewerEventLabel => match locale {
             Locale::Ja => "イベント種別",
@@ -1437,8 +1537,8 @@ fn lookup_admin(key: &MessageKey, locale: Locale) -> Option<&'static str> {
             Locale::En => "Time (UTC)",
         },
         AuditViewerColActor => match locale {
-            Locale::Ja => "Actor",
-            Locale::En => "Actor",
+            Locale::Ja => "Subject",
+            Locale::En => "Subject",
         },
         AuditViewerColEvent => match locale {
             Locale::Ja => "Event",
@@ -1694,6 +1794,149 @@ fn lookup_fetch(key: &MessageKey, locale: Locale) -> Option<&'static str> {
         FetchLoading => match locale {
             Locale::Ja => "読み込み中…",
             Locale::En => "Loading…",
+        },
+
+        _ => return None,
+    })
+}
+
+/// RFC 185 §5.3 screen 2 — the chain-status screen
+/// (`/admin/console/audit/chain`). A dedicated function rather than
+/// folding into `lookup_admin` (already well past this module's own
+/// 150-line-per-group guideline) — 31 keys for one screen is exactly
+/// the shape `lookup_fetch` set the precedent for: a cohesive feature
+/// gets its own group. `AuditChainColStatus` does not exist here: the
+/// row label reuses the screen-neutral `Status` key (`lookup_r2b`)
+/// rather than duplicating it, and `error_message`'s unauthorized/
+/// failed/loading states reuse `Fetch*` rather than appearing here —
+/// both reuses found and verified at G1 review.
+#[inline]
+fn lookup_audit_chain(key: &MessageKey, locale: Locale) -> Option<&'static str> {
+    use MessageKey::*;
+    Some(match key {
+        AuditChainPageTitle => match locale {
+            Locale::Ja => "監査チェーン",
+            Locale::En => "Audit chain",
+        },
+        AuditChainHeading => match locale {
+            Locale::Ja => "監査チェーン検証",
+            Locale::En => "Audit chain verification",
+        },
+        AuditChainNavBack => match locale {
+            Locale::Ja => "← 監査ログ",
+            Locale::En => "← Audit log",
+        },
+        AuditChainStatusNoRuns => match locale {
+            Locale::Ja => "検証未実行",
+            Locale::En => "Not yet verified",
+        },
+        AuditChainStatusValid => match locale {
+            Locale::Ja => "✓ チェーン正常",
+            Locale::En => "✓ Chain valid",
+        },
+        AuditChainStatusTamperAtSeq => match locale {
+            Locale::Ja => "⛔ seq={seq} で改ざんを検出",
+            Locale::En => "⛔ Tamper detected at seq={seq}",
+        },
+        AuditChainStatusHistoryMismatch => match locale {
+            Locale::Ja => "⛔ チェーン履歴の不一致（チェックポイントが現在の先頭と一致しません）",
+            Locale::En => "⛔ Chain history mismatch (checkpoint disagrees with current head)",
+        },
+        AuditChainStatusVerificationFailed => match locale {
+            Locale::Ja => "⛔ 検証失敗",
+            Locale::En => "⛔ Verification failed",
+        },
+        AuditChainConsistencyMatch => match locale {
+            Locale::Ja => "✓ seq の現在行と一致",
+            Locale::En => "✓ Matches current row at seq",
+        },
+        AuditChainConsistencyMismatch => match locale {
+            Locale::Ja => "✗ seq の現在行と不一致（書き換えの疑い）",
+            Locale::En => "✗ Does not match current row at seq (rewrite suspected)",
+        },
+        AuditChainConsistencyColdStart => match locale {
+            Locale::Ja => "初回実行 — 照合なし",
+            Locale::En => "First run — no cross-check",
+        },
+        AuditChainConsistencyNotApplicable => match locale {
+            Locale::Ja => "対象外 — 直前の実行は全体再検証のため照合をスキップしています",
+            Locale::En => "Not applicable — the last run was a full re-verify, which skips the cross-check",
+        },
+        AuditChainSummaryTitle => match locale {
+            Locale::Ja => "検証状況",
+            Locale::En => "Verification status",
+        },
+        AuditChainColChainLength => match locale {
+            Locale::Ja => "現在のチェーン長",
+            Locale::En => "Current chain length",
+        },
+        AuditChainChainLengthUnit => match locale {
+            Locale::Ja => " 行（起点行を含む）",
+            Locale::En => " rows (including the genesis row)",
+        },
+        AuditChainColLastVerification => match locale {
+            Locale::Ja => "最終検証日時",
+            Locale::En => "Last verification",
+        },
+        AuditChainColRowsWalked => match locale {
+            Locale::Ja => "直前の検証で走査した行数",
+            Locale::En => "Rows walked in last run",
+        },
+        AuditChainGrowthHint => match locale {
+            Locale::Ja => "⏳ 前回の検証後に新しい監査イベントが追加されています。次回のcron（毎日04:00 UTC）がこれらを検証しますが、下の操作でいつでも全体を再検証できます。",
+            Locale::En => "⏳ New audit events have been appended since the last verification. The next daily cron at 04:00 UTC will walk them; you can also trigger a full re-verify below.",
+        },
+        AuditChainAckTitle => match locale {
+            Locale::Ja => "改ざん検出の確認",
+            Locale::En => "Tamper detection acknowledgement",
+        },
+        AuditChainAckNote => match locale {
+            Locale::Ja => "この検出はまだ確認されていません。確認するまで、チェックポイントは新しい先頭位置には進みません — 次回以降の検証が内部的には整合していても同じです。確認しても監査ログの記録は消えません。対応が完了してから確認してください。",
+            Locale::En => "This detection has not yet been acknowledged. Until it is, the checkpoint will not advance to a new head — even if later verifications are internally consistent. Acknowledging does not erase the audit log record. Acknowledge only once you have dealt with it.",
+        },
+        AuditChainAckButton => match locale {
+            Locale::Ja => "検出を確認済みにする",
+            Locale::En => "Mark as acknowledged",
+        },
+        AuditChainCheckpointTitle => match locale {
+            Locale::Ja => "チェックポイント",
+            Locale::En => "Checkpoint",
+        },
+        AuditChainCheckpointEmpty => match locale {
+            Locale::Ja => "検証が一度も正常に完了していません。最初の日次cron実行でチェックポイントが作成されます。",
+            Locale::En => "No successful verification has completed yet. The first daily cron run will produce a checkpoint.",
+        },
+        AuditChainCheckpointNote => match locale {
+            Locale::Ja => "検証処理は、正常に完了するたびにチェーンの先頭位置を記録します。次回の実行では、記録された chain_hash を同じ seq の現在の行と照合します — 一致しない場合はチェーン全体の書き換えによる改ざんを示します。",
+            Locale::En => "The verifier records the chain head after each successful run. The next run cross-checks the recorded chain_hash against the current row at the same seq — a mismatch indicates wholesale-rewrite tampering.",
+        },
+        AuditChainColLastVerifiedSeq => match locale {
+            Locale::Ja => "最終検証済み seq",
+            Locale::En => "Last verified seq",
+        },
+        AuditChainColRecordedChainHash => match locale {
+            Locale::Ja => "記録された chain_hash",
+            Locale::En => "Recorded chain_hash",
+        },
+        AuditChainColRecordedAt => match locale {
+            Locale::Ja => "記録日時",
+            Locale::En => "Recorded at",
+        },
+        AuditChainColConsistency => match locale {
+            Locale::Ja => "整合性",
+            Locale::En => "Consistency",
+        },
+        AuditChainVerifyTitle => match locale {
+            Locale::Ja => "検証を実行",
+            Locale::En => "Run verification",
+        },
+        AuditChainVerifyNote => match locale {
+            Locale::Ja => "今すぐ全体を再検証します。既存のチェックポイントを無視して起点行からチェーン全体を走査します。成功すると、チェックポイントは新しい先頭位置に置き換わります。デプロイ後や、即時に状態を確認したいときに使用してください。未確認の改ざん検出がある間は、この操作を行ってもチェックポイントは進みません。",
+            Locale::En => "Run a full re-verification right now. Walks the chain from the genesis row, ignoring the existing checkpoint. On success the checkpoint is replaced with the new head. Use after a deploy or whenever you want immediate confirmation. While there is an unacknowledged tamper detection, this action will not advance the checkpoint even so.",
+        },
+        AuditChainVerifyButton => match locale {
+            Locale::Ja => "今すぐ検証する（全体再検証）",
+            Locale::En => "Verify now (full re-walk)",
         },
 
         _ => return None,

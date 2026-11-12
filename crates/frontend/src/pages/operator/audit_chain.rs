@@ -1,48 +1,68 @@
-//! 監査チェーン検証状況 (`/admin/console/audit/chain`) — RFC 131 §0 slice 2.
+//! Chain verification status (`/admin/console/audit/chain`) — RFC 131 §0
+//! slice 2, converted to a negotiated locale by RFC 185 §5.3 screen 2.
 //!
-//! ADR-013 準拠: 日本語のみ。ロケールネゴシエーションなし。
+//! **This is why the gate was widened in RFC 185 §5.2.** Nine of this
+//! screen's Japanese strings sat in raw-string HTML (`status_badge`/
+//! `consistency_badge`'s markup fragments below) and had been rendering
+//! unconverted since `0.97.0`, through two reviews that counted this
+//! file's Japanese with a matcher that could not see them — `0.101.0`
+//! closed that gap, and this is the screen that gap exists for.
 //!
-//! Reproduces `crates/frontend/src/admin/audit_chain.rs`'s
-//! `audit_chain_status_page` (280 lines, 6 tests, no caller since
-//! `580eeba`) as a CSR component against the new
-//! `GET /admin/console/audit/chain.json`. Four blocks, same order:
-//! nav back, summary, checkpoint, verify-now form.
+//! `routes/admin/console/audit_chain.rs::page` resolves `Locale` from
+//! `Accept-Language` and emits it as `<html lang>`; this component reads
+//! it back once, at mount, via [`crate::app::mounted_locale`], same
+//! channel as screen 1. `<main lang>` follows the same value for the
+//! same reason screen 1's does: an element-level `lang` left hardcoded
+//! would win over `<html lang>` for this component's whole subtree with
+//! no build-time signal for the mistake.
 //!
-//! **The badge logic is copied verbatim, not re-derived** — `badge_html`
-//! and `consistency_badge` below match `render_summary`'s five-arm match
-//! and `render_checkpoint`'s three-arm match exactly, kept as pure
-//! functions for the same reason `audit.rs`'s `classify_status` is pure:
-//! host-testable without a reactive signal or a DOM.
+//! **`status_badge`/`consistency_badge` return `(class, text)`, not
+//! HTML.** The pre-conversion versions built raw `<span>` strings and
+//! injected them through a raw-markup sink attribute (two of them, on
+//! the audit-tamper screen) — not exploitable (the only interpolation was `{seq}`, an
+//! `i64`), but removed anyway while every line of both functions was
+//! already being touched for i18n, rather than left as the smaller
+//! change. The `view!` macro pairs the class with the text natively, so
+//! both sinks disappear with no runtime-string HTML left to parse back
+//! out of.
 //!
-//! **The verify-now form posts and lets the server's 302 drive the
-//! refetch** — `POST /admin/console/audit/chain/verify` always redirects
-//! to `/admin/console/audit/chain` (a full page navigation, not a fetch),
-//! so the browser reloads the component and it refetches on mount. That
-//! is the intended flow per this slice's handoff, not a defect to work
-//! around with a client-side re-fetch after the POST.
+//! **The five/four-arm matches are load-bearing and were kept in exact
+//! correspondence with the pre-`580eeba` server-rendered template's own
+//! `render_summary`/`render_checkpoint`.** `consistency_badge`'s fourth
+//! arm (`NotApplicable`, distinct from genuine `ColdStart`) has no
+//! template counterpart — it is the `0.97.0` bug fix described on the
+//! variant itself: the old single `None` arm conflated "no checkpoint
+//! has ever existed" with "a full re-walk always skips the cross-check,"
+//! so a non-cold store that had just been fully re-verified was
+//! mislabelled as a cold start.
 //!
-//! **RFC 131 §0 slice 2, round 3: localized into the register every
-//! other `pages/operator/` component uses.** The reference template
-//! (`admin/audit_chain.rs`) is hardcoded English, and round 1 copied
-//! that register verbatim instead of translating it — the slice's own
-//! handoff explicitly forbade this ("do not translate the template's
-//! English into the component; write the Japanese the stub already
-//! uses as its register"), and both the implementation and the review
-//! missed it until round 3. `chain_hash` and `seq` stay in English
-//! deliberately — identifiers from the data/API, not prose, the same
-//! carve-out slice 1 made for `Export CSV`/`Export JSONL`.
+//! Reproduces `admin/audit_chain.rs`'s `audit_chain_status_page` (281
+//! lines, 6 tests, no caller since `580eeba` by its own module doc) —
+//! **deleted at RFC 185 §5.3 screen 2**, once measured region-by-region
+//! parity held; last present at commit `f82122b`,
+//! `git show f82122b:crates/frontend/src/admin/audit_chain.rs`.
+//! Four blocks, same order: nav back, summary, checkpoint, verify-now
+//! form. RFC 184 adds a fifth between summary and checkpoint: an
+//! acknowledgement form, shown only while `alarm_needs_acknowledgement`
+//! is true.
 //!
-//! **RFC 184** adds a fifth block between the summary and the
-//! checkpoint: an acknowledgement form, shown only while
-//! `alarm_needs_acknowledgement` is true (a detected mismatch with no
-//! operator assertion yet that it was dealt with). It posts to
-//! `/admin/console/audit/chain/acknowledge`, same CSRF-token-in-hidden-
-//! field shape as the verify-now form below it, and the same
-//! full-page-redirect-drives-the-refetch discipline.
+//! **The verify-now and acknowledge forms post and let the server's 302
+//! drive the refetch** — both always redirect back to this page (a full
+//! navigation, not a fetch), so the browser reloads the component and it
+//! refetches on mount. Intended flow, not a defect to work around with a
+//! client-side re-fetch after the POST.
+//!
+//! `chain_hash` and `seq` stay in English in both locales deliberately —
+//! identifiers from the data/API, not prose, the same carve-out slice 1
+//! made for `Export CSV`/`Export JSONL`.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::Deserialize;
+
+use cesauth_core::i18n::{lookup, Locale, MessageKey};
+
+use crate::app::mounted_locale;
 
 // ─── Data shapes ────────────────────────────────────────────────────────────
 
@@ -82,34 +102,35 @@ fn classify_status(status: u16) -> Result<(), String> {
     }
 }
 
-fn error_message(error: &str) -> &'static str {
+fn error_message(error: &str, locale: Locale) -> &'static str {
     if error == "unauthorized" {
-        "権限がありません。再度サインインしてください。"
+        lookup(MessageKey::FetchUnauthorized, locale)
     } else {
-        "読み込みに失敗しました。再読み込みしてください。"
+        lookup(MessageKey::FetchFailed, locale)
     }
 }
 
 /// Mirrors `admin/audit_chain.rs::render_summary`'s badge match exactly —
 /// five states, in the same order. `(valid, first_mismatch, checkpoint_match)`.
-/// Japanese since round 3 (§1); `seq` stays as the identifier, not
-/// translated.
-fn badge_html(valid: Option<bool>, first_mismatch: Option<i64>, checkpoint_match: Option<bool>) -> String {
+/// Returns `(css class, text)` rather than an HTML string (RFC 185 §5.3
+/// screen 2, D2 — removes the raw-markup sink this function used to
+/// feed). `seq` stays as the identifier, not translated.
+fn status_badge(valid: Option<bool>, first_mismatch: Option<i64>, checkpoint_match: Option<bool>, locale: Locale) -> (&'static str, String) {
     match (valid, first_mismatch, checkpoint_match) {
         (None, _, _) => {
-            r##"<span class="badge">検証未実行</span>"##.to_owned()
+            ("badge", lookup(MessageKey::AuditChainStatusNoRuns, locale).to_owned())
         }
         (Some(true), _, _) => {
-            r##"<span class="badge badge--success">✓ チェーン正常</span>"##.to_owned()
+            ("badge badge--success", lookup(MessageKey::AuditChainStatusValid, locale).to_owned())
         }
         (Some(false), Some(seq), _) => {
-            format!(r##"<span class="badge badge--danger">⛔ seq={seq} で改ざんを検出</span>"##)
+            ("badge badge--danger", lookup(MessageKey::AuditChainStatusTamperAtSeq, locale).replace("{seq}", &seq.to_string()))
         }
         (Some(false), None, Some(false)) => {
-            r##"<span class="badge badge--danger">⛔ チェーン履歴の不一致（チェックポイントが現在の先頭と一致しません）</span>"##.to_owned()
+            ("badge badge--danger", lookup(MessageKey::AuditChainStatusHistoryMismatch, locale).to_owned())
         }
         (Some(false), None, _) => {
-            r##"<span class="badge badge--danger">⛔ 検証失敗</span>"##.to_owned()
+            ("badge badge--danger", lookup(MessageKey::AuditChainStatusVerificationFailed, locale).to_owned())
         }
     }
 }
@@ -126,14 +147,14 @@ fn badge_html(valid: Option<bool>, first_mismatch: Option<i64>, checkpoint_match
 /// store that is not cold at all, the old label said it was. Telling the
 /// two apart needs `checkpoint_seq` alongside `checkpoint_match`, which
 /// the old function had available in its caller but never consulted for
-/// this label. Japanese since round 3 (§1); `seq` stays as the
-/// identifier, not translated.
-fn consistency_badge(checkpoint_seq: Option<i64>, checkpoint_match: Option<bool>) -> &'static str {
+/// this label. Returns `(css class, text)`, same reason as `status_badge`
+/// above (D2). `seq` stays as the identifier, not translated.
+fn consistency_badge(checkpoint_seq: Option<i64>, checkpoint_match: Option<bool>, locale: Locale) -> (&'static str, String) {
     match (checkpoint_seq, checkpoint_match) {
-        (_, Some(true))  => r##"<span class="badge badge--success">✓ seq の現在行と一致</span>"##,
-        (_, Some(false)) => r##"<span class="badge badge--danger">✗ seq の現在行と不一致（書き換えの疑い）</span>"##,
-        (None, None)      => r##"<span class="badge">初回実行 — 照合なし</span>"##,
-        (Some(_), None)   => r##"<span class="badge">対象外 — 直前の実行は全体再検証のため照合をスキップしています</span>"##,
+        (_, Some(true))  => ("badge badge--success", lookup(MessageKey::AuditChainConsistencyMatch, locale).to_owned()),
+        (_, Some(false)) => ("badge badge--danger", lookup(MessageKey::AuditChainConsistencyMismatch, locale).to_owned()),
+        (None, None)      => ("badge", lookup(MessageKey::AuditChainConsistencyColdStart, locale).to_owned()),
+        (Some(_), None)   => ("badge", lookup(MessageKey::AuditChainConsistencyNotApplicable, locale).to_owned()),
     }
 }
 
@@ -159,9 +180,11 @@ async fn fetch_status() -> Result<ChainStatusView, String> {
 
 // ─── Top-level page component ──────────────────────────────────────────────
 
-/// 監査チェーン検証状況 (`/admin/console/audit/chain`)
+/// Chain verification status (`/admin/console/audit/chain`)
 #[component]
 pub fn ConsoleAuditChain() -> impl IntoView {
+    let locale = mounted_locale();
+
     let status      = RwSignal::new(Option::<ChainStatusView>::None);
     let loading      = RwSignal::new(true);
     let load_error   = RwSignal::new(Option::<String>::None);
@@ -175,23 +198,23 @@ pub fn ConsoleAuditChain() -> impl IntoView {
     });
 
     view! {
-        <main lang="ja" aria-label="監査チェーン検証">
-            <h1>"監査チェーン検証"</h1>
+        <main lang=locale.bcp47() aria-label=lookup(MessageKey::AuditChainHeading, locale)>
+            <h1>{lookup(MessageKey::AuditChainHeading, locale)}</h1>
 
             // ── nav back ─────────────────────────────────────────────────
-            <p><a href="/admin/console/audit">"← 監査ログ"</a></p>
+            <p><a href="/admin/console/audit">{lookup(MessageKey::AuditChainNavBack, locale)}</a></p>
 
             {move || load_error.get().map(|e| view! {
-                <p role="alert">{error_message(&e)}</p>
+                <p role="alert">{error_message(&e, locale)}</p>
             })}
 
             <Show when=move || loading.get()>
-                <p aria-busy="true" aria-live="polite">"読み込み中…"</p>
+                <p aria-busy="true" aria-live="polite">{lookup(MessageKey::FetchLoading, locale)}</p>
             </Show>
 
             <Show when=move || !loading.get() && load_error.get().is_none()>
                 {move || status.get().map(|s| {
-                    let badge = badge_html(s.last_run_valid, s.last_run_first_mismatch, s.last_run_checkpoint_match);
+                    let (status_class, status_text) = status_badge(s.last_run_valid, s.last_run_first_mismatch, s.last_run_checkpoint_match, locale);
                     let last_run_at = s.last_run_at
                         .map(cesauth_core::util::format_unix_as_iso8601)
                         .unwrap_or_else(|| "—".to_owned());
@@ -206,34 +229,34 @@ pub fn ConsoleAuditChain() -> impl IntoView {
                     let checkpoint_at     = s.checkpoint_at
                         .map(cesauth_core::util::format_unix_as_iso8601)
                         .unwrap_or_else(|| "—".to_owned());
-                    let consistency = consistency_badge(checkpoint_seq, s.last_run_checkpoint_match);
+                    let (consistency_class, consistency_text) = consistency_badge(checkpoint_seq, s.last_run_checkpoint_match, locale);
                     let needs_ack = alarm_needs_acknowledgement(s.last_run_valid, s.last_run_acknowledged);
                     let csrf_verify = s.csrf_token.clone();
                     let csrf_ack    = s.csrf_token.clone();
 
                     view! {
                         // ── summary ──────────────────────────────────────
-                        <section aria-label="検証状況">
-                            <h2>"検証状況"</h2>
+                        <section aria-label=lookup(MessageKey::AuditChainSummaryTitle, locale)>
+                            <h2>{lookup(MessageKey::AuditChainSummaryTitle, locale)}</h2>
                             <table>
-                                <tr><th scope="row">"ステータス"</th><td inner_html=badge></td></tr>
-                                <tr><th scope="row">"現在のチェーン長"</th><td><code>{current_chain_length}</code>" 行（起点行を含む）"</td></tr>
-                                <tr><th scope="row">"最終検証日時"</th><td>{last_run_at}</td></tr>
-                                <tr><th scope="row">"直前の検証で走査した行数"</th><td><code>{rows_walked}</code></td></tr>
+                                <tr><th scope="row">{lookup(MessageKey::Status, locale)}</th><td><span class=status_class>{status_text}</span></td></tr>
+                                <tr><th scope="row">{lookup(MessageKey::AuditChainColChainLength, locale)}</th><td><code>{current_chain_length}</code>{lookup(MessageKey::AuditChainChainLengthUnit, locale)}</td></tr>
+                                <tr><th scope="row">{lookup(MessageKey::AuditChainColLastVerification, locale)}</th><td>{last_run_at}</td></tr>
+                                <tr><th scope="row">{lookup(MessageKey::AuditChainColRowsWalked, locale)}</th><td><code>{rows_walked}</code></td></tr>
                             </table>
                             <Show when=move || growth_hint>
-                                <p class="note">"⏳ 前回の検証後に新しい監査イベントが追加されています。次回のcron（毎日04:00 UTC）がこれらを検証しますが、下の操作でいつでも全体を再検証できます。"</p>
+                                <p class="note">{lookup(MessageKey::AuditChainGrowthHint, locale)}</p>
                             </Show>
                         </section>
 
                         // ── acknowledgement (RFC 184 §3.3) ───────────────
                         <Show when=move || needs_ack>
-                            <section aria-label="改ざん検出の確認">
-                                <h2>"改ざん検出の確認"</h2>
-                                <p class="note">"この検出はまだ確認されていません。確認するまで、チェックポイントは新しい先頭位置には進みません — 次回以降の検証が内部的には整合していても同じです。確認しても監査ログの記録は消えません。対応が完了してから確認してください。"</p>
+                            <section aria-label=lookup(MessageKey::AuditChainAckTitle, locale)>
+                                <h2>{lookup(MessageKey::AuditChainAckTitle, locale)}</h2>
+                                <p class="note">{lookup(MessageKey::AuditChainAckNote, locale)}</p>
                                 <form method="post" action="/admin/console/audit/chain/acknowledge">
                                     <input type="hidden" name="csrf" value=csrf_ack.clone() />
-                                    <button type="submit" class="warning">"検出を確認済みにする"</button>
+                                    <button type="submit" class="warning">{lookup(MessageKey::AuditChainAckButton, locale)}</button>
                                 </form>
                             </section>
                         </Show>
@@ -241,33 +264,33 @@ pub fn ConsoleAuditChain() -> impl IntoView {
                         // ── checkpoint ───────────────────────────────────
                         {if checkpoint_seq.is_none() {
                             view! {
-                                <section aria-label="チェックポイント">
-                                    <h2>"チェックポイント"</h2>
-                                    <div class="empty">"検証が一度も正常に完了していません。最初の日次cron実行でチェックポイントが作成されます。"</div>
+                                <section aria-label=lookup(MessageKey::AuditChainCheckpointTitle, locale)>
+                                    <h2>{lookup(MessageKey::AuditChainCheckpointTitle, locale)}</h2>
+                                    <div class="empty">{lookup(MessageKey::AuditChainCheckpointEmpty, locale)}</div>
                                 </section>
                             }.into_any()
                         } else {
                             view! {
-                                <section aria-label="チェックポイント">
-                                    <h2>"チェックポイント"</h2>
-                                    <p class="note">"検証処理は、正常に完了するたびにチェーンの先頭位置を記録します。次回の実行では、記録された chain_hash を同じ seq の現在の行と照合します — 一致しない場合はチェーン全体の書き換えによる改ざんを示します。"</p>
+                                <section aria-label=lookup(MessageKey::AuditChainCheckpointTitle, locale)>
+                                    <h2>{lookup(MessageKey::AuditChainCheckpointTitle, locale)}</h2>
+                                    <p class="note">{lookup(MessageKey::AuditChainCheckpointNote, locale)}</p>
                                     <table>
-                                        <tr><th scope="row">"最終検証済み seq"</th><td><code>{checkpoint_seq.unwrap_or_default()}</code></td></tr>
-                                        <tr><th scope="row">"記録された chain_hash"</th><td><code>{checkpoint_hash.clone()}</code></td></tr>
-                                        <tr><th scope="row">"記録日時"</th><td>{checkpoint_at.clone()}</td></tr>
-                                        <tr><th scope="row">"整合性"</th><td inner_html=consistency></td></tr>
+                                        <tr><th scope="row">{lookup(MessageKey::AuditChainColLastVerifiedSeq, locale)}</th><td><code>{checkpoint_seq.unwrap_or_default()}</code></td></tr>
+                                        <tr><th scope="row">{lookup(MessageKey::AuditChainColRecordedChainHash, locale)}</th><td><code>{checkpoint_hash.clone()}</code></td></tr>
+                                        <tr><th scope="row">{lookup(MessageKey::AuditChainColRecordedAt, locale)}</th><td>{checkpoint_at.clone()}</td></tr>
+                                        <tr><th scope="row">{lookup(MessageKey::AuditChainColConsistency, locale)}</th><td><span class=consistency_class>{consistency_text}</span></td></tr>
                                     </table>
                                 </section>
                             }.into_any()
                         }}
 
                         // ── verify-now form ──────────────────────────────
-                        <section aria-label="検証を実行">
-                            <h2>"検証を実行"</h2>
-                            <p class="note">"今すぐ全体を再検証します。既存のチェックポイントを無視して起点行からチェーン全体を走査します。成功すると、チェックポイントは新しい先頭位置に置き換わります。デプロイ後や、即時に状態を確認したいときに使用してください。未確認の改ざん検出がある間は、この操作を行ってもチェックポイントは進みません。"</p>
+                        <section aria-label=lookup(MessageKey::AuditChainVerifyTitle, locale)>
+                            <h2>{lookup(MessageKey::AuditChainVerifyTitle, locale)}</h2>
+                            <p class="note">{lookup(MessageKey::AuditChainVerifyNote, locale)}</p>
                             <form method="post" action="/admin/console/audit/chain/verify">
                                 <input type="hidden" name="csrf" value=csrf_verify />
-                                <button type="submit" class="warning">"今すぐ検証する（全体再検証）"</button>
+                                <button type="submit" class="warning">{lookup(MessageKey::AuditChainVerifyButton, locale)}</button>
                             </form>
                         </section>
                     }
@@ -298,49 +321,60 @@ mod tests {
     }
 
     #[test]
-    fn unauthorized_error_gets_the_specific_message() {
-        assert_eq!(error_message("unauthorized"), "権限がありません。再度サインインしてください。");
-    }
-
-    #[test]
-    fn any_other_error_gets_the_generic_message() {
-        assert_eq!(error_message("http 500"), "読み込みに失敗しました。再読み込みしてください。");
+    fn error_message_follows_the_locale_argument() {
+        assert_eq!(error_message("unauthorized", Locale::En), "You do not have permission. Please sign in again.");
+        assert_eq!(error_message("http 500", Locale::En), "Failed to load. Please reload.");
+        assert_ne!(
+            error_message("unauthorized", Locale::Ja),
+            error_message("unauthorized", Locale::En),
+        );
     }
 
     #[test]
     fn no_runs_yet_badge() {
-        assert!(badge_html(None, None, None).contains("検証未実行"));
+        let (_, text) = status_badge(None, None, None, Locale::Ja);
+        assert!(text.contains("検証未実行"));
     }
 
     #[test]
     fn valid_chain_badge() {
-        assert!(badge_html(Some(true), None, Some(true)).contains("✓ チェーン正常"));
+        let (_, text) = status_badge(Some(true), None, Some(true), Locale::Ja);
+        assert!(text.contains("✓ チェーン正常"));
     }
 
     #[test]
     fn tamper_at_seq_badge() {
-        let html = badge_html(Some(false), Some(17), None);
-        assert!(html.contains("seq=17 で改ざんを検出"));
-        assert!(html.contains("badge--danger"));
+        let (class, text) = status_badge(Some(false), Some(17), None, Locale::Ja);
+        assert!(text.contains("seq=17 で改ざんを検出"));
+        assert_eq!(class, "badge badge--danger");
     }
 
     #[test]
     fn chain_history_mismatch_badge() {
-        let html = badge_html(Some(false), None, Some(false));
-        assert!(html.contains("チェーン履歴の不一致"));
-        assert!(html.contains("badge--danger"));
+        let (class, text) = status_badge(Some(false), None, Some(false), Locale::Ja);
+        assert!(text.contains("チェーン履歴の不一致"));
+        assert_eq!(class, "badge badge--danger");
     }
 
     #[test]
     fn verification_failed_badge() {
-        let html = badge_html(Some(false), None, None);
-        assert!(html.contains("検証失敗"));
-        assert!(html.contains("badge--danger"));
+        let (class, text) = status_badge(Some(false), None, None, Locale::Ja);
+        assert!(text.contains("検証失敗"));
+        assert_eq!(class, "badge badge--danger");
+    }
+
+    #[test]
+    fn status_badge_follows_the_locale_argument() {
+        let (_, ja) = status_badge(None, None, None, Locale::Ja);
+        let (_, en) = status_badge(None, None, None, Locale::En);
+        assert_eq!(en, "Not yet verified");
+        assert_ne!(ja, en);
     }
 
     #[test]
     fn consistency_cold_start_no_checkpoint_at_all() {
-        assert!(consistency_badge(None, None).contains("初回実行"));
+        let (_, text) = consistency_badge(None, None, Locale::Ja);
+        assert!(text.contains("初回実行"));
     }
 
     #[test]
@@ -348,22 +382,32 @@ mod tests {
         // RFC 131 §0 slice 2 follow-up §2 — the defect this slice fixes:
         // a checkpoint exists (268 on the live instance tested), but the
         // last run was a full re-walk, which always skips the cross-check.
-        let html = consistency_badge(Some(268), None);
-        assert!(html.contains("対象外"));
-        assert!(!html.contains("初回実行"),
+        let (_, text) = consistency_badge(Some(268), None, Locale::Ja);
+        assert!(text.contains("対象外"));
+        assert!(!text.contains("初回実行"),
             "a checkpoint that exists must never be described as a cold start");
     }
 
     #[test]
     fn consistency_match() {
-        assert!(consistency_badge(Some(42), Some(true)).contains("seq の現在行と一致"));
+        let (class, text) = consistency_badge(Some(42), Some(true), Locale::Ja);
+        assert!(text.contains("seq の現在行と一致"));
+        assert_eq!(class, "badge badge--success");
     }
 
     #[test]
     fn consistency_mismatch() {
-        let html = consistency_badge(Some(42), Some(false));
-        assert!(html.contains("不一致"));
-        assert!(html.contains("badge--danger"));
+        let (class, text) = consistency_badge(Some(42), Some(false), Locale::Ja);
+        assert!(text.contains("不一致"));
+        assert_eq!(class, "badge badge--danger");
+    }
+
+    #[test]
+    fn consistency_badge_follows_the_locale_argument() {
+        let (_, ja) = consistency_badge(None, None, Locale::Ja);
+        let (_, en) = consistency_badge(None, None, Locale::En);
+        assert_eq!(en, "First run — no cross-check");
+        assert_ne!(ja, en);
     }
 
     // ── alarm_needs_acknowledgement (RFC 184 §3.3) ──────────────────────

@@ -98,7 +98,12 @@ pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
     audit::write_owned(&ctx.env, EventKind::AdminConsoleViewed, Some(principal.id.clone()), None, None)
         .await.ok();
 
-    crate::routes::leptos_shell::leptos_html_shell(&req, &ctx.env, "監査チェーン — cesauth", cesauth_core::i18n::Locale::Ja).await
+    // RFC 185 §5.3 screen 2 — this route now negotiates: `resolve_locale`
+    // reads `Accept-Language` instead of a hardcoded `Locale::Ja`, same
+    // pattern as slice 1's `audit.rs::page`.
+    let locale = crate::i18n::resolve_locale(&req);
+    let title = format!("{} — cesauth", cesauth_core::i18n::lookup(cesauth_core::i18n::MessageKey::AuditChainPageTitle, locale));
+    crate::routes::leptos_shell::leptos_html_shell(&req, &ctx.env, &title, locale).await
 }
 
 // -------------------------------------------------------------------------

@@ -140,7 +140,20 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         StatusSuspended | SuspendedTenantTitle | SuspendedTenantBody |
         SignInVolumeLast24h | OneTimeRevealNotice |
         // RFC 185 §5.3 screen 1 — screen-neutral Fetch* family
-        FetchUnauthorized | FetchFailed | FetchLoading
+        FetchUnauthorized | FetchFailed | FetchLoading |
+        // RFC 185 §5.3 screen 2 — chain-status screen
+        AuditChainPageTitle | AuditChainHeading | AuditChainNavBack |
+        AuditChainStatusNoRuns | AuditChainStatusValid | AuditChainStatusTamperAtSeq |
+        AuditChainStatusHistoryMismatch | AuditChainStatusVerificationFailed |
+        AuditChainConsistencyMatch | AuditChainConsistencyMismatch |
+        AuditChainConsistencyColdStart | AuditChainConsistencyNotApplicable |
+        AuditChainSummaryTitle | AuditChainColChainLength | AuditChainChainLengthUnit |
+        AuditChainColLastVerification | AuditChainColRowsWalked | AuditChainGrowthHint |
+        AuditChainAckTitle | AuditChainAckNote | AuditChainAckButton |
+        AuditChainCheckpointTitle | AuditChainCheckpointEmpty | AuditChainCheckpointNote |
+        AuditChainColLastVerifiedSeq | AuditChainColRecordedChainHash |
+        AuditChainColRecordedAt | AuditChainColConsistency |
+        AuditChainVerifyTitle | AuditChainVerifyNote | AuditChainVerifyButton
             => {}  // exhaustiveness pin — body is irrelevant
     }
     // Now actually iterate. The list below mirrors the match
@@ -250,6 +263,19 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         SignInVolumeLast24h, OneTimeRevealNotice,
         // RFC 185 §5.3 screen 1
         FetchUnauthorized, FetchFailed, FetchLoading,
+        // RFC 185 §5.3 screen 2
+        AuditChainPageTitle, AuditChainHeading, AuditChainNavBack,
+        AuditChainStatusNoRuns, AuditChainStatusValid, AuditChainStatusTamperAtSeq,
+        AuditChainStatusHistoryMismatch, AuditChainStatusVerificationFailed,
+        AuditChainConsistencyMatch, AuditChainConsistencyMismatch,
+        AuditChainConsistencyColdStart, AuditChainConsistencyNotApplicable,
+        AuditChainSummaryTitle, AuditChainColChainLength, AuditChainChainLengthUnit,
+        AuditChainColLastVerification, AuditChainColRowsWalked, AuditChainGrowthHint,
+        AuditChainAckTitle, AuditChainAckNote, AuditChainAckButton,
+        AuditChainCheckpointTitle, AuditChainCheckpointEmpty, AuditChainCheckpointNote,
+        AuditChainColLastVerifiedSeq, AuditChainColRecordedChainHash,
+        AuditChainColRecordedAt, AuditChainColConsistency,
+        AuditChainVerifyTitle, AuditChainVerifyNote, AuditChainVerifyButton,
     ];
     for k in all { f(k); }
 }
