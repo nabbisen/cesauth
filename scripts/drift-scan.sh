@@ -1291,10 +1291,12 @@ fi
 #
 # Matcher N (RFC 185 §4 F1), reproduced verbatim from the handoff's own
 # probe: for each file, truncate at the first `#[cfg(test)]` line and drop
-# comment lines, then count (a) any string literal containing kana/CJK, plus
-# (b) any standalone `view!` text-child literal containing two consecutive
-# ASCII letters, excluding all-lowercase-hyphenated words (CSS class names).
-# D7: test code is excluded by construction (the truncation) AND by path
+# comment lines, then count (a) any string literal containing kana/CJK
+# (round 1, UNCHANGED since -- see ROUND 2 below for the one place its
+# reach was extended without touching its own code), plus (b) a widened
+# English/CJK literal count, which round 2 below replaces entirely and
+# describes in full. D7: test code is excluded by construction (the
+# truncation) AND by path
 # (`*/tests/*`, `tests.rs`) — a standalone tests.rs file has no
 # `#[cfg(test)]` line of its own to truncate at, since it is included
 # conditionally from its parent module.
@@ -1310,51 +1312,147 @@ fi
 # equal this run's actual count), because unlike an exemption list a ceiling
 # has a specific number to be stale AT.
 #
-# G1 (RFC 185 round 1 handoff): known matcher limitations, named rather than
-# silently fixed (§7 bars widening the matcher this cut) --
-#   - False negatives, accepted: an English literal that is not a
-#     standalone `view!` text child (an attribute value, a helper's return)
-#     is invisible to clause (b), and clause (a) only ever catches kana/CJK.
-#     The gate therefore bounds the Japanese debt exactly and the English
-#     debt only partially.
-#   - A further false negative found while building this gate, not in the
-#     original RFC's own measurement: `admin/safety.rs`'s two literals
-#     ("all buckets verified within staleness window", "one or more
-#     buckets need re-verification") are genuine English prose that the
-#     class-name-exclusion regex wrongly excludes, because an all-lowercase,
-#     space-separated sentence with no punctuation is indistinguishable
-#     from a CSS class list under `^"[a-z][a-z-]*( [a-z][a-z-]*)*"$`. Not
-#     fixed here, per the same §7 bar -- narrowing the exclusion widens
-#     what clause (b) catches, which is exactly what this cut's matcher is
-#     not allowed to do. `admin/` correctly has no ceiling entry below: its
-#     matcher-visible count really is 0, by construction of the matcher as
-#     specified.
+# ROUND 2 (RFC 185 §5.2 gate-widening handoff): round 1's clause (b) only
+# ever saw a `view!` text child filling its ENTIRE line, so a literal
+# sharing a line with its own tags (`<th scope="col">"Seq"</th>`) and
+# essentially all of `admin/`, `tenancy_console/`, `tenant_admin/` (which
+# hold their text inside `format!` raw-string HTML, never a standalone
+# quoted line) were invisible -- the gate's own `0` for those three
+# directories was a weaker claim than it read as (F-A, demonstrated by
+# screen 1). Clause (b) is now a small lexer, not one regex:
+#
+#   - NORMAL mode (ordinary Rust code, including a `view!` text child in
+#     full) matches a QUOTED text node anywhere on its line, not only
+#     filling it. Requiring the quotes is what keeps a Rust generic
+#     (`-> Result<`, `Vec<T>`, ...) structurally unmatchable -- generics
+#     are never quoted, so there is no exclusion list to maintain for
+#     them, by construction rather than by guessing a shape.
+#   - HTML mode (inside a `format!`/raw-string HTML fragment, tracked
+#     across raw-string hash counts and escaped quotes) matches an
+#     UNQUOTED text node, joined across every source line the enclosing
+#     string spans (a sentence can sit on its own line between a `</span>`
+#     above it and a `</p>` below -- `admin/alerts.rs`). `<script>`,
+#     `<style>` and `<pre>` bodies are stripped first (code/preformatted
+#     content, not prose; without this, a whole joined stylesheet or a
+#     runbook `curl` example reads as "one literal" once joined). `<code>`
+#     ALONE is not stripped -- a short inline `<code>RUNBOOK_URL</code>` or
+#     `<code>super-bootstrap</code>` is prose-adjacent but not prose
+#     itself, and is deliberately counted rather than excluded (see below).
+#   - HTML mode also now matches a CJK text node (1+ kana/CJK character,
+#     no Latin-letter floor) -- clause (a) only ever sees CJK wrapped in a
+#     literal Rust quote, so a raw-string HTML fragment's CJK (the
+#     `admin/frame.rs` family's Japanese skip-link, `pages/operator/
+#     audit_chain.rs`'s nine hardcoded chain-verification strings) was as
+#     invisible as English used to be, on the exact same three frame
+#     files AND in `pages/`, not only the server directories.
+#
+# What this still does NOT see, named rather than silently left wrong
+# (the handoff's own "what must not be claimed" bar):
+#   - A NORMAL-mode literal that is an all-lowercase, space-separated
+#     sentence with no digits or punctuation (`admin/safety.rs`'s
+#     "all buckets verified within staleness window") is indistinguishable
+#     from a CSS class list (`"card-grid"`) by shape alone, and the
+#     CSS-class exclusion stays in NORMAL mode because removing it would
+#     reintroduce the matcher's very first false-positive class. This is
+#     the same accepted gap round 1 named for the same file; it is a
+#     NORMAL-mode-only accident -- the identical exclusion was never
+#     ported into HTML mode, because a class attribute's value lives
+#     inside a tag's own `<...>`, never between one tag's `>` and the
+#     next's `<`, so HTML-mode text nodes were never at risk of this
+#     confusion to begin with.
+#   - A bare, lowercase, hyphen-or-underscore-shaped identifier rendered
+#     inside a sentence (`admin/tokens.rs`'s `super-bootstrap`, `admin_
+#     tokens`) is counted as debt, not excluded, by a deliberate decision:
+#     unlike an `UPPER_SNAKE` env-var name (excluded -- `RUNBOOK_URL`),
+#     there is no shape that reliably separates this from a real two-word
+#     label, and a role-badge word matching its own enum variant's name
+#     (`"super"`, `"read_only"`) is counted for the same reason -- it is
+#     plausible real UI text, not a mechanical artifact.
+#   - A text node is assumed not to cross a `<script>`/`<style>`/`<pre>`
+#     boundary itself (i.e. these three never nest one inside another in
+#     this codebase) and a raw string's hash count is assumed to be
+#     literal (`r#"`, `r##"`, ...; no byte-string or char-literal lexing).
+#     Neither has a counter-example in this codebase as of this cut.
 # ---------------------------------------------------------------------------
 
 I18N_FRONTEND_SRC="${REPO_ROOT}/crates/frontend/src"
 
-# file (relative to crates/frontend/src) <TAB> ceiling. Eighteen rows,
-# reproduced from RFC 185 §4 F1's own measurement; `templates/security_center.rs`
-# and `templates/totp.rs` are 0 here because T3 already deleted their one
-# literal each in this same cut (round 1 §6 T3) -- this table is the
-# POST-T3 state, not the one F1's own table printed before T3 ran.
+# file (relative to crates/frontend/src) <TAB> ceiling. 68 rows, rebaselined
+# from this cut's own matcher (round 2, RFC 185 gate-widening handoff D4) --
+# this REPLACES round 1's 18-row table wholesale rather than editing it,
+# since most numbers changed for a measurement reason, not a tree reason
+# (D1: this cut converts nothing). `templates/security_center.rs` and
+# `templates/totp.rs` keep an explicit `0` entry per D5 -- confirmed still
+# 0 under the new matcher too, their text is 100% `lookup()` interpolation.
 declare -a I18N_CEILINGS=(
-    "pages/operator/clients.rs	52"
-    "pages/operator/audit_chain.rs	41"
-    "pages/operator/console.rs	33"
-    "pages/operator/tenancy.rs	27"
-    "pages/operator/audit.rs	0"
-    "pages/security_center.rs	9"
-    "pages/login.rs	3"
-    "pages/sessions.rs	3"
-    "pages/totp.rs	3"
-    "pages/tenant_admin/overview.rs	2"
-    "pages/tenant_admin/invitations.rs	1"
+    "admin/alerts.rs	10"
+    "admin/audit_chain.rs	27"
+    "admin/config_edit.rs	27"
+    "admin/config.rs	27"
+    "admin/cost.rs	12"
+    "admin/frame.rs	4"
+    "admin/operations.rs	4"
+    "admin/overview.rs	23"
+    "admin/safety.rs	32"
+    "admin/tokens.rs	45"
+    "components/domain/role_impact.rs	4"
     "components/primitives/confirm_dialog.rs	4"
-    "components/domain/role_impact.rs	3"
     "components/primitives/density_toggle.rs	2"
-    "components/shells/tenant_admin_shell.rs	2"
-    "components/shells/operator_shell.rs	1"
+    "components/primitives/error_summary.rs	1"
+    "components/primitives/permission_denied.rs	1"
+    "components/shells/operator_shell.rs	7"
+    "components/shells/tenant_admin_shell.rs	3"
+    "pages/login.rs	8"
+    "pages/operator/audit_chain.rs	55"
+    "pages/operator/audit.rs	2"
+    "pages/operator/clients.rs	60"
+    "pages/operator/console.rs	44"
+    "pages/operator/tenancy.rs	27"
+    "pages/security_center.rs	31"
+    "pages/sessions.rs	18"
+    "pages/tenant_admin/forms.rs	11"
+    "pages/tenant_admin/invitations.rs	16"
+    "pages/tenant_admin/organizations.rs	5"
+    "pages/tenant_admin/overview.rs	15"
+    "pages/tenant_admin/subscription.rs	5"
+    "pages/tenant_admin/users.rs	10"
+    "pages/totp.rs	17"
+    "templates/chrome.rs	1"
+    "tenancy_console/forms/group_create.rs	11"
+    "tenancy_console/forms/group_delete.rs	10"
+    "tenancy_console/forms/membership_add.rs	12"
+    "tenancy_console/forms/membership_remove.rs	5"
+    "tenancy_console/forms/organization_create.rs	12"
+    "tenancy_console/forms/organization_set_status.rs	28"
+    "tenancy_console/forms/role_assignment_create.rs	17"
+    "tenancy_console/forms/role_assignment_delete.rs	18"
+    "tenancy_console/forms/subscription_set_plan.rs	25"
+    "tenancy_console/forms/subscription_set_status.rs	28"
+    "tenancy_console/forms/tenant_create.rs	24"
+    "tenancy_console/forms/tenant_set_status.rs	26"
+    "tenancy_console/forms/token_mint.rs	35"
+    "tenancy_console/frame.rs	4"
+    "tenancy_console/organizations.rs	26"
+    "tenancy_console/overview.rs	24"
+    "tenancy_console/role_assignments.rs	15"
+    "tenancy_console/subscription.rs	12"
+    "tenancy_console/tenant_detail.rs	47"
+    "tenancy_console/tenants.rs	12"
+    "tenant_admin/forms/group_create.rs	9"
+    "tenant_admin/forms/group_delete.rs	18"
+    "tenant_admin/forms/membership_add.rs	12"
+    "tenant_admin/forms/membership_remove.rs	5"
+    "tenant_admin/forms/organization_create.rs	11"
+    "tenant_admin/forms/organization_set_status.rs	23"
+    "tenant_admin/forms/role_assignment_grant.rs	29"
+    "tenant_admin/forms/role_assignment_revoke.rs	15"
+    "tenant_admin/frame.rs	4"
+    "tenant_admin/oidc_clients.rs	20"
+    "tenant_admin/organizations.rs	22"
+    "tenant_admin/overview.rs	24"
+    "tenant_admin/role_assignments.rs	7"
+    "tenant_admin/subscription.rs	10"
+    "tenant_admin/users.rs	8"
     "templates/security_center.rs	0"
     "templates/totp.rs	0"
 )
@@ -1367,16 +1465,182 @@ declare -a I18N_CEILINGS=(
 # `grep -q`/`head` are (it never exits before consuming all input), so the
 # only hazard here is the exit-code one `|| true` already closes.
 i18n_count_literals() {
-    local f="$1" body a b
+    local f="$1" body a lexed n_lines h_lines
+    local b1=0 b2=0 h_en=0 h_cjk=0
+
+    # Clause (a): CJK inside an ordinary quoted Rust string literal.
+    # UNCHANGED from round 1 -- its only extension this round is the
+    # separate HTML-mode CJK pass below, which is additive, not an edit
+    # to this code.
     body=$(awk '/^#\[cfg\(test\)\]/{exit} {print}' "$f" | grep -vP '^\s*//' || true)
     a=$(grep -oP '"[^"]*[\x{3040}-\x{30ff}\x{4e00}-\x{9fff}][^"]*"' <<< "$body" | wc -l || true)
-    b=$(grep -oP '^\s*"[^"]*"\s*$' <<< "$body" \
-        | sed -E 's/^\s*//; s/\s*$//' \
+
+    # Clause (b): a two-mode lexer (round 2). NORMAL (ordinary Rust code,
+    # including a plain string in full) vs HTML (inside a format!/raw-
+    # string HTML fragment, hash-count- and escape-aware, joined across
+    # every line the string spans). See the header comment above
+    # I18N_FRONTEND_SRC for the design and its named residual gaps.
+    lexed=$(awk '
+        function find_raw_open(s, start,    rest) {
+            rest = substr(s, start)
+            if (match(rest, /r#+"/)) {
+                g_raw_pos = start + RSTART - 1
+                g_raw_len = RLENGTH
+                return 1
+            }
+            return 0
+        }
+        function find_bare_quote(s, start,    rest, p) {
+            rest = substr(s, start)
+            p = index(rest, "\"")
+            if (p == 0) return 0
+            return start + p - 1
+        }
+        function find_close_plain(s, start,    i, n2, c) {
+            n2 = length(s)
+            i = start
+            while (i <= n2) {
+                c = substr(s, i, 1)
+                if (c == "\\") { i += 2; continue }
+                if (c == "\"") return i
+                i += 1
+            }
+            return 0
+        }
+        function html_append(seg) {
+            if (seg == "") return
+            if (html_buf == "") { html_buf = seg; html_start = lineno }
+            else html_buf = html_buf " " seg
+        }
+        function html_flush(    out) {
+            if (html_buf != "") {
+                out = html_buf
+                gsub(/<script[^>]*>.*<\/script>/, "<script></script>", out)
+                gsub(/<style[^>]*>.*<\/style>/, "<style></style>", out)
+                gsub(/<pre[^>]*>.*<\/pre>/, "<pre></pre>", out)
+                print "H\t" html_start "\t" out
+            }
+            html_buf = ""
+        }
+        BEGIN { mode = 0; raw = 0; hashes = 0; html_buf = "" }
+        /^#\[cfg\(test\)\]/ { html_flush(); exit }
+        {
+            line = $0
+            lineno = FNR
+            if (line ~ /^[ \t]*\/\//) next
+            n = length(line)
+            pos = 1
+            while (pos <= n) {
+                if (mode == 0) {
+                    seek = pos
+                    chosen = 0
+                    while (1) {
+                        has_raw = find_raw_open(line, seek)
+                        raw_candidate = has_raw ? g_raw_pos : 0
+                        raw_candidate_len = has_raw ? g_raw_len : 0
+                        bare_candidate = find_bare_quote(line, seek)
+                        if (raw_candidate == 0 && bare_candidate == 0) { chosen = 0; break }
+                        if (raw_candidate > 0 && (bare_candidate == 0 || raw_candidate <= bare_candidate)) {
+                            chosen = raw_candidate; chosen_kind = "raw"; chosen_len = raw_candidate_len; break
+                        }
+                        nextc = substr(line, bare_candidate + 1, 1)
+                        if (nextc == "<") { chosen = bare_candidate; chosen_kind = "plain"; break }
+                        close_at = find_close_plain(line, bare_candidate + 1)
+                        if (close_at == 0) { chosen = 0; break }
+                        seek = close_at + 1
+                    }
+                    if (chosen == 0) {
+                        if (pos <= n) print "N\t" lineno "\t" substr(line, pos)
+                        pos = n + 1
+                    } else {
+                        if (chosen > pos) print "N\t" lineno "\t" substr(line, pos, chosen - pos)
+                        if (chosen_kind == "raw") { hashes = chosen_len - 2; raw = 1; pos = chosen + chosen_len }
+                        else { hashes = 0; raw = 0; pos = chosen + 1 }
+                        mode = 1; html_buf = ""
+                    }
+                } else {
+                    if (raw) {
+                        closer = "\""
+                        for (hh = 0; hh < hashes; hh++) closer = closer "#"
+                        seg = substr(line, pos)
+                        k = index(seg, closer)
+                        if (k > 0) {
+                            html_append(substr(seg, 1, k - 1)); html_flush()
+                            pos = pos + k - 1 + length(closer); mode = 0
+                        } else { html_append(seg); pos = n + 1 }
+                    } else {
+                        closed_at = find_close_plain(line, pos)
+                        if (closed_at > 0) {
+                            html_append(substr(line, pos, closed_at - pos)); html_flush()
+                            pos = closed_at + 1; mode = 0
+                        } else {
+                            html_append(substr(line, pos)); pos = n + 1; mode = 0; html_flush()
+                        }
+                    }
+                }
+            }
+        }
+        END { html_flush() }
+    ' "$f" || true)
+
+    n_lines=$(grep -P '^N\t' <<< "$lexed" || true)
+    h_lines=$(grep -P '^H\t' <<< "$lexed" || true)
+
+    # b1: a NORMAL-mode record that is nothing but "..." end to end (a
+    # view! text child alone on its own line) -- round 1's original
+    # clause (b), unwidened, kept as one of the two NORMAL-mode cases.
+    b1=$(printf '%s\n' "$n_lines" \
+        | { grep -P '^N\t[0-9]+\t\s*"[^"]*"\s*$' || true; } \
+        | sed -E 's/^N\t[0-9]+\t\s*"//; s/"\s*$//' \
         | grep -P '[A-Za-z]{2}' \
-        | grep -vP '^"[a-z][a-z-]*( [a-z][a-z-]*)*"$' \
-        | grep -vP '[\x{3040}-\x{30ff}\x{4e00}-\x{9fff}]' \
+        | grep -vP '^[a-z][a-z-]*( [a-z][a-z-]*)*$' \
+        | grep -vP '^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$' \
         | wc -l || true)
-    echo "$a $b"
+
+    # b2: a quoted text node sharing its line with its own tags (round 2's
+    # closure of F-A's demonstrated miss, `<th scope="col">"Seq"</th>`).
+    b2=$(printf '%s\n' "$n_lines" | while IFS=$'\t' read -r _ _ content; do
+        [[ -z "${content:-}" ]] && continue
+        { grep -oP '>\s*"[^"<>{}]*"\s*<' <<< "$content" || true; } | while read -r m; do
+            bare=$(grep -oP '"[^"]*"' <<< "$m" | sed -E 's/^"//; s/"$//')
+            [[ "$bare" =~ [A-Za-z]{2} ]] || continue
+            [[ "$bare" =~ ^[a-z][a-z-]*(\ [a-z][a-z-]*)*$ ]] && continue
+            [[ "$bare" =~ ^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$ ]] && continue
+            echo x
+        done
+    done | wc -l || true)
+
+    # HTML mode: one pass over >[^<>]*< (no `{}` exclusion -- a node that
+    # mixes real prose with an interpolation, `No alerts at unix
+    # {now_unix}. Safety attestations...`, must still match end to end;
+    # `{...}` runs are stripped before the floor check instead, so a
+    # PURE placeholder node stays at zero per D5). Classified English
+    # vs CJK after stripping; captured once into a string (not a temp
+    # file) and counted twice from it, rather than mutate a counter from
+    # inside the pipe's subshell.
+    local html_tags
+    html_tags=$(printf '%s\n' "$h_lines" | while IFS=$'\t' read -r _ _ content; do
+        [[ -z "${content:-}" ]] && continue
+        { grep -oP '>[^<>]*<' <<< "$content" || true; } | while read -r m; do
+            inner=$(sed -E 's/^>//; s/<$//' <<< "$m")
+            trimmed=$(sed -E 's/^\s*//; s/\s*$//; s/  +/ /g' <<< "$inner")
+            [[ -z "${trimmed// }" ]] && continue
+            stripped=$(sed -E 's/\{[^}]*\}//g' <<< "$trimmed" | sed -E 's/^\s*//; s/\s*$//; s/  +/ /g')
+            [[ -z "${stripped// }" ]] && continue
+            if grep -qP '[\x{3040}-\x{30ff}\x{4e00}-\x{9fff}]' <<< "$stripped"; then
+                echo "cjk"
+                continue
+            fi
+            [[ "$stripped" =~ [A-Za-z]{3} ]] || continue
+            [[ "$stripped" =~ ^(\&[a-zA-Z]+\;\ *)+$ ]] && continue
+            [[ "$stripped" =~ ^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$ ]] && continue
+            echo "en"
+        done
+    done || true)
+    h_en=$(grep -c '^en$' <<< "$html_tags" || true)
+    h_cjk=$(grep -c '^cjk$' <<< "$html_tags" || true)
+
+    echo "$((a + h_cjk)) $((b1 + b2 + h_en))"
 }
 
 i18n_scanned_files=0
