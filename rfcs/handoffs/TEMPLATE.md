@@ -167,6 +167,15 @@ fail is not a gate. This has been required four times and has caught something
 real every time — including a script that reported `✅ All 0 routes are
 documented` on an empty input.
 
+**An evidence log must contain the values the report asserts from it.** Stating
+*"land the log"* is not enough and has now cost a round three times. RFC 185
+screen 2's locale log captured real HTTP, a live CSP nonce and the full header
+set — and ended each request at curl's `{ [1665 bytes data]` placeholder, so the
+`<html lang>` and `<title>` values its own table claimed were nowhere in it. The
+request side was specified; the response body was not. **Name the values, not
+just the file**: if a report will assert X from a log, the handoff says the log
+must show X.
+
 **Evidence policy.** Every file under `evidence/` is redirected command output.
 A hand-written summary line is not evidence and is rejected at review: the
 v0.81.0 bundle shipped an 80-byte prose `cargo-fmt.log` asserting a clean run
