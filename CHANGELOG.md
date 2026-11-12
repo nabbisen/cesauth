@@ -61,6 +61,94 @@ section Step 3 says to archive, is 3.3%.
 
 ---
 
+## [0.102.0] - 2026-11-12
+
+**Minor** — new catalog surface, and a second route begins negotiating its
+locale. RFC 185 §5.3 screen 2, two rounds, both reviewed and accepted.
+
+### Added — the chain-status screen negotiates, and its badges are views now
+
+`GET /admin/console/audit/chain` calls `resolve_locale`, and **both** of its
+`lang` attributes follow it — the shell's `<html lang>` and the screen's own
+`<main lang>`, which would otherwise have overridden the document for its whole
+subtree. Driven over real HTTP: `wrangler dev --local`, three `curl -v` requests
+with the body captured, all `200 OK` — `en` gives `<html lang="en">` and
+*"Audit chain — cesauth"*, `ja` and no header give `<html lang="ja">` and
+*"監査チェーン — cesauth"*.
+
+This is the screen that reports audit-log tampering, and its status badges —
+*"⛔ seq={n} で改ざんを検出"*, *"✗ seq の現在行と不一致（書き換えの疑い）"* — are
+the words that tell an operator their audit log may have been rewritten. They
+existed in one language with no catalog entry.
+
+**31 new keys, and 4 strings that needed none.** Three fetch states and the
+`Status` row label already had keys — the `Fetch*` family created for exactly
+this purpose one screen earlier, and a bare `Status` key whose Japanese matches
+this screen's word character for character. Finding those before writing
+anything is what a key-list review is for.
+
+**Two raw-markup sinks removed.** The badges were built as HTML strings and
+injected through `inner_html`; they now return a class and a text, which `view!`
+pairs natively. **No exploitable path existed** — the only interpolation was
+`{seq}`, an `i64` — so this is two sinks removed from a security surface while
+every line of both functions was being rewritten anyway, and nothing more.
+
+### Changed — one label stops asserting something false
+
+The audit viewer's subject filter and column were headed **"Actor"**. Measured
+across **125** audit write sites, that column holds *who the event concerns*: the
+acting principal for most kinds, but **the affected user** where the actor is a
+background job or an admin acting on someone else. `AnonymousExpired` is emitted
+by the 04:00 cron and has no human actor at all.
+
+So *"Actor"* asserted agency that is false for those kinds, and the label is now
+**"Subject"** — matching the type and the export header, which were right all
+along. A label that can mislead is worse than a neutral one.
+
+**That is the smaller half of what the investigation found.** Where actor and
+subject differ, the actor survives only in free text: `DeletionExecuted` records
+the deleted user while the acting admin's id sits on the line above, reachable
+only as `"admin-triggered by:…"` inside `reason`. **So "which admin deleted this
+user?" cannot be answered from the audit UI.** That is RFC 187, accepted, and
+not in this release.
+
+### Removed — the dead template, and a stale ceiling entry
+
+`crates/frontend/src/admin/audit_chain.rs`, 281 lines and 6 tests, with no
+caller. Cleared by the standing rule: zero callers, a host-test delta equal to
+the deleted file's own test count, and no route-surface movement.
+
+Its deletion also made a **ceiling entry stale** — the dead template carried a
+count of 27 from `0.101.0`'s rebaseline, which had scored its own English. The
+gate's stale-entry check caught it on the next run, and the entry was removed
+rather than zeroed. **That rule had never before fired on a real entry**, only in
+the synthetic test run to prove it could.
+
+### Gates
+
+Host tests **1,706 / 0 / 4** across 12 `test result:` lines, and the arithmetic
+rather than the number: **+1** on the converted screen (two split error-message
+tests merged into one locale-parameterised test, plus a locale-following test for
+each badge function) **− 6** for the deleted template **= −5** from 1,711.
+`route-contracts-check.sh` exit 0, **197 routes**, every figure identical.
+`drift-scan.sh` clean — **103 scanned, 66 hit, 69 entries**, with
+`pages/operator/audit_chain.rs` at **0**. `cargo check` warnings unchanged.
+
+**Bundle, with the version string controlled for.** `0.101.0` established that a
+seven-character same-length version bump alone moves this artifact by hundreds of
+bytes, so the figures are given both ways. **Code delta: +1,415 B** measured with
+the version pinned at `0.101.0` — 31 keys in two locales, and that is the figure
+to quote for this release's code.
+
+**Absolute after the bump: 901,768 B** (891,069 wasm + 10,699 shim.js), sha256
+`dfb3a4c660223dee` / `f4ab4606e9cd7ccc` — `899,904 → 901,768`, **+1,864 B**. The
+**449 B** between that and the code delta is the version string, and `shim.js`
+moved by a byte (10,700 → 10,699) for the same reason. Reported both ways
+because the naive figure attributes 1,864 B to 31 catalog strings when 1,415 of
+it is theirs.
+
+---
+
 ## [0.101.0] - 2026-11-12
 
 **Minor** — a new gate condition changes what a contributor must satisfy to
