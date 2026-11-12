@@ -557,6 +557,44 @@ reader is not left guessing:
    it is the one condition here that takes a decision away from us rather than
    giving us one.
 
+### Scheduled, not deferred — owner's directive 2026-11-12
+
+> *"As to crates.io, it is not necessarily required now. However, it should be
+> controlled in our schedule. It will have to be published when it should be."*
+
+**So this is a scheduled item the architect owns the timing of, and the owner
+authorizes — not a criteria list waiting for someone to remember it.** The
+distinction matters because this project has watched the other shape fail twice:
+ADR-013's i18n-3 deferral hardened into a cited policy once its *"if/when demand
+surfaces"* stopped being quoted, and Q1's *"defer until there's an observable
+need"* went years without anyone defining the need. **A list of five criteria
+with no owner and no review point is the same shape.**
+
+**The trigger, written mechanically so it cannot rot.** Criterion 1 above is the
+gating one, and it names its own condition: *"either the sentence stops being
+true for `cesauth-core`, or there is no reason to publish it."* That sentence
+lives at **`README.md:158`** and **`CHANGELOG.md:10`** — *the public surface,
+including `core::ports` traits, may change between minor versions.*
+
+So the invariant to hold is: **`publish = false` on all seven crates ⟺ that
+sentence stands.** Either side moving without the other is a contradiction:
+
+- Remove or weaken the sentence while the crates stay unpublished, and the
+  project is making an API-stability promise it declines to ship — the moment to
+  revisit publication.
+- Flip `publish` on any crate while the sentence stands, and the project is
+  shipping a library it says may break every minor — publishing a dependency it
+  has declined to support.
+
+**Proposed as a `drift-scan.sh` check** (rowed in `ROADMAP.md`) so the decision
+is forced by the tree rather than by recall. It fires exactly when the condition
+changes, needs no calendar, and is the project's own answer to a documented
+expectation with no gate.
+
+**Until then nothing changes**: `publish = false` on all seven, the `cesauth`
+name held, the member names unreserved by deliberate decision, and the rename
+unscheduled.
+
 ### Asked again 2026-11-12 — status against the five criteria above
 
 The owner: *"it may be better for us to consider publishment on crates.io when
