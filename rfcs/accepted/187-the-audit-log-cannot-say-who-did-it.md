@@ -1,7 +1,9 @@
 # RFC 187 — The audit log records what happened and, where it matters most, not who did it
 
-**Status**: Proposed, 2026-11-12. **Needs the owner's authorization** — it
-changes the D1 schema, a `core::ports` trait and the export format.
+**Status**: **Accepted** by the owner, 2026-11-12. Not yet dispatched — RFC 185
+§5.3 screen 2 (`0.102.0`) is in flight, and this project does not dispatch the
+next release while a cut is pending. §6's two open items are resolved below by
+that acceptance, and both are still reversible: nothing is built.
 **Found**: 2026-11-12, deciding the owner's delegated question about one field
 with four names (`.git-exclude/reviewed/three-decisions-2026-11-12.md`,
 decision 1). The naming turned out to be the smaller half.
@@ -116,10 +118,24 @@ the prose is the only record and deleting it would lose data.
   documentation plus the migration `seq`, not by a sentinel value. A sentinel
   would be a value that looks like data.
 
-## 6. Open, and the owner's
+## 6. Resolved by the owner's acceptance, 2026-11-12
 
-1. **CSV column position** (§3.3) — append, or the readable order.
-2. **Whether this precedes or follows RFC 185 §5.3's remaining screens.** My
-   recommendation: **after screen 2, before screens 3–5.** Screen 2 closes live
-   wrong output that is already shipped; this closes a question an incident
-   would ask. Screens 3–5 are volume, and volume should yield to both.
+Both items below were stated as proposals with the alternative named. Accepting
+the RFC takes the proposal; recorded explicitly so a later reader does not have
+to infer it, and **both remain reversible until the dispatch**, since no code
+exists yet.
+
+1. **CSV column position** — **append**:
+   `seq,timestamp,kind,subject,client,reason,actor`. The readable order
+   (`actor` before `subject`) was the alternative and is **not** taken: this
+   project has no published consumers but does have an existing downloaded-file
+   format, and a positional change breaks a spreadsheet silently while an
+   appended column does not.
+2. **Sequencing** — **after screen 2, before RFC 185 §5.3's screens 3–5.**
+   Screen 2 closes live wrong output that is already shipped; this closes a
+   question an incident would ask; screens 3–5 are volume, and volume yields to
+   both.
+
+**Still genuinely open, and for the implementing cycle, not the owner**: whether
+adding the column changes what the hash chain hashes (§4, §5). That is the first
+task and a refutation is the more valuable outcome.
