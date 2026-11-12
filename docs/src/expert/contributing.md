@@ -557,6 +557,41 @@ reader is not left guessing:
    it is the one condition here that takes a decision away from us rather than
    giving us one.
 
+### Asked again 2026-11-12 — status against the five criteria above
+
+The owner: *"it may be better for us to consider publishment on crates.io when
+reasonable."* The answer is the five criteria already above; this note records
+where the project stands against them, measured, so the next re-ask starts from
+a position rather than a re-derivation.
+
+**The architect proposed reserving the six member names in response, as RFC 186,
+without having read this section.** That RFC is **withdrawn**
+([`rfcs/archive/186-crates-io-publication.md`](https://github.com/nabbisen/cesauth/blob/main/rfcs/archive/186-crates-io-publication.md)):
+its central claim — that a stub closes a first-come risk — is refuted by this
+section's own costing, and it would have reserved `cesauth-core`, a name the
+2026-10-30 ruling says may be abandoned in favour of `cesauth`.
+
+**Measured 2026-11-12** against the crates.io API: `cesauth` is registered
+(`0.0.0`, 2026-09-10, a 5,238-byte stub, 14 downloads); `cesauth-core`,
+`cesauth-adapter-cloudflare`, `cesauth-adapter-test`, `cesauth-migrate`,
+`cesauth-frontend` and `cesauth-backend` are all unregistered. crates.io has no
+namespace reservation, so holding `cesauth` confers nothing over the hyphenated
+names — which is consistent with this section's framing of reservation as brand
+assurance rather than a control, not an argument against it.
+
+| criterion | status 2026-11-12 |
+|---|---|
+| **1. A consumer that is not this repository** | **Not met, and it is the gating one.** Every caller of `cesauth-core` is in-workspace. `README.md:158` and `CHANGELOG.md:10` both still carry the *"may change between minor versions"* sentence, so the condition this criterion names — *"either the sentence stops being true for `cesauth-core`, or there is no reason to publish it"* — is unchanged. |
+| **2. A name that does not mislead** | **Not met**, and cheap to meet at publish time rather than before: it is a `description` and a docs.rs landing page, not a code change. |
+| **3. A rename is mechanical but not invisible** | **The figures have grown and the characterisation needs updating.** This section says *"six dependent `Cargo.toml` entries"*; re-measured at `0.100.0` it is **12** `Cargo.toml` entries, **1,400** `cesauth_core::` occurrences across **313** files, and **24** book pages. *"Cheap, but not invisible"* is now an understatement — still mechanical, no longer small. |
+| **4. The first real version is not `0.0.0`** | Unchanged and now concrete: the library would start at **`0.100.x`**, whatever the workspace version is at the time. |
+| **5. Publishing hands the version rubric to Cargo** | **Already satisfied, by accident, and worth knowing.** This criterion warns that a caret requirement on a `0.x` crate resolves to `>=0.x.y, <0.(x+1).0`, making `0.x` the compatibility unit, so a breaking change **must** bump the minor. **RFC 181 already made minor the default** and a patch the argued exception — so the project's own rubric now coincides with what Cargo would impose, and publishing would take nothing away. That was not true when this criterion was written. |
+
+**So one criterion is now satisfied, one is gating, one is cheap-at-the-time,
+and one needs its own figures updated.** Nothing changes today: `publish =
+false` stays on all seven crates, no name is reserved, and the rename is not
+scheduled.
+
 Until all of that holds, the honest state is the one in place now: the name is
 held, the crates are unpublished, and **`README.md` must say so next to its
 crates.io/docs.rs/deps.rs badges** — which it does not yet
