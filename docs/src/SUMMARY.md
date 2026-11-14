@@ -71,6 +71,7 @@
     - [ADR-017: Audit append performance](./expert/adr/017-audit-append-performance.md)
     - [ADR-018: Request correlation ID](./expert/adr/018-request-traceability.md)
     - [ADR-019: Formal verification position](./expert/adr/019-formal-verification-position.md)
+    - [ADR-020: Security assurance posture](./expert/adr/020-security-assurance-posture.md)
 - [Security considerations](./expert/security.md)
 - [Attack surface review cadence](./expert/attack-surface-review-cadence.md)
 - [Contributing to cesauth](./expert/contributing.md)

@@ -71,8 +71,13 @@ the residual gaps. See ROADMAP.md "UI/UX finishing track" for grouping.
 | [112](./proposed/112-worker-auth-macro-batch-migration.md) | Worker auth macro batch migration (RFC 100 全面適用) | P2 | env-blocked |
 | [110a](./proposed/110a-rate-limit-summary.md) | Rate limit summary surface (RFC 110 sub-RFC) | P2 | v0.75.0+ (KV-heavy, env-blocked) |
 
-Security-critical assurance track. Source: architect instruction
-`security-critical-assurance-strategy-v0.80.2.md`; audit report at
+Security-critical assurance track. **`Tier` and `Category` are defined in
+[ADR-020](../docs/src/expert/adr/020-security-assurance-posture.md)** — in this
+repository, as of 2026-11-14. They were previously defined only in the architect
+instruction `security-critical-assurance-strategy-v0.80.2.md`, which git does not
+track, so every `Tier · Category` header in this corpus was unresolvable from
+inside the repo. The instruction remains the origin and stays private; the
+definitions the repo cites no longer live solely in it. Audit report at
 `docs/src/expert/security-assurance-audit-v0.80.2.md`. Implement in ID
 order (116 first — later RFCs consume its newtypes). Numbers 114/115 are
 consumed by the v0.79/v0.80 workspace-restructure and Leptos-migration

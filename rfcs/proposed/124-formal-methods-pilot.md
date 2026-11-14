@@ -1,24 +1,74 @@
-# RFC 124 — Lightweight formal/model-checking pilot (Kani + TLA+)
+# RFC 124 — Lightweight model-checking pilot (TLA+ on the refresh-token family lifecycle)
 
-**Status.** Proposed
+**Status.** Proposed. **Narrowed to TLA+ only, 2026-11-14 — see §0.**
 **Tier.** P2 · Category C (pilot only; time-boxed; may be rejected)
 **Size.** Small (by mandate)
-**Tracks.** Strategy §5.5/§5.2 optional techniques, §8 (RFC theme 9).
+**Tracks.** [ADR-020 §1](../../docs/src/expert/adr/020-security-assurance-posture.md)
+(Category C) and §5 (the §5.2 lifecycle invariants); formerly cited as
+"strategy §5.5/§5.2, §8 (RFC theme 9)", which was unresolvable from inside
+this repository until ADR-020 landed.
 **Touches.** New `verification/` directory (out-of-workspace, like
 `fuzz/`); no production code changes permitted by this RFC.
-**Depends on.** RFC 118 (`FamilyModel`), RFC 120 (sealed authz core).
+**Depends on.** RFC 118 (`FamilyModel`) — **shipped, so this RFC is no longer
+blocked.**
+
+## 0. Narrowed to TLA+ only, 2026-11-14 (architect)
+
+This RFC proposed **two tools on two targets in one 10-working-day box**. That
+shape is no longer permitted, and the dependency structure says where to cut.
+
+**Why it changed.** [ADR-019 §5](../../docs/src/expert/adr/019-formal-verification-position.md)
+now requires **one named target at a time**, derived from RFC 183's shape — the
+pilot that actually worked — and the owner's instruction of 2026-11-10 is
+explicit: *"Too wide range will cost insanely. It should start from minimal and
+be optimized every time."* A two-tool pilot is the thing both rules forbid.
+
+**Where the cut falls is not a preference — it is this RFC's own dependency
+seam.** Its `Depends on` line bundled two tools' prerequisites:
+
+| half | target | needs | status |
+|---|---|---|---|
+| **TLA+** | the refresh-token family lifecycle, via RFC 118's `FamilyModel` | **RFC 118** | **shipped** |
+| **Kani** | `scope_covers` and friends — RFC 120 invariant 6 | **RFC 120** | **not shipped** |
+
+So the blocker that held this whole RFC belonged to only one half of it.
+
+**The resolution:**
+
+1. **This RFC is TLA+ only**, on the refresh-token family lifecycle. One target,
+   one tool, dependency **RFC 118 alone — which shipped, so it is unblocked.**
+   The time box halves with the scope.
+2. **Kani leaves this RFC.** It is owned by the Kani-trial row in `ROADMAP.md`,
+   at RFC 183's own two TOTP-truncation obligations — a target that needs
+   neither RFC 118 nor RFC 120, and whose scope the owner fixed as minimal.
+3. **The Kani targets below are preserved as future candidates**, not deleted:
+   `scope_covers`, `pkce::verify`'s comparison path and `FamilyModel::apply`,
+   still dependent on RFC 120, and **explicitly after the trial row reports** —
+   because that trial decides whether Kani is adopted at all. Running it on four
+   authorization functions before knowing that is the "too wide range" the
+   owner warned against.
+4. **One of those targets should be dropped when it is revisited.**
+   `util::constant_time_eq_bytes` is listed in §5.2 below with its own
+   admission that *"timing is out of scope for Kani"*. Its entire purpose **is**
+   timing, so proving functional equality certifies the one property nobody
+   doubts — exactly the mistake ADR-019 §5 records RFC 183 for avoiding when it
+   declined the same function as a Verus target.
+
+**Not changed:** the Category C verdict obligation (adopt narrowly / defer /
+reject, per ADR-020 §1), the no-production-code rule, and Flux staying
+de-scoped per §3.
 
 ## 1. Summary
 
-A strictly time-boxed evaluation (10 working days total) of two
-candidates on the two best-shaped targets the earlier RFCs produce:
+A strictly time-boxed evaluation of **TLA+** on the refresh-token family
+lifecycle, modelling the client/attacker/store interaction that the Rust
+`FamilyModel` cannot express (multiple concurrent clients holding copies of
+jtis).
 
-- **Kani** (bounded model checking) on small pure functions:
-  `scope_covers`, `pkce::verify`'s comparison path,
-  `util::constant_time_eq_bytes`, and `FamilyModel::apply`.
-- **TLA+** on the refresh-token family lifecycle, modelling the
-  client/attacker/store interaction that the Rust `FamilyModel`
-  cannot express (multiple concurrent clients holding copies of jtis).
+**§0 narrowed this.** The Kani half — `scope_covers`, `pkce::verify`'s
+comparison path, `util::constant_time_eq_bytes`, `FamilyModel::apply` — moved
+out on 2026-11-14 and is preserved there as a future candidate set. The original
+box was 10 working days for both tools; TLA+ alone takes its half.
 
 Deliverable is a written recommendation per tool: **adopt narrowly /
 defer / reject**, with reproducible artifacts either way.

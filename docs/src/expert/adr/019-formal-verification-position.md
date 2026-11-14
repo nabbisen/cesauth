@@ -9,10 +9,12 @@
 The project's position on mechanised proof was, until this ADR, **cited rather
 than contained**. It lived in four places:
 
-1. A **Category A–D taxonomy** and a `§12` that declined broad Verus, in
-   `security-critical-assurance-strategy-v.0.80.2.md` — which is **not in this
-   repository**. Nine in-repo documents cite it, including this book, five RFCs
-   and `ROADMAP.md`.
+1. A **Category A–D taxonomy** and a `§12` that declined broad Verus, in an
+   architect instruction **not tracked by git**. Nine in-repo documents cited
+   it, including this book, five RFCs and `ROADMAP.md`. **Closed 2026-11-14**:
+   both now live in
+   [ADR-020](./020-security-assurance-posture.md), of which this ADR is a
+   specialisation.
 2. **ROADMAP narrative prose**, inside the `## Planned` section that is 93% of a
    file 4.5× over its own budget and whose planning narrative, by its own
    record, "was never pruned as items shipped". That note still described
@@ -56,8 +58,9 @@ why the Kani trial may not grow beyond RFC 183's own two obligations.
 
 ### 3. Broad Verus stays declined; the narrow pilot was the exception
 
-Broad Verus is **Category D** — recorded, no RFC, per strategy §12, which this
-ADR does not reopen. Verus moved out of Category D **only** in the
+Broad Verus is **Category D** — recorded, no RFC, per
+[ADR-020 §2](./020-security-assurance-posture.md), which this ADR does not
+reopen. Verus moved out of Category D **only** in the
 narrow-pilot shape the owner agreed to on 2026-11-09, which was RFC 183: one
 function, five working days, comparative verdict.
 
@@ -148,10 +151,10 @@ hardenings of files that may be deleted:
 ## Consequences
 
 A maintainer can now answer "what is our position on formal verification?" from
-one document in the book. The citation chain to a document outside the
-repository remains for the *wider* assurance strategy, which is deliberately
-private; what changes is that the **formal-verification slice of it no longer
-depends on reading that file.**
+one document in the book. **And as of ADR-020 the citation chain is closed**: the
+taxonomy and the standing direction this ADR specialises are both in the
+repository. The wider strategy stays private, and nothing tracked depends on
+reading it.
 
 **What this ADR does not do**: reopen strategy §12, authorise a second proof
 target, change `verification/`'s fate, or say anything about 1.0 — which remains

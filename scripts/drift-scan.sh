@@ -1741,4 +1741,100 @@ if [[ "$i18n_failed" -eq 1 ]]; then
     exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# Documentation self-containment (owner's instruction 2026-11-14; the rule is
+# in docs/src/expert/contributing.md §Documentation self-containment).
+#
+# Normative content that tracked files depend on must live in a tracked file.
+# `.git-exclude/` is deliberately private and git tracks none of it, so a
+# definition reachable only from there is unresolvable for any reader of this
+# repository. The 2026-11-14 audit found `Tier · Category` on 64 RFC headers
+# with neither label defined in-repo: Category A-D lived only in the untracked
+# assurance strategy's §6, and P0-P3 was defined nowhere at all. ADR-020 now
+# carries both.
+#
+# Two halves, both cheap:
+#   1. ADR-020 still exists and still carries the definitions 64 RFC headers
+#      resolve against. Deleting or gutting it silently re-opens the defect.
+#   2. No tracked file cites .git-exclude/specs/ or .git-exclude/roles/ by
+#      path -- the two normative directories. Zero do today, so this is a
+#      regression guard, green on arrival.
+#
+# Evidence pointers (.git-exclude/review-request/, .git-exclude/reviewed/) are
+# deliberately NOT forbidden: their conclusions are summarised in the ROADMAP
+# row, the CHANGELOG entry or the RFC outcome, and that summary is what makes
+# the pointer acceptable. 154 such citations exist and are allowed by the rule.
+#
+# RFC 182: the greps below use here-strings or file arguments, never a pipe
+# into a short-circuiting reader, so a match cannot become a miss.
+# ---------------------------------------------------------------------------
+
+SELFCONTAIN_ADR="${REPO_ROOT}/docs/src/expert/adr/020-security-assurance-posture.md"
+selfcontain_failed=0
+
+if [[ ! -f "$SELFCONTAIN_ADR" ]]; then
+    echo "❌  ADR-020 is missing: docs/src/expert/adr/020-security-assurance-posture.md" >&2
+    echo "    64 RFC headers carry \`Tier · Category\` and resolve against it." >&2
+    echo "    See docs/src/expert/contributing.md §Documentation self-containment." >&2
+    selfcontain_failed=1
+else
+    selfcontain_missing=""
+    # The four Category MEANINGS and the four direction verbs -- not the
+    # labels "Category A".."Category D", which the ADR writes as table cells
+    # (`| **A** |`). Chosen by measuring the document rather than by assuming
+    # its wording: the first version of this list asserted four strings the
+    # ADR does not contain, which is this project's own
+    # check-it-exists-before-naming-it rule, broken inside the gate meant to
+    # enforce documentation integrity.
+    for token in "Must implement now" "Implement soon" "Pilot only" \
+                 "Defer / do not adopt" \
+                 "Adopt" "Pilot" "Defer" "Reject for now"; do
+        if ! grep -qF -- "$token" "$SELFCONTAIN_ADR"; then
+            selfcontain_missing="${selfcontain_missing}${token}\n"
+        fi
+    done
+    if [[ -n "$selfcontain_missing" ]]; then
+        echo "❌  ADR-020 no longer carries the definition(s) the RFC corpus resolves" >&2
+        echo "    against -- missing:" >&2
+        printf '%b' "$selfcontain_missing" | while IFS= read -r l; do [[ -n "$l" ]] && echo "      $l" >&2; done
+        selfcontain_failed=1
+    fi
+fi
+
+# Half 2: no tracked file may cite a normative .git-exclude directory by path.
+# Two files are excluded by construction, not by list: this script (which must
+# name the pattern it greps for) and contributing.md (the rule's own home,
+# which must be able to state what it forbids). That self-referential match is
+# a hazard this project has now hit three times -- the `inner_html` and `lang=`
+# assertions before it -- so it is handled here rather than by weakening the
+# pattern. Any OTHER file matching is a real violation.
+selfcontain_hits=$(git -C "$REPO_ROOT" grep -In -e '\.git-exclude/specs/' -e '\.git-exclude/roles/' \
+                     -- . ':(exclude)scripts/drift-scan.sh' \
+                        ':(exclude)docs/src/expert/contributing.md' 2>/dev/null || true)
+selfcontain_hit_count=$(grep -c . <<< "$selfcontain_hits" || true)
+[[ -z "$selfcontain_hits" ]] && selfcontain_hit_count=0
+
+if [[ "$selfcontain_hit_count" -ne 0 ]]; then
+    echo "❌  tracked file(s) cite a normative .git-exclude directory by path:" >&2
+    printf '%s\n' "$selfcontain_hits" | while IFS= read -r l; do [[ -n "$l" ]] && echo "    $l" >&2; done
+    echo "" >&2
+    echo "    .git-exclude/ is untracked, so this is unresolvable for any reader" >&2
+    echo "    of the repository. Move the content into a tracked document (an ADR)" >&2
+    echo "    and cite that. Evidence pointers to review-request/ and reviewed/" >&2
+    echo "    remain allowed -- see contributing.md §Documentation self-containment." >&2
+    selfcontain_failed=1
+fi
+
+if [[ "$selfcontain_failed" -eq 1 ]]; then
+    selfcontain_state="DEFECT (see above)"
+else
+    selfcontain_state="ADR-020 present with all 8 definition tokens"
+fi
+echo "ℹ️   documentation self-containment: ${selfcontain_state}," \
+     "${selfcontain_hit_count} tracked citation(s) of a normative .git-exclude path (want 0)"
+
+if [[ "$selfcontain_failed" -eq 1 ]]; then
+    exit 1
+fi
+
 echo "drift-scan: clean — no stale phrases detected."

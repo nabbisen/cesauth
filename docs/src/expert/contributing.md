@@ -482,6 +482,71 @@ than rewording the rule.
   migration, and the MSRV has never moved. [RFC 168](https://github.com/nabbisen/cesauth/blob/main/rfcs/accepted/168-the-release-record-does-not-reconcile.md)
   proposes the three checks.
 
+## Documentation self-containment
+
+**Owner's instruction, 2026-11-14:**
+
+> The documentation must be self-contained, encompassing all necessary
+> information within this folder and other project management materials which
+> git controls. There should be no critical information that exists solely in
+> files outside of the project management scope; such information must be
+> formally documented somewhere within the project's official documentation.
+
+**The test is whether git controls it.** `.git-exclude/` is deliberately private
+— it holds the architect/dev-team workflow, specs, roles and upstream
+correspondence — and `git ls-files .git-exclude/` returns **0**. So anything
+reachable only from there is outside the scope this rule governs.
+
+### The line: normative content in, evidence pointers out
+
+- **Normative content must be in a tracked file.** A definition, a taxonomy, a
+  classification, a standing direction, an invariant cited as the *reason* for a
+  design — if a tracked file depends on it, it lives in a tracked file. Naming
+  an outside document as *provenance* is fine; depending on it for *content* is
+  not.
+- **Evidence pointers may point outside.** A path to an implementation report or
+  a review is a pointer to fuller material whose conclusions are already
+  summarised in-repo — in the `ROADMAP.md` row, the `CHANGELOG.md` entry, or the
+  RFC's own outcome section. Those are allowed, and the summary is what makes
+  them allowed.
+
+### What the 2026-11-14 audit found
+
+Measured: **94 tracked files** carry **161** citations of `.git-exclude/` paths.
+**154 of those are the evidence class** (83 `review-request/`, 71 `reviewed/`),
+and spot-checking confirmed the conclusions are carried in-repo — 6 `ROADMAP.md`
+rows state a verdict inline, 14 state host-test figures inline. **All 33 in
+`ROADMAP.md` are inline code, none are Markdown links**, so the link-integrity
+checks never saw them; that is why the audit had to be done by hand.
+
+The normative class was worse and smaller: `Tier · Category` is a header field
+on **64 RFCs** and a column in `rfcs/README.md`, and **neither label was defined
+anywhere in this repository.** Category A–D came from the untracked strategy's
+§6; `P0`–`P3` was defined **nowhere at all**, inside the repo or out. Both now
+live in [ADR-020](./adr/020-security-assurance-posture.md), the Tier scheme
+explicitly labelled as derived from usage rather than recovered.
+
+**The cost of having had it outside, concretely**: `rfcs/done/118`'s citation of
+`strategy §5.2` misread it — the source marks the *TLA+ model* optional, not
+typestate — and **no reader of this repository could have checked.** It stood for
+two releases. ADR-020 §5 carries the correction.
+
+### Gated
+
+`scripts/drift-scan.sh` enforces two halves of this:
+
+1. **The definitions cannot vanish.** ADR-020 must exist and must still contain
+   the four Category labels and the four direction verbs, because 64 RFC headers
+   resolve against them.
+2. **No tracked file may cite `.git-exclude/specs/` or `.git-exclude/roles/` by
+   path** — the two normative directories. Zero do today, so the check lands
+   green and stays a regression guard.
+
+**What is deliberately not gated**: whether a `strategy §N` mention is
+accompanied by in-repo content. That needs judgement, and a check that cannot
+make the judgement would either pass everything or forbid the provenance note
+this rule explicitly permits.
+
 ## Publishing to crates.io
 
 **Only the name `cesauth` is published, and it holds nothing.**

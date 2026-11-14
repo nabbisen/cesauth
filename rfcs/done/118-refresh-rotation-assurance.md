@@ -80,7 +80,12 @@ For any operation sequence applied to a family:
 - No typestate wrapper around the store handle: the lifecycle authority
   lives inside the DO; a host-side typestate would assert state the
   host cannot know. The pure model + generated tests are the right tool
-  here (strategy §5.2 lists typestate as *optional*).
+  here. **Correction 2026-11-14**: this parenthetical read *"(strategy §5.2
+  lists typestate as optional)"*, which **misread the source** — §5.2 lists
+  typestate among its important invariants and marks the *TLA+ model*
+  optional. The decision above is unaffected and rests on its own reasoning;
+  only the supporting citation was wrong. Both §5.2 invariants are now in
+  [ADR-020 §5](../../docs/src/expert/adr/020-security-assurance-posture.md).
 - TLA+ modelling is RFC 124's pilot, not part of this RFC.
 
 ## 7. Proposed design
