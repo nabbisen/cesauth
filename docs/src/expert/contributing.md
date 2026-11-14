@@ -203,6 +203,49 @@ submodules in a subdirectory.
 
 **Language**: English for all documentation and code comments.
 
+## Design-first development
+
+**Important design decisions must not be made implicitly during
+implementation.** That is the rule the stage order exists to serve, and it is
+the one with teeth.
+
+Except for narrowly scoped emergency fixes, work proceeds in this order:
+
+| # | stage | where it lives in this repository |
+|---|---|---|
+| 1 | Confirm project goals and constraints | `ROADMAP.md`, and the ADRs under `docs/src/expert/adr/` |
+| 2 | Define requirements | the governing RFC's *Summary* / *Motivation*; historically also the requirements specification (see [the private document manifest](./private-document-manifest.md)) |
+| 3 | Produce external and architectural design | ADRs, `architecture.md`, `ports-adapters.md`; historically also the external design specification |
+| 4 | Define internal design / implementation direction | the RFC's *Proposed design*, then the dispatch handoff under `rfcs/handoffs/` |
+| 5 | Implement | the implementing cycle, against that handoff and nothing else |
+| 6 | Test and verify | the gate set in §Running tests, plus whatever the handoff names |
+| 7 | Review | the review, summarised into the `ROADMAP.md` row and the `CHANGELOG.md` entry |
+| 8 | Make a release decision | the owner authorizes; see §Versioning policy in `ROADMAP.md` for what is not delegated |
+
+**Stages 2 and 3 are why the private specifications exist**, and the table is
+the clearest statement of their role: they were the requirement and
+external-design artifacts for the `0.78.13` baseline. The repository is
+authoritative for current behaviour — see §Direction above — and those documents
+are inputs of record. A reader needs the table, not the documents.
+
+### Why the prohibition is the part that matters
+
+The stage order is easy to agree with and easy to skip. The prohibition is what
+makes skipping visible, and this project has paid for it:
+
+- **RFC 132** found a stated rendering policy — *"The screens use server-side
+  rendering only (no client framework)"* — that had been **silently abandoned,
+  one screen at a time**, while RFC 115 migrated screens to a client framework.
+  Nobody decided to replace it; it was overtaken during implementation.
+- **`0.102.0`** corrected an audit-log column headed **"Actor"** that asserted
+  agency the data could not support — the acting principal for most event kinds,
+  but the affected user for cron-emitted and admin-on-behalf ones. No one chose
+  that label as a design decision; it accreted.
+
+Both are the same failure: a design decision taken by default, during
+implementation, with no record anyone could later disagree with. A stage order
+without the prohibition would not have caught either.
+
 ## How a change reaches `main`
 
 **Commit on `main` and push. The default is no branch and no pull request.**
