@@ -531,6 +531,47 @@ explicitly labelled as derived from usage rather than recovered.
 typestate — and **no reader of this repository could have checked.** It stood for
 two releases. ADR-020 §5 carries the correction.
 
+### Direction, decided 2026-11-14: this repository is authoritative
+
+The owner delegated the choice between publishing the private requirements and
+external-design specifications, or extracting what the repo relies on.
+**Decision: neither, exactly — the repository is authoritative for current
+behaviour, and those specs are inputs of record at their baseline.**
+
+**Why not publish.** Their declared baseline is **`0.78.13`**, against today's
+**`0.102.0`** — **24 minor versions** elapsed, across the CSR migration, locale
+negotiation, the audit chain's sticky alarm and much else. This file already
+records that *"the tree those documents describe cannot be checked out"*.
+Publishing them would put a second source of truth in front of a reader **and
+the stale one would carry the authority of a specification** — a confusion
+generator, and two divergent specs is not a clean design. Publishing stays open
+if they are ever brought current; it is declined on staleness, not on principle.
+
+**Why not a wholesale extraction either: the practice already works.** The
+2026-11-14 audit set out to find content that exists *solely* outside, and for
+the behavioural class it found none. Every citation already carries its own
+substance:
+
+- `crates/frontend/src/pages/sessions.rs` cites External Design §S-11 **and
+  enumerates all three UX requirements** it is citing.
+- `crates/frontend/src/components/primitives/scope_breadcrumb.rs` cites mockup
+  external design §8.2 **and states the rule**.
+- `rfcs/done/017-oidc-audience-admin-editor.md` cites Requirements §5 **and
+  gives the uniqueness check in full**.
+- `rfcs/done/132-view-rendering-policy.md` **quotes** External Design v2 §4
+  verbatim before replacing it, and the successor policy is a tracked book page.
+
+**So the rule to keep is the one the project was already following**, now
+written down: **a citation to a private document is provenance, and is
+permitted only alongside the substance being cited.** The private document says
+where a rule came from; the tracked file says what the rule is.
+
+**What actually failed was the opposite shape** — definitional metadata with
+*no* inline substance anywhere. `Tier · Category` on 64 RFC headers had nothing
+to read, in or out of the repo. That is the class the rule and the gate target,
+and it is why the gate checks for the *presence of definitions* rather than
+trying to judge prose.
+
 ### Gated
 
 `scripts/drift-scan.sh` enforces two halves of this:
