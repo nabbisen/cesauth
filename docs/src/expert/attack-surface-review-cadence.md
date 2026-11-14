@@ -7,6 +7,70 @@ finding document. Findings go in the per-quarter review files
 
 ---
 
+## Two tiers, and the per-release one is new
+
+**Amended 2026-11-14.** This page had one tier — a periodic deep review — while
+the project's release instruction required something else: *"On release: audit
+for security flaws. If changes involve new data flows, external integrations, or
+auth logic, update the threat model. Otherwise, verify existing controls remain
+valid."* That is **two branches**, and neither was implemented here. The
+per-quarter deliverable below had also never been produced: `0.98.0` fixed a
+privilege escalation on the audit log — a `ReadOnly` admin could erase the
+tamper alarm and re-baseline the checkpoint — and no review was recorded.
+
+So there are now two tiers:
+
+| tier | fires | deliverable |
+|---|---|---|
+| **Per release** | every release, as a release requirement | one line in the `CHANGELOG.md` entry; findings, if any, go into the current quarter's review file |
+| **Periodic deep review** | the cadence below — major releases, cross-cutting refactors, new threat classes | the full per-review deliverable below |
+
+### The per-release tier
+
+**Measured before being adopted.** Across the nine release intervals
+`0.93.0`→`0.102.0`, a path-based trigger over the auth-relevant tree fires on
+**six**, touching 1–8 files each. That frequency is why the per-release
+deliverable is *one line*, not a findings document: a full review two releases
+in three is the kind of commitment that goes unmet, and the empty
+`security-review-*` series is the evidence.
+
+**Step 1 — the paths force the question.** A release is *in scope* if its diff
+against the previous tag touches any of:
+
+```
+crates/core/src/{jwt,totp,webauthn,oidc,authz,session,audit}
+crates/backend/src/routes/{oidc,me,magic_link,admin}
+migrations/
+```
+
+**Step 2 — a human answers it.** The trigger is deliberately *not* the
+criterion. The instruction's criterion is **semantic** — new data flows,
+external integrations, or auth logic — and a path list cannot judge that.
+Demonstrated: `0.99.0` touched **eight** files under
+`crates/backend/src/routes/admin`, and every one was the `lang: &str → Locale`
+type change from the i18n work. **Zero auth semantics.** A path trigger that
+were treated as the answer would have produced a security note about a type
+annotation.
+
+**Step 3 — record the answer either way**, in the release's `CHANGELOG.md`
+entry:
+
+- **Not in scope**, or in scope but not semantically security-relevant:
+  one line naming what was checked and why it is not relevant. The
+  `0.99.0` case reads *"touches `routes/admin`; the change is a locale type
+  signature, no auth logic, no data flow, no new integration."*
+- **Semantically relevant**: one line stating that, plus a finding entry in the
+  **current quarter's** `security-review-<year>-<quarter>.md` — created on first
+  need. Findings accumulate per quarter; answers are per release. That is what
+  keeps the paperwork proportional.
+
+**Why the answer is recorded even when it is "no".** An unrecorded "no" is
+indistinguishable from never having asked, which is precisely the state this
+amendment found: six releases that would have fired, and no record of any of
+them being considered.
+
+---
+
 ## Cadence
 
 At a minimum, a review runs:

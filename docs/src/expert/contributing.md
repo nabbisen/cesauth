@@ -459,6 +459,18 @@ than rewording the rule.
   produced.
 - Version bumps require explicit owner confirmation; `1.0.0` requires
   confirmation *and* sufficient test coverage.
+- **A security answer is recorded in the CHANGELOG entry, every release**
+  (2026-11-14). Check whether the diff against the previous tag touches
+  `crates/core/src/{jwt,totp,webauthn,oidc,authz,session,audit}`,
+  `crates/backend/src/routes/{oidc,me,magic_link,admin}` or `migrations/`; then
+  **answer in one line whether the change is semantically security-relevant** —
+  new data flows, external integrations, or auth logic — and say what was
+  checked. If it is, the finding goes in the current quarter's
+  `security-review-<year>-<quarter>.md`. **The path list forces the question; it
+  does not answer it** — `0.99.0` touched eight files under `routes/admin` that
+  were all a locale type signature. See
+  [attack surface review cadence](./attack-surface-review-cadence.md). An
+  unrecorded "no" is indistinguishable from never having asked.
 - **The dispatch handoff states the target level, and argues for it if it is a
   patch** (ruling 2026-10-31, amended by **RFC 181** 2026-11-07: minor is the
   default and needs no trigger; a patch needs the argument). The level is

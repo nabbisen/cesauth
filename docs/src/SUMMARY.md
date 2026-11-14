@@ -75,6 +75,7 @@
     - [Private document manifest](./expert/private-document-manifest.md)
 - [Security considerations](./expert/security.md)
 - [Attack surface review cadence](./expert/attack-surface-review-cadence.md)
+    - [Security review 2026-Q4](./expert/security-review-2026-q4.md)
 - [Contributing to cesauth](./expert/contributing.md)
 
 ---
