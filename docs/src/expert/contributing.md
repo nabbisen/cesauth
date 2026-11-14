@@ -174,6 +174,35 @@ A gate is only as reproducible as the tool it runs. The convention
   latest release (RFC 138 C1-138). The local binary does not exist without the
   install, so a forgotten `npm ci` fails loudly.
 
+## Test file organization
+
+**Separate test modules from implementation.** Under `src/`, a module's tests
+live in a sibling file, not inside the implementation file:
+
+- ✅ `src/some_mod.rs` and `src/some_mod/tests.rs`
+- ❌ `#[test]` modules placed inside `src/some_mod.rs`
+- When `tests.rs` grows too large, split it into submodules under
+  `src/some_mod/tests/`.
+
+The same file-splitting logic, by line count, applies to `.rs` files under
+`tests/`.
+
+**This was an unwritten convention until 2026-11-14**, and it had already cost
+four releases: **v0.75.0 through v0.78.0** were spent entirely on test-file
+modularization — `templates/tests.rs` at 2,057 lines split into 7 submodules,
+`service/introspect/tests.rs` at 1,519 into 6, then `migrate/tests.rs`,
+`tenant_admin/tests.rs`, `migration_chain.rs`, and finally four more until every
+host-buildable test file was under 500 ELOC. Every `tests.rs` in the tree follows
+it. It is written down here because a convention enforced by four releases of
+work and documented nowhere is one the next contributor has to rediscover by
+having a review rejected.
+
+Module style, for the same reason: **Rust 2024 edition, 2018+ module layout** —
+a `foo.rs` and a `foo/` directory may coexist, and `mod.rs` is not needed for
+submodules in a subdirectory.
+
+**Language**: English for all documentation and code comments.
+
 ## How a change reaches `main`
 
 **Commit on `main` and push. The default is no branch and no pull request.**
