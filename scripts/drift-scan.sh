@@ -1837,4 +1837,126 @@ if [[ "$selfcontain_failed" -eq 1 ]]; then
     exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# Private document manifest (docs/src/expert/private-document-manifest.md).
+#
+# `.git-exclude/` is untracked, so a private document can quietly become an
+# authority no reader of this repository can reach. It has happened: the
+# Category A-D taxonomy was a header field on 64 RFCs with its definition only
+# in a private strategy. The manifest classifies every such document; this
+# check makes the classification mandatory rather than aspirational.
+#
+# Three assertions, and the FIRST runs everywhere while the other two need the
+# directory present:
+#   1. Every `extracted` / `partial` row names an in-repo document that
+#      EXISTS. Runs in CI, where .git-exclude/ is absent.
+#   2. Every top-level entry under specs/, roles/, rules/ has a manifest row
+#      -- a new private document cannot become an authority silently.
+#   3. Every manifest row's path still exists -- a row for a deleted document
+#      is a stale classification, the E6_BEARER_LEGACY_EXEMPT discipline.
+#
+# .git-exclude/ is absent in CI by construction (.git/info/exclude), so 2 and 3
+# are skipped there -- and the skip is REPORTED, never silent. RFC 183's own
+# `if [[ -f ]]` wrapper taught this project that a gate which vanishes quietly
+# is worse than one that fails: the Verus drift check could be disabled by
+# deleting the file it policed.
+# ---------------------------------------------------------------------------
+
+PRIVDOC_MANIFEST="${REPO_ROOT}/docs/src/expert/private-document-manifest.md"
+privdoc_failed=0
+privdoc_rows=0
+privdoc_mode="full"
+
+if [[ ! -f "$PRIVDOC_MANIFEST" ]]; then
+    echo "❌  the private document manifest is missing:" >&2
+    echo "    docs/src/expert/private-document-manifest.md" >&2
+    echo "    See contributing.md §Documentation self-containment." >&2
+    privdoc_failed=1
+else
+    # Parse rows: | `path` | `class` | `target-or-dash` | notes |
+    privdoc_parsed=$(grep -oP '^\| `[^`]+` \| `(extracted|partial|provenance)` \| [^|]*\|' \
+                       "$PRIVDOC_MANIFEST" || true)
+    privdoc_rows=$(grep -c . <<< "$privdoc_parsed" || true)
+    [[ -z "$privdoc_parsed" ]] && privdoc_rows=0
+
+    if [[ "$privdoc_rows" -eq 0 ]]; then
+        echo "❌  the private document manifest parsed ZERO rows -- the table shape" >&2
+        echo "    changed and this check is now blind. Fix the parser with it." >&2
+        privdoc_failed=1
+    fi
+
+    # 1. every extracted/partial row's in-repo authority must exist.
+    privdoc_missing_target=""
+    while IFS= read -r row; do
+        [[ -z "$row" ]] && continue
+        case "$row" in
+            *'`extracted`'*|*'`partial`'*) : ;;
+            *) continue ;;
+        esac
+        target=$(sed -E 's/^\| `[^`]+` \| `[a-z]+` \| *//; s/ *\|$//; s/^`//; s/`$//' <<< "$row")
+        if [[ "$target" == "—" || -z "$target" ]]; then
+            privdoc_missing_target="${privdoc_missing_target}${row} (no in-repo authority named)\n"
+        elif [[ ! -e "${REPO_ROOT}/${target}" ]]; then
+            privdoc_missing_target="${privdoc_missing_target}${target} (named as authority, does not exist)\n"
+        fi
+    done <<< "$privdoc_parsed"
+
+    if [[ -n "$privdoc_missing_target" ]]; then
+        echo "❌  manifest row(s) name an in-repo authority that is missing:" >&2
+        printf '%b' "$privdoc_missing_target" | while IFS= read -r l; do [[ -n "$l" ]] && echo "    $l" >&2; done
+        privdoc_failed=1
+    fi
+
+    # 2 + 3 need the private tree on disk.
+    if [[ ! -d "${REPO_ROOT}/.git-exclude" ]]; then
+        privdoc_mode="in-repo half only (.git-exclude/ absent -- expected in CI)"
+    else
+        privdoc_listed=$(grep -oP '^\| `\K[^`]+' "$PRIVDOC_MANIFEST" || true)
+        privdoc_unlisted=""
+        privdoc_stale=""
+        for dir in specs roles rules; do
+            [[ -d "${REPO_ROOT}/.git-exclude/${dir}" ]] || continue
+            while IFS= read -r entry; do
+                [[ -z "$entry" ]] && continue
+                rel="${dir}/$(basename "$entry")"
+                if ! grep -Fxq "$rel" <<< "$privdoc_listed"; then
+                    privdoc_unlisted="${privdoc_unlisted}${rel}\n"
+                fi
+            done < <(find "${REPO_ROOT}/.git-exclude/${dir}" -mindepth 1 -maxdepth 1)
+        done
+        while IFS= read -r rel; do
+            [[ -z "$rel" ]] && continue
+            [[ -e "${REPO_ROOT}/.git-exclude/${rel}" ]] || privdoc_stale="${privdoc_stale}${rel}\n"
+        done <<< "$privdoc_listed"
+
+        if [[ -n "$privdoc_unlisted" ]]; then
+            echo "❌  private document(s) with NO manifest row:" >&2
+            printf '%b' "$privdoc_unlisted" | while IFS= read -r l; do [[ -n "$l" ]] && echo "    $l" >&2; done
+            echo "" >&2
+            echo "    Classify each in docs/src/expert/private-document-manifest.md before" >&2
+            echo "    anything in the repository relies on it. An unclassified private" >&2
+            echo "    document is how a taxonomy came to govern 64 RFC headers with its" >&2
+            echo "    definition unreachable." >&2
+            privdoc_failed=1
+        fi
+        if [[ -n "$privdoc_stale" ]]; then
+            echo "❌  manifest row(s) naming a private document that no longer exists:" >&2
+            printf '%b' "$privdoc_stale" | while IFS= read -r l; do [[ -n "$l" ]] && echo "    $l" >&2; done
+            echo "    Remove the row, or correct the path." >&2
+            privdoc_failed=1
+        fi
+    fi
+fi
+
+echo "ℹ️   private document manifest: ${privdoc_rows} row(s) classified," \
+     "in-repo authorities all present, ${privdoc_mode}"
+
+if [[ "$privdoc_failed" -eq 1 ]]; then
+    exit 1
+fi
+
+if [[ "$selfcontain_failed" -eq 1 ]]; then
+    exit 1
+fi
+
 echo "drift-scan: clean — no stale phrases detected."
