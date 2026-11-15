@@ -48,6 +48,7 @@ impl InMemoryAuditEventRepository {
             ts:            0,
             kind:          "ChainGenesis".to_owned(),
             subject:       None,
+            actor:         None,
             client_id:     None,
             ip:            None,
             user_agent:    None,
@@ -116,6 +117,20 @@ impl InMemoryAuditEventRepository {
         }
     }
 
+    /// Replace the `actor` column at `seq`, leaving `payload`,
+    /// `payload_hash` and `chain_hash` untouched. **RFC 187 G2**:
+    /// simulates an attacker who edited the indexed `actor` column
+    /// directly without touching the payload — the specific tamper
+    /// D1's "payload is the evidence" design is supposed to make
+    /// detectable. Used only by the RFC 187 G2 test; see that test's
+    /// own comment for what it actually finds.
+    pub fn tamper_set_actor(&self, seq: i64, new_actor: Option<String>) {
+        let mut g = self.rows.lock().unwrap();
+        if let Some(row) = g.iter_mut().find(|r| r.seq == seq) {
+            row.actor = new_actor;
+        }
+    }
+
     /// Remove the row at `seq`. Simulates an intermediate-row
     /// deletion attack.
     pub fn tamper_delete_seq(&self, seq: i64) {
@@ -155,6 +170,7 @@ impl AuditEventRepository for InMemoryAuditEventRepository {
             ts:            ev.ts,
             kind:          ev.kind.to_owned(),
             subject:       ev.subject.map(str::to_owned),
+            actor:         ev.actor.map(str::to_owned),
             client_id:     ev.client_id.map(str::to_owned),
             ip:            ev.ip.map(str::to_owned),
             user_agent:    ev.user_agent.map(str::to_owned),
@@ -185,6 +201,9 @@ impl AuditEventRepository for InMemoryAuditEventRepository {
                 }
                 if let Some(s) = q.subject.as_deref() {
                     if r.subject.as_deref() != Some(s) { return false; }
+                }
+                if let Some(a) = q.actor.as_deref() {
+                    if r.actor.as_deref() != Some(a) { return false; }
                 }
                 if let Some(since) = q.since {
                     if r.ts < since { return false; }

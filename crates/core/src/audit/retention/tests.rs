@@ -27,6 +27,7 @@ impl StubRepo {
             id:            format!("ev_{seq}"),
             kind:          kind.to_owned(),
             subject:       None,
+            actor:         None,
             client_id:     None,
             ip:            None,
             user_agent:    None,

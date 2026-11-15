@@ -195,10 +195,13 @@ pub async fn create<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     // Audit the creation. Subject is the NEW principal id (the token
     // being created); reason carries the role string so a grep through
     // the audit log tells the full story without needing the D1
-    // snapshot at the same moment.
-    audit::write_owned(
+    // snapshot at the same moment. RFC 187 T4: actor is the minting
+    // admin — out of T8's scope (deletions.rs only), so the reason's own
+    // "by=" clause stays, now duplicated by the column rather than being
+    // its only record.
+    audit::write_owned_with_actor(
         &ctx.env, EventKind::AdminTokenCreated,
-        Some(minted.id.clone()), None, Some(format!("role={} by={}", role.as_str(), principal.id)),
+        Some(minted.id.clone()), Some(principal.id.clone()), None, Some(format!("role={} by={}", role.as_str(), principal.id)),
     ).await.ok();
 
     render::html_response(|| ui::admin::token_created_page(&principal, &minted, &plaintext))
@@ -247,9 +250,11 @@ pub async fn disable<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> 
     let repo = CloudflareAdminTokenRepository::new(&ctx.env);
     match repo.disable(id, now).await {
         Ok(()) => {
-            audit::write_owned(
+            // RFC 187 T4: actor is the disabling admin — out of T8's
+            // scope, reason's "by=" clause stays.
+            audit::write_owned_with_actor(
                 &ctx.env, EventKind::AdminTokenDisabled,
-                Some(id.to_owned()), None, Some(format!("by={}", principal.id)),
+                Some(id.to_owned()), Some(principal.id.clone()), None, Some(format!("by={}", principal.id)),
             ).await.ok();
 
             if render::prefers_json(&req) {

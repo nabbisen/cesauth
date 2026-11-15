@@ -30,3 +30,5 @@ mod rfc_050_sql;
 mod rfc_051_authenticators;
 #[path = "migration_chain/rfc_148_scrub.rs"]
 mod rfc_148_scrub;
+#[path = "migration_chain/rfc_187_audit_actor.rs"]
+mod rfc_187_audit_actor;

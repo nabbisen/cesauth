@@ -124,15 +124,35 @@ CREATE INDEX idx_audit_events_subject  ON audit_events(subject)
     WHERE subject IS NOT NULL;
 ```
 
+Migration 0021 (v0.103.0, RFC 187) adds a nullable `actor TEXT`
+column and a matching partial index
+(`idx_audit_events_actor`), following the same pattern as
+`subject` above — not reproduced here since this ADR documents
+the Phase 1/2 shape as shipped; see RFC 187 for the column's
+own rationale.
+
 `payload` is the JSON blob written to R2 in v0.31.0 and earlier
 (structurally identical to `worker::audit::Event` serialized
 via serde_json). Keeping it as a single TEXT column means a
 future schema change to add a new field doesn't require a
 migration of existing rows. Per-field columns (`subject`,
-`client_id`, `ip`, `user_agent`, `reason`) duplicate top-level
-fields for query efficiency — they're indexed and used by
-admin search, while the JSON `payload` is the canonical record
-that participates in the hash chain.
+`client_id`, `ip`, `user_agent`, `reason`, and, from v0.103.0
+(RFC 187), `actor`) duplicate top-level fields for query
+efficiency — they're indexed and used by admin search, while
+the JSON `payload` is the canonical record that participates
+in the hash chain.
+
+**None of those per-field columns are inputs to `chain_hash`**
+(see "Hash calculation" below — the input is `previous_hash`,
+`payload_hash`, `seq`, `ts`, `kind`, and `id` only). A tamper
+that edits one of them directly, leaving `payload` and
+`chain_hash` alone, changes what admin search and the viewer
+display without being caught by `verify_chain`/`verify_chain_full`.
+D1 column-level ACLs or a separate column-hash would be needed
+to close that gap; neither exists today. RFC 187's G2 test
+(`cesauth-adapter-test::audit_chain::tests`) demonstrates this
+for `actor`; the finding generalizes to every column in the
+list above.
 
 ## Hash calculation
 

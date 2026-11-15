@@ -101,9 +101,12 @@ pub async fn submit<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     ).await.ok();
 
     if outcome.owner_home == OwnerHomeOutcome::Assigned {
-        audit::write_owned(
+        // RFC 187 T4: subject is the assigned owner; actor is the admin
+        // creating the tenant (`principal`, resolved above) — same
+        // defect as the api_v1 sibling, same fix.
+        audit::write_owned_with_actor(
             &ctx.env, EventKind::UserTenantAssigned,
-            Some(owner_user_id.clone()), Some(tenant.id.clone()),
+            Some(owner_user_id.clone()), Some(principal.id.clone()), Some(tenant.id.clone()),
             Some(format!("via=tenancy-console,tenant={}", tenant.id)),
         ).await.ok();
         // RFC 158 §5.6: Assigned is unchanged — straight to the tenant

@@ -242,9 +242,14 @@ pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
     // Audit the issuance with handle only. The plaintext OTP MUST NOT
     // appear in the audit log (RFC 008, v0.50.3 — "no token material
     // ever" invariant). Real delivery is via MagicLinkMailer (RFC 010).
-    audit::write_owned(
+    // RFC 187 round 2 F-2: subject is a caller-supplied, UNVERIFIED
+    // email on a public endpoint — defaulting actor = subject would let
+    // anyone who can POST here write a row claiming that address
+    // performed an action. No identity has been proven at this point in
+    // the flow, so actor is explicit None, not the default.
+    audit::write_owned_with_actor(
         &ctx.env, EventKind::MagicLinkIssued,
-        Some(body.email.clone()), None,
+        Some(body.email.clone()), None, None,
         Some(format!("handle={handle}")),
     ).await.ok();
 
@@ -264,9 +269,12 @@ pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
     };
     match mailer.send(&payload).await {
         Ok(receipt) => {
-            audit::write_owned(
+            // RFC 187 round 2 F-2: same reasoning as MagicLinkIssued
+            // above — subject is still the unverified caller-supplied
+            // email, actor stays explicit None.
+            audit::write_owned_with_actor(
                 &ctx.env, EventKind::MagicLinkDelivered,
-                Some(body.email.clone()), None,
+                Some(body.email.clone()), None, None,
                 Some(format!(
                     "handle={handle} provider_msg_id={}",
                     receipt.provider_message_id.as_deref().unwrap_or("-")
@@ -274,9 +282,10 @@ pub async fn request<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respon
             ).await.ok();
         }
         Err(e) => {
-            audit::write_owned(
+            // RFC 187 round 2 F-2: same reasoning.
+            audit::write_owned_with_actor(
                 &ctx.env, EventKind::MagicLinkDeliveryFailed,
-                Some(body.email.clone()), None,
+                Some(body.email.clone()), None, None,
                 Some(format!("handle={handle} kind={}", e.audit_kind())),
             ).await.ok();
             log::emit(&cfg.log, Level::Error, Category::Magic,

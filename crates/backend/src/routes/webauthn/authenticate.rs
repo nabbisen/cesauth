@@ -149,9 +149,11 @@ pub async fn authenticate_finish<D>(mut req: Request, ctx: RouteContext<D>) -> R
     let outcome = match authentication::finish(&rp, &state, &body.response, &stored) {
         Ok(o)  => o,
         Err(e) => {
-            audit::write_owned(
+            // RFC 187 round 2 F-2: the cryptographic assertion failed —
+            // identity was not proven. actor stays explicit None.
+            audit::write_owned_with_actor(
                 &ctx.env, EventKind::AuthFailed,
-                Some(stored.user_id.clone()), None,
+                Some(stored.user_id.clone()), None, None,
                 Some(format!("webauthn auth finish: {e:?}")),
             ).await.ok();
             return oauth_error_response(&e);
@@ -162,9 +164,13 @@ pub async fn authenticate_finish<D>(mut req: Request, ctx: RouteContext<D>) -> R
     // can hold on to. A failure here must rewind: without the counter
     // bump, a replayed assertion would pass.
     if let Err(e) = repo.touch(&stored.credential_id, outcome.new_sign_count, now).await {
-        audit::write_owned(
+        // RFC 187 round 2 F-2: this is still an AuthFailed outcome — the
+        // login did not complete — even though the crypto step itself
+        // succeeded; actor stays explicit None, consistent with every
+        // other AuthFailed site.
+        audit::write_owned_with_actor(
             &ctx.env, EventKind::AuthFailed,
-            Some(outcome.user_id.clone()), None,
+            Some(outcome.user_id.clone()), None, None,
             Some(format!("sign_count persist: {e:?}")),
         ).await.ok();
         return oauth_error_response(&cesauth_core::CoreError::Internal);

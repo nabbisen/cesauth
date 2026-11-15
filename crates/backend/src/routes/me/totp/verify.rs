@@ -434,7 +434,12 @@ pub async fn post_handler(
         // brute-force attempt against the second factor. `user_id` is the
         // subject, matching RFC 154 §4's table.
         VerifyPostDecision::Lockout { user_id } => {
-            audit::write_owned(&env, EventKind::MfaLockedOut, Some(user_id), None, None)
+            // RFC 187 round 2 F-2: the lockout itself is system-initiated
+            // (the attempt cap tripped), the same family as
+            // AnonymousExpired — actor stays explicit None, distinct
+            // from BadCode below, where the user themself is the actor
+            // of a failed attempt, not a system decision.
+            audit::write_owned_with_actor(&env, EventKind::MfaLockedOut, Some(user_id), None, None, None)
                 .await.ok();
             clear_gate_and_redirect("/login")
         }
@@ -453,6 +458,14 @@ pub async fn post_handler(
         VerifyPostDecision::Success { user_id, auth_method, ar_fields } => {
             // RFC 154: `MfaVerified` existed in the enum, declared and
             // emitted nowhere, until this line.
+            //
+            // RFC 187 round 2 F-2: the default (actor = subject) stands
+            // here, stated rather than left unstated — `user_id` was
+            // already proven by the primary factor before this TOTP
+            // challenge was even issued (`VerifyPostDecision::Success`
+            // only reaches this arm post-primary-auth), unlike the
+            // WebAuthn/magic-link sites above where the step that just
+            // ran IS the identity proof and it failed.
             audit::write_owned(&env, EventKind::MfaVerified, Some(user_id.clone()), None, None)
                 .await.ok();
             complete_auth_post_gate(
@@ -476,6 +489,12 @@ pub async fn post_handler(
 
         VerifyPostDecision::BadCode { user_id } => {
             // RFC 154: a failed verification used to leave no trace.
+            //
+            // RFC 187 round 2 F-2: the default stands — same reasoning
+            // as MfaVerified above. `user_id` is an already-proven
+            // identity (primary auth succeeded first); a wrong TOTP code
+            // is still something that identified user did, not a system
+            // decision or an unproven claim.
             audit::write_owned(&env, EventKind::MfaFailed, Some(user_id), None, None)
                 .await.ok();
             // Re-render the verify page with an inline error.

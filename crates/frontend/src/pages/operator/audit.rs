@@ -46,6 +46,19 @@
 //! helper the `.json` query already uses) rather than a second parser;
 //! an empty or unparseable input omits the field, matching how an
 //! unset filter is already treated.
+//!
+//! **RFC 187 round 2 T6 adds a genuinely new actor filter and column,
+//! distinct from the pre-existing (mislabelled) "Subject" one.** The
+//! existing `actor_v` signal / `actor=` query parameter / `AuditViewerActorLabel`
+//! key have always meant SUBJECT (decision 1, `0.102.0`) — out of this
+//! cut's scope to rename (D4/§7). The new filter is `performed_by_v` /
+//! `performed_by=` / the freed `AuditViewerActorLabel`/`AuditViewerColActor`
+//! names, with the old subject keys renamed to `AuditViewerSubjectLabel`/
+//! `AuditViewerColSubject`. **Carried through to the export form too**
+//! (`name="performed_by"`) — the same class of bug RFC 131 §0 slice 2
+//! deliverable B already found on this exact screen for `since`/`until`:
+//! a screen filter missing from the export form downloads silently
+//! ignoring it.
 
 use cesauth_core::admin::service::audit_pagination::parse_rfc3339_to_unix;
 use cesauth_core::i18n::{lookup, Locale, MessageKey};
@@ -63,6 +76,10 @@ struct AuditEntryView {
     kind:    String,
     #[serde(default)]
     subject: Option<String>,
+    /// **RFC 187 round 2 T6.** Who performed the action, distinct from
+    /// `subject`.
+    #[serde(default)]
+    actor:   Option<String>,
     #[serde(default)]
     reason:  Option<String>,
     key:     String,
@@ -101,9 +118,15 @@ fn error_message(error: &str, locale: Locale) -> &'static str {
 /// state. Empty fields are omitted, matching the old template's
 /// `audit_page::build_filter_url`'s behaviour (an unset filter is
 /// absent, not sent as an empty-string match).
-fn build_query(actor: &str, event: &str, from: &str, to: &str, cursor: Option<&str>) -> String {
+///
+/// **RFC 187 round 2 T6**: `subject` is the pre-existing filter whose
+/// query parameter has always been (mislabelled) `actor` — out of this
+/// cut's scope to rename. `performed_by` is the genuinely new filter
+/// this round adds, under its own, non-colliding parameter name.
+fn build_query(subject: &str, performed_by: &str, event: &str, from: &str, to: &str, cursor: Option<&str>) -> String {
     let mut parts: Vec<String> = Vec::new();
-    if !actor.is_empty() { parts.push(format!("actor={}", urlencode(actor))); }
+    if !subject.is_empty() { parts.push(format!("actor={}", urlencode(subject))); }
+    if !performed_by.is_empty() { parts.push(format!("performed_by={}", urlencode(performed_by))); }
     if !event.is_empty() { parts.push(format!("event={}", urlencode(event))); }
     if !from.is_empty()  { parts.push(format!("from={}",  urlencode(from))); }
     if !to.is_empty()    { parts.push(format!("to={}",    urlencode(to))); }
@@ -152,6 +175,11 @@ pub fn ConsoleAudit() -> impl IntoView {
     let locale = mounted_locale();
 
     let actor_v = RwSignal::new(String::new());
+    // RFC 187 round 2 T6: the genuinely new actor filter. Named
+    // `performed_by_v`, not `actor_v2` or similar — `actor_v` above is
+    // the pre-existing SUBJECT filter (its own query parameter has
+    // always been, mislabelled, `actor`); this is the real one.
+    let performed_by_v = RwSignal::new(String::new());
     let event_v = RwSignal::new(String::new());
     let from_v  = RwSignal::new(String::new());
     let to_v    = RwSignal::new(String::new());
@@ -168,7 +196,7 @@ pub fn ConsoleAudit() -> impl IntoView {
         loading.set(true);
         load_error.set(None);
         let q = build_query(
-            &actor_v.get_untracked(), &event_v.get_untracked(),
+            &actor_v.get_untracked(), &performed_by_v.get_untracked(), &event_v.get_untracked(),
             &from_v.get_untracked(),  &to_v.get_untracked(),
             cursor.get_untracked().as_deref(),
         );
@@ -226,11 +254,22 @@ pub fn ConsoleAudit() -> impl IntoView {
                 <form on:submit=on_filter_submit>
                     <table>
                         <tr>
-                            <th scope="row"><label for="audit-actor">{lookup(MessageKey::AuditViewerActorLabel, locale)}</label></th>
+                            <th scope="row"><label for="audit-subject">{lookup(MessageKey::AuditViewerSubjectLabel, locale)}</label></th>
                             <td>
-                                <input id="audit-actor" type="text" placeholder="user-id" style="width:100%"
+                                <input id="audit-subject" type="text" placeholder="user-id" style="width:100%"
                                     prop:value=move || actor_v.get()
                                     on:input=move |ev| actor_v.set(event_target_value(&ev)) />
+                            </td>
+                        </tr>
+                        // RFC 187 round 2 T6: the genuinely new actor filter,
+                        // its own id/for pair so it cannot be confused with
+                        // the subject row above.
+                        <tr>
+                            <th scope="row"><label for="audit-performed-by">{lookup(MessageKey::AuditViewerActorLabel, locale)}</label></th>
+                            <td>
+                                <input id="audit-performed-by" type="text" placeholder="user-id" style="width:100%"
+                                    prop:value=move || performed_by_v.get()
+                                    on:input=move |ev| performed_by_v.set(event_target_value(&ev)) />
                             </td>
                         </tr>
                         <tr>
@@ -279,6 +318,13 @@ pub fn ConsoleAudit() -> impl IntoView {
                 <form method="post" action="/admin/console/audit/export" style="margin-top:8px">
                     <input type="hidden" name="csrf"    prop:value=move || csrf.get() />
                     <input type="hidden" name="subject" prop:value=move || actor_v.get() />
+                    // RFC 187 round 2 §4(a): the export form must carry
+                    // every screen filter, or the download silently
+                    // ignores whichever one is missing — this exact bug
+                    // already shipped on this exact screen for
+                    // since/until (RFC 131 §0 slice 2 deliverable B, see
+                    // this file's own module doc).
+                    <input type="hidden" name="performed_by" prop:value=move || performed_by_v.get() />
                     <input type="hidden" name="event"   prop:value=move || event_v.get() />
                     {move || parse_rfc3339_to_unix(&from_v.get())
                         .map(|secs| view! { <input type="hidden" name="since" value=secs.to_string() /> })}
@@ -310,6 +356,7 @@ pub fn ConsoleAudit() -> impl IntoView {
                             <thead>
                                 <tr>
                                     <th scope="col" class="num">{lookup(MessageKey::AuditViewerColTime, locale)}</th>
+                                    <th scope="col">{lookup(MessageKey::AuditViewerColSubject, locale)}</th>
                                     <th scope="col">{lookup(MessageKey::AuditViewerColActor, locale)}</th>
                                     <th scope="col">{lookup(MessageKey::AuditViewerColEvent, locale)}</th>
                                     <th scope="col">{lookup(MessageKey::AuditViewerColReason, locale)}</th>
@@ -324,6 +371,7 @@ pub fn ConsoleAudit() -> impl IntoView {
                                         <tr>
                                             <td class="num muted">{e.ts}</td>
                                             <td class="muted">{e.subject.clone().unwrap_or_else(|| "—".to_owned())}</td>
+                                            <td class="muted">{e.actor.clone().unwrap_or_else(|| "—".to_owned())}</td>
                                             <td><code>{e.kind.clone()}</code></td>
                                             <td class="muted">{e.reason.clone().unwrap_or_default()}</td>
                                             <td class="muted">{e.key.clone()}</td>
@@ -403,23 +451,34 @@ mod tests {
 
     #[test]
     fn build_query_omits_unset_fields() {
-        assert_eq!(build_query("", "", "", "", None), "/admin/console/audit.json");
+        assert_eq!(build_query("", "", "", "", "", None), "/admin/console/audit.json");
     }
 
     #[test]
     fn build_query_includes_only_set_fields() {
         assert_eq!(
-            build_query("alice", "", "", "", None),
+            build_query("alice", "", "", "", "", None),
             "/admin/console/audit.json?actor=alice",
         );
     }
 
     #[test]
+    fn build_query_includes_the_new_actor_filter_under_its_own_name() {
+        // RFC 187 round 2 T6: performed_by is its own parameter, not
+        // the pre-existing (mislabelled) "actor" one, which "subject"
+        // above already occupies.
+        assert_eq!(
+            build_query("", "bob", "", "", "", None),
+            "/admin/console/audit.json?performed_by=bob",
+        );
+    }
+
+    #[test]
     fn build_query_includes_every_filter_and_the_cursor() {
-        let q = build_query("alice", "auth_failed", "2025-01-01T00:00:00Z", "2025-01-02T00:00:00Z", Some("abc123"));
+        let q = build_query("alice", "bob", "auth_failed", "2025-01-01T00:00:00Z", "2025-01-02T00:00:00Z", Some("abc123"));
         assert_eq!(
             q,
-            "/admin/console/audit.json?actor=alice&event=auth_failed&from=2025-01-01T00:00:00Z&to=2025-01-02T00:00:00Z&cursor=abc123",
+            "/admin/console/audit.json?actor=alice&performed_by=bob&event=auth_failed&from=2025-01-01T00:00:00Z&to=2025-01-02T00:00:00Z&cursor=abc123",
         );
     }
 

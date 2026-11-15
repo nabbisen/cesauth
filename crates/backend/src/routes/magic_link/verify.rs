@@ -260,9 +260,12 @@ pub async fn verify<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Respons
     };
 
     if let Err(e) = magic_link::verify(&body.code, &code_hash, now, expires_at) {
-        audit::write_owned(
+        // RFC 187 round 2 F-2: verification failed, so identity was NOT
+        // proven at this point — the code submitter has not shown they
+        // are this email's owner. actor stays explicit None.
+        audit::write_owned_with_actor(
             &ctx.env, EventKind::MagicLinkFailed,
-            Some(email), None, Some(format!("{e:?}")),
+            Some(email), None, None, Some(format!("{e:?}")),
         ).await.ok();
         return if is_json {
             oauth_error_response(&e)

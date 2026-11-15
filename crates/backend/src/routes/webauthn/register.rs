@@ -230,9 +230,11 @@ pub async fn register_finish<D>(mut req: Request, ctx: RouteContext<D>) -> Resul
     let authn = match registration::finish(&rp, &state, &body.response, &tenant_id, now) {
         Ok(a)  => a,
         Err(e) => {
-            audit::write_owned(
+            // RFC 187 round 2 F-2: the ceremony failed — identity was
+            // not proven. actor stays explicit None.
+            audit::write_owned_with_actor(
                 &ctx.env, EventKind::AuthFailed,
-                Some(state.user_id.clone()), None,
+                Some(state.user_id.clone()), None, None,
                 Some(format!("webauthn register finish: {e:?}")),
             ).await.ok();
             return oauth_error_response(&e);
@@ -244,9 +246,12 @@ pub async fn register_finish<D>(mut req: Request, ctx: RouteContext<D>) -> Resul
     // asking the user to retry.
     let repo = CloudflareAuthenticatorRepository::new(&ctx.env);
     if let Err(e) = repo.create(&authn).await {
-        audit::write_owned(
+        // RFC 187 round 2 F-2: still an AuthFailed outcome — the login
+        // did not complete — same reasoning as the authenticate.rs
+        // sibling site. actor stays explicit None.
+        audit::write_owned_with_actor(
             &ctx.env, EventKind::AuthFailed,
-            Some(authn.user_id.clone()), None,
+            Some(authn.user_id.clone()), None, None,
             Some(format!("authenticator persist: {e:?}")),
         ).await.ok();
         return oauth_error_response(&cesauth_core::CoreError::Internal);

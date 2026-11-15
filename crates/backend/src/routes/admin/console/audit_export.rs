@@ -60,6 +60,33 @@ fn resolve_export_limit(form_limit: Option<&str>, max_rows: usize) -> Option<u32
     Some(limit.max(1))
 }
 
+/// RFC 187 round 2 §4(b). Every filter dimension actually applied to
+/// `query`, named in the export's own `AuditExported` audit event — not
+/// just the event-kind one, which left `subject`/`actor`/`since`/
+/// `until` unrecorded on an audited export whose point is audit
+/// completeness. `"*"` means no filter was applied at all. Pulled out
+/// as its own pure function (same reason `resolve_export_limit` is one)
+/// so the shape is host-testable without a live `worker::Env`.
+fn build_filter_desc(query: &AuditQuery) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(v) = query.event_exact.as_deref().or(query.kind_contains.as_deref()) {
+        parts.push(format!("event={v}"));
+    }
+    if let Some(v) = query.subject_exact.as_deref() {
+        parts.push(format!("subject={v}"));
+    }
+    if let Some(v) = query.actor_exact.as_deref() {
+        parts.push(format!("actor={v}"));
+    }
+    if let Some(v) = query.since {
+        parts.push(format!("from={v}"));
+    }
+    if let Some(v) = query.until {
+        parts.push(format!("to={v}"));
+    }
+    if parts.is_empty() { "*".to_owned() } else { parts.join(",") }
+}
+
 pub async fn export<D>(mut req: Request, ctx: RouteContext<D>) -> worker::Result<Response> {
     require_system_admin!(req, ctx, principal, AdminAction::ViewConsole);
 
@@ -100,13 +127,17 @@ pub async fn export<D>(mut req: Request, ctx: RouteContext<D>) -> worker::Result
     let query = AuditQuery {
         // v0.31.x compat fields.
         kind_contains:    get("kind").filter(|s| !s.is_empty()),
-        subject_contains: get("subject").filter(|s| !s.is_empty()),
+        subject_exact: get("subject").filter(|s| !s.is_empty()),
         limit: resolve_export_limit(get("limit").as_deref(), max_rows),
         // RFC 109 (v0.71.0) fields the new viewer sends. The viewer's
-        // export form passes `subject` for actor, `event` for exact-
-        // match event kind, and `since`/`until` as Unix seconds
-        // (already converted from RFC 3339 at the viewer's UI layer).
+        // export form passes `subject` for its own (mislabelled) actor
+        // filter, `event` for exact-match event kind, and `since`/`until`
+        // as Unix seconds (already converted from RFC 3339 at the
+        // viewer's UI layer). RFC 187 round 2 T6/§4(a): `performed_by`
+        // is the genuinely new actor filter the viewer's export form
+        // now also carries.
         event_exact: get("event").filter(|s| !s.is_empty()),
+        actor_exact: get("performed_by").filter(|s| !s.is_empty()),
         since:       get("since").and_then(|s| s.parse::<i64>().ok()),
         until:       get("until").and_then(|s| s.parse::<i64>().ok()),
         ..Default::default()
@@ -116,13 +147,13 @@ pub async fn export<D>(mut req: Request, ctx: RouteContext<D>) -> worker::Result
     let result = export_audit(&audit_repo, &query, format, max_rows).await
         .map_err(|e| worker::Error::RustError(format!("audit export failed: {e:?}")))?;
 
-    // Emit audit event for the export operation itself. Filter
-    // description prefers the more specific RFC 109 fields when set,
-    // falling back to the legacy `kind` substring for older callers.
-    let filter_desc = query.event_exact
-        .as_deref()
-        .or(query.kind_contains.as_deref())
-        .unwrap_or("*");
+    // Emit audit event for the export operation itself. RFC 187 round 2
+    // §4(b): `build_filter_desc` used to name only the event-kind
+    // dimension, leaving `subject`/`actor`/`since`/`until` unrecorded —
+    // an audited export whose own audit record did not say what was
+    // filtered, the date range half of which was security-review F-1
+    // (`docs/src/expert/security-review-2026-q4.md`).
+    let filter_desc = build_filter_desc(&query);
     waudit::write_owned(
         &ctx.env,
         EventKind::AuditExported,
@@ -223,5 +254,64 @@ mod tests {
     #[test]
     fn an_absurd_max_rows_does_not_wrap_to_zero_or_one() {
         assert_eq!(resolve_export_limit(None, u32::MAX as usize), Some(u32::MAX));
+    }
+
+    // RFC 187 round 2 §4(b) — build_filter_desc
+
+    #[test]
+    fn no_filter_applied_is_a_star() {
+        assert_eq!(build_filter_desc(&AuditQuery::default()), "*");
+    }
+
+    #[test]
+    fn every_dimension_that_is_set_is_named() {
+        let q = AuditQuery {
+            event_exact:   Some("auth_failed".to_owned()),
+            subject_exact: Some("alice".to_owned()),
+            actor_exact:   Some("bob".to_owned()),
+            since:         Some(1_700_000_000),
+            until:         Some(1_700_100_000),
+            ..Default::default()
+        };
+        assert_eq!(
+            build_filter_desc(&q),
+            "event=auth_failed,subject=alice,actor=bob,from=1700000000,to=1700100000",
+        );
+    }
+
+    #[test]
+    fn event_exact_wins_over_kind_contains_when_both_are_set() {
+        let q = AuditQuery {
+            event_exact:   Some("auth_failed".to_owned()),
+            kind_contains: Some("auth".to_owned()),
+            ..Default::default()
+        };
+        assert_eq!(build_filter_desc(&q), "event=auth_failed");
+    }
+
+    #[test]
+    fn kind_contains_is_used_for_legacy_callers_with_no_event_exact() {
+        let q = AuditQuery {
+            kind_contains: Some("auth".to_owned()),
+            ..Default::default()
+        };
+        assert_eq!(build_filter_desc(&q), "event=auth");
+    }
+
+    #[test]
+    fn subject_and_actor_are_independent_dimensions() {
+        // The two filters this cut's own naming confusion is about:
+        // confirms they are not conflated into one slot.
+        let q = AuditQuery {
+            subject_exact: Some("alice".to_owned()),
+            ..Default::default()
+        };
+        assert_eq!(build_filter_desc(&q), "subject=alice");
+
+        let q = AuditQuery {
+            actor_exact: Some("bob".to_owned()),
+            ..Default::default()
+        };
+        assert_eq!(build_filter_desc(&q), "actor=bob");
     }
 }

@@ -46,9 +46,14 @@ What I measured:
   future schema change adding a new field can update the `payload` JSON shape
   without altering the indexed [columns]."*
 
-**So: no chain break, and the actor becomes tamper-evident for free — provided
-you put it in the payload.** Which is the next section, and it is the one thing
-in this cut that is easy to get wrong in a way nothing would catch.
+**So: no chain break, and the actor's *payload copy* becomes tamper-evident for
+free — provided you put it in the payload.** Which is the next section, and it
+is the one thing in this cut that is easy to get wrong in a way nothing would
+catch. **This does not extend to the D1 column copy** — round 2's G2 test
+(`g2_tampering_the_actor_column_alone_is_not_caught_by_chain_verification`)
+found that the column is not an input to `chain_hash` and a tamper confined to
+it is invisible to `verify_chain`/`verify_chain_full`; see §10(ii) below, which
+predicted the opposite and was wrong.
 
 ## 3. Resolved decisions — do not re-open
 
@@ -217,9 +222,17 @@ the actor round-trip); `migration_chain` **35 → report the new figure**;
 route surface **197, 0 added, 0 removed**; `drift-scan.sh` exit 0.
 
 **Required pairs**: (i) a chain containing pre- and post-migration rows verifies
-`valid=true` (G2); (ii) a row whose `actor` column is edited in the database but
-whose payload is not **fails** verification — that is the proof D1 bought, and
-it is the single most valuable test in this cut.
+`valid=true` (G2); (ii) ~~a row whose `actor` column is edited in the database
+but whose payload is not **fails** verification — that is the proof D1
+bought, and it is the single most valuable test in this cut~~ — **wrong,
+refuted by round 2's G2 test.** `chain_hash` is computed from
+`previous_hash`, `payload_hash`, `seq`, `ts`, `kind`, `id` only
+(`crates/core/src/audit/chain.rs:87`, already noted in §2 above); the `actor`
+column is not among them, so editing it alone **passes** verification. D1's
+real proof is narrower than this predicted: it protects the **payload's**
+copy of `actor` (payload_hash covers the payload bytes), not the column.
+Detecting a column-only tamper needs a manual comparison against the
+payload (e.g. `wrangler d1 execute`), not an automated one.
 
 ## 11. What must NOT be claimed
 

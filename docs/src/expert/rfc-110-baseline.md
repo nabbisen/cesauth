@@ -24,7 +24,7 @@ Safety controls
 | Turnstile configured  | `crates/backend/src/turnstile.rs` has `TurnstileConfig::is_configured()`. **Indicator not surfaced** in any admin page. | gap → **shipped v0.74.0 (RFC 110b)** |
 | Refresh reuse alerts  | `EventKind::RefreshTokenReuseDetected` is written to `audit_events`. **No summary of recent occurrences** in admin UI; operator must query the audit log directly. | gap → **shipped v0.74.0 (RFC 110c)** |
 | TOTP key status       | `TOTP_SECRET_KEY` env-var presence not surfaced in admin UI. | gap → **shipped v0.74.0 (RFC 110d)** |
-| Open runbook link     | `docs/src/deployment/day-2-runbook.md` exists, but **no hyperlink** from `/admin/console/safety` to it. | gap → **shipped v0.74.0 (RFC 110e)** — `RUNBOOK_URL` env var feeds the anchor |
+| Open runbook link     | `docs/src/deployment/runbook.md` exists, but **no hyperlink** from `/admin/console/safety` to it. | gap → **shipped v0.74.0 (RFC 110e)** — `RUNBOOK_URL` env var feeds the anchor |
 
 Note: `/admin/console/safety` is the **Data Safety Dashboard** (R2 bucket
 public/private safety, RFC 047) — a different surface from PDF page 9's

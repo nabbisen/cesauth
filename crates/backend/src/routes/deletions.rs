@@ -273,11 +273,16 @@ pub async fn cancel_self<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Re
     let now = OffsetDateTime::now_utc().unix_timestamp();
     match deletion::cancel_deletion(&del_repo, &pending.id, session.user_id.as_str(), now).await {
         Ok(()) => {
+            // RFC 187 round 2 F-1: this is the self-service path (actor
+            // == subject, the user cancelling their own request) —
+            // "self-request" is this file's own existing marker for
+            // that shape (see :141/:213), not an actor id repeated now
+            // that the column carries it.
             audit::write_owned(
                 &ctx.env, EventKind::DeletionCancelled,
                 Some(session.user_id.to_string()),
                 None,
-                Some(format!("request:{} cancelled_by:{}", pending.id, session.user_id)),
+                Some(format!("request:{} self-request", pending.id)),
             ).await.ok();
             let mut resp = Response::empty()?.with_status(302);
             let _ = resp.headers_mut().set("location", "/me/security");
@@ -375,11 +380,19 @@ pub async fn admin_cancel<D>(mut req: Request, ctx: RouteContext<D>) -> Result<R
     let now = OffsetDateTime::now_utc().unix_timestamp();
     match deletion::cancel_deletion(&del_repo, &request_id, &ctx_ta.principal.id, now).await {
         Ok(()) => {
-            audit::write_owned(
+            // RFC 187 T4: subject is the affected user; actor is the
+            // cancelling admin. T8: the reason string no longer repeats
+            // the actor's id now that the column carries it; round 2
+            // F-1 adds "admin-triggered" (not an id) so the self-service
+            // and admin-triggered DeletionCancelled paths are
+            // distinguishable by a word in the reason, the same shape
+            // :463's DeletionExecuted already uses.
+            audit::write_owned_with_actor(
                 &ctx.env, EventKind::DeletionCancelled,
                 Some(req_row.user_id.clone()),
+                Some(ctx_ta.principal.id.clone()),
                 None,
-                Some(format!("request:{request_id} cancelled_by:{}", ctx_ta.principal.id)),
+                Some(format!("request:{request_id} admin-triggered")),
             ).await.ok();
             let mut resp = Response::empty()?.with_status(303);
             let _ = resp.headers_mut().set(
@@ -445,14 +458,20 @@ pub async fn admin_execute<D>(mut req: Request, ctx: RouteContext<D>) -> Result<
         Ok(outcome) => {
             // RFC 148 §7: the scrub outcome rides in the same audit event's
             // detail that already distinguishes an admin-triggered
-            // execution from the sweep — no new EventKind.
-            audit::write_owned(
+            // execution from the sweep — no new EventKind. RFC 187 T4:
+            // subject is the deleted user; actor is the executing admin.
+            // T8: the reason string no longer repeats the actor's id now
+            // that the column carries it; "admin-triggered" itself stays
+            // (same role as sweep.rs's own "sweep" marker — distinguishing
+            // the trigger, not naming who).
+            audit::write_owned_with_actor(
                 &ctx.env, EventKind::DeletionExecuted,
                 Some(req_row.user_id.clone()),
+                Some(ctx_ta.principal.id.clone()),
                 None,
                 Some(format!(
-                    "request:{request_id} admin-triggered by:{} scrub:{}",
-                    ctx_ta.principal.id, outcome.scrub.as_str(),
+                    "request:{request_id} admin-triggered scrub:{}",
+                    outcome.scrub.as_str(),
                 )),
             ).await.ok();
             log::emit(&cfg.log, Level::Warn, Category::Auth,

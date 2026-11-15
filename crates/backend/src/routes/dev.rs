@@ -118,6 +118,7 @@ pub async fn list_audit<D>(req: Request, ctx: RouteContext<D>) -> Result<Respons
     let repo = cesauth_cf::ports::audit::CloudflareAuditEventRepository::new(&ctx.env);
     let search = cesauth_core::ports::audit::AuditSearch {
         kind, subject, since, until,
+        actor: None, // RFC 187: this dev-only inspector's own filters are out of this cut's scope; minimal fix to compile
         limit: Some(limit),
         before_seq: None,
     };

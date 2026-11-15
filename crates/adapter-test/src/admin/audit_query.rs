@@ -51,7 +51,7 @@ impl AuditQuerySource for InMemoryAuditQuerySource {
                 Some(s) => e.kind.contains(s.as_str()),
                 None    => true,
             })
-            .filter(|e| match &q.subject_contains {
+            .filter(|e| match &q.subject_exact {
                 Some(s) => e.subject.as_deref().map(|x| x.contains(s.as_str())).unwrap_or(false),
                 None    => true,
             })
@@ -96,6 +96,7 @@ mod tests {
             id:      format!("ev-{ts}"),
             kind:    kind.to_owned(),
             subject: subj.map(|s| s.to_owned()),
+            actor:   None,
             client:  None,
             reason:  None,
             key:     format!("seq={ts}"),

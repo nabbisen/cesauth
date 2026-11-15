@@ -261,20 +261,20 @@ async fn audit_search_filters_and_limits() {
     audit.seed(vec![
         AdminAuditEntry {
             ts: 1000, id: "1".into(), kind: "token_issued".into(),
-            subject: Some("alice".into()), client: Some("c1".into()),
+            subject: Some("alice".into()), actor: None, client: Some("c1".into()),
             reason: None, key: "k1".into(),
         },
         AdminAuditEntry {
             ts: 1001, id: "2".into(), kind: "magic_link_verified".into(),
-            subject: Some("bob".into()), client: None, reason: None, key: "k2".into(),
+            subject: Some("bob".into()), actor: None, client: None, reason: None, key: "k2".into(),
         },
         AdminAuditEntry {
             ts: 1002, id: "3".into(), kind: "auth_failed".into(),
-            subject: Some("bob".into()), client: None, reason: Some("pkce".into()), key: "k3".into(),
+            subject: Some("bob".into()), actor: None, client: None, reason: Some("pkce".into()), key: "k3".into(),
         },
     ]);
     let only_bob = service::search_audit(&audit, &AuditQuery {
-        subject_contains: Some("bob".into()),
+        subject_exact: Some("bob".into()),
         ..AuditQuery::default()
     }).await.unwrap();
     assert_eq!(only_bob.len(), 2);

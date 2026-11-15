@@ -61,6 +61,42 @@ pub fn apply_all_migrations() -> RusqliteResult<Connection> {
     Ok(conn)
 }
 
+/// Open an in-memory SQLite database and apply only the migrations up
+/// to and including the one whose filename starts with `prefix` (e.g.
+/// `"0020"`). **RFC 187 round 2 F-3**: lets a test genuinely put a row
+/// in the database the way it looked BEFORE a later migration ran,
+/// rather than inserting after `apply_all_migrations()` has already
+/// applied everything — the shape `migration_0021_does_not_backfill_
+/// existing_rows` needed and did not have.
+pub fn apply_migrations_through(prefix: &str) -> RusqliteResult<Connection> {
+    let conn = Connection::open_in_memory()?;
+    conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+
+    let mdir = migrations_dir();
+    let mut files: Vec<_> = fs::read_dir(&mdir)
+        .unwrap_or_else(|e| panic!("read migrations dir {:?}: {e}", mdir))
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|x| x == "sql").unwrap_or(false))
+        .map(|e| e.path())
+        .collect();
+    files.sort();
+
+    let cutoff = files.iter().position(|p| {
+        p.file_name().and_then(|n| n.to_str())
+            .map(|n| n.starts_with(prefix))
+            .unwrap_or(false)
+    }).unwrap_or_else(|| panic!("no migration file starts with {prefix:?}"));
+
+    for path in &files[..=cutoff] {
+        let sql = fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("read {:?}: {e}", path));
+        conn.execute_batch(&sql)
+            .unwrap_or_else(|e| panic!("apply {:?}: {e}", path));
+    }
+
+    Ok(conn)
+}
+
 /// Return the expected SCHEMA_VERSION: the count of *.sql files in
 /// migrations/.
 pub fn expected_schema_version() -> u32 {

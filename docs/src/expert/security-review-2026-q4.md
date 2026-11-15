@@ -64,23 +64,27 @@ that anything was checked.
 ### F-1: the audit record of an export does not say which rows left
 
 **Severity**: Low
-**Surface**: `crates/backend/src/routes/admin/console/audit_export.rs:126-137`
-**Status**: **new in this review**
+**Surface**: `crates/backend/src/routes/admin/console/audit_export.rs`
+**Status**: **closed, RFC 187 round 2 §4(b)**
 
-The export's audit detail is
-`format={} rows={} truncated={} filter={}`, where `filter` is
-`event_exact` or `kind_contains` or `*`. **The date range is absent.** `0.97.0`
-added `since`/`until` to the export form — the operator-visible fix for an
-export that had been silently dropping the range — and the audit detail was not
-extended with it.
+The export's audit detail was
+`format={} rows={} truncated={} filter={}`, where `filter` was
+`event_exact` or `kind_contains` or `*`. **The date range, the subject filter,
+and the actor filter were all absent.** `0.97.0` added `since`/`until` to the
+export form without extending the audit detail to match; RFC 187 round 2 found
+the same gap for `subject`/`actor` while adding the latter.
 
-So for an export of a specific window the record states how many rows left and
+So for an export of a specific window the record stated how many rows left and
 in what format, and **not which rows**. For the question an incident asks —
-*what was disclosed?* — row count plus `filter=*` is weak evidence.
+*what was disclosed?* — row count plus `filter=*` was weak evidence.
 
-**Disposition**: open. One-line change to the `format!`; no schema or port
-change. Natural companion to RFC 187, which is already amending this subsystem's
-records.
+**Fix.** `build_filter_desc` (`audit_export.rs`) now names every applied
+dimension — `event`, `subject`, `actor`, `from`, `to` — comma-joined, `*` only
+when none is set. Pulled out as its own pure function (same reason
+`resolve_export_limit` already was one) and host-tested directly
+(`build_filter_desc`'s own test block), rather than only exercised indirectly
+through the route handler. Closed in the same cut that added the `actor`
+filter, rather than adding a third unrecorded dimension to an audited export.
 
 ### F-2: a `ReadOnly` admin could erase the tamper alarm
 

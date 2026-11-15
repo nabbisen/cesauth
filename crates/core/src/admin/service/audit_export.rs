@@ -87,12 +87,19 @@ where
 /// Render audit rows as CSV (RFC 4180).
 ///
 /// Column order is fixed to ensure stability across upgrades:
-/// `seq,timestamp,kind,subject,client,reason`
+/// `seq,timestamp,kind,subject,client,reason,actor`
+///
+/// **RFC 187 D4 (owner-resolved): `actor` is APPENDED, not inserted next
+/// to `subject`.** This project has no published consumers of this
+/// format, but it does have a downloaded-file format, and a positional
+/// change breaks a spreadsheet silently — appending does not. Disclosed
+/// as a surface-contract change in this cut's report even though the
+/// append-only choice is correct.
 ///
 /// The `reason` field passes through `audit::redaction` before
 /// serialization so that no secret material leaks into the export.
 fn render_csv(rows: &[crate::admin::types::AdminAuditEntry]) -> String {
-    let mut out = String::from("seq,timestamp,kind,subject,client,reason\r\n");
+    let mut out = String::from("seq,timestamp,kind,subject,client,reason,actor\r\n");
     for row in rows {
         out.push_str(&csv_field(&row.key));
         out.push(',');
@@ -107,6 +114,8 @@ fn render_csv(rows: &[crate::admin::types::AdminAuditEntry]) -> String {
         out.push_str(&csv_field(row.client.as_deref().unwrap_or("")));
         out.push(',');
         out.push_str(&csv_field(row.reason.as_deref().unwrap_or("")));
+        out.push(',');
+        out.push_str(&csv_field(row.actor.as_deref().unwrap_or("")));
         out.push_str("\r\n");
     }
     out
@@ -118,14 +127,17 @@ fn render_jsonl(rows: &[crate::admin::types::AdminAuditEntry]) -> String {
         // Manual serialization keeps core free of serde dependency on this path
         // (serde is already a dep of cesauth-core via other modules, so this is
         // belt-and-suspenders clarity rather than a real constraint).
+        // RFC 187 D4: actor appended, same surface-contract discipline as
+        // the CSV header above.
         format!(
-            r#"{{"seq":{seq:?},"timestamp":{ts:?},"kind":{kind:?},"subject":{subj},"client":{cli},"reason":{rsn}}}"#,
-            seq  = row.key,
-            ts   = crate::util::format_unix_as_iso8601(row.ts),
-            kind = row.kind,
-            subj = json_string_opt(row.subject.as_deref()),
-            cli  = json_string_opt(row.client.as_deref()),
-            rsn  = json_string_opt(row.reason.as_deref()),
+            r#"{{"seq":{seq:?},"timestamp":{ts:?},"kind":{kind:?},"subject":{subj},"client":{cli},"reason":{rsn},"actor":{actor}}}"#,
+            seq   = row.key,
+            ts    = crate::util::format_unix_as_iso8601(row.ts),
+            kind  = row.kind,
+            subj  = json_string_opt(row.subject.as_deref()),
+            cli   = json_string_opt(row.client.as_deref()),
+            rsn   = json_string_opt(row.reason.as_deref()),
+            actor = json_string_opt(row.actor.as_deref()),
         )
     }).collect::<Vec<_>>().join("\n")
 }
@@ -170,6 +182,7 @@ mod export_tests {
             id:      "id-1".to_owned(),
             kind:    kind.to_owned(),
             subject: subject.map(ToOwned::to_owned),
+            actor:   None,
             client:  None,
             reason:  None,
             key:     "seq=1".to_owned(),
@@ -178,8 +191,9 @@ mod export_tests {
 
     #[test]
     fn csv_header_is_correct() {
+        // RFC 187 D4: actor is APPENDED, not inserted next to subject.
         let csv = render_csv(&[]);
-        assert!(csv.starts_with("seq,timestamp,kind,subject,client,reason\r\n"));
+        assert!(csv.starts_with("seq,timestamp,kind,subject,client,reason,actor\r\n"));
     }
 
     #[test]
@@ -278,6 +292,7 @@ mod service_tests {
             id:      format!("id-{kind}"),
             kind:    kind.to_owned(),
             subject: None,
+            actor:   None,
             client:  None,
             reason:  None,
             key:     "seq=1".to_owned(),

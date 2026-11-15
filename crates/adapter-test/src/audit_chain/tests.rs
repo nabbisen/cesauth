@@ -35,6 +35,7 @@ async fn build_chain(n: usize) -> InMemoryAuditEventRepository {
             ts,
             kind:         "test_event",
             subject:      None,
+            actor:        None,
             client_id:    None,
             ip:           None,
             user_agent:   None,
@@ -108,13 +109,13 @@ async fn second_run_resumes_from_checkpoint_and_walks_only_new_rows() {
 
     let h = compute_payload_hash(b"{}");
     repo.append(&NewAuditEvent {
-        id: "e3", ts: 200, kind: "k", subject: None, client_id: None,
+        id: "e3", ts: 200, kind: "k", subject: None, actor: None, client_id: None,
         ip: None, user_agent: None, reason: None,
         payload: "{}", payload_hash: &h, created_at: 200,
             request_id:    None,
     }).await.unwrap();
     repo.append(&NewAuditEvent {
-        id: "e4", ts: 201, kind: "k", subject: None, client_id: None,
+        id: "e4", ts: 201, kind: "k", subject: None, actor: None, client_id: None,
         ip: None, user_agent: None, reason: None,
         payload: "{}", payload_hash: &h, created_at: 201,
             request_id:    None,
@@ -225,7 +226,7 @@ async fn wholesale_rewrite_is_detected_via_checkpoint_cross_check() {
         repo.append(&NewAuditEvent {
             id: &id, ts: 1000 + i as i64,
             kind: "forged_event",
-            subject: None, client_id: None, ip: None, user_agent: None, reason: None,
+            subject: None, actor: None, client_id: None, ip: None, user_agent: None, reason: None,
             payload: r#"{"forged":true}"#, payload_hash: &h,
             created_at: 1000 + i as i64,
             request_id: None,
@@ -471,4 +472,125 @@ async fn a_fresh_overwrite_clears_any_earlier_refusal_stamp() {
     assert!(r3.stored.valid);
     assert_eq!(r3.stored.clean_walk_refused_at, None,
         "a fresh, non-refused write starts with no refusal stamp");
+}
+
+// =====================================================================
+// RFC 187 G2 — the actor column, re-verified independently
+// =====================================================================
+
+#[tokio::test]
+async fn g2_chain_with_pre_and_post_migration_actor_rows_verifies_valid() {
+    // D2: actor is None for rows before the migration point (here: rows
+    // appended with no actor, mirroring a pre-0021 row) and Some(...) for
+    // rows after it. Neither shape should ever break the chain, since
+    // compute_chain_hash/compute_payload_hash never read actor at all
+    // (§9 assertion 2 of the handoff; also independently confirmed: the
+    // field is new to NewAuditEvent/Event, not a changed signature of
+    // either hash function).
+    let repo = InMemoryAuditEventRepository::with_genesis();
+
+    // "Pre-migration" row: no actor at all. The payload here is what
+    // `backend::audit::Event::new(..).with_subject(..)` would actually
+    // serialize to (checked for the `actor` field specifically — not
+    // field-for-field — by
+    // `event_with_no_actor_serializes_a_present_null_not_an_absent_key`
+    // in `crates/backend/src/audit/tests.rs` — this test cannot reach
+    // that type directly, adapter-test sits below backend in the dependency
+    // graph) — a hand-built but realistic payload, not a placeholder.
+    let pre_payload = r#"{"subject":"user-1","actor":null}"#;
+    let h_pre = compute_payload_hash(pre_payload.as_bytes());
+    repo.append(&NewAuditEvent {
+        id: "pre-1", ts: 100, kind: "legacy_event",
+        subject: Some("user-1"), actor: None,
+        client_id: None, ip: None, user_agent: None, reason: None,
+        payload: pre_payload, payload_hash: &h_pre, created_at: 100, request_id: None,
+    }).await.unwrap();
+
+    // "Post-migration" row: actor differs from subject, exactly the
+    // shape G1's classification named (b) (admin acting on a different
+    // user's behalf).
+    let post_payload = r#"{"subject":"user-2","actor":"admin-1"}"#;
+    let h_post = compute_payload_hash(post_payload.as_bytes());
+    repo.append(&NewAuditEvent {
+        id: "post-1", ts: 200, kind: "deletion_executed",
+        subject: Some("user-2"), actor: Some("admin-1"),
+        client_id: None, ip: None, user_agent: None, reason: None,
+        payload: post_payload, payload_hash: &h_post, created_at: 200, request_id: None,
+    }).await.unwrap();
+
+    let checkpoints = InMemoryAuditChainCheckpointStore::new();
+    let outcome = verify_chain_full(&repo, &checkpoints, NOW).await.unwrap();
+    assert!(outcome.stored.valid, "actor column must not break chain verification");
+    assert_eq!(outcome.stored.chain_length, 3, "genesis + 2 appended rows");
+    assert_eq!(outcome.stored.rows_walked, 3);
+    assert!(outcome.stored.first_mismatch_seq.is_none());
+
+    // And the actor really did ride into the payload (D1), not just the
+    // column — confirmed by reading the stored row back and parsing its
+    // own payload JSON, not by trusting the field exists on the Rust type.
+    let rows = repo.rows();
+    let post = rows.iter().find(|r| r.id == "post-1").unwrap();
+    assert_eq!(post.actor.as_deref(), Some("admin-1"), "column carries it");
+    let payload_json: serde_json::Value = serde_json::from_str(&post.payload).unwrap();
+    assert_eq!(payload_json["actor"], "admin-1", "payload carries it too (D1)");
+}
+
+#[tokio::test]
+async fn g2_tampering_the_actor_column_alone_is_not_caught_by_chain_verification() {
+    // **This is the required pair's second half, and it does NOT prove
+    // what the handoff's §10 says it proves.** Read `verify_chain`'s own
+    // module doc (`crates/core/src/audit/verifier.rs:7-30`): verification
+    // checks exactly three things — payload_hash integrity, chain_hash
+    // integrity, and chain linkage (previous_hash). None of the three
+    // reads any indexed column (actor, subject, client_id, ...) and
+    // compares it against the payload's own copy of that field. So
+    // editing ONLY the `actor` column, leaving `payload`/`payload_hash`/
+    // `chain_hash` untouched, changes nothing any of those three checks
+    // look at — `valid` stays `true`.
+    //
+    // This is not new to `actor`: the SAME gap exists for `subject`,
+    // `client_id`, `ip`, `user_agent`, and `reason` today, for every row
+    // in the table, and predates this cut. RFC 187's own text ("the
+    // actor becomes tamper-evident for free — provided you put it in
+    // the payload") reads as a claim about the automated verifier; what
+    // D1 actually buys is narrower: a HUMAN comparing the displayed
+    // column against the archived `payload` blob (via `wrangler d1
+    // execute` or an export) CAN notice the mismatch, because the
+    // evidence is there to compare against. No code path does that
+    // comparison automatically today.
+    //
+    // Per the handoff's own instruction ("if the chain breaks, stop and
+    // report — that refutes the RFC's design and is worth more than an
+    // implementation"): the chain does not break (see the companion
+    // test above), so this is not that stop condition. But the
+    // specific claim in §10 ("fails verification... the proof D1
+    // bought") is reported here as not reproducing, rather than this
+    // test being written to silently assert the opposite of what it
+    // measures.
+    let repo = InMemoryAuditEventRepository::with_genesis();
+    let payload = r#"{"subject":"user-2","actor":"admin-1"}"#;
+    let h = compute_payload_hash(payload.as_bytes());
+    repo.append(&NewAuditEvent {
+        id: "post-1", ts: 200, kind: "deletion_executed",
+        subject: Some("user-2"), actor: Some("admin-1"),
+        client_id: None, ip: None, user_agent: None, reason: None,
+        payload, payload_hash: &h, created_at: 200, request_id: None,
+    }).await.unwrap();
+
+    repo.tamper_set_actor(2, Some("admin-2".to_owned()));
+
+    let rows = repo.rows();
+    let row = rows.iter().find(|r| r.seq == 2).unwrap();
+    let payload_json: serde_json::Value = serde_json::from_str(&row.payload).unwrap();
+    assert_eq!(row.actor.as_deref(), Some("admin-2"), "the column now disagrees with the payload");
+    assert_eq!(payload_json["actor"], "admin-1", "the payload still says what was originally written");
+
+    let checkpoints = InMemoryAuditChainCheckpointStore::new();
+    let outcome = verify_chain_full(&repo, &checkpoints, NOW).await.unwrap();
+    assert!(
+        outcome.stored.valid,
+        "documents the actual behaviour: a column-only tamper does not fail \
+         chain verification today, contrary to the handoff's §10 claim — see \
+         this test's own comment and the G2 finding in the implementation report",
+    );
 }

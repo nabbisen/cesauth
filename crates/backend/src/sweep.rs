@@ -96,9 +96,14 @@ pub async fn run(env: &Env) -> worker::Result<usize> {
         // diagnostic query then shows whether the row actually
         // disappeared. ADR-004 §Q5: audit trail integrity over
         // delete-then-audit ordering.
-        audit::write_owned(
+        // RFC 187 T4: cron-emitted, no principal acted. subject is the
+        // expired user; defaulting actor = subject would wrongly claim
+        // the expired user expired themselves (the handoff's own named
+        // trap case for this default).
+        audit::write_owned_with_actor(
             env, EventKind::AnonymousExpired,
             Some(u.id.clone()),
+            None,
             None,
             Some(format!(
                 "via=anonymous-sweep,age_secs={}",
@@ -284,9 +289,16 @@ pub async fn sweep_pending_deletions(env: &Env) -> worker::Result<usize> {
                 // row. `executed_by` on the row itself already carries
                 // `"sweep"` as the actor (D6). RFC 148 §7: the scrub
                 // outcome rides in the same detail string.
-                audit::write_owned(
+                // RFC 187 T4: cron-emitted, no principal acted. The
+                // deletion_requests row's own `executed_by` field (D6,
+                // not this audit event) already carries "sweep" as a
+                // domain-level marker; the audit log's `actor` column
+                // is about a PRINCIPAL, so it stays None rather than
+                // smuggling that same string in as a fake one (D2: no
+                // sentinel — a sentinel is a value that looks like data).
+                audit::write_owned_with_actor(
                     env, audit::EventKind::DeletionExecuted,
-                    Some(row.user_id.clone()), None,
+                    Some(row.user_id.clone()), None, None,
                     Some(format!("request:{} sweep scrub:{}", row.request_id, outcome.scrub.as_str())),
                 ).await.ok();
                 if outcome.scrub == cesauth_core::deletion::ScrubOutcome::Failed {

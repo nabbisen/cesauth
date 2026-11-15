@@ -57,8 +57,17 @@ guarantee, and the bug would be a race condition in the wild.
 
 Audit events live in the `audit_events` D1 table (v0.32.0+,
 ADR-010). Each row carries a SHA-256 hash chain over its
-predecessor, making the log tamper-evident: modifying any past
-row invalidates every subsequent `chain_hash`.
+predecessor, making the log tamper-evident: modifying the
+`payload` or `chain_hash` of any past row invalidates every
+subsequent `chain_hash`. **The indexed duplicate columns**
+(`subject`, `client_id`, `ip`, `user_agent`, `reason`, `actor`)
+**are not inputs to the chain hash** — see ADR-010's "Schema"
+section — so a tamper confined to one of those columns alone
+changes what the viewer displays and filters on without
+breaking the chain. RFC 187's G2 test demonstrates this for
+`actor` specifically; the gap is generic to every column in
+that list, not particular to the one that test happened to
+cover.
 
 The chain ledger is the source of truth. v0.31.x and earlier
 wrote audit events to the R2 `AUDIT` bucket as

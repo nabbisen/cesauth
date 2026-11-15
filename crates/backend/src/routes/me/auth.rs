@@ -296,9 +296,13 @@ pub async fn resolve_or_redirect(
                 "last_seen_at": state.last_seen_at,
                 "now":          now,
             }).to_string();
-            crate::audit::write_owned(
+            // RFC 187 round 2 F-2: system-initiated (the request merely
+            // discovered a timeout that elapsed with no request in
+            // flight) — same family as AnonymousExpired. actor stays
+            // explicit None.
+            crate::audit::write_owned_with_actor(
                 env, crate::audit::EventKind::SessionIdleTimeout,
-                Some(state.user_id.to_string()), Some(state.client_id.to_string()),
+                Some(state.user_id.to_string()), None, Some(state.client_id.to_string()),
                 Some(payload),
             ).await.ok();
             Ok(Err(redirect_to_login_with_next(req)?))
@@ -310,9 +314,11 @@ pub async fn resolve_or_redirect(
                 "created_at":  state.created_at,
                 "now":         now,
             }).to_string();
-            crate::audit::write_owned(
+            // RFC 187 round 2 F-2: same reasoning as SessionIdleTimeout
+            // above.
+            crate::audit::write_owned_with_actor(
                 env, crate::audit::EventKind::SessionAbsoluteTimeout,
-                Some(state.user_id.to_string()), Some(state.client_id.to_string()),
+                Some(state.user_id.to_string()), None, Some(state.client_id.to_string()),
                 Some(payload),
             ).await.ok();
             Ok(Err(redirect_to_login_with_next(req)?))

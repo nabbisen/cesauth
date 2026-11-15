@@ -79,7 +79,8 @@ impl AuditQuerySource for CloudflareAuditQuerySource<'_> {
 
         let search = AuditSearch {
             kind:       kind_slot,
-            subject:    q.subject_contains.clone(),
+            subject:    q.subject_exact.clone(),
+            actor:      q.actor_exact.clone(),
             since:      q.since,
             until:      q.until,
             limit:      Some(q.limit.unwrap_or(DEFAULT_LIMIT)),
@@ -94,6 +95,7 @@ impl AuditQuerySource for CloudflareAuditQuerySource<'_> {
             id:      r.id,
             kind:    r.kind,
             subject: r.subject,
+            actor:   r.actor,
             client:  r.client_id,
             reason:  r.reason,
             // v0.32.0+: the "key" column shown in the UI is the

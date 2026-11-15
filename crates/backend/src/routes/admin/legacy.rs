@@ -79,9 +79,11 @@ pub async fn create_user<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Re
     let repo = CloudflareUserRepository::new(&ctx.env);
     match repo.create(&user).await {
         Ok(()) => {
-            audit::write_owned(
+            // RFC 187 T4: subject is the new user; actor is the creating
+            // admin — out of T8's scope, reason's bare id stays.
+            audit::write_owned_with_actor(
                 &ctx.env, EventKind::AdminUserCreated,
-                Some(user.id.clone()), None, Some(principal.id.clone()),
+                Some(user.id.clone()), Some(principal.id.clone()), None, Some(principal.id.clone()),
             ).await.ok();
             Response::from_json(&serde_json::json!({
                 "id":    user.id,
@@ -119,9 +121,14 @@ pub async fn revoke_session<D>(req: Request, ctx: RouteContext<D>) -> Result<Res
     let store = CloudflareActiveSessionStore::new(&ctx.env);
     match store.revoke(&cesauth_core::types::SessionId::from_storage(session_id), now).await {
         Ok(_) => {
-            audit::write_owned(
+            // RFC 187 T4: subject here is a SESSION id, not a principal
+            // (a pre-existing data-shape anomaly in this one event kind,
+            // not this cut's to fix — D5 bars redefining what subject
+            // means). actor is the revoking admin regardless; reason's
+            // bare id stays, out of T8's scope.
+            audit::write_owned_with_actor(
                 &ctx.env, EventKind::AdminSessionRevoked,
-                Some(session_id.to_owned()), None, Some(principal.id.clone()),
+                Some(session_id.to_owned()), Some(principal.id.clone()), None, Some(principal.id.clone()),
             ).await.ok();
             // 204 No Content - revoke is idempotent and has no body.
             Response::empty().map(|r| r.with_status(204))

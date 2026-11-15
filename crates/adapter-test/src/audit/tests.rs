@@ -18,7 +18,7 @@ fn ev<'a>(
 ) -> NewAuditEvent<'a> {
     NewAuditEvent {
         id, ts, kind,
-        subject: None, client_id: None, ip: None, user_agent: None, reason: None,
+        subject: None, actor: None, client_id: None, ip: None, user_agent: None, reason: None,
         payload,
         payload_hash,
         created_at: ts,
@@ -159,6 +159,7 @@ async fn populate_for_search() -> InMemoryAuditEventRepository {
 
     e = ev("e4", 400, "login_failed", "{}", &h);
     e.subject = None;
+    e.actor = Some("sweep"); // RFC 187: subject None, a non-default actor set deliberately
     repo.append(&e).await.unwrap();
     repo
 }
@@ -193,6 +194,19 @@ async fn search_subject_filter_applies() {
     }).await.unwrap();
     assert_eq!(out.len(), 2);
     assert!(out.iter().all(|r| r.subject.as_deref() == Some("alice")));
+}
+
+#[tokio::test]
+async fn search_actor_filter_applies() {
+    // RFC 187 T5: actor follows the exact same path as subject.
+    let repo = populate_for_search().await;
+    let out = repo.search(&AuditSearch {
+        actor: Some("sweep".to_owned()),
+        ..AuditSearch::default()
+    }).await.unwrap();
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].id, "e4");
+    assert!(out[0].subject.is_none(), "this row's subject is deliberately None while actor is Some");
 }
 
 #[tokio::test]

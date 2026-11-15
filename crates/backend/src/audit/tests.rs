@@ -338,3 +338,43 @@ fn tenant_created_detail_surfaces_a_failed_owner_home_outcome() {
     let detail = super::tenant_created_detail("", "acme", OwnerHomeOutcome::Failed);
     assert_eq!(detail, "slug=acme,owner_home=failed");
 }
+
+// RFC 187 §9 assertion 1 — "the Event struct field, and a serialized
+// 'actor' in a payload test." This is the test that assertion asks for:
+// not that the field compiles, but that it actually appears in the
+// bytes `payload_hash` covers. `write()` itself needs a live `Env` and
+// is exercised at G2/G3 instead; this test is about `Event`'s own
+// `Serialize` impl, which needs neither.
+
+#[test]
+fn event_with_no_actor_serializes_a_present_null_not_an_absent_key() {
+    // RFC 187 round 2 F-3: renamed from `..._omits_it_...`, which
+    // asserted the opposite of what it said, AND `parsed["actor"]`
+    // returns `Null` for a MISSING key too (serde_json::Value::Index),
+    // so the old assertion could not tell "no actor set -> null" apart
+    // from "the field doesn't exist" — it would have stayed green even
+    // if `actor` grew `#[serde(skip_serializing_if = "Option::is_none")]`.
+    // D2 means a present null, never an absent key, so both are checked.
+    let ev = super::Event::new(super::EventKind::AdminConsoleViewed)
+        .with_subject("user-1");
+    let json = serde_json::to_string(&ev).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert!(
+        parsed.as_object().unwrap().contains_key("actor"),
+        "the key must be present even when there is no actor (D2: no sentinel, a real null, not an absence)",
+    );
+    assert!(parsed["actor"].is_null(), "no actor set -> null in the payload");
+}
+
+#[test]
+fn event_with_actor_carries_it_in_the_serialized_payload() {
+    // D1's whole point: actor rides in the SAME bytes payload_hash
+    // covers, not only in the AuditEventRow/NewAuditEvent column.
+    let ev = super::Event::new(super::EventKind::DeletionExecuted)
+        .with_subject("user-2")
+        .with_actor("admin-1");
+    let json = serde_json::to_string(&ev).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed["actor"], "admin-1");
+    assert_eq!(parsed["subject"], "user-2", "subject and actor are independent fields");
+}

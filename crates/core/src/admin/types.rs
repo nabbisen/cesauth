@@ -490,6 +490,8 @@ pub struct AdminAuditEntry {
     pub id:      String,
     pub kind:    String,
     pub subject: Option<String>,
+    /// **RFC 187.** See [`AuditEventRow::actor`][crate::ports::audit::AuditEventRow::actor].
+    pub actor:   Option<String>,
     pub client:  Option<String>,
     pub reason:  Option<String>,
     /// Stable reference for the UI to link or display alongside
@@ -502,7 +504,7 @@ pub struct AdminAuditEntry {
 ///
 /// **v0.71.0 (RFC 109)** added `event_exact`, `since`, `until`, and
 /// `cursor` for the new audit log viewer. The pre-existing fields
-/// (`prefix`, `limit`, `kind_contains`, `subject_contains`) stay for
+/// (`prefix`, `limit`, `kind_contains`, `subject_exact`) stay for
 /// backward-compatibility with the v0.31.x admin search form and with
 /// `POST /admin/console/audit/export` (RFC 080), which the viewer
 /// hands its current filter state off to.
@@ -519,7 +521,11 @@ pub struct AuditQuery {
     pub limit:  Option<u32>,
     /// Match events whose `kind` contains this substring.
     pub kind_contains:    Option<String>,
-    pub subject_contains: Option<String>,
+    pub subject_exact: Option<String>,
+    /// **RFC 187.** Who performed the action, distinct from
+    /// `subject_exact` (who the event concerns). Follows the exact
+    /// same adapter path as `subject_exact` (D4, T5).
+    pub actor_exact:   Option<String>,
     // RFC 109 (v0.71.0) additions ----------------------------------
     /// Exact-match on event kind. Used by the audit-viewer dropdown
     /// (RFC 109) when the operator picks a specific event kind. Distinct

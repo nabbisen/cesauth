@@ -228,9 +228,13 @@ async fn emit_drift_event_with_extra(
             "drift_kind":    kind_str,
         }),
     };
-    audit::write_owned(
+    // RFC 187 T4: invoked from lib.rs's scheduled handler (the daily
+    // drift detector) — cron-emitted, no principal acted. subject is
+    // whose session drifted, not an actor; defaulting would wrongly
+    // claim that user caused their own drift.
+    audit::write_owned_with_actor(
         env, EventKind::SessionIndexDrift,
-        Some(row.user_id.to_string()), None,
+        Some(row.user_id.to_string()), None, None,
         Some(payload.to_string()),
     ).await.ok();
 }

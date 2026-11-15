@@ -65,5 +65,5 @@ solutions (queue-based async appends could reorder events).
 
 - `CloudflareAuditEventRepository::append` emits a `console_warn` on slow
   or retried appends.
-- `docs/src/deployment/day-2-runbook.md` gains a detection/mitigation entry.
+- `docs/src/deployment/runbook.md` gains a detection/mitigation entry.
 - Operators with high-introspection deployments should watch for the warning.

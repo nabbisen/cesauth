@@ -403,7 +403,14 @@ pub enum MessageKey {
     // ---- RFC 109: audit log viewer (admin console, JA-only per ADR-013) ----
     AuditViewerPageTitle,
     AuditViewerSectionTitle,
-    AuditViewerActorLabel,
+    /// **RFC 187 round 2 (T6 §3).** Renamed from `AuditViewerActorLabel`
+    /// — the key name said "Actor" while decision 1 (`0.102.0`) had
+    /// already repointed its *value* at "Subject", and the mismatch sat
+    /// unnoticed until RFC 187 needed the freed name for the real actor
+    /// filter. Value unchanged in substance here, corrected for wording
+    /// in the same cut (see `AuditViewerActorLabel` below for why
+    /// "exact match" replaces "substring").
+    AuditViewerSubjectLabel,
     AuditViewerEventLabel,
     AuditViewerPeriodLabel,
     AuditViewerFromLabel,
@@ -414,7 +421,9 @@ pub enum MessageKey {
     AuditViewerOlderLink,
     AuditViewerEmptyState,
     AuditViewerColTime,
-    AuditViewerColActor,
+    /// **RFC 187 round 2 (T6 §3).** Renamed from `AuditViewerColActor`,
+    /// same reason as `AuditViewerSubjectLabel` above.
+    AuditViewerColSubject,
     AuditViewerColEvent,
     AuditViewerColReason,
     /// **RFC 185 §5.3 screen 1, round 2 — the fourth D2 entry.** Wired
@@ -437,6 +446,14 @@ pub enum MessageKey {
     /// `crates/frontend/src/admin/audit.rs`, **deleted in the same cut**
     /// — `git show 2ea2758:crates/frontend/src/admin/audit.rs`.
     AuditViewerChainLink,
+    /// **RFC 187 round 2 (T6 §3).** The real actor filter's `<label>` —
+    /// takes the name freed by `AuditViewerSubjectLabel`'s rename above.
+    /// `AuditViewerColActor` is this family's new column header. "exact
+    /// match" / "完全一致", not "substring" — `actor = ?N` in the
+    /// adapter, the same already-exact query `AuditViewerSubjectLabel`
+    /// was wrongly describing as "部分一致" before this round.
+    AuditViewerActorLabel,
+    AuditViewerColActor,
 
     // ---- RFC 185 §5.3 screen 2: the chain-status screen
     // (`/admin/console/audit/chain`). G1 reviewed and approved
@@ -1486,11 +1503,17 @@ fn lookup_admin(key: &MessageKey, locale: Locale) -> Option<&'static str> {
         // (AnonymousExpired) and admin-on-behalf (DeletionExecuted/
         // DeletionCancelled) event kinds, where this column holds the
         // AFFECTED user, not whoever acted. "Subject" is honest for all
-        // three shapes. The key names are unchanged (a rename is churn
-        // with no reader) -- only the values move.
-        AuditViewerActorLabel => match locale {
-            Locale::Ja => "Subject (部分一致)",
-            Locale::En => "Subject (substring)",
+        // three shapes. RFC 187 round 2 (T6 §3): the KEY itself is now
+        // renamed too (decision 1's "a rename is churn with no reader"
+        // held only until RFC 187 needed the freed name two cuts later —
+        // a mislabelled identifier is not free, it taxes the next
+        // change). The value also drops "部分一致"/"substring" for
+        // "完全一致"/"exact match": the adapter has always run
+        // `subject = ?N`, an exact match, not the substring the old
+        // wording claimed.
+        AuditViewerSubjectLabel => match locale {
+            Locale::Ja => "Subject (完全一致)",
+            Locale::En => "Subject (exact match)",
         },
         AuditViewerEventLabel => match locale {
             Locale::Ja => "イベント種別",
@@ -1536,7 +1559,7 @@ fn lookup_admin(key: &MessageKey, locale: Locale) -> Option<&'static str> {
             Locale::Ja => "時刻 (UTC)",
             Locale::En => "Time (UTC)",
         },
-        AuditViewerColActor => match locale {
+        AuditViewerColSubject => match locale {
             Locale::Ja => "Subject",
             Locale::En => "Subject",
         },
@@ -1559,6 +1582,21 @@ fn lookup_admin(key: &MessageKey, locale: Locale) -> Option<&'static str> {
         AuditViewerChainLink => match locale {
             Locale::Ja => "チェーン検証状況 →",
             Locale::En => "Chain verification status →",
+        },
+        // RFC 187 round 2 (T6 §3): "Actor" as the literal value in both
+        // locales, on purpose — the backend's own vocabulary is "actor"
+        // end to end (the D1 column, `write_owned_with_actor`), and a
+        // third word (e.g. a Japanese-native 実行者) would make
+        // operators learn a synonym for no reason. "完全一致"/"exact
+        // match" for the same reason AuditViewerSubjectLabel's wording
+        // just changed: `actor = ?N` is exact, never a substring.
+        AuditViewerActorLabel => match locale {
+            Locale::Ja => "Actor (完全一致)",
+            Locale::En => "Actor (exact match)",
+        },
+        AuditViewerColActor => match locale {
+            Locale::Ja => "Actor",
+            Locale::En => "Actor",
         },
 
         _ => return None,

@@ -69,6 +69,10 @@ struct DbRow {
     kind:          String,
     #[serde(default)]
     subject:       Option<String>,
+    /// RFC 187: nullable; rows written before the migration adding this
+    /// column will be NULL.
+    #[serde(default)]
+    actor:         Option<String>,
     #[serde(default)]
     client_id:     Option<String>,
     #[serde(default)]
@@ -95,6 +99,7 @@ impl DbRow {
             ts:            self.ts,
             kind:          self.kind,
             subject:       self.subject,
+            actor:         self.actor,
             client_id:     self.client_id,
             ip:            self.ip,
             user_agent:    self.user_agent,
@@ -110,7 +115,7 @@ impl DbRow {
 }
 
 const SELECT_COLUMNS: &str =
-    "seq, id, ts, kind, subject, client_id, ip, user_agent, reason, \
+    "seq, id, ts, kind, subject, actor, client_id, ip, user_agent, reason, \
      payload, payload_hash, previous_hash, chain_hash, created_at, request_id";
 
 impl AuditEventRepository for CloudflareAuditEventRepository<'_> {
@@ -152,9 +157,9 @@ impl AuditEventRepository for CloudflareAuditEventRepository<'_> {
             let stmt = db.prepare(
                 "INSERT INTO audit_events (\
                     seq, id, ts, kind, \
-                    subject, client_id, ip, user_agent, reason, \
+                    subject, actor, client_id, ip, user_agent, reason, \
                     payload, payload_hash, previous_hash, chain_hash, created_at, request_id\
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)"
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)"
             )
                 .bind(&[
                     d1_int(next_seq),
@@ -162,6 +167,10 @@ impl AuditEventRepository for CloudflareAuditEventRepository<'_> {
                     d1_int(ev.ts),
                     ev.kind.into(),
                     ev.subject.map(|s| s.into()).unwrap_or(JsValue::NULL),
+                    // RFC 187: actor rides in the payload too (Event::actor,
+                    // crates/backend/src/audit.rs) — this column is the
+                    // index, the payload is the evidence.
+                    ev.actor.map(|s| s.into()).unwrap_or(JsValue::NULL),
                     ev.client_id.map(|s| s.into()).unwrap_or(JsValue::NULL),
                     ev.ip.map(|s| s.into()).unwrap_or(JsValue::NULL),
                     ev.user_agent.map(|s| s.into()).unwrap_or(JsValue::NULL),
@@ -195,6 +204,7 @@ impl AuditEventRepository for CloudflareAuditEventRepository<'_> {
                         ts:            ev.ts,
                         kind:          ev.kind.to_owned(),
                         subject:       ev.subject.map(str::to_owned),
+                        actor:         ev.actor.map(str::to_owned),
                         client_id:     ev.client_id.map(str::to_owned),
                         ip:            ev.ip.map(str::to_owned),
                         user_agent:    ev.user_agent.map(str::to_owned),
@@ -270,6 +280,16 @@ impl AuditEventRepository for CloudflareAuditEventRepository<'_> {
         if let Some(s) = q.subject.as_deref() {
             where_clauses.push(format!("subject = ?{idx}"));
             params.push(s.into());
+            idx += 1;
+        }
+        // RFC 187 T5: actor_exact follows the exact same path as
+        // subject_exact above — including its pre-existing exact-match
+        // SQL despite the "_contains" name (a discrepancy between the UI
+        // label and the query this adapter has always run; not this cut's
+        // to fix, reported rather than silently corrected).
+        if let Some(a) = q.actor.as_deref() {
+            where_clauses.push(format!("actor = ?{idx}"));
+            params.push(a.into());
             idx += 1;
         }
         if let Some(since) = q.since {

@@ -116,13 +116,15 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         TenantDeletionScheduledInDays | TenantDeletionCancelButton |
         TenantDeletionExecuteButton | TenantDeletionExecuteConfirm |
         // RFC 109 — audit log viewer
-        AuditViewerPageTitle | AuditViewerSectionTitle | AuditViewerActorLabel |
+        AuditViewerPageTitle | AuditViewerSectionTitle | AuditViewerSubjectLabel |
         AuditViewerEventLabel | AuditViewerEventAny | AuditViewerPeriodLabel |
         AuditViewerFromLabel | AuditViewerToLabel | AuditViewerSubmitButton |
         AuditViewerExportButton | AuditViewerNewerLink | AuditViewerOlderLink |
-        AuditViewerEmptyState | AuditViewerColTime | AuditViewerColActor |
+        AuditViewerEmptyState | AuditViewerColTime | AuditViewerColSubject |
         AuditViewerColEvent | AuditViewerColReason | AuditViewerColSeq |
         AuditViewerNoteSchemaTenant | AuditViewerChainLink |
+        // RFC 187 round 2 (T6 §3) — the real actor filter/column
+        AuditViewerActorLabel | AuditViewerColActor |
         // RFC 180 (R2b) — dormant CSR component chrome
         ActionBack | ActionCopy | ActionCopied | ActionSignOut |
         PoweredBy | Privacy | Terms | Status |
@@ -238,13 +240,14 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         TenantDeletionScheduledInDays, TenantDeletionCancelButton,
         TenantDeletionExecuteButton, TenantDeletionExecuteConfirm,
         // RFC 109 — audit log viewer
-        AuditViewerPageTitle, AuditViewerSectionTitle, AuditViewerActorLabel,
+        AuditViewerPageTitle, AuditViewerSectionTitle, AuditViewerSubjectLabel,
         AuditViewerEventLabel, AuditViewerEventAny, AuditViewerPeriodLabel,
         AuditViewerFromLabel, AuditViewerToLabel, AuditViewerSubmitButton,
         AuditViewerExportButton, AuditViewerNewerLink, AuditViewerOlderLink,
-        AuditViewerEmptyState, AuditViewerColTime, AuditViewerColActor,
+        AuditViewerEmptyState, AuditViewerColTime, AuditViewerColSubject,
         AuditViewerColEvent, AuditViewerColReason, AuditViewerColSeq,
         AuditViewerNoteSchemaTenant, AuditViewerChainLink,
+        AuditViewerActorLabel, AuditViewerColActor,
         // RFC 180 (R2b)
         ActionBack, ActionCopy, ActionCopied, ActionSignOut,
         PoweredBy, Privacy, Terms, Status,

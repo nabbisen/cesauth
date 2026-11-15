@@ -87,25 +87,36 @@ pub async fn page_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
     // continued use of an already-recorded view, not a new one.
 
     let url = req.url()?;
-    let mut actor:  Option<String> = None;
+    // "actor" is the pre-existing, caller-visible query parameter that
+    // has always filtered by `subject` — mislabelled, and out of this
+    // cut's scope to rename (RFC 187 D4/§7: "no change to the actor
+    // query parameter... that is still its own sequenced item").
+    // "performed_by" is the genuinely new filter RFC 187 round 2 T6
+    // adds, mapped to the real `actor_exact`. Reusing "actor" for it
+    // was rejected at review: a bookmarked `?actor=alice` would
+    // silently start answering a different question.
+    let mut subject:     Option<String> = None;
+    let mut performed_by: Option<String> = None;
     let mut event:  Option<String> = None;
     let mut since:  Option<i64>    = None;
     let mut until:  Option<i64>    = None;
     let mut cursor: Option<String> = None;
     for (k, v) in url.query_pairs() {
         match k.as_ref() {
-            "actor"  if !v.is_empty() => actor  = Some(v.into_owned()),
-            "event"  if !v.is_empty() => event  = Some(v.into_owned()),
-            "from"   if !v.is_empty() => since  = parse_rfc3339_to_unix(&v),
-            "to"     if !v.is_empty() => until  = parse_rfc3339_to_unix(&v),
-            "cursor" if !v.is_empty() => cursor = Some(v.into_owned()),
+            "actor"        if !v.is_empty() => subject      = Some(v.into_owned()),
+            "performed_by" if !v.is_empty() => performed_by = Some(v.into_owned()),
+            "event"        if !v.is_empty() => event        = Some(v.into_owned()),
+            "from"         if !v.is_empty() => since        = parse_rfc3339_to_unix(&v),
+            "to"           if !v.is_empty() => until        = parse_rfc3339_to_unix(&v),
+            "cursor"       if !v.is_empty() => cursor       = Some(v.into_owned()),
             _ => {}
         }
     }
     let has_newer = cursor.is_some();
 
     let query = AuditQuery {
-        subject_contains: actor,
+        subject_exact: subject,
+        actor_exact:   performed_by,
         event_exact:       event,
         since,
         until,

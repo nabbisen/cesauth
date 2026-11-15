@@ -45,6 +45,13 @@ pub struct AuditEventRow {
     pub ts:            i64,
     pub kind:          String,
     pub subject:       Option<String>,
+    /// **RFC 187.** Who performed the action, distinct from `subject`
+    /// (who the event concerns). `None` means either UNKNOWN (rows
+    /// written before migration `0021_audit_actor.sql`) or NO PRINCIPAL
+    /// ACTED (cron/system paths that pass no actor, written after it) —
+    /// the two are told apart by `seq` relative to that migration's
+    /// point, never by a sentinel value. No backfill, ever (D2).
+    pub actor:         Option<String>,
     pub client_id:     Option<String>,
     pub ip:            Option<String>,
     pub user_agent:    Option<String>,
@@ -75,6 +82,8 @@ pub struct NewAuditEvent<'a> {
     pub ts:           i64,
     pub kind:         &'a str,
     pub subject:      Option<&'a str>,
+    /// **RFC 187.** See [`AuditEventRow::actor`].
+    pub actor:        Option<&'a str>,
     pub client_id:    Option<&'a str>,
     pub ip:           Option<&'a str>,
     pub user_agent:   Option<&'a str>,
@@ -106,6 +115,8 @@ pub struct NewAuditEvent<'a> {
 pub struct AuditSearch {
     pub kind:    Option<String>,
     pub subject: Option<String>,
+    /// **RFC 187.** See [`AuditEventRow::actor`].
+    pub actor:   Option<String>,
     pub since:   Option<i64>,
     pub until:   Option<i64>,
     pub limit:   Option<u32>,

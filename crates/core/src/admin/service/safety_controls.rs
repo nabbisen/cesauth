@@ -64,6 +64,7 @@ where
         // No upper bound: count everything from `since` to now.
         until:      None,
         subject:    None,
+        actor:      None,
         // 1000 is a soft cap — if the deployment ever sees more in 24h
         // the operator already knows there's a problem; "1000+" is a
         // truthful signal.
@@ -135,6 +136,7 @@ mod tests {
                 ts,
                 kind:          kind.to_owned(),
                 subject:       None,
+                actor:         None,
                 client_id:     None,
                 ip:            None,
                 user_agent:    None,

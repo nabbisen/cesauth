@@ -4,9 +4,13 @@
 //!
 //! * **D1 with hash chain.** v0.32.0 moved audit events from R2
 //!   to a D1 table `audit_events` with a SHA-256 hash chain
-//!   over the rows (ADR-010). Each row is tamper-evident: any
-//!   modification of a past row invalidates every subsequent
-//!   row's `chain_hash`.
+//!   over the rows (ADR-010). Modifying the `payload` or
+//!   `chain_hash` of a past row invalidates every subsequent
+//!   row's `chain_hash`. The indexed duplicate columns
+//!   (`subject`, `client_id`, `ip`, `user_agent`, `reason`,
+//!   `actor`) are not inputs to the chain hash, so a tamper
+//!   confined to one of them is not caught by chain
+//!   verification alone (RFC 187's G2 test).
 //! * **No token material ever.** Spec §10.4: we log identifiers,
 //!   not secrets. A JWT's `jti` is fine; its signature bytes are
 //!   not.
@@ -36,7 +40,7 @@
 //! `routes::magic_link::request` and `routes::api_v1::anonymous`
 //! (v0.16 → v0.50.1) and were closed in v0.50.2 (RFC 008).
 //! Operators upgrading past v0.50.1 must run the audit-purge
-//! runbook in `docs/src/deployment/day-2-runbook.md` to sanitize
+//! runbook in `docs/src/deployment/runbook.md` to sanitize
 //! already-persisted rows.
 //!
 //! ## Migration from v0.31.x R2
@@ -318,15 +322,29 @@ pub enum EventKind {
     InvitationRevoked,
 
     // ── RFC 044 — Deletion requests / GDPR Article 17 ────────────────────
-    /// A user (self) or admin submitted a deletion request.
-    /// Payload: `request_id`, `user_id`, `scheduled_at`, `requested_by`.
+    /// A user submitted a deletion request against their own account —
+    /// self-service only, there is no admin-initiated request path.
+    /// Payload: `request_id`, `user_id`, `scheduled_at`.
+    /// **RFC 187**: `requested_by` never existed as a payload field
+    /// (this doc comment claimed it for three releases); `actor` is the
+    /// real answer, and it always equals `subject` here.
     DeletionRequested,
     /// Physical deletion was executed (by cron sweep or admin).
-    /// Payload: `request_id`, `user_id`, `executed_by`.
+    /// Payload: `request_id`, `user_id`.
     /// Note: the user row and cascaded data no longer exist after this event.
+    /// **RFC 187**: `executed_by` never existed as a payload field;
+    /// `actor` is the real answer — `None` for the cron sweep path
+    /// (D2/D6: the domain row's own `executed_by` column separately
+    /// carries the literal string `"sweep"`, a marker, not a principal),
+    /// the executing admin's id for the admin-triggered path.
     DeletionExecuted,
-    /// A pending deletion request was cancelled before execution.
-    /// Payload: `request_id`, `user_id`, `cancelled_by`.
+    /// A pending deletion request was cancelled before execution, by
+    /// the requesting user themself or by an admin on their behalf.
+    /// Payload: `request_id`.
+    /// **RFC 187**: `cancelled_by` never existed as a payload field;
+    /// `actor` is the real answer — equal to `subject` on the
+    /// self-service path, the cancelling admin's id (distinct from
+    /// `subject`) on the admin-triggered path.
     DeletionCancelled,
     /// **v0.38.0** — `POST /introspect` was called (RFC 7662
     /// Token Introspection). Payload includes the requesting
@@ -537,6 +555,13 @@ pub struct Event<'a> {
     /// User or subject identifier if known. Do NOT put PII in here
     /// (no raw emails); a user id / auth handle is fine.
     pub subject:    Option<&'a str>,
+    /// **RFC 187.** Who performed the action, distinct from `subject`
+    /// (who the event concerns). This is the non-negotiable half of D1:
+    /// the `actor` D1 column is an index, this field is the evidence —
+    /// `payload_hash` covers the serialized `Event`, so an `actor`
+    /// recorded only in the column and not here would be the one audit
+    /// field editable without detection.
+    pub actor:      Option<&'a str>,
     pub client_id:  Option<&'a str>,
     pub ip:         Option<&'a str>,
     pub user_agent: Option<&'a str>,
@@ -555,6 +580,7 @@ impl<'a> Event<'a> {
             id:         Uuid::new_v4().to_string(),
             kind,
             subject:    None,
+            actor:      None,
             client_id:  None,
             ip:         None,
             user_agent: None,
@@ -564,6 +590,8 @@ impl<'a> Event<'a> {
     }
 
     pub fn with_subject(mut self, s: &'a str) -> Self      { self.subject    = Some(s);  self }
+    /// **RFC 187.** See [`Event::actor`].
+    pub fn with_actor(mut self, a: &'a str) -> Self        { self.actor      = Some(a);  self }
     pub fn with_client(mut self, c: &'a str) -> Self       { self.client_id  = Some(c);  self }
     pub fn with_ip(mut self, ip: &'a str) -> Self          { self.ip         = Some(ip); self }
     pub fn with_user_agent(mut self, ua: &'a str) -> Self  { self.user_agent = Some(ua); self }
@@ -618,6 +646,7 @@ pub async fn write(env: &Env, ev: &Event<'_>) {
         ts:           ev.ts,
         kind:         ev.kind.as_str(),
         subject:      ev.subject,
+        actor:        ev.actor,
         client_id:    ev.client_id,
         ip:           ev.ip,
         user_agent:   ev.user_agent,
@@ -638,6 +667,18 @@ pub async fn write(env: &Env, ev: &Event<'_>) {
 /// Convenience for writing a non-borrowed event (when the caller
 /// has already built the String form). Saves a lifetime battle
 /// at call sites.
+///
+/// **RFC 187: `actor` defaults to `subject`.** Correct only where the
+/// acting principal IS the subject — 116 of the 127 sites measured at
+/// this cut's G1 take this default correctly, because most events are
+/// genuinely self-referential (a user acting on their own account, an
+/// admin recording their own console action with the target resource
+/// named elsewhere). **It is wrong for a cron-emitted event** (the
+/// default would claim the expired user expired themselves) **and for
+/// an admin-on-behalf event** (it would claim the affected user acted).
+/// Call [`write_owned_with_actor`] instead at those 11 sites — a future
+/// call site copying whichever of the two is nearest should default to
+/// asking which shape it is, not to this one by proximity.
 pub async fn write_owned(
     env:     &Env,
     kind:    EventKind,
@@ -650,6 +691,39 @@ pub async fn write_owned(
         id:         Uuid::new_v4().to_string(),
         kind,
         subject:    subject.as_deref(),
+        actor:      subject.as_deref(),
+        client_id:  client.as_deref(),
+        ip:         None,
+        user_agent: None,
+        reason:     reason.as_deref(),
+        request_id: None, // cron / background callers do not have a request id
+    };
+    write(env, &ev).await;
+    Ok(())
+}
+
+/// **RFC 187.** The explicit sibling `write_owned`'s own doc comment
+/// points at: for the sites where `actor` is a different principal from
+/// `subject`, or where no principal acted at all (`actor: None`) despite
+/// `subject` being `Some(...)` — the two shapes G1's classification
+/// named (b) and (c), 11 sites total. `write_owned` itself keeps its
+/// five-argument signature on purpose (125 of its own call sites don't
+/// need to change at all); this is the sixth argument those 11 do need,
+/// as a separate function rather than a widened one (handoff §12).
+pub async fn write_owned_with_actor(
+    env:     &Env,
+    kind:    EventKind,
+    subject: Option<String>,
+    actor:   Option<String>,
+    client:  Option<String>,
+    reason:  Option<String>,
+) -> Result<()> {
+    let ev = Event {
+        ts:         OffsetDateTime::now_utc().unix_timestamp(),
+        id:         Uuid::new_v4().to_string(),
+        kind,
+        subject:    subject.as_deref(),
+        actor:      actor.as_deref(),
         client_id:  client.as_deref(),
         ip:         None,
         user_agent: None,
