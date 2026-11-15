@@ -151,6 +151,28 @@ unchanged. Route surface **197, 0 added, 0 removed**. `drift-scan` clean,
 i18n ceiling **103 scanned / 65 hit / 69 entries** with
 `pages/operator/tenancy.rs` moving 27 → 0.
 
+**Bundle, four CI measurements of the same workflow**, because this cut
+happened to land its code and its version bump in separate commits and the
+chain is worth keeping:
+
+| commit | `Cargo.toml` | gzip |
+|---|---|---|
+| `4be0296` (`0.103.0` tag) | `0.103.0` | 903,469 B |
+| `a260baa` (this cut's code) | `0.103.0` | 904,109 B |
+| `314e092` (+ the review's one-space fix) | `0.103.0` | 904,206 B |
+| `eee448b` (`0.104.0` tag) | `0.104.0` | **904,062 B** |
+
+**Code delta at the pinned version: +737 B** (rows 1 → 3, version string
+held constant). **Absolute at the tag: 904,062 B, +593 B** over `0.103.0`'s
+own tagged figure, 34% of the 2,621,440 B budget. **The version string
+alone accounts for −144 B** — it moved the bundle *down*, as a version
+string did by −829 B at `0.101.0`, which is why the two figures are
+reported separately rather than one being called the other.
+
+And a floor worth recording: row 2 → 3 is **+97 B** for a change that
+compiles to one `" "` text node and two catalog strings one byte shorter.
+Even with the version held constant, sub-100-byte attribution is noise.
+
 ---
 
 ## [0.103.0] - 2026-11-15
