@@ -92,7 +92,9 @@ fn op_error_response(e: ClientOpError) -> Result<Response> {
 // -------------------------------------------------------------------------
 
 pub async fn list<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::shell(&req, &ctx, "OIDC クライアント — cesauth").await
+    crate::routes::admin::operator_json_api::shell(
+        &req, &ctx, cesauth_core::i18n::MessageKey::OidcClientsTitle, cesauth_core::i18n::Locale::Ja,
+    ).await
 }
 
 // -------------------------------------------------------------------------

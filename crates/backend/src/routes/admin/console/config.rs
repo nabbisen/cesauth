@@ -46,7 +46,9 @@ use crate::routes::admin::console::render;
 // -------------------------------------------------------------------------
 
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::shell(&req, &ctx, "設定 — cesauth").await
+    crate::routes::admin::operator_json_api::shell(
+        &req, &ctx, cesauth_core::i18n::MessageKey::ConfigTitle, cesauth_core::i18n::Locale::Ja,
+    ).await
 }
 
 // -------------------------------------------------------------------------

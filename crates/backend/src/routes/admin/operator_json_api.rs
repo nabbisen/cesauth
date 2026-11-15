@@ -26,16 +26,28 @@ pub async fn resolve_admin<D>(
 }
 
 /// Return the Leptos HTML shell after admin auth check.
+///
+/// **RFC 185 §5.3 screen 3, T2.** `title_key` + `locale` replace a
+/// hardcoded title string and a hardcoded `Locale::Ja` — the same move
+/// §5.2 made for `leptos_html_shell` itself (`lang: &str → Locale`,
+/// `0.99.0`). The title is composed `"{screen} — cesauth"` from the
+/// catalog, matching `routes/admin/console/audit.rs`'s own precedent.
+/// Callers whose body is still hardcoded Japanese pass `Locale::Ja`
+/// explicitly (RFC 185 amendment A5: a route must not be served inside
+/// `<html lang="en">` while its body is still Japanese); only this
+/// slice's three tenancy routes pass a negotiated locale.
 pub async fn shell<D>(
-    req:   &Request,
-    ctx:   &RouteContext<D>,
-    title: &str,
+    req:       &Request,
+    ctx:       &RouteContext<D>,
+    title_key: cesauth_core::i18n::MessageKey,
+    locale:    cesauth_core::i18n::Locale,
 ) -> Result<Response> {
     let _admin = match resolve_admin(req, ctx).await? {
         Ok(a)  => a,
         Err(r) => return Ok(r),
     };
-    crate::routes::leptos_shell::leptos_html_shell(req, &ctx.env, title, cesauth_core::i18n::Locale::Ja).await
+    let title = format!("{} — cesauth", cesauth_core::i18n::lookup(title_key, locale));
+    crate::routes::leptos_shell::leptos_html_shell(req, &ctx.env, &title, locale).await
 }
 
 /// Return `{ csrf_token }` JSON after admin auth check.

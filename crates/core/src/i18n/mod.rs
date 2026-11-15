@@ -543,6 +543,52 @@ pub enum MessageKey {
     AuditChainVerifyNote,
     AuditChainVerifyButton,
 
+    // ---- RFC 185 §5.3 screen 3: the tenancy console
+    // (`TenancyOverview`/`TenancyTenants`/`TenancyTenantDetail`,
+    // `/admin/tenancy*`). G1 reviewed and ruled
+    // (`.git-exclude/reviewed/185-slice3-screen3-g1-decision.md`): three
+    // page-title keys double as their own `<h1>` (the `AuditViewerPageTitle`
+    // precedent); the two create-tenant links collapse into one key (§4 of
+    // that decision); the generic fetch-failure wording reuses `FetchFailed`
+    // rather than keeping a third phrasing of one condition. ----
+    TenancyOverviewPageTitle,
+    TenancyTenantsPageTitle,
+    TenancyTenantDetailPageTitle,
+    /// Used at both `/admin/tenancy` (overview nav) and
+    /// `/admin/tenancy/tenants` (tenants-list nav) — both point at
+    /// `/admin/tenancy/tenants/new`, one destination, one name (G1
+    /// decision §4).
+    TenancyCreateTenantLink,
+    TenancyOverviewTenantCountLabel,
+    /// **Not `FetchFailed`** — this is an inline label beside a count,
+    /// not a page-level failure state, and the G1 decision's §1 ruling
+    /// gives it its own wording without `FetchFailed`'s "Please reload."
+    /// instruction.
+    TenancyOverviewTenantCountFetchFailed,
+    TenancyTenantsBackLink,
+    TenancyTenantsEmpty,
+    TenancyTenantsColSlug,
+    TenancyTenantsColDisplayName,
+    TenancyTenantsRowDetailLink,
+    TenancyTenantDetailBackLink,
+    TenancyTenantDetailStatusChangeLink,
+    TenancyTenantDetailSubscriptionHistoryLink,
+    TenancyTenantDetailPlanChangeLink,
+    TenancyTenantDetailAddMemberLink,
+    /// Composed title for `/admin/console` (`operator_json_api::shell`'s
+    /// title argument, RFC 185 §5.3 screen 3 T2/T3). G1 Q2: the console's
+    /// landing title moves from the one irregular shape among eleven
+    /// (`cesauth コンソール`, prefix not suffix) to the same `X — cesauth`
+    /// composition every other operator title uses. The page's own
+    /// `<h1>` (`cesauth オペレーターコンソール`) is untouched — out of
+    /// this slice's scope (§7) — so the title and the heading now
+    /// disagree where they agreed by accident before; rowed for whichever
+    /// cut converts `console.rs`.
+    ConsoleOverviewPageTitle,
+    ConsoleCostPageTitle,
+    ConsoleAlertsPageTitle,
+    ConsoleSafetyPageTitle,
+
     // ---- RFC 180 (R2b): dormant CSR component chrome imported from the
     // mockup at df3d9d0 -- operator/tenant-admin shells, role-impact
     // preview, permission-denied/suspended notices, sign-in volume
@@ -1673,20 +1719,38 @@ fn lookup_r2b(key: &MessageKey, locale: Locale) -> Option<&'static str> {
             Locale::Ja => "調査",
             Locale::En => "Investigate",
         },
+        // RFC 185 §5.3 screen 3, G1 decision §2: repointed from the
+        // dormant mockup's own wording (`運用`) to the live operator
+        // console's `/admin/console/operations` title/<h1> text, which
+        // this key now also serves via `operator_json_api::shell`. Both
+        // keys name the same screen; the live surface's wording wins.
+        // The discarded mockup wording is rowed for RFC 131, which owns
+        // adopting these dormant shells.
         OperationsTitle => match locale {
-            Locale::Ja => "運用",
+            Locale::Ja => "オペレーション",
             Locale::En => "Operations",
         },
         ConfigTitle => match locale {
             Locale::Ja => "設定",
             Locale::En => "Config",
         },
+        // RFC 185 §5.3 screen 3, G1 decision §2: repointed from `管理者
+        // トークン` to the live `/admin/console/tokens` title/<h1> text
+        // (`管理トークン`) for the same reason as `OperationsTitle` above.
         TokensTitle => match locale {
-            Locale::Ja => "管理者トークン",
+            Locale::Ja => "管理トークン",
             Locale::En => "Admin tokens",
         },
+        // RFC 185 §5.3 screen 3, G1 decision §2: repointed from `OIDC
+        // クライアント` (no space) to the live `/admin/console/clients`
+        // title/<h1> text (`OIDC クライアント`, with a space) for the
+        // same reason. `OidcClientsTitle` also still names a different,
+        // tenant-admin surface (`/admin/t/{slug}/oidc-clients`) — one key
+        // for one concept across two surfaces, the same precedent
+        // `is_legitimate_duplicate` already documents for "Active
+        // sessions"; split it if a future cut needs to tell them apart.
         OidcClientsTitle => match locale {
-            Locale::Ja => "OIDCクライアント",
+            Locale::Ja => "OIDC クライアント",
             Locale::En => "OIDC clients",
         },
 
@@ -1975,6 +2039,87 @@ fn lookup_audit_chain(key: &MessageKey, locale: Locale) -> Option<&'static str> 
         AuditChainVerifyButton => match locale {
             Locale::Ja => "今すぐ検証する（全体再検証）",
             Locale::En => "Verify now (full re-walk)",
+        },
+
+        TenancyOverviewPageTitle => match locale {
+            Locale::Ja => "テナント管理",
+            Locale::En => "Tenant management",
+        },
+        TenancyTenantsPageTitle => match locale {
+            Locale::Ja => "テナント一覧",
+            Locale::En => "Tenants",
+        },
+        TenancyTenantDetailPageTitle => match locale {
+            Locale::Ja => "テナント詳細",
+            Locale::En => "Tenant details",
+        },
+        TenancyCreateTenantLink => match locale {
+            Locale::Ja => "テナント作成",
+            Locale::En => "Create tenant",
+        },
+        TenancyOverviewTenantCountLabel => match locale {
+            Locale::Ja => "登録テナント数: ",
+            Locale::En => "Registered tenants: ",
+        },
+        TenancyOverviewTenantCountFetchFailed => match locale {
+            Locale::Ja => "テナント数の読み込みに失敗しました。",
+            Locale::En => "Failed to load the tenant count.",
+        },
+        TenancyTenantsBackLink => match locale {
+            Locale::Ja => "← テナント管理",
+            Locale::En => "← Tenant management",
+        },
+        TenancyTenantsEmpty => match locale {
+            Locale::Ja => "テナントがまだ登録されていません。",
+            Locale::En => "No tenants are registered yet.",
+        },
+        TenancyTenantsColSlug => match locale {
+            Locale::Ja => "スラッグ",
+            Locale::En => "Slug",
+        },
+        TenancyTenantsColDisplayName => match locale {
+            Locale::Ja => "表示名",
+            Locale::En => "Display name",
+        },
+        TenancyTenantsRowDetailLink => match locale {
+            Locale::Ja => "詳細",
+            Locale::En => "Details",
+        },
+        TenancyTenantDetailBackLink => match locale {
+            Locale::Ja => "← テナント一覧",
+            Locale::En => "← Tenants",
+        },
+        TenancyTenantDetailStatusChangeLink => match locale {
+            Locale::Ja => "ステータス変更",
+            Locale::En => "Change status",
+        },
+        TenancyTenantDetailSubscriptionHistoryLink => match locale {
+            Locale::Ja => "サブスクリプション履歴",
+            Locale::En => "Subscription history",
+        },
+        TenancyTenantDetailPlanChangeLink => match locale {
+            Locale::Ja => "プラン変更",
+            Locale::En => "Change plan",
+        },
+        TenancyTenantDetailAddMemberLink => match locale {
+            Locale::Ja => "メンバー追加",
+            Locale::En => "Add member",
+        },
+        ConsoleOverviewPageTitle => match locale {
+            Locale::Ja => "コンソール",
+            Locale::En => "Console",
+        },
+        ConsoleCostPageTitle => match locale {
+            Locale::Ja => "コスト",
+            Locale::En => "Cost",
+        },
+        ConsoleAlertsPageTitle => match locale {
+            Locale::Ja => "アラート",
+            Locale::En => "Alerts",
+        },
+        ConsoleSafetyPageTitle => match locale {
+            Locale::Ja => "安全性",
+            Locale::En => "Safety",
         },
 
         _ => return None,

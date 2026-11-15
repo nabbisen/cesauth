@@ -6,7 +6,10 @@ use worker::{Request, Response, Result, RouteContext};
 
 
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::shell(&req, &ctx, "テナント管理 — cesauth").await
+    let locale = crate::i18n::resolve_locale(&req);
+    crate::routes::admin::operator_json_api::shell(
+        &req, &ctx, cesauth_core::i18n::MessageKey::TenancyOverviewPageTitle, locale,
+    ).await
 }
 
 pub async fn page_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {

@@ -155,7 +155,15 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         AuditChainCheckpointTitle | AuditChainCheckpointEmpty | AuditChainCheckpointNote |
         AuditChainColLastVerifiedSeq | AuditChainColRecordedChainHash |
         AuditChainColRecordedAt | AuditChainColConsistency |
-        AuditChainVerifyTitle | AuditChainVerifyNote | AuditChainVerifyButton
+        AuditChainVerifyTitle | AuditChainVerifyNote | AuditChainVerifyButton |
+        TenancyOverviewPageTitle | TenancyTenantsPageTitle | TenancyTenantDetailPageTitle |
+        TenancyCreateTenantLink | TenancyOverviewTenantCountLabel |
+        TenancyOverviewTenantCountFetchFailed | TenancyTenantsBackLink | TenancyTenantsEmpty |
+        TenancyTenantsColSlug | TenancyTenantsColDisplayName | TenancyTenantsRowDetailLink |
+        TenancyTenantDetailBackLink | TenancyTenantDetailStatusChangeLink |
+        TenancyTenantDetailSubscriptionHistoryLink | TenancyTenantDetailPlanChangeLink |
+        TenancyTenantDetailAddMemberLink | ConsoleOverviewPageTitle | ConsoleCostPageTitle |
+        ConsoleAlertsPageTitle | ConsoleSafetyPageTitle
             => {}  // exhaustiveness pin — body is irrelevant
     }
     // Now actually iterate. The list below mirrors the match
@@ -279,6 +287,14 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         AuditChainColLastVerifiedSeq, AuditChainColRecordedChainHash,
         AuditChainColRecordedAt, AuditChainColConsistency,
         AuditChainVerifyTitle, AuditChainVerifyNote, AuditChainVerifyButton,
+        TenancyOverviewPageTitle, TenancyTenantsPageTitle, TenancyTenantDetailPageTitle,
+        TenancyCreateTenantLink, TenancyOverviewTenantCountLabel,
+        TenancyOverviewTenantCountFetchFailed, TenancyTenantsBackLink, TenancyTenantsEmpty,
+        TenancyTenantsColSlug, TenancyTenantsColDisplayName, TenancyTenantsRowDetailLink,
+        TenancyTenantDetailBackLink, TenancyTenantDetailStatusChangeLink,
+        TenancyTenantDetailSubscriptionHistoryLink, TenancyTenantDetailPlanChangeLink,
+        TenancyTenantDetailAddMemberLink, ConsoleOverviewPageTitle, ConsoleCostPageTitle,
+        ConsoleAlertsPageTitle, ConsoleSafetyPageTitle,
     ];
     for k in all { f(k); }
 }

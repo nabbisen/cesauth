@@ -22,7 +22,9 @@ use crate::routes::admin::auth;
 use crate::routes::admin::console::render;
 
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
-    crate::routes::admin::operator_json_api::shell(&req, &ctx, "安全性 — cesauth").await
+    crate::routes::admin::operator_json_api::shell(
+        &req, &ctx, cesauth_core::i18n::MessageKey::ConsoleSafetyPageTitle, cesauth_core::i18n::Locale::Ja,
+    ).await
 }
 
 /// `POST /admin/console/safety/:bucket/verify`

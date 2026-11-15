@@ -60,3 +60,4 @@ fn from_primary_subtag_returns_none_for_unsupported() {
 mod lookup_completeness;
 mod accept_language;
 mod plural;
+mod screen3_titles;
