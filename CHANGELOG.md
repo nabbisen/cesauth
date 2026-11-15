@@ -61,6 +61,111 @@ section Step 3 says to archive, is 3.3%.
 
 ---
 
+## [0.105.0] - 2026-11-15
+
+**Minor** — seven more operator screens answer `Accept-Language`, and the
+last three Japanese literals outside `pages/operator/` come from the
+catalog. RFC 185 §5.3 screen 4, one copy gate and one implementation
+round, both reviewed.
+
+### Added — the console's seven, and twelve of thirteen
+
+`/admin/console` and its six sub-screens (`operations`, `tokens`,
+`safety`, `cost`, `alerts`, `config`) resolve their locale per request and
+render from the catalog: **9 new `MessageKey`s** and **10 existing keys
+reused**, including `OperatorConsoleBackLink` alone covering six
+occurrences of `← コンソール`. **Twelve of the console's thirteen
+shell-rendering screens now negotiate**; `clients.rs` is the thirteenth.
+
+Driven over real HTTP: 21 requests under `wrangler dev --local` — seven
+routes × {`en`, `ja`, no header} — all `200`, seven `<html lang="en">`
+with English titles, fourteen Japanese.
+
+**The ceiling row for this screen went 44 → 4, not 44 → 0, and the four
+are right.** `retention_sweep`, `audit_chain_verify`,
+`session_index_audit` and `session_index_repair` are cron job identifiers,
+not prose — the same carve-out `chain_hash` and `seq` already have on the
+chain-status screen. The gate's rows are values, not targets.
+
+### Added — the skip links, from a key that existed for three releases
+
+`admin/frame.rs`, `tenancy_console/frame.rs` and `tenant_admin/frame.rs`
+each hardcoded `メインコンテンツへスキップ`. **`SkipToMainContent` has held
+that string since RFC 077** and was already wired into the end-user chrome
+(`templates/chrome.rs`), so the three admin frames were the divergent
+ones, not the key. They now use the same shape, `escape(lookup(…,
+locale))`, escaping included — not because the old constant was
+injectable, but because three more raw-HTML splices should not depend on
+us happening to own the value.
+
+**This closes a claim `0.99.0`'s tag got wrong**: that the i18n gate
+bounded the Japanese debt exactly. It did not — these three sat outside
+it.
+
+### Changed
+
+- **The four RFC 161 placeholder screens share one key.** Each already
+  names itself in its `<h1>`, so the body only has to say the status; four
+  bespoke sentences would have been four translations written to be
+  deleted when RFC 131 restores those screens.
+- **One condition, one verb.** The overview's status-check failure reads
+  `⚠ 状態の確認に失敗しました` / `⚠ Failed to check status` rather than
+  *"could not check"*, joining the `失敗しました` / *"Failed to …"* family
+  that `0.104.0` consolidated. A visible wording change in both locales,
+  and the alternative was a fourth phrasing of one condition.
+- **A generic error key, minted once.** `エラーが発生しました。` /
+  *"An error occurred."* appears on this screen and again in
+  `clients.rs`, which is the next slice's file; naming it now is what stops
+  the second variant from existing. Its key says what its value says —
+  the `Performer`-key/`Actor`-value lesson from `0.103.0`.
+- **A title may be shorter than its heading, when the heading contains
+  it.** `安全性チェック` ⊃ `安全性` and `cesauth オペレーターコンソール` ⊃
+  `コンソール` both stay, each its own key, and the containment is a rule
+  about wording rather than bytes.
+- Thirteen Japanese doc-comment lines in the two converted screens are
+  now English, matching `audit.rs` and `audit_chain.rs`, which were
+  authored that way.
+
+### Fixed — a test pinning a policy that had been retracted
+
+`crates/frontend/tests/acceptance_harness.rs` asserted that the three
+admin frames render Japanese-only *"per ADR-013"*, in a fixture comment
+and in a test named after that ADR. **ADR-013 was amended on 2026-11-11 to
+close exactly that deferral** — console multilanguage is now required —
+so the harness was pinning a position the governing document had already
+withdrawn, which is the same deferral-hardened-into-settled-law pattern
+RFC 185 §2 found across nine documents. The citation is corrected: the
+frames are JA-only because they still hardcode `<html lang="ja">`, the
+amendment is named, and the test now says in its own panic message that it
+inverts when RFC 185 reaches those frames. **The inversion is not done
+here** — it belongs to the cut that converts the server-rendered admin
+family, and reversing a policy pin should be that cut's deliberate act
+rather than a red test someone meets under pressure.
+
+### Security answer
+
+The diff touches `crates/backend/src/routes/admin/`, which the release
+rubric's path list names, so the question fires. **No new
+security-relevant surface**, and this is what was checked: the seven
+routes changed only which locale they hand to a helper whose
+`resolve_admin` gate is untouched and still runs first; no route, query
+parameter or payload moved (197 routes, 0 added, 0 removed);
+`crates/backend/src/i18n.rs` is untouched, so `Accept-Language` is parsed
+by the same code in use since `0.99.0`; and the skip link's new `escape()`
+is hygiene, not a fix — the value it replaced was a compile-time constant,
+so nothing was injectable before or after.
+
+### Gates
+
+Host tests **1,728 / 0 / 4 across 12 `test result:` lines** — unchanged,
+because the nine new keys are covered by the completeness walk that
+already enumerates every key, and no new test function was needed.
+Migration chain **39**. Route surface **197, 0 added, 0 removed**.
+`drift-scan` clean, i18n ceiling **103 scanned / 65 hit / 69 entries**.
+Catalog **272 → 281** arms.
+
+---
+
 ## [0.104.0] - 2026-11-15
 
 **Minor** — the tenancy console answers `Accept-Language`, and so does the
