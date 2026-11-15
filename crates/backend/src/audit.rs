@@ -78,65 +78,96 @@ pub enum EventKind {
 
     // ── RFC 053 — Session lifecycle events ───────────────────────────────
     /// A new persistent session was created after successful authentication.
-    /// Payload: `session_id`, `user_id`, `auth_method` (webauthn|magic_link|totp).
     ///
     /// **RFC 154.** Intentionally unemitted, for the same reason as
     /// `AuthSucceeded` just above: a session begins exactly when
     /// `MagicLinkVerified` / `WebauthnVerified` fires, so a separate
     /// "session created" row would duplicate, not add, information.
+    /// **RFC 187 round 3**: never emitted, so there is no real payload to
+    /// check against; the struct has no `session_id` or `auth_method`
+    /// field regardless (the payload is `Event`: `subject`, `actor`,
+    /// `client_id`, `ip`, `user_agent`, `reason`, `request_id`), so no
+    /// payload claim is made here.
     SessionCreated,
-    /// A session was explicitly revoked (by the user or an admin).
-    /// Payload: `session_id`, `user_id`, `revoked_by`.
+    /// A session was explicitly revoked.
+    /// **RFC 187 round 3**: `subject` = the revoked session's user id;
+    /// `actor` defaults to the same (the one call site,
+    /// `routes/session.rs`'s self-logout, has no admin-initiated path —
+    /// unlike this comment's old "by the user or an admin" claim). No
+    /// `revoked_by` field ever existed.
     SessionRevoked,
     /// A session was found idle-expired during the session-index cron pass.
-    /// Payload: `session_id`, `user_id`, `expired_at`.
     ///
     /// **RFC 154.** Intentionally unemitted: superseded by the more specific
     /// `SessionIdleTimeout` / `SessionAbsoluteTimeout` (below), both of
     /// which name *which* timeout fired — information this generic kind
     /// cannot carry.
+    /// **RFC 187 round 3**: never emitted; no `session_id`/`expired_at`
+    /// payload field exists or would exist, for the same reason as
+    /// `SessionCreated` above.
     SessionExpired,
     /// MFA step (TOTP or WebAuthn assertion) was verified during
     /// an authentication flow that required step-up.
-    /// Payload: `user_id`, `mfa_kind` (totp|webauthn).
     /// **RFC 154.** Declared since this enum's introduction, emitted
     /// nowhere until this RFC wired `crates/backend/src/routes/me/totp/verify.rs`
     /// to write it on a successful TOTP verification. Before this, TOTP's
     /// second-factor step left no success record at all (RFC 154 §1).
+    /// **RFC 187 round 3**: `subject` = the user; `actor` defaults to the
+    /// same, with a comment at the call site explaining why the default
+    /// is correct here (identity already proven by the primary factor).
+    /// No `mfa_kind` field exists — the kind is already named by the
+    /// `EventKind` itself.
     MfaVerified,
     /// **RFC 154.** TOTP enrolment completed — the user confirmed the
     /// six-digit code from their authenticator app, so the row moves from
-    /// unconfirmed to active. Payload: `user_id`.
-    /// Emitted by `routes/me/totp/enroll.rs::post_confirm_handler`.
+    /// unconfirmed to active. Emitted by
+    /// `routes/me/totp/enroll.rs::post_confirm_handler`.
+    /// **RFC 187 round 3**: `subject` = the enrolling user; `actor`
+    /// defaults to the same. No other field is set.
     MfaEnrolled,
     /// **RFC 154.** A TOTP verification attempt failed (wrong code).
     /// Distinct from `MfaLockedOut`, below — this fires on every wrong
     /// attempt under the limit; that one fires once, when the limit is
-    /// reached. Payload: `user_id`. Emitted by
-    /// `routes/me/totp/verify.rs::post_handler`.
+    /// reached. Emitted by `routes/me/totp/verify.rs::post_handler`.
+    /// **RFC 187 round 3**: `subject` = the user; `actor` defaults to the
+    /// same. No other field is set.
     MfaFailed,
     /// **RFC 154.** The per-session TOTP attempt limit (RFC 143) was
     /// reached — the gate locks and the user must restart the challenge.
     /// Before this RFC the lockout tripped with no audit trace at all
     /// (RFC 154 §3): "a brute-force attempt against a TOTP gate is
-    /// invisible after the fact." Payload: `user_id`. Emitted by
+    /// invisible after the fact." Emitted by
     /// `routes/me/totp/verify.rs::post_handler`.
+    /// **RFC 187 round 2/3**: `subject` = the user; `actor` is explicit
+    /// `None` (a lockout is the gate reacting to repeated failure, not a
+    /// proven identity acting).
     MfaLockedOut,
-    /// **RFC 154.** TOTP was disabled for a user. Payload: `user_id`,
-    /// `actor` (the user themself — this route has no admin-initiated
-    /// path). Emitted by `routes/me/totp/disable.rs::post_handler`.
+    /// **RFC 154.** TOTP was disabled for a user. Emitted by
+    /// `routes/me/totp/disable.rs::post_handler`, which has no
+    /// admin-initiated path.
+    /// **RFC 187 round 3**: `subject` = the user; `actor` defaults to the
+    /// same (correct, since there is only ever one principal here).
+    /// `reason` carries a free-text `actor:{id}` marker written before
+    /// the real `actor` column existed — now redundant with the column,
+    /// not a second source of truth.
     MfaDisabled,
     /// **RFC 154.** A recovery code was redeemed in place of a TOTP code.
-    /// Payload: `user_id`. Emitted by
-    /// `routes/me/totp/recover.rs::post_handler`.
+    /// Emitted by `routes/me/totp/recover.rs::post_handler`.
+    /// **RFC 187 round 3**: `subject` = the user; `actor` defaults to the
+    /// same. No other field is set.
     MfaRecoveryCodeUsed,
     /// **v0.50.3 (RFC 011)** — `csrf::mint()` was called but the
     /// platform CSPRNG (`getrandom`) returned an error. The request
     /// that triggered the form-render was aborted with HTTP 500 rather
-    /// than silently returning a zeroed (predictable) CSRF token.
-    /// Payload includes the route path. In practice `getrandom`
-    /// on Cloudflare Workers reliably succeeds; a non-zero rate here
-    /// indicates a runtime regression worth investigating.
+    /// than silently returning a zeroed (predictable) CSRF token. In
+    /// practice `getrandom` on Cloudflare Workers reliably succeeds; a
+    /// non-zero rate here indicates a runtime regression worth
+    /// investigating.
+    /// **RFC 187 round 3**: the only call site
+    /// (`routes/magic_link/request.rs`) sets `subject`/`actor`/`client_id`
+    /// to `None` and `reason` to the fixed marker string
+    /// `"csp_nonce_failure"` — not the route path this comment used to
+    /// claim.
     CsrfRngFailure,
     // Admin operations
     AdminUserCreated,
@@ -233,9 +264,12 @@ pub enum EventKind {
     /// distinction (spec §10.3 internal/external separation).
     RefreshTokenReuseDetected,
     /// **v0.37.0** — Per-family rate limit threshold exceeded
-    /// on `/token` refresh (ADR-011 §Q1 resolution). Payload
-    /// includes `family_id`, `client_id`, `count` (current
-    /// hits in window), `threshold`, `retry_after_secs`. This
+    /// on `/token` refresh (ADR-011 §Q1 resolution). `reason` is a
+    /// JSON string: `family_id`, `client_id` (`client_id` is also the
+    /// `Event` struct's own `client_id` field — the JSON copy is
+    /// redundant with it), `threshold`, `window_secs`, `retry_after_secs`.
+    /// **RFC 187 round 3**: the real key is `window_secs`, not `count` —
+    /// this comment named a field the code never wrote. This
     /// fires *before* the family DO is consulted, so a hit on
     /// this kind does NOT imply reuse — they're separable
     /// signals.
@@ -312,39 +346,58 @@ pub enum EventKind {
 
     // ── RFC 043 — Invitation tokens ───────────────────────────────────────
     /// Tenant admin issued an invitation to an email address.
-    /// Payload: `tenant_slug`, `email` (recipient), `role`, `expires_at`.
+    /// **RFC 187 round 3**: `subject` = the issuing admin (not the
+    /// recipient — the invitee never becomes a principal until
+    /// `InvitationAccepted`); `reason` carries free text
+    /// `"tenant:{slug} email:{email} role:{role}"`. There is no
+    /// `expires_at` field anywhere — that claim never matched the code.
     InvitationIssued,
     /// Invitee accepted an invitation and completed registration.
-    /// Payload: `invitation_id`, `user_id` (newly created/linked), `tenant_slug`.
+    /// **RFC 187 round 3**: `subject` = the newly created/linked user's
+    /// id (the real principal — RFC 153 fixed this from an old `None`);
+    /// `reason` carries free text
+    /// `"invite:{id} email:{email} tenant:{tenant_id}"`. There is no
+    /// separate `invitation_id`/`tenant_slug` field — both live only
+    /// inside that text.
     InvitationAccepted,
     /// Admin manually revoked a pending invitation before it was accepted.
-    /// Payload: `invitation_id`, `email`, `tenant_slug`.
+    /// **RFC 187 round 3**: `subject` = the revoking admin (matching
+    /// `InvitationIssued`'s convention — there is no affected-user id to
+    /// use instead, since the invitee never became one); `reason` carries
+    /// free text `"invite:{id} email:{email} tenant:{slug}"`.
     InvitationRevoked,
 
     // ── RFC 044 — Deletion requests / GDPR Article 17 ────────────────────
     /// A user submitted a deletion request against their own account —
     /// self-service only, there is no admin-initiated request path.
-    /// Payload: `request_id`, `user_id`, `scheduled_at`.
-    /// **RFC 187**: `requested_by` never existed as a payload field
-    /// (this doc comment claimed it for three releases); `actor` is the
-    /// real answer, and it always equals `subject` here.
+    /// **RFC 187 round 3**: `subject` = the user; `actor` = the same user
+    /// (always, on this path). `reason` carries the free-text marker
+    /// `self-request` and `scheduled_at=…`. **The deletion request's own
+    /// id is not recorded on this event at all** (`routes/deletions.rs`)
+    /// — `requested_by` never existed as a payload field (this doc
+    /// comment claimed it for three releases, and `request_id`, had it
+    /// been claimed, would have read as the `Event` struct's own
+    /// `request_id` field — the RFC 036 `cf-ray` correlation id, a
+    /// different value entirely).
     DeletionRequested,
     /// Physical deletion was executed (by cron sweep or admin).
-    /// Payload: `request_id`, `user_id`.
     /// Note: the user row and cascaded data no longer exist after this event.
-    /// **RFC 187**: `executed_by` never existed as a payload field;
-    /// `actor` is the real answer — `None` for the cron sweep path
-    /// (D2/D6: the domain row's own `executed_by` column separately
-    /// carries the literal string `"sweep"`, a marker, not a principal),
-    /// the executing admin's id for the admin-triggered path.
+    /// **RFC 187 round 3**: `subject` = the deleted user; `actor` = the
+    /// executing admin, or `None` on the cron sweep path (D2/D6: the
+    /// domain row's own `executed_by` column separately carries the
+    /// literal string `"sweep"`, a marker, not a principal). `reason`
+    /// carries the deletion request's id as `request:{id}`, an
+    /// `admin-triggered`/`sweep` marker, and `scrub:{outcome}`
+    /// (RFC 148). `executed_by` never existed as a payload field.
     DeletionExecuted,
     /// A pending deletion request was cancelled before execution, by
     /// the requesting user themself or by an admin on their behalf.
-    /// Payload: `request_id`.
-    /// **RFC 187**: `cancelled_by` never existed as a payload field;
-    /// `actor` is the real answer — equal to `subject` on the
-    /// self-service path, the cancelling admin's id (distinct from
-    /// `subject`) on the admin-triggered path.
+    /// **RFC 187 round 3**: `subject` = the affected user; `actor` =
+    /// that same user on the self-service path, the cancelling admin's
+    /// id (distinct from `subject`) on the admin-triggered path. `reason`
+    /// carries the deletion request's id as `request:{id}` and a
+    /// `self-request`/`admin-triggered` marker. `cancelled_by` never
+    /// existed as a payload field.
     DeletionCancelled,
     /// **v0.38.0** — `POST /introspect` was called (RFC 7662
     /// Token Introspection). Payload includes the requesting
@@ -378,19 +431,25 @@ pub enum EventKind {
     MagicLinkVerified,
     MagicLinkFailed,
     /// **v0.51.0 (RFC 010)** — Magic Link OTP was issued and the mailer
-    /// accepted the outbound send (provider ACK). Payload:
-    /// `{handle, provider_msg_id}`. No plaintext code ever in payload
-    /// (RFC 008 invariant). Distinct from `MagicLinkIssued` (which fires
-    /// before the mailer call) to let operators compute issue-to-delivery
-    /// success rates without provider-side telemetry.
+    /// accepted the outbound send (provider ACK). No plaintext code ever
+    /// in payload (RFC 008 invariant). Distinct from `MagicLinkIssued`
+    /// (which fires before the mailer call) to let operators compute
+    /// issue-to-delivery success rates without provider-side telemetry.
+    /// **RFC 187 round 2/3**: `subject` = the unverified caller-supplied
+    /// email (this is a public, pre-authentication endpoint); `actor`
+    /// explicit `None`. `reason` is plain text, not a `{...}` object:
+    /// `"handle={handle} provider_msg_id={id}"`.
     MagicLinkDelivered,
     /// **v0.51.0 (RFC 010)** — Magic Link OTP was issued but the mailer
-    /// returned an error. Payload: `{handle, kind}` where `kind` is one
-    /// of `transient`, `permanent`, `not_configured`. The user-facing
-    /// response is identical to the success path (no enumeration leak).
-    /// A spike of `not_configured` events indicates the deployment has no
-    /// mail provider configured; `permanent` indicates a provider-side
-    /// rejection; `transient` is a retryable provider hiccup.
+    /// returned an error. The user-facing response is identical to the
+    /// success path (no enumeration leak). A spike of `not_configured`
+    /// events indicates the deployment has no mail provider configured;
+    /// `permanent` indicates a provider-side rejection; `transient` is a
+    /// retryable provider hiccup.
+    /// **RFC 187 round 2/3**: same `subject`/`actor` shape as
+    /// `MagicLinkDelivered` above. `reason` is plain text:
+    /// `"handle={handle} kind={kind}"`, `kind` one of `transient`,
+    /// `permanent`, `not_configured`.
     MagicLinkDeliveryFailed,
     // Sessions
     /// **RFC 154.** Intentionally unemitted, same reasoning as
@@ -424,13 +483,19 @@ pub enum EventKind {
     /// **v0.35.0** — Idle timeout fired. Session was inactive
     /// past the configured `session_idle_timeout_secs` window
     /// and got auto-revoked at the next request's `touch()`.
-    /// Payload includes how long the session had been idle.
+    /// **RFC 187 round 2/3**: `subject` = the timed-out user, `client_id`
+    /// = the session's client, `actor` explicit `None` (system-initiated
+    /// — the request merely discovered a timeout that elapsed with no
+    /// request in flight, same family as `AnonymousExpired`). `reason`
+    /// is a JSON string: `idle_secs`, `last_seen_at`, `now`.
     SessionIdleTimeout,
     /// **v0.35.0** — Absolute lifetime exceeded. Session
     /// reached `created_at + session_ttl_secs` regardless of
     /// activity and got auto-revoked at the next request's
-    /// `touch()`. Payload includes the configured ttl + the
-    /// session's age.
+    /// `touch()`.
+    /// **RFC 187 round 2/3**: same shape as `SessionIdleTimeout` above —
+    /// `subject`/`client_id` set, `actor` explicit `None`. `reason` is a
+    /// JSON string: `session_id`, `ttl_secs`, `created_at`, `now`.
     SessionAbsoluteTimeout,
     /// **v0.40.0** — D1-DO session index drift detected by
     /// the daily reconciliation cron (ADR-012 §Q1,
