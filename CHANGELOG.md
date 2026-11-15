@@ -164,6 +164,30 @@ Migration chain **39**. Route surface **197, 0 added, 0 removed**.
 `drift-scan` clean, i18n ceiling **103 scanned / 65 hit / 69 entries**.
 Catalog **272 → 281** arms.
 
+**Bundle, CI to CI**, with the code and the version bump again in separate
+commits:
+
+| commit | `Cargo.toml` | gzip |
+|---|---|---|
+| `eee448b` (`0.104.0` tag) | `0.104.0` | 904,062 B |
+| `43f9da0` (this cut's code) | `0.104.0` | 904,471 B |
+| `1c242b7` (`0.105.0` tag) | `0.105.0` | **904,367 B** |
+
+**Code delta at the pinned version: +409 B.** **Absolute at the tag:
+904,367 B, +305 B** over `0.104.0`, 34% of the 2,621,440 B budget. **The
+version string accounts for −104 B** — down again, as it was by −144 B at
+`0.104.0` and −829 B at `0.101.0`.
+
+**CI ran 16 check runs on this release commit, not the usual 15, and the
+sixteenth is not a gate.** `deny.yml` carries a daily `schedule:` beside
+its `push:` trigger, and that scheduled run fired while `main`'s tip was
+the release commit — `event: schedule`, same head SHA, `success`, a second
+check run named `deny`. The release-workflow count is still 14 (15 check
+runs, since `worker-build.yml` emits two jobs); **a release's check-run
+total is that plus any scheduled workflow that happens to fire on the same
+tip**, which is why the condition to wait on is a *stable* count with
+nothing pending rather than a literal 15.
+
 ---
 
 ## [0.104.0] - 2026-11-15
