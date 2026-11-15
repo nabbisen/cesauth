@@ -148,8 +148,18 @@ in the hash chain.
 that edits one of them directly, leaving `payload` and
 `chain_hash` alone, changes what admin search and the viewer
 display without being caught by `verify_chain`/`verify_chain_full`.
-D1 column-level ACLs or a separate column-hash would be needed
-to close that gap; neither exists today. RFC 187's G2 test
+Closing that gap means **detecting** the disagreement, not
+preventing the edit: the verifier would have to compare each
+indexed column against the payload's own copy of the same
+field, which is a check it does not perform today. That check
+has to treat an *absent* payload key as no claim rather than a
+mismatch — `actor` is absent from every pre-0021 payload and
+`request_id` from every pre-0015 one — so it is its own change
+with its own compatibility question, not a line added here.
+(Access control over the column is a different property. It
+would make such an edit harder to perform; it would not make
+one evident after the fact, which is what this ADR is about.)
+RFC 187's G2 test
 (`cesauth-adapter-test::audit_chain::tests`) demonstrates this
 for `actor`; the finding generalizes to every column in the
 list above.
