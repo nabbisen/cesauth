@@ -73,8 +73,21 @@ fn fixtures() -> Vec<FrameSpec> {
         // End-user chrome: EN + JA both supported per RFC 072.
         FrameSpec { label: "chrome::frame_for / EN",  admin: false, locale: Locale::En },
         FrameSpec { label: "chrome::frame_for / JA",  admin: false, locale: Locale::Ja },
-        // Admin family: JA only per ADR-013. (EN is reachable in code
-        // — exhaustiveness pin — but production never reaches it.)
+        // Admin family: JA only — but NOT "per ADR-013" any more, and the
+        // distinction is load-bearing. ADR-013's Japanese-only position was
+        // a deferral with an exit condition ("if/when demand surfaces"),
+        // and it was **closed by amendment on 2026-11-11**: console
+        // multilanguage is now required, tracked as RFC 185 §5.3. These
+        // three fixtures are JA-only for a narrower, mechanical reason —
+        // `admin/frame.rs`, `tenancy_console/frame.rs` and
+        // `tenant_admin/frame.rs` still hardcode `<html lang="ja">` even
+        // though each takes `locale` and now reads its skip link from the
+        // catalog (RFC 185 §5.3 screen 4). **When RFC 185 reaches those
+        // frames, this table gains EN fixtures and
+        // `admin_fixtures_render_in_ja_only_per_adr_013` inverts** — it is
+        // the pin that currently keeps invariant 1 from failing, so it has
+        // to be retired deliberately rather than discovered as a red test.
+        // Do not cite ADR-013 for JA-only; cite the hardcoded attribute.
         FrameSpec { label: "admin_frame_for / JA",           admin: true,  locale: Locale::Ja },
         FrameSpec { label: "tenant_admin_frame_for / JA",    admin: true,  locale: Locale::Ja },
         FrameSpec { label: "tenancy_console_frame_for / JA", admin: true,  locale: Locale::Ja },
@@ -226,7 +239,9 @@ fn admin_fixtures_render_in_ja_only_per_adr_013() {
     let admin_fixtures: Vec<_> = fixtures().into_iter().filter(|s| s.admin).collect();
     for s in &admin_fixtures {
         assert_eq!(s.locale, Locale::Ja,
-            "admin fixture {label} must render in JA per ADR-013; got {locale:?}",
+            "admin fixture {label} is JA-only while its frame hardcodes \
+             <html lang=\"ja\"> (see fixtures()'s own note; ADR-013's \
+             JA-only deferral was closed 2026-11-11); got {locale:?}",
             label = s.label, locale = s.locale);
     }
 }
