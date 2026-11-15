@@ -61,6 +61,126 @@ section Step 3 says to archive, is 3.3%.
 
 ---
 
+## [0.103.0] - 2026-11-15
+
+**Minor** — the audit log can say who acted. RFC 187 across four rounds: a
+classification stop-gate, two implementation rounds, and a documentation
+round, each reviewed and accepted.
+
+### Added — `actor`, distinct from `subject`
+
+Migration `0021_audit_actor.sql` adds a nullable `actor TEXT` with a partial
+index. `subject` answers *who the event concerns*; `actor` answers *who
+performed it*. They were one column until now, and on the most destructive
+operation in the product — `DeletionExecuted` — the acting admin's id
+survived only as free text inside `reason` (`"admin-triggered by:{id}"`).
+**"Which admin deleted this user?" was not answerable from the audit UI**,
+one release after a cut devoted entirely to audit-chain integrity: `0.98.0`
+hardened *that the record is intact*, and this is *what the record says*.
+
+`actor` rides in the **hashed payload**, not only the indexed column —
+`payload_hash` covers the serialized `Event` — so the column has evidence
+behind it instead of being the one audit field editable without a trace.
+**No backfill, ever:** `NULL` means *unknown* for rows below the migration
+point and *no principal acted* above it, told apart by `seq` and never by a
+sentinel value.
+
+The operator console gains an **Actor** filter and column, under its own
+`performed_by=` parameter — the pre-existing `actor=` has always filtered by
+*subject*, and reusing it would have made bookmarked URLs silently answer a
+different question. The filter is carried into the export form too: a screen
+filter missing from that form downloads silently ignoring it, which already
+happened once on this screen, to the date range. CSV and JSONL exports gain
+an **appended** `actor` column — appended rather than placed in the readable
+order, because a positional change breaks a spreadsheet silently.
+
+### Changed
+
+- **The audit viewer's two filter labels now say what the query does.** Both
+  read *"(部分一致)" / "(substring)"* over SQL that has always been
+  `subject = ?N` — an exact match. Now *"(完全一致)" / "(exact match)"*, and
+  the port fields are `subject_exact` / `actor_exact` rather than
+  `*_contains`. Two `MessageKey`s whose names said `Actor` while `0.102.0`
+  had repointed their values at `Subject` are renamed to match their
+  meaning, freeing those names for the real thing.
+- **`AuditExported`'s own audit row names every filter applied** — event,
+  subject, actor, from, to — where it previously named only the event kind.
+  An audited export that cannot say *what was disclosed* is weak evidence.
+  This closes **F-1** of `docs/src/expert/security-review-2026-q4.md`.
+- `DeletionCancelled` and `DeletionExecuted` stop repeating the actor's id
+  in `reason`; the column carries it, and each path keeps a
+  `self-request` / `admin-triggered` / `sweep` marker so the *kind* of
+  trigger is still a word rather than an inference from two columns.
+
+### Fixed — documentation that stated things the code does not do
+
+- **`storage.md` and `audit.rs`'s module doc both claimed the log is
+  tamper-evident because "modifying any past row invalidates every
+  subsequent `chain_hash`".** It does not: the indexed duplicate columns
+  (`subject`, `client_id`, `ip`, `user_agent`, `reason`, `actor`) are not
+  inputs to the chain hash, so a tamper confined to one of them passes
+  verification. Found by the test this RFC required as *proof* of the
+  opposite, which refuted its own prediction. ADR-010 — correct but
+  implicit — now says it outright, and the remedy is stated as detection
+  (compare each column against the payload's copy, treating an absent key
+  as no claim) rather than prevention. Rowed as its own RFC; the gap
+  predates this cut and none of it is introduced by `actor`.
+- **22 of the 28 `EventKind` doc comments that describe a payload were
+  describing a format that stopped existing at `v0.32.0`**, when the payload
+  became the serialized `Event`: `user_id` is `subject`, `scheduled_at` is
+  text inside `reason`, and `request_id` collided with the payload's *actual*
+  RFC 036 correlation field. One was a plain wrong key —
+  `RefreshRateLimited` documented `count`, and the code has written
+  `window_secs` since `v0.37.0`. Four were verified accurate; two are rowed
+  with RFC 123's declared-but-unemitted gate.
+- `crates/backend/src/audit.rs` pointed operators at
+  `docs/src/deployment/day-2-runbook.md` for the `v0.50.3` audit-purge
+  procedure. That file was renamed to `runbook.md`; the procedure is at
+  `runbook.md:499`. Closed RFCs keep the old path as the record of what was
+  true when they shipped.
+
+### Security answer
+
+**Yes — this release is security-relevant**, and the path list
+(`crates/core/src/audit`, `migrations/`, `routes/{oidc,me,magic_link,admin}`)
+is not what makes it so; it is a new field recorded in an append-only log
+that operators will read as *who did this*.
+
+- **An attacker could have had the log name anyone.** Three sites on the
+  public, unauthenticated magic-link endpoint pass the caller's own email
+  as `subject`; the new field's default (`actor = subject`) would have made
+  that unverified string the recorded actor, so anyone able to POST a
+  magic-link request could write rows claiming `victim@example.com`
+  performed an action. Those three now pass `actor: None`, and so do eight
+  more sites where identity was not proven when the row was written: failed
+  WebAuthn assertions, a failed magic-link verification, idle and absolute
+  session timeouts, and an MFA lockout. The rule is written at the call
+  sites and in `write_owned`'s own doc: **`actor` is `None` for a
+  system-initiated transition or an authentication that did not succeed.**
+  Found by enumerating all **127** write sites with a parser, not a grep.
+- **Auth logic is unchanged.** Nothing in this cut alters who may do what;
+  every change is to what is recorded. The one new input, `performed_by`,
+  is bound through a `?N` placeholder on an endpoint already behind the
+  system-admin gate, and the route surface is unchanged at 197 routes.
+- **The record got stronger where prose was removed.** The actor id left
+  `reason`'s free text for a hash-covered field plus an indexed column, and
+  the screen that displays it shipped in the same cut — no release exists
+  where the information is recorded but unreadable.
+- The chain-integrity scope finding above is recorded as **F-7** in
+  `security-review-2026-q4.md`; **F-3** (this RFC's own trigger) is closed.
+
+### Gates
+
+Host tests **1,717 / 0 / 4 across 12 `test result:` lines** (`0.102.0`:
+1,706) from the five-crate command in `contributing.md` §Running tests;
+migration chain **39** (35). Route surface unchanged — 197 routes, all seven
+coverage figures identical. `drift-scan` clean, i18n ceiling 103/66/69
+unmoved. Bundle, CI to CI and therefore comparable: **901,475 B → 903,428 B,
++1,953 B**, 34% of the 2,621,440 B budget, with no version string in the
+delta.
+
+---
+
 ## [0.102.0] - 2026-11-12
 
 **Minor** — new catalog surface, and a second route begins negotiating its

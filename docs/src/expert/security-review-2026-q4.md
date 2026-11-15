@@ -107,8 +107,10 @@ this review**, and because `0.98.0` shipped without one.
 
 ### F-3: the audit log cannot say who performed an action
 
-**Severity**: Medium · **Disposition: accepted as RFC 187, dispatched**
-**Surface**: `crates/core/src/ports/audit.rs`, 125 `write_owned` call sites
+**Severity**: Medium · **Disposition: closed at `0.103.0` (RFC 187)**
+**Surface**: `crates/core/src/ports/audit.rs`, 127 `write_owned` call sites
+(the 125 recorded below was a regex artifact; the real figure, from a parser,
+is 127)
 
 `subject` is the log's only principal column and `subject_contains` its only
 principal filter. Across 125 write sites it carries two meanings: the acting
@@ -119,6 +121,12 @@ the line above and survives only as free text in `reason`.
 
 **So "which admin deleted this user?" is not answerable from the audit UI** — on
 the most destructive operation in the product.
+
+**Closed** by migration `0021_audit_actor.sql` plus the `actor` field in the
+hashed payload, the 11 explicit call sites a stop-gate classification
+identified, the 11 further sites where the default would have recorded an
+unverified identity, and the operator console's own Actor filter and column —
+all in `0.103.0`. The verifier-scope gap the same RFC uncovered is **F-7**.
 
 ### F-4: the route-contract table's audit-kind column names events the code does not produce
 
@@ -151,6 +159,43 @@ a human uses. An operator who receives a short file has no way to learn why.
 the strongest available signal that a wholesale rewrite may have occurred — and
 **no console surface displays it.** The operator sees the standing alarm, not
 the fact that a later walk came back clean and was refused.
+
+### F-7: chain verification does not cover the indexed columns the console displays
+
+**Severity**: Medium · **Disposition: open, rowed as its own RFC**
+**Surface**: `crates/core/src/audit/verifier.rs:409-431`, `migrations/0008_audit_chain.sql`
+
+`verify_chain` checks three things: `payload_hash` against the stored
+`payload` bytes, `chain_hash` against `compute_chain_hash(previous_hash,
+payload_hash, seq, ts, kind, id)`, and `previous_hash` against the
+predecessor's `chain_hash`. **None of the three reads an indexed column and
+compares it against the payload's own copy of that field.** So an in-place
+edit to `subject`, `client_id`, `ip`, `user_agent`, `reason` or `actor` —
+leaving `payload`, `payload_hash` and `chain_hash` untouched — changes what
+the audit viewer and the admin search display while verification still
+reports `valid: true`.
+
+The operator-visible consequence is the one that matters: the console renders
+those columns, and the chain-status screen reports *"✓ Chain valid"* beside
+them. The two statements are about different data.
+
+**Found by the test RFC 187 required as proof of the opposite.** The RFC's
+handoff predicted that a column-only tamper would *fail* verification and
+called that "the proof D1 bought"; the test written to demonstrate it
+measured `valid: true` and was reported as refuting its own instruction
+rather than rewritten to pass. The gap predates `actor` by eleven minor
+versions and is not introduced by it — `actor` is simply the first column
+whose payload copy was added deliberately, which is what makes the check
+below possible for it.
+
+**The fix is detection, not prevention.** Access control over the column
+would make such an edit harder, not evident afterwards. The check is: compare
+each indexed column against the payload's copy of the same field during
+verification — and **treat an absent payload key as no claim**, since `actor`
+is absent from every pre-`0021` payload and `request_id` from every pre-`0015`
+one. That compatibility rule is why this is its own change with its own
+review rather than a line added to the verifier here. `docs/src/expert/adr/
+010-audit-log-hash-chain.md` now states the scope limitation outright.
 
 ---
 
