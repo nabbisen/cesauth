@@ -61,6 +61,98 @@ section Step 3 says to archive, is 3.3%.
 
 ---
 
+## [0.104.0] - 2026-11-15
+
+**Minor** — the tenancy console answers `Accept-Language`, and so does the
+shell that serves eleven operator screens. RFC 185 §5.3 screen 3, one
+report-and-stop copy gate and one implementation round, both reviewed.
+
+### Added — three more screens negotiate, through one chokepoint
+
+`/admin/tenancy`, `/admin/tenancy/tenants` and
+`/admin/tenancy/tenants/:tid` resolve their locale per request and render
+every word from the catalog: **20 new `MessageKey`s**, both locales, and
+nine existing keys reused rather than duplicated.
+
+**Screens 1 and 2 each owned their route; the remaining eleven share one
+helper.** `operator_json_api::shell` hardcoded `Locale::Ja` and took a
+hardcoded Japanese title string from each caller. It now takes a
+`MessageKey` and a `Locale` and composes
+`format!("{} — cesauth", lookup(title_key, locale))`, the pattern the audit
+viewer's route already set. **The locale stays a parameter rather than
+becoming a negotiation**, because RFC 185 amendment A5 forbids serving a
+still-Japanese body inside `<html lang="en">`: eight callers pass
+`Locale::Ja` explicitly and will keep doing so until their own bodies
+convert. Five of the console's thirteen shell-rendering screens now
+negotiate, up from two.
+
+Driven over real HTTP rather than asserted: `wrangler dev --local`, nine
+requests, three routes × {`en`, `ja`, no header}, all `200`. `en` gives
+`<html lang="en">` and *"Tenant management — cesauth"*; `ja` and no header
+both give the Japanese form.
+
+### Changed
+
+- **Four of the eleven titles engage an existing key instead of minting a
+  new one.** `ConfigTitle` was already byte-identical to its route's title;
+  `OperationsTitle`, `TokensTitle` and `OidcClientsTitle` have their
+  Japanese repointed to the live route's wording. Minting instead would
+  have failed `no_two_keys_share_text_within_a_locale` outright for one
+  (`"Operations"` was already taken) and produced case-only English splits
+  no test can see for the others. **No user-visible change**: both
+  components that read those keys (`OperatorShell`, `TenantAdminShell`) have
+  no caller anywhere in the tree. The mockup wording they discard
+  (`運用`, `管理者トークン`) is rowed for RFC 131, which owns adopting the
+  mockups and can move heading, title and sidebar together.
+- **The operator console's landing title is renamed, deliberately.**
+  `cesauth コンソール` → `コンソール — cesauth` / `Console — cesauth`: the
+  one title among eleven that did not fit the shape, left irregular by
+  nobody's decision. Recorded while deciding it: that page has **three
+  names** today — `コンソール` in the back link, `cesauth コンソール` in the
+  title, `cesauth オペレーターコンソール` in its own `<h1>`. This settles the
+  title; the heading waits for the cut that converts `console.rs`.
+- **Two links that both point at `/admin/tenancy/tenants/new` are now one
+  key.** Keying `テナント作成` and `新規テナント作成` separately would have
+  minted two English names for one destination and made the confusion
+  permanent in a second language.
+- **One fetch failure, one wording.** The tenancy screens carried three
+  phrasings of "could not load" against the catalog's own `FetchFailed`;
+  the two generic sites now reuse it, and the count-specific message is
+  re-registered to match its register in both locales rather than keep the
+  split in English too.
+
+### Fixed
+
+- A catalog value carried a **trailing space** — faithfully reproduced from
+  the literal it replaced, and invisible to review and to the duplicate-text
+  test, which sees `"X: "` and `"X:"` as simply different strings. The
+  separator now lives in the markup as its own text node.
+
+### Security answer
+
+The diff touches `crates/backend/src/routes/admin/`, which the release
+rubric's path list names, so the question fires. **No new
+security-relevant surface**, and this is what was checked:
+`operator_json_api::shell`'s signature changed, but `resolve_admin` still
+runs first and unchanged, so all eleven routes keep their admin gate; no
+route, query parameter or JSON payload was added or removed (197 routes, 0
+added, 0 removed); the only new input any of this reads is
+`Accept-Language`, and `crates/backend/src/i18n.rs` is **untouched** by this
+cut — three more routes now call a parser in use and unit-tested since
+`0.99.0`; and the locale-negotiation evidence log carries no credential
+material.
+
+### Gates
+
+Host tests **1,728 / 0 / 4 across 12 `test result:` lines** (`0.103.0`:
+1,717; +11, all of them the title byte-identity tests) from the five-crate
+command in `contributing.md` §Running tests. Migration chain **39**,
+unchanged. Route surface **197, 0 added, 0 removed**. `drift-scan` clean,
+i18n ceiling **103 scanned / 65 hit / 69 entries** with
+`pages/operator/tenancy.rs` moving 27 → 0.
+
+---
+
 ## [0.103.0] - 2026-11-15
 
 **Minor** — the audit log can say who acted. RFC 187 across four rounds: a
