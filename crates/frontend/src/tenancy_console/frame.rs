@@ -9,7 +9,7 @@
 use crate::escape;
 use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::types::Role;
-use cesauth_core::i18n::Locale;
+use cesauth_core::i18n::{lookup, Locale, MessageKey};
 use cesauth_core::routes::tenancy_console as routes;
 
 /// Tabs in the tenancy console nav.
@@ -86,6 +86,9 @@ pub fn tenancy_console_frame_for(
     let scope_class = scope.css_class();
     let scope_label = scope.label_for(locale);
     let scope_aria  = scope.aria_label_for(locale);
+    // RFC 185 §5.3 screen 4, T4 — same pattern as `admin/frame.rs`,
+    // copied from `templates/chrome.rs::frame_with_flash`.
+    let skip_txt = escape(lookup(MessageKey::SkipToMainContent, locale));
 
     let nav: String = NAV_TABS.iter().map(|t| {
         let current = if *t == active_tab { r#" aria-current="page""# } else { "" };
@@ -168,7 +171,7 @@ pub fn tenancy_console_frame_for(
   </style>
 </head>
 <body>
-<a href="#main" class="skip-link">メインコンテンツへスキップ</a>
+<a href="#main" class="skip-link">{skip_txt}</a>
   <header>
     <h1>cesauth tenancy console</h1>
     <span class="{scope_class}" aria-label="{scope_aria}">{scope_label}</span>

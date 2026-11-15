@@ -22,8 +22,9 @@ use crate::routes::admin::auth;
 use crate::routes::admin::console::render;
 
 pub async fn page<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let locale = crate::i18n::resolve_locale(&req);
     crate::routes::admin::operator_json_api::shell(
-        &req, &ctx, cesauth_core::i18n::MessageKey::ConsoleSafetyPageTitle, cesauth_core::i18n::Locale::Ja,
+        &req, &ctx, cesauth_core::i18n::MessageKey::ConsoleSafetyPageTitle, locale,
     ).await
 }
 

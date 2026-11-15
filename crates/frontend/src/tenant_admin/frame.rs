@@ -21,7 +21,7 @@
 use crate::escape;
 use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::types::Role;
-use cesauth_core::i18n::Locale;
+use cesauth_core::i18n::{lookup, Locale, MessageKey};
 use cesauth_core::routes::tenant_admin as routes;
 
 /// Tabs in the tenant-admin nav. All hrefs are built per-render
@@ -133,6 +133,9 @@ pub fn tenant_admin_frame_for(
     let scope_class  = scope.css_class();
     let scope_label  = scope.label_for(locale);
     let scope_aria   = scope.aria_label_for(locale);
+    // RFC 185 §5.3 screen 4, T4 — same pattern as `admin/frame.rs`,
+    // copied from `templates/chrome.rs::frame_with_flash`.
+    let skip_txt = escape(lookup(MessageKey::SkipToMainContent, locale));
 
     let nav: String = NAV_TABS.iter().map(|t| {
         let current = if *t == active_tab { r#" aria-current="page""# } else { "" };
@@ -210,7 +213,7 @@ pub fn tenant_admin_frame_for(
   </style>
 </head>
 <body>
-<a href="#main" class="skip-link">メインコンテンツへスキップ</a>
+<a href="#main" class="skip-link">{skip_txt}</a>
   <header>
     <h1>cesauth tenant admin</h1>
     <span class="tenant-name">{tenant_name_esc}</span>

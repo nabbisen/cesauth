@@ -1,14 +1,30 @@
-//! システムコンソールページコンポーネント (`/admin/console/*`)
+//! System console page components (`/admin/console/*`).
 //!
-//! ADR-013: 日本語のみ。ロケールネゴシエーションなし。
+//! Converted to a negotiated locale by RFC 185 §5.3 screen 4, following
+//! screen 1/3's own pattern exactly: the server resolves `Locale` from
+//! `Accept-Language` and emits it as `<html lang>`
+//! (`routes/admin/console/{overview,operations_route,tokens,safety,cost,alerts,config}.rs`);
+//! each component here reads it back once, at mount, via
+//! [`crate::app::mounted_locale`] — there is no other channel a CSR
+//! component has to learn the locale the server negotiated (D5). Each
+//! `<main lang>` below follows the same value — the same `<main lang>`
+//! trap screen 1's handoff named, seven times here, the most of any
+//! slice so far.
+//!
+//! `console/clients.rs` stays pinned to `Locale::Ja` (`0.106.0`'s own
+//! body, out of this slice's scope).
 
 use leptos::prelude::*;
+use cesauth_core::i18n::{lookup, MessageKey};
+
+use crate::app::mounted_locale;
 
 // ─── Overview (/admin/console) ───────────────────────────────────────────────
 
-/// コンソール概要 (`/admin/console`)
+/// Console overview (`/admin/console`).
 #[component]
 pub fn ConsoleOverview() -> impl IntoView {
+    let locale = mounted_locale();
     let data = LocalResource::new(|| async {
         gloo_net::http::Request::get("/admin/console.json")
             .header("Accept", "application/json")
@@ -19,25 +35,25 @@ pub fn ConsoleOverview() -> impl IntoView {
     });
 
     view! {
-        <main lang="ja">
-            <h1>"cesauth オペレーターコンソール"</h1>
+        <main lang=locale.bcp47()>
+            <h1>{lookup(MessageKey::ConsoleOverviewHeading, locale)}</h1>
             <nav>
                 <ul>
-                    <li><a href="/admin/tenancy">"テナント管理"</a></li>
-                    <li><a href="/admin/console/operations">"オペレーション"</a></li>
-                    <li><a href="/admin/console/audit">"監査ログ"</a></li>
-                    <li><a href="/admin/console/safety">"安全性チェック"</a></li>
-                    <li><a href="/admin/console/cost">"コスト"</a></li>
-                    <li><a href="/admin/console/tokens">"管理トークン"</a></li>
-                    <li><a href="/admin/console/alerts">"アラート"</a></li>
-                    <li><a href="/admin/console/config">"設定"</a></li>
+                    <li><a href="/admin/tenancy">{lookup(MessageKey::TenancyOverviewPageTitle, locale)}</a></li>
+                    <li><a href="/admin/console/operations">{lookup(MessageKey::OperationsTitle, locale)}</a></li>
+                    <li><a href="/admin/console/audit">{lookup(MessageKey::AuditViewerPageTitle, locale)}</a></li>
+                    <li><a href="/admin/console/safety">{lookup(MessageKey::ConsoleSafetyHeading, locale)}</a></li>
+                    <li><a href="/admin/console/cost">{lookup(MessageKey::ConsoleCostPageTitle, locale)}</a></li>
+                    <li><a href="/admin/console/tokens">{lookup(MessageKey::TokensTitle, locale)}</a></li>
+                    <li><a href="/admin/console/alerts">{lookup(MessageKey::ConsoleAlertsPageTitle, locale)}</a></li>
+                    <li><a href="/admin/console/config">{lookup(MessageKey::ConfigTitle, locale)}</a></li>
                 </ul>
             </nav>
-            <Suspense fallback=|| view! { <p aria-busy="true">"読み込み中…"</p> }>
+            <Suspense fallback=move || view! { <p aria-busy="true">{lookup(MessageKey::FetchLoading, locale)}</p> }>
                 {move || data.get().map(|ok| if ok {
-                    view! { <p class="status-ok">"✓ システム正常"</p> }.into_any()
+                    view! { <p class="status-ok">{lookup(MessageKey::ConsoleStatusOk, locale)}</p> }.into_any()
                 } else {
-                    view! { <p class="status-warn">"⚠ 状態を確認できませんでした"</p> }.into_any()
+                    view! { <p class="status-warn">{lookup(MessageKey::ConsoleStatusCheckFailed, locale)}</p> }.into_any()
                 })}
             </Suspense>
         </main>
@@ -46,14 +62,15 @@ pub fn ConsoleOverview() -> impl IntoView {
 
 // ─── Operations (/admin/console/operations) ──────────────────────────────────
 
-/// オペレーション状況 (`/admin/console/operations`)
+/// Operations status (`/admin/console/operations`).
 #[component]
 pub fn ConsoleOperations() -> impl IntoView {
+    let locale = mounted_locale();
     view! {
-        <main lang="ja">
-            <h1>"オペレーション"</h1>
-            <p><a href="/admin/console">"← コンソール"</a></p>
-            <p>"cronジョブの状態はKVストアに保存されています。"</p>
+        <main lang=locale.bcp47()>
+            <h1>{lookup(MessageKey::OperationsTitle, locale)}</h1>
+            <p><a href="/admin/console">{lookup(MessageKey::OperatorConsoleBackLink, locale)}</a></p>
+            <p>{lookup(MessageKey::ConsoleOperationsCronNote, locale)}</p>
             <ul>
                 <li>"retention_sweep"</li>
                 <li>"audit_chain_verify"</li>
@@ -76,27 +93,28 @@ async fn fetch_tokens() -> Result<TokensData, String> {
     match r.status() { 200 => r.json().await.map_err(|e| e.to_string()), _ => Err("error".into()) }
 }
 
-/// 管理トークン一覧 (`/admin/console/tokens`)
+/// Admin token list (`/admin/console/tokens`).
 #[component]
 pub fn ConsoleTokens() -> impl IntoView {
+    let locale = mounted_locale();
     let data = LocalResource::new(|| async { fetch_tokens().await });
 
     view! {
-        <main lang="ja">
-            <h1>"管理トークン"</h1>
-            <p><a href="/admin/console">"← コンソール"</a></p>
-            <Suspense fallback=|| view! { <p aria-busy="true">"読み込み中…"</p> }>
+        <main lang=locale.bcp47()>
+            <h1>{lookup(MessageKey::TokensTitle, locale)}</h1>
+            <p><a href="/admin/console">{lookup(MessageKey::OperatorConsoleBackLink, locale)}</a></p>
+            <Suspense fallback=move || view! { <p aria-busy="true">{lookup(MessageKey::FetchLoading, locale)}</p> }>
                 {move || data.get().map(|r| match r {
                     Ok(d) => view! {
                         <div>
-                            <p><a href="/admin/console/tokens/new">"新しいトークンを発行"</a></p>
+                            <p><a href="/admin/console/tokens/new">{lookup(MessageKey::ConsoleTokensIssueLink, locale)}</a></p>
                             <form method="POST" action="/admin/console/tokens/disable">
                                 <input type="hidden" name="csrf" value=d.csrf_token />
-                                <p>"トークンの無効化はIDを指定して行います。"</p>
+                                <p>{lookup(MessageKey::ConsoleTokensDisableNote, locale)}</p>
                             </form>
                         </div>
                     }.into_any(),
-                    Err(_) => view! { <p role="alert">"エラーが発生しました。"</p> }.into_any(),
+                    Err(_) => view! { <p role="alert">{lookup(MessageKey::GenericErrorOccurred, locale)}</p> }.into_any(),
                 })}
             </Suspense>
         </main>
@@ -105,43 +123,46 @@ pub fn ConsoleTokens() -> impl IntoView {
 
 // ─── Generic placeholder pages ───────────────────────────────────────────────
 
-/// 安全性チェック (`/admin/console/safety`)
+/// Safety check (`/admin/console/safety`).
 #[component]
 pub fn ConsoleSafety() -> impl IntoView {
-    view! { <main lang="ja">
-        <h1>"安全性チェック"</h1>
-        <p><a href="/admin/console">"← コンソール"</a></p>
-        <p>"検証結果の一覧表示は未実装です(RFC 161)。"</p>
+    let locale = mounted_locale();
+    view! { <main lang=locale.bcp47()>
+        <h1>{lookup(MessageKey::ConsoleSafetyHeading, locale)}</h1>
+        <p><a href="/admin/console">{lookup(MessageKey::OperatorConsoleBackLink, locale)}</a></p>
+        <p>{lookup(MessageKey::ConsoleNotImplementedNote, locale)}</p>
     </main> }
 }
 
-/// コスト (`/admin/console/cost`)
+/// Cost (`/admin/console/cost`).
 #[component]
 pub fn ConsoleCost() -> impl IntoView {
-    view! { <main lang="ja">
-        <h1>"コスト"</h1>
-        <p><a href="/admin/console">"← コンソール"</a></p>
-        <p>"テナント別コストスナップショットの表示は未実装です(RFC 161)。"</p>
+    let locale = mounted_locale();
+    view! { <main lang=locale.bcp47()>
+        <h1>{lookup(MessageKey::ConsoleCostPageTitle, locale)}</h1>
+        <p><a href="/admin/console">{lookup(MessageKey::OperatorConsoleBackLink, locale)}</a></p>
+        <p>{lookup(MessageKey::ConsoleNotImplementedNote, locale)}</p>
     </main> }
 }
 
-/// アラート (`/admin/console/alerts`)
+/// Alerts (`/admin/console/alerts`).
 #[component]
 pub fn ConsoleAlerts() -> impl IntoView {
-    view! { <main lang="ja">
-        <h1>"アラート"</h1>
-        <p><a href="/admin/console">"← コンソール"</a></p>
-        <p>"アラート一覧は未実装です(RFC 161)。"</p>
+    let locale = mounted_locale();
+    view! { <main lang=locale.bcp47()>
+        <h1>{lookup(MessageKey::ConsoleAlertsPageTitle, locale)}</h1>
+        <p><a href="/admin/console">{lookup(MessageKey::OperatorConsoleBackLink, locale)}</a></p>
+        <p>{lookup(MessageKey::ConsoleNotImplementedNote, locale)}</p>
     </main> }
 }
 
-/// 設定 (`/admin/console/config`)
+/// Config (`/admin/console/config`).
 #[component]
 pub fn ConsoleConfig() -> impl IntoView {
-    view! { <main lang="ja">
-        <h1>"設定"</h1>
-        <p><a href="/admin/console">"← コンソール"</a></p>
-        <p>"ライブ設定の確認・適用画面は未実装です(RFC 161)。"</p>
+    let locale = mounted_locale();
+    view! { <main lang=locale.bcp47()>
+        <h1>{lookup(MessageKey::ConfigTitle, locale)}</h1>
+        <p><a href="/admin/console">{lookup(MessageKey::OperatorConsoleBackLink, locale)}</a></p>
+        <p>{lookup(MessageKey::ConsoleNotImplementedNote, locale)}</p>
     </main> }
 }
-

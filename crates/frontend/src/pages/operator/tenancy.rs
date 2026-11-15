@@ -1,4 +1,4 @@
-//! テナント管理コンソールコンポーネント (`/admin/tenancy/*`)
+//! Tenancy management console components (`/admin/tenancy/*`).
 //!
 //! Converted to a negotiated locale by RFC 185 §5.3 screen 3, following
 //! screen 1's own pattern exactly: the server resolves `Locale` from
@@ -24,7 +24,7 @@ use crate::app::mounted_locale;
 #[derive(Debug, Clone, serde::Deserialize)]
 struct OverviewData { tenant_count: usize }
 
-/// テナント管理概要 (`/admin/tenancy`)
+/// Tenancy management overview (`/admin/tenancy`).
 #[component]
 pub fn TenancyOverview() -> impl IntoView {
     let locale = mounted_locale();
@@ -68,7 +68,7 @@ pub fn TenancyOverview() -> impl IntoView {
 #[derive(Debug, Clone, serde::Deserialize)]
 struct TenantsData { tenants: Vec<Tenant> }
 
-/// テナント一覧 (`/admin/tenancy/tenants`)
+/// Tenant list (`/admin/tenancy/tenants`).
 #[component]
 pub fn TenancyTenants() -> impl IntoView {
     let locale = mounted_locale();
@@ -131,7 +131,7 @@ pub fn TenancyTenants() -> impl IntoView {
 #[derive(Debug, Clone, serde::Deserialize)]
 struct TenantDetailData { csrf_token: String }
 
-/// テナント詳細 (`/admin/tenancy/tenants/:tid`)
+/// Tenant detail (`/admin/tenancy/tenants/:tid`).
 #[component]
 pub fn TenancyTenantDetail() -> impl IntoView {
     let locale = mounted_locale();

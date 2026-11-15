@@ -14,7 +14,7 @@
 use crate::escape;
 use cesauth_core::admin::scope::ScopeBadge;
 use cesauth_core::admin::types::Role;
-use cesauth_core::i18n::Locale;
+use cesauth_core::i18n::{lookup, Locale, MessageKey};
 use cesauth_core::routes::admin as routes;
 
 /// Nav-tab identifier. Used by the frame to render the active link
@@ -116,6 +116,11 @@ pub fn admin_frame_for(
     let scope_class = scope.css_class();
     let scope_label = scope.label_for(locale);
     let scope_aria  = scope.aria_label_for(locale);
+    // RFC 185 §5.3 screen 4, T4. The pattern this copies lives in
+    // `templates/chrome.rs::frame_with_flash` — a catalog value spliced
+    // into a raw HTML string is escaped there, and that is the reason
+    // this one is too, not a new concern.
+    let skip_txt = escape(lookup(MessageKey::SkipToMainContent, locale));
 
     let nav: String = TABS_ORDER.iter()
         .filter(|t| t.visible_to(role))
@@ -216,7 +221,7 @@ pub fn admin_frame_for(
 </style>
 </head>
 <body>
-<a href="#main" class="skip-link">メインコンテンツへスキップ</a>
+<a href="#main" class="skip-link">{skip_txt}</a>
 <header class="site">
   <span class="brand">cesauth admin</span>
   <span class="{scope_class}" aria-label="{scope_aria}">{scope_label}</span>

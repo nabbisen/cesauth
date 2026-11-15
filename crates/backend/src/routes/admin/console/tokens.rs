@@ -73,8 +73,9 @@ async fn parse_form(req: &mut Request) -> Result<HashMap<String, String>> {
 // -------------------------------------------------------------------------
 
 pub async fn list<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let locale = crate::i18n::resolve_locale(&req);
     crate::routes::admin::operator_json_api::shell(
-        &req, &ctx, cesauth_core::i18n::MessageKey::TokensTitle, cesauth_core::i18n::Locale::Ja,
+        &req, &ctx, cesauth_core::i18n::MessageKey::TokensTitle, locale,
     ).await
 }
 

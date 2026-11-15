@@ -589,6 +589,39 @@ pub enum MessageKey {
     ConsoleAlertsPageTitle,
     ConsoleSafetyPageTitle,
 
+    // ---- RFC 185 §5.3 screen 4: the operator console's seven
+    // (`ConsoleOverview`/`ConsoleOperations`/`ConsoleTokens`/`ConsoleSafety`/
+    // `ConsoleCost`/`ConsoleAlerts`/`ConsoleConfig`, `/admin/console/*`). G1
+    // reviewed and ruled
+    // (`.git-exclude/reviewed/185-slice3-screen4-g1-decision.md`): the
+    // heading keys are supersets of their screen's own `*PageTitle` key
+    // (R2 — a heading may be fuller than its title, and must contain the
+    // title's words); the four RFC 161 placeholder sentences collapse into
+    // one key (R1); the status-check failure joins the `読み込みに失敗
+    // しました`/`取得に失敗しました` register rather than opening a fourth
+    // verb for one condition (R-c, screen 3's own lesson applied again). ----
+    /// Superset of `ConsoleOverviewPageTitle` (`コンソール`/`Console`) —
+    /// must contain its words, per R2.
+    ConsoleOverviewHeading,
+    /// Superset of `ConsoleSafetyPageTitle` (`安全性`/`Safety`) — same
+    /// rule, used both as `ConsoleOverview`'s nav link to `/admin/console/safety`
+    /// and as `ConsoleSafety`'s own `<h1>`.
+    ConsoleSafetyHeading,
+    ConsoleStatusOk,
+    ConsoleStatusCheckFailed,
+    ConsoleOperationsCronNote,
+    ConsoleTokensIssueLink,
+    ConsoleTokensDisableNote,
+    /// **Not `ActionFailed`** — G1 decision R-b: a key's name and its
+    /// value say the same thing, and the Japanese says an error occurred,
+    /// not that an action failed. Also the key `0.106.0`'s
+    /// `pages/operator/clients.rs:126` reuses — minted once, here, before
+    /// a second variant of this exact sentence exists (R3).
+    GenericErrorOccurred,
+    /// Shared by all four RFC 161 placeholder screens (R1) — each already
+    /// names itself in its own `<h1>`, so this only has to say the status.
+    ConsoleNotImplementedNote,
+
     // ---- RFC 180 (R2b): dormant CSR component chrome imported from the
     // mockup at df3d9d0 -- operator/tenant-admin shells, role-impact
     // preview, permission-denied/suspended notices, sign-in volume
@@ -2130,6 +2163,43 @@ fn lookup_audit_chain(key: &MessageKey, locale: Locale) -> Option<&'static str> 
         ConsoleSafetyPageTitle => match locale {
             Locale::Ja => "安全性",
             Locale::En => "Safety",
+        },
+
+        ConsoleOverviewHeading => match locale {
+            Locale::Ja => "cesauth オペレーターコンソール",
+            Locale::En => "cesauth operator console",
+        },
+        ConsoleSafetyHeading => match locale {
+            Locale::Ja => "安全性チェック",
+            Locale::En => "Safety check",
+        },
+        ConsoleStatusOk => match locale {
+            Locale::Ja => "✓ システム正常",
+            Locale::En => "✓ System normal",
+        },
+        ConsoleStatusCheckFailed => match locale {
+            Locale::Ja => "⚠ 状態の確認に失敗しました",
+            Locale::En => "⚠ Failed to check status",
+        },
+        ConsoleOperationsCronNote => match locale {
+            Locale::Ja => "cronジョブの状態はKVストアに保存されています。",
+            Locale::En => "Cron job status is stored in the KV store.",
+        },
+        ConsoleTokensIssueLink => match locale {
+            Locale::Ja => "新しいトークンを発行",
+            Locale::En => "Issue a new token",
+        },
+        ConsoleTokensDisableNote => match locale {
+            Locale::Ja => "トークンの無効化はIDを指定して行います。",
+            Locale::En => "Disable a token by specifying its ID.",
+        },
+        GenericErrorOccurred => match locale {
+            Locale::Ja => "エラーが発生しました。",
+            Locale::En => "An error occurred.",
+        },
+        ConsoleNotImplementedNote => match locale {
+            Locale::Ja => "この画面はまだ実装されていません(RFC 161)。",
+            Locale::En => "This screen is not yet implemented (RFC 161).",
         },
 
         _ => return None,

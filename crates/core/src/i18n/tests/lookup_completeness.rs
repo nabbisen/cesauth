@@ -163,7 +163,10 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         TenancyTenantDetailBackLink | TenancyTenantDetailStatusChangeLink |
         TenancyTenantDetailSubscriptionHistoryLink | TenancyTenantDetailPlanChangeLink |
         TenancyTenantDetailAddMemberLink | ConsoleOverviewPageTitle | ConsoleCostPageTitle |
-        ConsoleAlertsPageTitle | ConsoleSafetyPageTitle
+        ConsoleAlertsPageTitle | ConsoleSafetyPageTitle |
+        ConsoleOverviewHeading | ConsoleSafetyHeading | ConsoleStatusOk |
+        ConsoleStatusCheckFailed | ConsoleOperationsCronNote | ConsoleTokensIssueLink |
+        ConsoleTokensDisableNote | GenericErrorOccurred | ConsoleNotImplementedNote
             => {}  // exhaustiveness pin — body is irrelevant
     }
     // Now actually iterate. The list below mirrors the match
@@ -295,6 +298,9 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         TenancyTenantDetailSubscriptionHistoryLink, TenancyTenantDetailPlanChangeLink,
         TenancyTenantDetailAddMemberLink, ConsoleOverviewPageTitle, ConsoleCostPageTitle,
         ConsoleAlertsPageTitle, ConsoleSafetyPageTitle,
+        ConsoleOverviewHeading, ConsoleSafetyHeading, ConsoleStatusOk,
+        ConsoleStatusCheckFailed, ConsoleOperationsCronNote, ConsoleTokensIssueLink,
+        ConsoleTokensDisableNote, GenericErrorOccurred, ConsoleNotImplementedNote,
     ];
     for k in all { f(k); }
 }
