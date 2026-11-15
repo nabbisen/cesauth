@@ -499,15 +499,20 @@ pub enum EventKind {
     SessionAbsoluteTimeout,
     /// **v0.40.0** — D1-DO session index drift detected by
     /// the daily reconciliation cron (ADR-012 §Q1,
-    /// detection-only resolution). Payload includes
-    /// `session_id`, `user_id` (so per-user dashboards can
-    /// correlate), and a `drift_kind` discriminator
-    /// (`do_vanished` / `do_newer_revoke` /
-    /// `anomalous_d1_revoked_do_active`). For
-    /// `do_newer_revoke` the payload also carries the DO's
-    /// `do_revoked_at` timestamp so operators can see how
-    /// stale the D1 mirror was. v0.40.0 emits but does NOT
+    /// detection-only resolution). v0.40.0 emits but does NOT
     /// auto-repair; repair is ADR-012 §Q1.5 follow-up.
+    /// **RFC 187 round 3** (this variant fell between round 3's
+    /// two greps; found by parsing the enum instead): `subject` =
+    /// the user whose session drifted, `actor` is explicit `None`
+    /// (cron-emitted, no principal acted — defaulting would claim
+    /// the user caused their own drift). `reason` is a JSON
+    /// string, not a set of payload fields: `session_id`,
+    /// `user_id` (redundant with `subject`, kept so per-user
+    /// dashboards can correlate), a `drift_kind` discriminator
+    /// (`do_vanished` / `do_newer_revoke` /
+    /// `anomalous_d1_revoked_do_active`), and, for
+    /// `do_newer_revoke` only, the DO's `do_revoked_at` timestamp
+    /// so operators can see how stale the D1 mirror was.
     SessionIndexDrift,
     // Anonymous trial (v0.16.0, ADR-004)
     AnonymousCreated,
