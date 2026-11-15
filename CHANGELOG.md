@@ -175,9 +175,19 @@ Host tests **1,717 / 0 / 4 across 12 `test result:` lines** (`0.102.0`:
 1,706) from the five-crate command in `contributing.md` §Running tests;
 migration chain **39** (35). Route surface unchanged — 197 routes, all seven
 coverage figures identical. `drift-scan` clean, i18n ceiling 103/66/69
-unmoved. Bundle, CI to CI and therefore comparable: **901,475 B → 903,428 B,
-+1,953 B**, 34% of the 2,621,440 B budget, with no version string in the
-delta.
+unmoved.
+
+Bundle, CI to CI throughout — the only comparison this project accepts, after
+a local raw-byte figure was once diffed against a CI gzip one inside this very
+cut. **Code delta at the pinned version**: `0.102.0`'s 901,475 B → **903,428 B**
+measuring this release's code with `Cargo.toml` still at `0.102.0`, **+1,953 B**.
+**Absolute at the tag**, after the bump: **903,469 B** (892,770 wasm + 10,699
+shim.js), **+1,994 B** over `0.102.0`'s own tagged figure — so **41 B of that is
+the version string**, reported separately because a version bump alone has moved
+this bundle by as much as 829 B before. 34% of the 2,621,440 B budget.
+
+All **15** CI check runs green on the release commit (14 workflows;
+`worker-build.yml` emits two jobs).
 
 ---
 
