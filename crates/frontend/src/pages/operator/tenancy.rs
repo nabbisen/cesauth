@@ -54,7 +54,7 @@ pub fn TenancyOverview() -> impl IntoView {
             <Suspense fallback=move || view! { <p aria-busy="true">{lookup(MessageKey::FetchLoading, locale)}</p> }>
                 {move || data.get().map(|d| match d {
                     Some(d) => view! {
-                        <p>{lookup(MessageKey::TenancyOverviewTenantCountLabel, locale)} <strong>{d.tenant_count}</strong></p>
+                        <p>{lookup(MessageKey::TenancyOverviewTenantCountLabel, locale)}" "<strong>{d.tenant_count}</strong></p>
                     }.into_any(),
                     None => view! { <p>{lookup(MessageKey::TenancyOverviewTenantCountFetchFailed, locale)}</p> }.into_any(),
                 })}

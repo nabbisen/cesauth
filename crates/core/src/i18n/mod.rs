@@ -2057,9 +2057,19 @@ fn lookup_audit_chain(key: &MessageKey, locale: Locale) -> Option<&'static str> 
             Locale::Ja => "テナント作成",
             Locale::En => "Create tenant",
         },
+        // RFC 185 §5.3 screen 3 review: the literal this replaced carried a
+        // TRAILING SPACE (`"登録テナント数: "`), which the conversion
+        // faithfully reproduced. Whitespace inside a catalog value is
+        // invisible to review, invisible to
+        // `no_two_keys_share_text_within_a_locale` (which compares exact
+        // strings, so `"X: "` and `"X:"` are simply different keys' text),
+        // and the first thing a translation tool trims. The separator now
+        // lives in the markup as its own text node
+        // (`pages/operator/tenancy.rs`), where it is visible and cannot be
+        // trimmed away; the value is clean. Do not reintroduce the space.
         TenancyOverviewTenantCountLabel => match locale {
-            Locale::Ja => "登録テナント数: ",
-            Locale::En => "Registered tenants: ",
+            Locale::Ja => "登録テナント数:",
+            Locale::En => "Registered tenants:",
         },
         TenancyOverviewTenantCountFetchFailed => match locale {
             Locale::Ja => "テナント数の読み込みに失敗しました。",
