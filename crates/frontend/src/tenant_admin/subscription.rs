@@ -42,7 +42,7 @@ fn render_table(entries: &[SubscriptionHistoryEntry]) -> String {
   <td>{status_change}</td>
   <td>{actor}</td>
 </tr>"#,
-            when          = e.occurred_at,
+            when          = cesauth_core::util::format_unix_as_iso8601(e.occurred_at),
             event         = escape(&e.event),
             plan_change   = render_plan_change(e.from_plan_id.as_deref(), e.to_plan_id.as_deref()),
             status_change = render_status_change(e.from_status, e.to_status),
@@ -52,7 +52,7 @@ fn render_table(entries: &[SubscriptionHistoryEntry]) -> String {
     format!(
         r##"<table>
   <thead><tr>
-    <th scope="col">When (unix)</th>
+    <th scope="col">When</th>
     <th scope="col">Event</th>
     <th scope="col">Plan change</th>
     <th scope="col">Status change</th>
@@ -90,5 +90,42 @@ fn status_label(s: SubscriptionStatus) -> &'static str {
         SubscriptionStatus::PastDue   => r#"<span class="badge warn">past_due</span>"#,
         SubscriptionStatus::Cancelled => r#"<span class="badge critical">cancelled</span>"#,
         SubscriptionStatus::Expired   => r#"<span class="badge critical">expired</span>"#,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cesauth_core::admin::types::Role;
+    use cesauth_core::tenancy::types::TenantStatus;
+
+    fn p() -> AdminPrincipal {
+        AdminPrincipal { id: "admin".into(), name: None, role: Role::ReadOnly, user_id: None }
+    }
+
+    fn tenant() -> Tenant {
+        Tenant {
+            id: "t-acme".into(), slug: "acme".into(), display_name: "Acme".into(),
+            status: TenantStatus::Active, created_at: 0, updated_at: 0,
+        }
+    }
+
+    /// RFC 111 slice A, T5. Anchor shared with `admin/tests.rs`'s
+    /// `rfc_111`/`rfc_111_callers` modules: `1_704_067_200` →
+    /// `2024-01-01T00:00:00Z`.
+    #[test]
+    fn occurred_at_renders_through_the_canonical_formatter() {
+        let entries = vec![SubscriptionHistoryEntry {
+            id: "h1".into(), subscription_id: "s".into(), tenant_id: "t-acme".into(),
+            event: "plan_changed".into(),
+            from_plan_id: None, to_plan_id: None,
+            from_status: None, to_status: None,
+            actor: "alice".into(), occurred_at: 1_704_067_200,
+        }];
+        let html = subscription_page(&p(), &tenant(), &entries);
+        assert!(html.contains("2024-01-01T00:00:00Z"),
+            "occurred_at must render through format_unix_as_iso8601, got:\n{html}");
+        assert!(!html.contains("1704067200"),
+            "the raw epoch integer must not appear beside its formatted form");
     }
 }

@@ -1,6 +1,6 @@
 # RFC 111 — Date rendering policy (ADR-013 §Q4 closure / date side)
 
-**Status**: Implemented (v0.73.0 — UTC ISO-8601 confirmed as canonical policy, `cesauth_core::util::format_unix_as_iso8601` is the single formatter, per-file legacy formatters removed)  
+**Status**: Implemented (v0.73.0 — UTC ISO-8601 confirmed as canonical policy. **Amendment, slice A / v0.107.0, corrected in round 2**: the "per-file legacy formatters removed" clause above is wrong about *how* the defect arose, which matters because that history is the argument for the gate below. Three facts, not one: **(1)** the clause was already false the day it was written — at tag `0.73.0`, `crates/ui/src/admin/overview.rs:94,99,129` already rendered raw epochs (`{ts}`, `ts = e.ts`, `Some(ts) => …`), which is the raw-epoch class, 13 of the 23 sites this slice found, not the formatters the clause names. **(2)** RFC 111 *did* remove the formatter it named (`security_center.rs::format_unix_local`) — the two per-file formatters converted this slice came later and each arrived with a CSR migration: `pages/sessions.rs::format_ts` in `a606c2f` ("RFC-115 Phase C, Screen 1: Security Centre migrated to Leptos", tagged `0.79.3`, 2026-07-07) and `pages/operator/clients.rs::format_created_at` in `357c7f6` ("RFC 141 cycle 2", 2026-11-03, shipped in `0.92.0`) — so the pattern this RFC removed once **regrew twice**, six and sixteen minors later, each time a screen was rewritten. **(3)** RFC 111's own acceptance criteria could not have caught either half: they grepped for `OffsetDateTime::from_unix_timestamp` and `fn format_unix_local` under `crates/ui/`, and a raw `{ts}` interpolation matches neither pattern — the RFC verified the absence of two spellings and claimed the absence of a class. `drift-scan.sh`'s timestamp-rendering gate (added v0.107.0, population 23 across 15 files, five named exemptions) exists because the pattern comes back every time a screen is rewritten, not because of a one-time miscount in v0.73.0; see the RFC 111 slice A report for the census.)  
 **Tier**: P2  
 **Size**: Small  
 **Target**: v0.71.0 (originally) → shipped v0.73.0  
@@ -114,6 +114,13 @@ schema を持たない。
 - [ ] 非 deprecated warnings = 0
 
 ## Test strategy
+
+**Amendment, slice A / v0.107.0**: the canonical formatter settled on the
+`Z` suffix, not the `+00:00` offset form the example below still shows —
+`admin/tests.rs::rfc_111::canonical_formatter_never_emits_offset_form`
+pins the `Z` form and asserts the negative. Read `2024-05-06T15:33:20Z`
+wherever this section says `+00:00`; the example is left as originally
+written, with this note, rather than silently rewritten.
 
 ```rust
 #[test]

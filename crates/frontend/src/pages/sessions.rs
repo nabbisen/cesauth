@@ -133,8 +133,8 @@ fn SessionsView(resp: SessionsResponse) -> impl IntoView {
 #[component]
 fn SessionRow(item: SessionListItem, csrf: String) -> impl IntoView {
     let method_label = method_label(&item.auth_method);
-    let created      = format_ts(item.created_at);
-    let last_seen    = format_ts(item.last_seen_at);
+    let created      = cesauth_core::util::format_unix_as_iso8601(item.created_at);
+    let last_seen    = cesauth_core::util::format_unix_as_iso8601(item.last_seen_at);
     let revoke_url   = format!("/me/security/sessions/{}/revoke", item.session_id);
 
     view! {
@@ -206,16 +206,3 @@ fn method_label(method: &str) -> &'static str {
     }
 }
 
-fn format_ts(unix: i64) -> String {
-    // Simple human-readable format; a JS `Intl.DateTimeFormat` would
-    // give locale-aware output but requires more infrastructure.
-    // For now emit ISO-8601 which browsers render reasonably.
-    use time::OffsetDateTime;
-    OffsetDateTime::from_unix_timestamp(unix)
-        .map(|dt| format!(
-            "{:04}-{:02}-{:02} {:02}:{:02}",
-            dt.year(), dt.month() as u8, dt.day(),
-            dt.hour(), dt.minute(),
-        ))
-        .unwrap_or_else(|_| "—".into())
-}

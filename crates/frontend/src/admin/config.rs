@@ -123,7 +123,7 @@ fn render_thresholds(thresholds: &[Threshold]) -> String {
             value      = t.value,
             unit       = escape(&t.unit),
             desc       = escape(t.description.as_deref().unwrap_or("")),
-            updated_at = t.updated_at,
+            updated_at = cesauth_core::util::format_unix_as_iso8601(t.updated_at),
         )
     }).collect::<Vec<_>>().join("\n");
     format!(
@@ -135,7 +135,7 @@ fn render_thresholds(thresholds: &[Threshold]) -> String {
       <th scope="col" class="num">Value</th>
       <th scope="col">Unit</th>
       <th scope="col">Description</th>
-      <th scope="col" class="num">Updated (unix)</th>
+      <th scope="col" class="num">Updated</th>
     </tr>
   </thead><tbody>
 {rows}

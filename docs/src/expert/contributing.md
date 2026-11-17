@@ -149,6 +149,18 @@ branch protection and answers `404` even when a ruleset governs the branch
 `PATH` rather than the root `package.json`'s pin. None of them is a CI gate. They
 are recorded here, not changed: RFC 138's scope is the gates CI runs.
 
+**Seeding local D1 data by hand (RFC 111 slice A, 2026-11-17): the fetch
+handler's D1 binding and `wrangler dev --local`'s bundled Local Explorer
+API (`/cdn-cgi/local/explorer/api/d1/database/<binding>/raw`) can resolve
+the same `--persist-to` directory and binding name to two *different*
+physical `.sqlite` files — confirmed by running `sqlite3 <file> "SELECT …"`
+directly against each file under the directory and finding disjoint row
+sets. Rows inserted through the Explorer API are then invisible to the
+real route handlers. Work around it by stopping `wrangler dev`, finding
+which file under `--persist-to` the fetch handler actually reads (inspect
+each `.sqlite` file directly rather than assuming the first one found),
+inserting rows with the `sqlite3` CLI into that file, and restarting.
+
 ### Pinning tools in CI
 
 A gate is only as reproducible as the tool it runs. The convention

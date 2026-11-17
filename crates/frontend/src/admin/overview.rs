@@ -96,7 +96,7 @@ fn render_recent_audit(s: &OverviewSummary) -> String {
   <td class="muted">{subject}</td>
   <td class="muted">{reason}</td>
 </tr>"#,
-                ts      = e.ts,
+                ts      = cesauth_core::util::format_unix_as_iso8601(e.ts),
                 kind    = escape(&e.kind),
                 subject = escape(e.subject.as_deref().unwrap_or("—")),
                 reason  = escape(e.reason.as_deref().unwrap_or("")),
@@ -126,7 +126,10 @@ fn render_last_verified(s: &OverviewSummary) -> String {
     } else {
         let rows: String = s.last_verified_buckets.iter().map(|b| {
             let verified = match b.last_verified_at {
-                Some(ts) => format!(r#"<td class="num">{ts}</td>"#),
+                Some(ts) => format!(
+                    r#"<td class="num">{}</td>"#,
+                    cesauth_core::util::format_unix_as_iso8601(ts),
+                ),
                 None     => r#"<td class="warn">never</td>"#.to_owned(),
             };
             format!(

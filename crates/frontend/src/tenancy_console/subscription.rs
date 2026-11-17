@@ -53,7 +53,7 @@ fn render_table(entries: &[SubscriptionHistoryEntry]) -> String {
   <td>{status}</td>
   <td><code>{actor}</code></td>
 </tr>"##,
-                ts     = e.occurred_at,
+                ts     = cesauth_core::util::format_unix_as_iso8601(e.occurred_at),
                 event  = escape(&e.event),
                 plan   = plan_change,
                 status = status_change,
@@ -65,7 +65,7 @@ fn render_table(entries: &[SubscriptionHistoryEntry]) -> String {
         r##"<section aria-label="History">
   <table><thead>
     <tr>
-      <th scope="col">Occurred (unix)</th>
+      <th scope="col">Occurred</th>
       <th scope="col">Event</th>
       <th scope="col">Plan change</th>
       <th scope="col">Status change</th>
@@ -141,5 +141,24 @@ mod tests {
     fn back_link_points_to_tenant_detail() {
         let html = subscription_history_page(&p(), "t-acme", "acme", &[]);
         assert!(html.contains(r#"href="/admin/tenancy/tenants/t-acme""#));
+    }
+
+    /// RFC 111 slice A, T5. Anchor shared with `admin/tests.rs`'s
+    /// `rfc_111`/`rfc_111_callers` modules: `1_704_067_200` →
+    /// `2024-01-01T00:00:00Z`.
+    #[test]
+    fn occurred_at_renders_through_the_canonical_formatter() {
+        let entries = vec![SubscriptionHistoryEntry {
+            id: "h1".into(), subscription_id: "s".into(), tenant_id: "t".into(),
+            event: "plan_changed".into(),
+            from_plan_id: None, to_plan_id: None,
+            from_status: None, to_status: None,
+            actor: "alice".into(), occurred_at: 1_704_067_200,
+        }];
+        let html = subscription_history_page(&p(), "t-acme", "acme", &entries);
+        assert!(html.contains("2024-01-01T00:00:00Z"),
+            "occurred_at must render through format_unix_as_iso8601, got:\n{html}");
+        assert!(!html.contains("1704067200"),
+            "the raw epoch integer must not appear beside its formatted form");
     }
 }

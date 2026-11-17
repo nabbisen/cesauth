@@ -28,7 +28,7 @@ pub fn confirm_page(
     <tr><th scope="row">Role</th>      <td>{role_label}</td></tr>
     <tr><th scope="row">Scope</th>     <td>{scope}</td></tr>
     <tr><th scope="row">Granted by</th><td><code>{granted_by}</code></td></tr>
-    <tr><th scope="row">Granted (unix)</th><td>{granted_at}</td></tr>
+    <tr><th scope="row">Granted</th><td>{granted_at}</td></tr>
     <tr><th scope="row">Assignment id</th><td><code>{aid}</code></td></tr>
   </tbody></table>
   <p role="status" class="critical">
@@ -51,7 +51,7 @@ pub fn confirm_page(
         role_label = role_label,           // already escaped by caller
         scope      = scope_html,
         granted_by = escape(&assignment.granted_by),
-        granted_at = assignment.granted_at,
+        granted_at = cesauth_core::util::format_unix_as_iso8601(assignment.granted_at),
         aid        = escape(&assignment.id),
         csrf       = escape(csrf),
     );

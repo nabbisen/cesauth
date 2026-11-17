@@ -182,7 +182,10 @@ fn render_row(b: &BucketSafetyState, may_verify: bool) -> String {
         r#"<td class="ok">private</td>"#
     };
     let verified_cell = match b.last_verified_at {
-        Some(ts) => format!(r#"<td class="num">{ts}</td>"#),
+        Some(ts) => format!(
+            r#"<td class="num">{}</td>"#,
+            cesauth_core::util::format_unix_as_iso8601(ts),
+        ),
         None     => r#"<td class="warn">never</td>"#.to_owned(),
     };
     let action_cell = if may_verify {

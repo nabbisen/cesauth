@@ -63,7 +63,7 @@ fn render_table(principal: &AdminPrincipal, input: &UserRoleAssignmentsInput<'_>
                 .unwrap_or_else(|| format!("<code>{}</code>", escape(&a.role_id)));
             let scope_html = render_scope(&a.scope);
             let expires = match a.expires_at {
-                Some(t) => format!("{t}"),
+                Some(t) => cesauth_core::util::format_unix_as_iso8601(t),
                 None    => r#"<span class="muted">none</span>"#.to_owned(),
             };
             let action_cell = if manage {
@@ -94,7 +94,7 @@ fn render_table(principal: &AdminPrincipal, input: &UserRoleAssignmentsInput<'_>
                 role_label = role_label,
                 scope      = scope_html,
                 granted_by = escape(&a.granted_by),
-                granted    = a.granted_at,
+                granted    = cesauth_core::util::format_unix_as_iso8601(a.granted_at),
                 expires    = expires,
             )
         }).collect::<Vec<_>>().join("\n")
@@ -108,7 +108,7 @@ fn render_table(principal: &AdminPrincipal, input: &UserRoleAssignmentsInput<'_>
       <th scope="col">Role</th>
       <th scope="col">Scope</th>
       <th scope="col">Granted by</th>
-      <th scope="col">Granted (unix)</th>
+      <th scope="col">Granted</th>
       <th scope="col">Expires</th>
       {action_th}
     </tr>

@@ -85,16 +85,6 @@ struct Revealed {
 // the fetch/view functions that need a real gloo_net::http::Response or a
 // reactive signal, neither constructable on host) ──────────────────────────
 
-fn format_created_at(unix: i64) -> String {
-    use time::OffsetDateTime;
-    OffsetDateTime::from_unix_timestamp(unix)
-        .map(|dt| format!(
-            "{:04}-{:02}-{:02} {:02}:{:02}",
-            dt.year(), dt.month() as u8, dt.day(), dt.hour(), dt.minute(),
-        ))
-        .unwrap_or_else(|_| "—".into())
-}
-
 fn classify_list_status(status: u16) -> Result<(), String> {
     match status {
         200       => Ok(()),
@@ -400,7 +390,7 @@ fn ClientRow(client: ClientView, confirm: RwSignal<Option<PendingConfirm>>) -> i
                     {client.redirect_uris.iter().map(|u| view! { <li><code>{u.clone()}</code></li> }).collect_view()}
                 </ul>
             </td>
-            <td>{format_created_at(client.created_at)}</td>
+            <td>{cesauth_core::util::format_unix_as_iso8601(client.created_at)}</td>
             <td>
                 <Show when=move || is_confidential>
                     <button type="button"
@@ -686,11 +676,5 @@ mod tests {
     fn client_label_falls_back_to_the_id_when_name_is_blank() {
         assert_eq!(client_label("", "app-1"), "app-1");
         assert_eq!(client_label("   ", "app-1"), "app-1");
-    }
-
-    #[test]
-    fn format_created_at_renders_a_known_timestamp() {
-        // 2024-01-01T00:00:00Z
-        assert_eq!(format_created_at(1_704_067_200), "2024-01-01 00:00");
     }
 }

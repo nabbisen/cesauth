@@ -887,6 +887,57 @@ if [[ "$release_failed" -eq 1 ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# RFC 028 slice B, T5 -- the CHANGELOG byte budget, enforced rather than
+# merely stated.
+#
+# RFC 028 Step 5 specified this as runnable bash and it was never built;
+# the only thing reading the budget before this cut was
+# scripts/changelog-archive-split.sh's own guard, which only ran when a
+# human ran the script by hand. BUDGET_KB=80 there uses `wc -c / 1024`,
+# i.e. KiB, so this check uses the same 80 * 1024 = 81920 definition --
+# a gate disagreeing with its own remedy tool by 1,920 B over a KB/KiB
+# mismatch would be its own defect.
+#
+# ROADMAP.md is NOT gated here (RFC 028 slice B, D2): its own remedy is
+# condensation to summary + link per row, "judgement rather than a shell
+# loop" in RFC 028's own words, and a gate with no mechanical remedy
+# would be red the day it lands. Its size is still printed on its own
+# line below, every run, rather than left in a ROADMAP row nobody
+# re-reads.
+# ---------------------------------------------------------------------------
+
+CHANGELOG_BUDGET_BYTES=81920
+changelog_bytes=$(wc -c < "${REPO_ROOT}/CHANGELOG.md")
+changelog_pct=$(( changelog_bytes * 100 / CHANGELOG_BUDGET_BYTES ))
+changelog_headroom=$(( CHANGELOG_BUDGET_BYTES - changelog_bytes ))
+
+echo "ℹ️   changelog budget: CHANGELOG.md is ${changelog_bytes} bytes of" \
+     "${CHANGELOG_BUDGET_BYTES} (${changelog_pct}% of budget," \
+     "${changelog_headroom} bytes headroom)"
+
+roadmap_bytes=$(wc -c < "${REPO_ROOT}/ROADMAP.md")
+roadmap_budget_bytes=$((40 * 1024))
+roadmap_factor=$(python3 -c "print(f'{${roadmap_bytes} / ${roadmap_budget_bytes}:.1f}')" 2>/dev/null || echo "?")
+
+echo "ℹ️   roadmap size (not gated, D2): ROADMAP.md is ${roadmap_bytes} bytes" \
+     "against its own ~${roadmap_budget_bytes}-byte (~40 KB) budget" \
+     "(${roadmap_factor}x over)"
+
+if [[ "$changelog_bytes" -gt "$CHANGELOG_BUDGET_BYTES" ]]; then
+    echo ""
+    echo "CHANGELOG.md is ${changelog_bytes} bytes, over the" \
+         "${CHANGELOG_BUDGET_BYTES}-byte (80 KB) budget by" \
+         "$((changelog_bytes - CHANGELOG_BUDGET_BYTES)) bytes."
+    echo ""
+    echo "  Run scripts/changelog-archive-split.sh <newest-version-to-archive>" \
+         "-- it archives everything AT that version and OLDER, same as the" \
+         "tool's own usage text -- to move that range into" \
+         "docs/changelog-archive/, and record the split in" \
+         "docs/changelog-archive/README.md's own dated note (RFC 028)."
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
 # RFC 168 §3.2, amended by RFC 181 (2026-11-07) -- the level backstop, plus
 # the route-set diff RFC 168 does not itself specify.
 #
@@ -1804,6 +1855,219 @@ if [[ -n "$negotiation_pinned" ]]; then
          "regressed, or it is a deliberately-pinned route this gate's" \
          "expected-13 count must then exclude -- named here, not silently" \
          "dropped."
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# RFC 111 slice A, T6 -- the timestamp-rendering gate. G1 ruled the census
+# population at 23 (crates/frontend/src/**, structurally re-derived from
+# every `i64`/`UnixSeconds`/`Option<...>` field declaration workspace-wide,
+# cross-referenced against field accesses, then hand-filtered for false
+# positives -- see .git-exclude/reviewed/111-formatter-g1-decision.md).
+#
+# Re-deriving that full structural census on every run is not what this
+# gate does -- it would reintroduce the same false-positive judgement calls
+# (booleans and counters sharing a field name with an unrelated i64 field)
+# that only a human read of each hit resolved. Instead it pins the two
+# things that ARE exactly mechanical: how many call sites name the
+# canonical formatter, and in which files, scoped to this slice's 15 files
+# (excluding `pages/security_center.rs` and `templates/security_center.rs`,
+# which the census's own §1.4 found already conforming -- a different,
+# pre-existing population this gate does not re-litigate).
+#
+# "Sites" (23, the census's own count) and "calls" (24, mechanical) differ
+# by exactly one case: `pages/sessions.rs`'s single deleted `format_ts`
+# function is one census site but now two field-level calls
+# (`created_at`, `last_seen_at`). The gate pins the mechanical number.
+#
+# Round-2 correction to the G1 ruling's own text: it says "11 files";
+# a direct file-list count (below) gives 15, not 11. Verified by listing
+# every file containing a non-test call to the formatter and counting --
+# reported rather than silently matched to the ruling's figure.
+# ---------------------------------------------------------------------------
+
+declare -a TIMESTAMP_RENDERING_EXEMPT=(
+    "tenant_admin/forms/role_assignment_grant.rs	input.expires_at	String, not i64/UnixSeconds -- raw operator-typed text echoed back on a confirm screen, never parsed to a timestamp; never in the i64 census at all"
+    "tenancy_console/forms/role_assignment_create.rs	input.expires_at	same -- String"
+    "tenant_admin/invitations.rs	inv.expires_at, inv.revoked_at	read only for arithmetic (hours-until-expiry) and an is_some() check; rendered value is a translated \"expires in N hours\" string, never the raw field"
+    "tenant_admin/deletions.rs	req.scheduled_at	same -- arithmetic only (days-until), rendered as a translated \"scheduled in N days\" string"
+    "admin/tests.rs	various fixtures	test-only literals, not render sites"
+)
+
+ts_files_list=""
+ts_total_calls=0
+while IFS= read -r -d '' file; do
+    rel="${file#${REPO_ROOT}/}"
+    case "$rel" in
+        */tests.rs|*/pages/security_center.rs|*/templates/security_center.rs) continue ;;
+    esac
+    n=$(grep -c "format_unix_as_iso8601(" "$file" || true)
+    [[ "$n" -eq 0 ]] && continue
+    ts_total_calls=$((ts_total_calls + n))
+    ts_files_list="${ts_files_list}${rel}\n"
+done < <(grep -rlZ "format_unix_as_iso8601(" "${REPO_ROOT}/crates/frontend/src")
+
+ts_files_count=$(printf '%b' "$ts_files_list" | grep -c . || true)
+
+echo "ℹ️   timestamp rendering: ${ts_total_calls} canonical-formatter call(s)" \
+     "across ${ts_files_count} file(s) (want 24 / 15; census population 23," \
+     "RFC 111 slice A), ${#TIMESTAMP_RENDERING_EXEMPT[@]} named exemptions"
+
+ts_failed=0
+
+from_unix_hits=$(grep -rn "from_unix_timestamp" "${REPO_ROOT}/crates/frontend/src" | grep -c . || true)
+hand_rolled_hits=$(grep -rnE '\{:0?4\}-\{:0?2\}-\{:0?2\}' "${REPO_ROOT}/crates/frontend/src" | grep -c . || true)
+
+if [[ "$from_unix_hits" -ne 0 ]] || [[ "$hand_rolled_hits" -ne 0 ]]; then
+    echo ""
+    echo "timestamp rendering: structural half failed -- ${from_unix_hits}" \
+         "from_unix_timestamp hit(s), ${hand_rolled_hits} hand-rolled" \
+         "YYYY-MM-DD-shaped format string(s) found under crates/frontend/src" \
+         "(want 0 for both). A per-file legacy formatter has regrown --" \
+         "convert the call site(s) to cesauth_core::util::format_unix_as_iso8601" \
+         "instead of adding a new local formatter."
+    ts_failed=1
+fi
+
+# The RFC 111 amendment's own finding (round 2): a raw `{ts}`/`.field`
+# interpolation matches NEITHER of the two greps above -- that is exactly
+# how the defect went unseen from 0.73.0 through 0.106.0. This checks
+# every field name the census itself names across its 23 sites (16
+# distinct names -- round 2's list omitted `ts`, `last_verified_at` and
+# `previous_taken_at`, found in round 3 by checking the vocabulary
+# against the census table itself rather than trusting the list already
+# written): every dot-access of one of them under crates/frontend/src
+# must be wrapped by the canonical formatter within a few lines, be an
+# arithmetic/comparison read (the exemption class), or be a named
+# TIMESTAMP_RENDERING_EXEMPT site. This is the census's own vocabulary,
+# not a generically "known" one -- a genuinely new field under an unknown
+# name is still outside what this check can see; see T6's round-2 report
+# §6 for what is and is not claimed.
+KNOWN_TIMESTAMP_FIELDS=(created_at updated_at occurred_at raised_at
+    granted_at expires_at trial_ends_at current_period_end started_at
+    joined_at last_seen_at scheduled_at revoked_at ts last_verified_at
+    previous_taken_at)
+
+# A window, not the same line: the common pattern is
+# `match x.field { Some(t) => format_unix_as_iso8601(t), ... }`, where the
+# formatter call is one or more lines below the field access, inside the
+# match arm -- checking only the hit's own line reproduced false positives
+# on every one of this slice's own Option<...> conversions.
+ts_exempt_raw=$(printf '%s\n' "${TIMESTAMP_RENDERING_EXEMPT[@]}")
+ts_raw_hits=$(KNOWN_FIELDS="${KNOWN_TIMESTAMP_FIELDS[*]}" TS_EXEMPT_RAW="$ts_exempt_raw" \
+    python3 - "${REPO_ROOT}" <<'PYEOF'
+import os, re, sys
+
+repo_root = sys.argv[1]
+src_root = os.path.join(repo_root, "crates", "frontend", "src")
+fields = os.environ["KNOWN_FIELDS"].split()
+skip_names = ("tests.rs", "security_center.rs")
+arith_ctx = re.compile(r'(\.cmp\(|\bis_some\(|\bis_none\(|/\s*3600|/\s*86400|\s[<>]=?\s)')
+
+exempt = []
+for line in os.environ.get("TS_EXEMPT_RAW", "").splitlines():
+    if not line.strip():
+        continue
+    parts = line.split("\t")
+    if len(parts) >= 2:
+        exempt.append((parts[0], parts[1]))
+
+hits = []
+for dirpath, _, filenames in os.walk(src_root):
+    for fn in filenames:
+        if not fn.endswith(".rs") or fn in skip_names:
+            continue
+        path = os.path.join(dirpath, fn)
+        rel = os.path.relpath(path, repo_root)
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.readlines()
+        for field in fields:
+            pat = re.compile(r'\.' + re.escape(field) + r'\b')
+            for i, line in enumerate(lines):
+                if not pat.search(line):
+                    continue
+                window = "".join(lines[i:i + 4])
+                if "format_unix_as_iso8601" in window:
+                    continue
+                if arith_ctx.search(line.rstrip("\n")):
+                    continue
+                if any(ex_file in rel and field in ex_field for ex_file, ex_field in exempt):
+                    continue
+                hits.append(f"{rel}:{i+1}: .{field}")
+
+print("\n".join(sorted(set(hits))))
+PYEOF
+)
+
+if [[ -n "$ts_raw_hits" ]]; then
+    echo ""
+    echo "timestamp rendering: raw (unformatted) access(es) of a known" \
+         "timestamp field found -- neither wrapped by" \
+         "cesauth_core::util::format_unix_as_iso8601, an arithmetic/" \
+         "comparison read, nor a named TIMESTAMP_RENDERING_EXEMPT entry:"
+    echo ""
+    printf '%b' "$ts_raw_hits" | sort -u | while IFS= read -r line; do [[ -n "$line" ]] && echo "    $line"; done
+    echo ""
+    echo "  Either wrap this call site in" \
+         "cesauth_core::util::format_unix_as_iso8601, or -- if it is" \
+         "genuinely read-only arithmetic or a non-timestamp field that" \
+         "happens to share this name -- add a TIMESTAMP_RENDERING_EXEMPT" \
+         "entry naming why, in the same commit."
+    ts_failed=1
+fi
+
+if [[ "$ts_total_calls" -ne 24 ]] || [[ "$ts_files_count" -ne 15 ]]; then
+    echo ""
+    echo "timestamp rendering: ${ts_total_calls} call(s) across" \
+         "${ts_files_count} file(s), expected exactly 24 calls across 15" \
+         "files -- a conversion reverted, a new raw-epoch render site" \
+         "landed, or a genuinely new conforming site was added since this" \
+         "gate was pinned. Current file list:"
+    echo ""
+    printf '%b' "$ts_files_list" | sort | while IFS= read -r line; do [[ -n "$line" ]] && echo "    $line"; done
+    echo ""
+    echo "  If a site reverted: convert it back and re-run. If a new" \
+         "conforming site was added deliberately: update the pinned 24/15" \
+         "(just above this check in scripts/drift-scan.sh) in the SAME" \
+         "commit, and add a TIMESTAMP_RENDERING_EXEMPT entry instead if the" \
+         "new site is a String/arithmetic-only field that should never have" \
+         "been counted at all."
+    ts_failed=1
+fi
+
+ts_exempt_stale=""
+for entry in "${TIMESTAMP_RENDERING_EXEMPT[@]}"; do
+    IFS=$'\t' read -r ex_file ex_fields _ <<< "$entry"
+    # "various fixtures" (the test-fixtures entry) names no concrete
+    # field -- nothing to re-check live, by design, not a staleness gap.
+    [[ "$ex_fields" == *"various"* ]] && continue
+    found=0
+    IFS=',' read -ra fields <<< "$ex_fields"
+    for raw_field in "${fields[@]}"; do
+        field="$(echo "$raw_field" | sed -E 's/^\s+|\s+$//g; s/^[a-zA-Z_][a-zA-Z0-9_]*\.//')"
+        [[ -z "$field" ]] && continue
+        if grep -q "\.${field}\b" "${REPO_ROOT}/crates/frontend/src/${ex_file}" 2>/dev/null; then
+            found=1
+        fi
+    done
+    if [[ "$found" -eq 0 ]]; then
+        ts_exempt_stale="${ts_exempt_stale}${ex_file}: ${ex_fields}\n"
+    fi
+done
+
+if [[ -n "$ts_exempt_stale" ]]; then
+    echo ""
+    echo "TIMESTAMP_RENDERING_EXEMPT entr(y|ies) whose named field(s) no" \
+         "longer appear in the named file (stale exemption):"
+    printf '%b' "$ts_exempt_stale" | while IFS= read -r line; do [[ -n "$line" ]] && echo "    $line"; done
+    echo ""
+    echo "  The field was renamed, removed, or the file moved -- update or" \
+         "remove this TIMESTAMP_RENDERING_EXEMPT entry rather than leaving a" \
+         "pre-authorised exclusion nobody is reviewing."
+    ts_failed=1
+fi
+
+if [[ "$ts_failed" -eq 1 ]]; then
     exit 1
 fi
 

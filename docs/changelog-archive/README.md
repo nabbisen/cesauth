@@ -20,10 +20,52 @@ budget (~80 KB for CHANGELOG.md, ~40 KB for ROADMAP.md).
 | [`CHANGELOG-0.89-to-0.89.md`](CHANGELOG-0.89-to-0.89.md) | v0.89.0 – v0.89.5 |
 | [`CHANGELOG-0.90-to-0.91.md`](CHANGELOG-0.90-to-0.91.md) | v0.90.0 – v0.91.2 |
 | [`CHANGELOG-0.92-to-0.92.md`](CHANGELOG-0.92-to-0.92.md) | v0.92.0 – v0.92.7 |
+| [`CHANGELOG-0.93-to-0.101.md`](CHANGELOG-0.93-to-0.101.md) | v0.93 – v0.101 |
 
-Current releases (**v0.93.0 and newer**) are in the root
+Current releases (**v0.102.0 and newer**) are in the root
 [`CHANGELOG.md`](../../CHANGELOG.md).
 
+> **2026-11-17, the 0.107.0 cut (RFC 028 slice B)**: 0.93–0.101 archived
+> (nine entries), root 99,916 → **40,081 B**. Reconciled: the moved range
+> diffs byte-identical against commit `b03fc9e`'s `CHANGELOG.md`
+> (`git diff` against the extracted range, empty); the kept entries
+> (0.102–0.106, including the now-last one's own trailing `---`
+> separator, which every entry in this file carries and which this split
+> correctly leaves alone) are **byte-for-byte unchanged**, 36,144 B before
+> and after; the only change inside the root is its own preamble sentence
+> growing by **1 B** (`v0.92.x` → `v0.101.x`, one extra digit). So
+> 99,916 − 40,081 = **59,835 B** removed from root — exactly the 59,836 B
+> that moved out, minus the 1 B the preamble sentence grew by. The
+> archive file totals **60,007 B**: the 59,836 B of
+> moved entries plus **171 B** of this file's own new header/intro text —
+> no `---`-separator discrepancy this time, because none was dropped.
+> Headroom: `81,920 − 40,081` = **41,839 B**, **51%** of the 81,920 B
+> budget, leaving the most recent **five** minors (0.102–0.106) in the
+> root — the same number Requirement 1's now-deleted derivation named,
+> not because the rule still holds but because that is where this cut's
+> own floor landed.
+>
+> **Run by the tool this time, not by hand** — `changelog-archive-split.sh`'s
+> three recorded defects (the README index `sed` silently failing, the
+> duplicated "## Older releases" block, root-relative links breaking two
+> levels down) are fixed in the same commit, and a fourth was found running
+> it on a real split for the first time: the "Current releases (**vX.Y.Z
+> and newer**)" sentence just above was never updated by the original
+> script either — every previous cut fixed it by hand along with the other
+> three and it never got folded back into the tool. All four are fixed now.
+> The link-rewrite path had **zero** instances to exercise in this range
+> (confirmed: the moved entries carry exactly one Markdown link, and it is
+> `https://github.com/verus-lang/verus`, already absolute) — recorded as
+> such rather than claimed as tested.
+>
+> **The predicted moved-bytes figure (59,265 B, from the handoff's own
+> per-minor table) was 571 B low against the measured 59,836 B.** Not
+> investigated further — the diff-confirmed byte-identical check above is
+> the correctness proof this note relies on, not agreement with a
+> pre-measurement taken before the four commits between this cut's actual
+> baseline (`b03fc9e`) and the handoff's stated one (`996cd22`, the
+> `0.106.0` tag itself).
+>
 > **2026-11-10, the 0.95.0 cut**: 0.92 archived (eight entries), root
 > 74,482 → **30,034 B**. Reconciled: 44,448 B out, 44,443 B in, the 5-byte
 > difference being the `---` separator this file replaces with its own header;

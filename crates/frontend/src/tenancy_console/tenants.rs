@@ -37,7 +37,7 @@ fn render_table(rows: &[Tenant]) -> String {
             slug  = escape(&t.slug),
             name  = escape(&t.display_name),
             status_badge = render_status_badge(t.status),
-            created  = t.created_at,
+            created  = cesauth_core::util::format_unix_as_iso8601(t.created_at),
             id_short = escape(&t.id),
         )).collect::<Vec<_>>().join("\n")
     };
@@ -49,7 +49,7 @@ fn render_table(rows: &[Tenant]) -> String {
       <th scope="col">Slug</th>
       <th scope="col">Display name</th>
       <th scope="col">Status</th>
-      <th scope="col">Created (unix)</th>
+      <th scope="col">Created</th>
       <th scope="col">Id</th>
     </tr>
   </thead><tbody>

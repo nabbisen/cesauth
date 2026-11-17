@@ -521,9 +521,11 @@ mod rfc_110 {
 //
 // Every visible timestamp in cesauth goes through
 // `cesauth_core::util::format_unix_as_iso8601`. The pin below asserts
-// the format the canonical formatter produces (UTC `Z` form, RFC 3339).
-// A change in formatter output requires updating the docs at
-// `docs/src/expert/i18n.md` §"Date / time rendering" in the same commit.
+// the format the canonical formatter produces (UTC `Z` form, RFC 3339);
+// `drift-scan.sh`'s timestamp-rendering gate (RFC 111 slice A, T6/T7 in
+// the handoff's own numbering) is what makes the "every visible
+// timestamp" claim itself checked — these four tests only pin the
+// formatter's own output in isolation, not any caller.
 
 mod rfc_111 {
     use cesauth_core::util::format_unix_as_iso8601;
@@ -557,5 +559,63 @@ mod rfc_111 {
         // Defensive: negative inputs (rare but possible from i64 fields)
         // clamp to epoch, not panic.
         assert_eq!(format_unix_as_iso8601(-1), "1970-01-01T00:00:00Z");
+    }
+}
+
+// ─── RFC 111 slice A, T5 — caller assertions ─────────────────────────────
+//
+// The anchor is `1_704_067_200` → `2024-01-01T00:00:00Z`, the same pair
+// `rfc_111` above pins in isolation — reused here so the two modules
+// agree on what "correct" looks like, rather than each inventing its
+// own round number.
+
+mod rfc_111_callers {
+    use super::*;
+    use cesauth_core::admin::types::AdminAuditEntry;
+
+    const ANCHOR_UNIX: i64 = 1_704_067_200;
+    const ANCHOR_ISO:  &str = "2024-01-01T00:00:00Z";
+
+    #[test]
+    fn overview_page_formats_last_audit_event_timestamp() {
+        let mut s = empty_summary(Role::Super);
+        s.last_audit_events.push(AdminAuditEntry {
+            ts:      ANCHOR_UNIX,
+            id:      "evt-1".into(),
+            kind:    "admin_login".into(),
+            subject: None,
+            actor:   None,
+            client:  None,
+            reason:  None,
+            key:     "seq=1".into(),
+        });
+        let out = overview_page(&s);
+        assert!(out.contains(ANCHOR_ISO),
+            "admin overview's recent-audit-events table must render the \
+             canonical formatter's output, got:\n{out}");
+        assert!(!out.contains(&ANCHOR_UNIX.to_string()),
+            "the raw epoch integer must not appear beside its formatted \
+             form, got:\n{out}");
+    }
+
+    #[test]
+    fn overview_page_formats_last_verified_at_timestamp() {
+        let mut s = empty_summary(Role::Super);
+        s.last_verified_buckets.push(BucketSafetyState {
+            bucket:               "AUDIT".into(),
+            public:               false,
+            cors_configured:      true,
+            bucket_lock:          false,
+            lifecycle_configured: true,
+            event_notifications:  false,
+            notes:                None,
+            last_verified_at:     Some(ANCHOR_UNIX),
+            last_verified_by:     Some("alice".into()),
+            updated_at:           ANCHOR_UNIX,
+        });
+        let out = overview_page(&s);
+        assert!(out.contains(ANCHOR_ISO),
+            "admin overview's bucket-verification table must render the \
+             canonical formatter's output for last_verified_at, got:\n{out}");
     }
 }

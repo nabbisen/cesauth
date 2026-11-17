@@ -369,7 +369,7 @@ pub fn ConsoleAudit() -> impl IntoView {
                                     key=|e| e.key.clone()
                                     children=move |e: AuditEntryView| view! {
                                         <tr>
-                                            <td class="num muted">{e.ts}</td>
+                                            <td class="num muted">{cesauth_core::util::format_unix_as_iso8601(e.ts)}</td>
                                             <td class="muted">{e.subject.clone().unwrap_or_else(|| "—".to_owned())}</td>
                                             <td class="muted">{e.actor.clone().unwrap_or_else(|| "—".to_owned())}</td>
                                             <td><code>{e.kind.clone()}</code></td>

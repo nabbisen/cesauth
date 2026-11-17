@@ -89,8 +89,8 @@ fn render_summary(t: &Tenant) -> String {
       <tr><th scope="row">Slug</th>          <td><code>{slug}</code></td></tr>
       <tr><th scope="row">Display name</th>  <td>{name}</td></tr>
       <tr><th scope="row">Status</th>        <td>{status}</td></tr>
-      <tr><th scope="row">Created (unix)</th><td>{created}</td></tr>
-      <tr><th scope="row">Updated (unix)</th><td>{updated}</td></tr>
+      <tr><th scope="row">Created</th><td>{created}</td></tr>
+      <tr><th scope="row">Updated</th><td>{updated}</td></tr>
     </tbody>
   </table>
 </section>"##,
@@ -98,8 +98,8 @@ fn render_summary(t: &Tenant) -> String {
         slug    = escape(&t.slug),
         name    = escape(&t.display_name),
         status  = render_status_badge(t.status),
-        created = t.created_at,
-        updated = t.updated_at,
+        created = cesauth_core::util::format_unix_as_iso8601(t.created_at),
+        updated = cesauth_core::util::format_unix_as_iso8601(t.updated_at),
     )
 }
 
@@ -123,11 +123,17 @@ fn render_subscription(s: Option<&Subscription>, p: Option<&Plan>, tenant_id: &s
             let plan_label = p.map(|x| escape(&x.display_name)).unwrap_or_else(|| "(unknown)".to_owned());
             let plan_slug  = p.map(|x| escape(&x.slug)).unwrap_or_else(|| escape(&s.plan_id));
             let trial_row = match s.trial_ends_at {
-                Some(t) => format!(r#"<tr><th scope="row">Trial ends (unix)</th><td>{t}</td></tr>"#),
+                Some(t) => format!(
+                    r#"<tr><th scope="row">Trial ends</th><td>{}</td></tr>"#,
+                    cesauth_core::util::format_unix_as_iso8601(t),
+                ),
                 None    => String::new(),
             };
             let period_row = match s.current_period_end {
-                Some(t) => format!(r#"<tr><th scope="row">Current period end (unix)</th><td>{t}</td></tr>"#),
+                Some(t) => format!(
+                    r#"<tr><th scope="row">Current period end</th><td>{}</td></tr>"#,
+                    cesauth_core::util::format_unix_as_iso8601(t),
+                ),
                 None    => r#"<tr><th scope="row">Current period end</th><td class="muted">none (evergreen)</td></tr>"#.to_owned(),
             };
             format!(
@@ -138,7 +144,7 @@ fn render_subscription(s: Option<&Subscription>, p: Option<&Plan>, tenant_id: &s
       <tr><th scope="row">Plan</th>      <td>{plan_label} (<code>{plan_slug}</code>)</td></tr>
       <tr><th scope="row">Lifecycle</th> <td><code>{lifecycle}</code></td></tr>
       <tr><th scope="row">Status</th>    <td>{status_badge}</td></tr>
-      <tr><th scope="row">Started (unix)</th><td>{started}</td></tr>
+      <tr><th scope="row">Started</th><td>{started}</td></tr>
       {period_row}
       {trial_row}
     </tbody>
@@ -150,7 +156,7 @@ fn render_subscription(s: Option<&Subscription>, p: Option<&Plan>, tenant_id: &s
                     cesauth_core::billing::types::SubscriptionLifecycle::Paid  => "paid",
                     cesauth_core::billing::types::SubscriptionLifecycle::Grace => "grace",
                 },
-                started = s.started_at,
+                started = cesauth_core::util::format_unix_as_iso8601(s.started_at),
                 history_url = escape(&routes::tenant_subscription_history(tenant_id)),
             )
         }
@@ -226,7 +232,7 @@ fn render_members_with_actions(
                 ra_url    = escape(&routes::user_role_assignments(&m.user_id)),
                 uid_short = escape(&m.user_id),
                 badge     = role_badge,
-                joined    = m.joined_at,
+                joined    = cesauth_core::util::format_unix_as_iso8601(m.joined_at),
                 action_cell = action_cell,
             )
         }).collect::<Vec<_>>().join("\n")
@@ -239,7 +245,7 @@ fn render_members_with_actions(
     <tr>
       <th scope="col">User id</th>
       <th scope="col">Role</th>
-      <th scope="col">Joined (unix)</th>
+      <th scope="col">Joined</th>
       {action_th}
     </tr>
   </thead><tbody>

@@ -85,7 +85,10 @@ fn render_ok(label: &str, t: &CostTrend) -> String {
         None    => String::new(),
     };
     let baseline = match t.previous_taken_at {
-        Some(ts) => format!(r#"<p class="note">Previous baseline taken at unix {ts}.</p>"#),
+        Some(ts) => format!(
+            r#"<p class="note">Previous baseline taken at {}.</p>"#,
+            cesauth_core::util::format_unix_as_iso8601(ts),
+        ),
         None     => r#"<p class="note">First snapshot — trend available from next view onward.</p>"#.to_owned(),
     };
 

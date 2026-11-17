@@ -1,13 +1,19 @@
 # RFC 028: CHANGELOG / ROADMAP volume policy — historical archive split, summary-style maintenance
 
-**Status**: Implemented — **partially, and the gaps are recorded in §Enforcement
-(2026-10-31) and §Enforcement note (2026-11-07) at the end of this file.** Step
-5's CI budget check, which this RFC specifies in full as runnable bash, was
-**never built**, and the archive went un-run for **forty minor versions**.
-**Requirement 1's "~5 minor versions" is a stale derived figure, not a rule** —
-the 2026-11-07 note withdraws the claim that it conflicts with the byte budget,
-and directs deleting it along with Step 1's "50-100 KB" claim. **The ROADMAP
-half (Requirement 3 / Step 3) is 4× over budget and has never been checked.**
+**Status**: Implemented — **the CHANGELOG half closed at the 0.107.0 cut
+(RFC 028 slice B); the ROADMAP half is still open, see §Outstanding.** Step
+5's CI budget check, specified in full as runnable bash and never built
+through five enforcement notes, now exists in `scripts/drift-scan.sh`'s
+changelog-budget section (CHANGELOG.md only — ROADMAP.md is deliberately
+ungated, D2 of the slice B handoff). `scripts/changelog-archive-split.sh`'s
+three recorded defects are fixed and the tool has now been run on a real
+split (0.93–0.101 archived) rather than by hand. **Requirement 1's "~5 minor
+versions" and Step 1's "50-100 KB" figures are deleted**, each with an
+amendment line in place, per the 2026-11-07 note's own direction. **The
+ROADMAP half (Requirement 3 / Step 3) remains untouched and is now 10.3×
+over its own budget** (422,662 B against ~40 KB, measured 2026-11-17 — up
+from the 134 KB the 2026-10-31 enforcement note recorded and the 414,711 B
+the slice B handoff cited).
 **ROADMAP**: Internal repository hygiene — `CHANGELOG.md` (511 KB) and `ROADMAP.md` (211 KB) bloat
 **ADR**: N/A — repository convention; small enough to live inline
 **Severity**: **P2 — both files are large enough to slow editor open, search, and human reading; the recent-history portion most readers want is buried under hundreds of historical lines**
@@ -55,11 +61,19 @@ most, and the root must stay clean.
 
 The fix must:
 
-1. The root `CHANGELOG.md` is reduced to the most
-   recent ~5 minor versions (a number large
-   enough to cover most "what shipped recently"
-   queries, small enough to keep the file under
-   ~80 KB).
+1. The root `CHANGELOG.md` is reduced to fit under its own byte budget
+   (~80 KB). **Amendment, 0.107.0 (RFC 028 slice B)**: the original
+   text of this requirement named *"~5 minor versions"* as the
+   mechanism, parenthetically deriving it *from* the byte budget — "a
+   number large enough to cover most 'what shipped recently' queries,
+   small enough to keep the file under ~80 KB." The 2026-11-07
+   enforcement note below found that derived figure stale (releases
+   per minor rose from ~1 to ~4 while the figure stayed fixed at five)
+   and argued for deleting it; this amendment is that deletion. The
+   rule is the byte budget alone — gated at 0.107.0 in
+   `scripts/drift-scan.sh`'s changelog-budget section — and how many
+   minors that holds is an outcome of entry size and release cadence,
+   not a number this requirement states.
 2. Older entries are preserved verbatim — never
    delete history — but live in a single
    subdirectory that does not pollute the root.
@@ -100,7 +114,14 @@ docs/
 The split-by-minor-version-range pattern keeps
 each archive file in the 50-100 KB range —
 substantial but tractable for both diff review
-and editor open.
+and editor open. **Amendment, 0.107.0**: also a
+stale derived figure, deleted per the
+2026-11-07 enforcement note's §4 direction —
+archive files in practice run 4,301 B to
+274,386 B, not a narrow band. Each file states
+its own actual range and size in the archive
+README's index, which is the thing worth
+trusting instead of a predicted band.
 
 ### Step 2 — Reduce root `CHANGELOG.md`
 
@@ -397,27 +418,36 @@ requires a broken path to stay broken is not what that rule is for.
 
 ### Outstanding
 
-- **The three defects above were fixed in the output, not in the tool**
-  (recorded 2026-10-31). `scripts/changelog-archive-split.sh` is unchanged, so
-  the next run reproduces all three: the invalid README-index `sed` still
-  swallowed by `|| true`, a fifth duplicate `## Older releases`, and
-  root-relative links broken again in whatever block moves next. **Do not run
-  it blind.** Not fixed here because the next CHANGELOG split is five minor
-  versions away and the fix belongs with the budget check RFC 028 §Step 5
-  specified and nobody built — one cycle, not two.
-
-- **The ROADMAP half is not done.** 134 KB against its own 40 KB budget, 61
-  shipped rows inline, archive stopped at v0.52. There is **no script** for it,
-  and the convention is *summary + link* rather than a verbatim move — so each
-  row has to be condensed, which is judgement rather than a shell loop. Not
-  improvised at 134 KB; scoped separately.
-- **The gate specified in §Step 5 still does not exist.** Folded into
-  [RFC 164](../accepted/164-the-link-sweep-rfc-000-mandates-is-unenforced.md)'s
-  cycle, which is already adding a check to `scripts/drift-scan.sh` for the same
-  reason: a documented rule with no enforcement. **Gate the byte budget, not the
-  version count** — bytes are what caused the pain, the constant already exists
-  in both the RFC and the script, and §Background's second complaint ("recent
-  history is buried") is largely answered by reverse-chronological order alone.
+- **Done, 0.107.0 (RFC 028 slice B): the tool's three recorded defects are
+  fixed, not just the output.** The invalid README-index `sed` (replaced
+  with a Python-based insert that fails loudly rather than being
+  swallowed by `|| true`), the duplicated `## Older releases` block
+  (the script now detects and updates an existing one in place), and
+  root-relative links breaking two levels down (rewritten to
+  `../../`-prefixed form on the move; this range had zero such links to
+  exercise the fix against, recorded as such). A fourth defect — the
+  archive README's "Current releases (vX.Y.Z and newer)" sentence was
+  never updated by the original script either — was found running the
+  fixed tool on a real split for the first time and fixed in the same
+  pass.
+- **Done, 0.107.0: the gate specified in §Step 5 exists.**
+  `scripts/drift-scan.sh`'s changelog-budget section fails when
+  `CHANGELOG.md` exceeds 81,920 B (80 KiB, matching the split script's
+  own `wc -c / 1024` definition), naming the split script as the
+  remedy. **Gates the byte budget, not a version count** — bytes are
+  what caused the pain, and §Background's second complaint ("recent
+  history is buried") is answered by reverse-chronological order alone,
+  which this RFC already had.
+- **Still not done: the ROADMAP half.** 422,662 B against its own 40 KB
+  budget (10.3×, measured 2026-11-17 — up from the 134 KB this note
+  recorded in 2026-10-31), 61+ shipped rows inline, archive stopped at
+  v0.52. There is **no script** for it, and the convention is *summary +
+  link* rather than a verbatim move — so each row has to be condensed,
+  which is judgement rather than a shell loop. **Deliberately ungated**
+  (RFC 028 slice B, D2): a gate whose only remedy is unscoped judgement
+  work would be red the day it lands, which is worse than an honest,
+  printed-every-run size line (`scripts/drift-scan.sh`'s "roadmap size"
+  line) with no enforcement behind it yet.
 
 ---
 

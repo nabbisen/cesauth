@@ -115,7 +115,7 @@ fn render_summary(o: &Organization) -> String {
       <tr><th scope="row">Slug</th>        <td><code>{slug}</code></td></tr>
       <tr><th scope="row">Display name</th><td>{name}</td></tr>
       <tr><th scope="row">Status</th>      <td>{status}</td></tr>
-      <tr><th scope="row">Created (unix)</th><td>{created}</td></tr>
+      <tr><th scope="row">Created</th><td>{created}</td></tr>
     </tbody>
   </table>
 </section>"##,
@@ -125,7 +125,7 @@ fn render_summary(o: &Organization) -> String {
         slug      = escape(&o.slug),
         name      = escape(&o.display_name),
         status    = status_badge,
-        created   = o.created_at,
+        created   = cesauth_core::util::format_unix_as_iso8601(o.created_at),
     )
 }
 
@@ -162,7 +162,7 @@ fn render_members_with_actions(
                 ra_url    = escape(&routes::user_role_assignments(&m.user_id)),
                 uid       = escape(&m.user_id),
                 badge     = badge,
-                joined    = m.joined_at,
+                joined    = cesauth_core::util::format_unix_as_iso8601(m.joined_at),
                 action_cell = action_cell,
             )
         }).collect::<Vec<_>>().join("\n")
@@ -175,7 +175,7 @@ fn render_members_with_actions(
     <tr>
       <th scope="col">User id</th>
       <th scope="col">Role</th>
-      <th scope="col">Joined (unix)</th>
+      <th scope="col">Joined</th>
       {action_th}
     </tr>
   </thead><tbody>
@@ -183,4 +183,48 @@ fn render_members_with_actions(
   </tbody></table>
 </section>"##
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cesauth_core::admin::types::Role;
+
+    fn p() -> AdminPrincipal {
+        AdminPrincipal { id: "admin".into(), name: None, role: Role::ReadOnly, user_id: None }
+    }
+
+    fn org() -> Organization {
+        Organization {
+            id: "org-1".into(), tenant_id: "t-acme".into(), slug: "acme-eng".into(),
+            display_name: "Acme Engineering".into(), status: OrganizationStatus::Active,
+            parent_organization_id: None,
+            created_at: 1_704_067_200, updated_at: 1_704_067_200,
+        }
+    }
+
+    /// RFC 111 slice A, T5. Anchor shared with `admin/tests.rs`'s
+    /// `rfc_111`/`rfc_111_callers` modules: `1_704_067_200` →
+    /// `2024-01-01T00:00:00Z`.
+    #[test]
+    fn created_at_renders_through_the_canonical_formatter() {
+        let input = OrganizationDetailInput { organization: &org(), groups: &[], members: &[] };
+        let html = organization_detail_page(&p(), &input);
+        assert!(html.contains("2024-01-01T00:00:00Z"),
+            "created_at must render through format_unix_as_iso8601, got:\n{html}");
+        assert!(!html.contains("1704067200"),
+            "the raw epoch integer must not appear beside its formatted form");
+    }
+
+    #[test]
+    fn joined_at_renders_through_the_canonical_formatter() {
+        let members = vec![OrganizationMembership {
+            organization_id: "org-1".into(), user_id: "u-1".into(),
+            role: OrganizationRole::Member, joined_at: 1_704_067_200,
+        }];
+        let input = OrganizationDetailInput { organization: &org(), groups: &[], members: &members };
+        let html = organization_detail_page(&p(), &input);
+        assert!(html.contains("2024-01-01T00:00:00Z"),
+            "joined_at must render through format_unix_as_iso8601, got:\n{html}");
+    }
 }

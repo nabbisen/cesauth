@@ -78,14 +78,14 @@ fn render_block(title: &str, cls: &str, alerts: &[&Alert]) -> String {
             level  = a.level.label(),
             title  = escape(&a.title),
             detail = escape(&a.detail),
-            ts     = a.raised_at,
+            ts     = cesauth_core::util::format_unix_as_iso8601(a.raised_at),
         )
     }).collect::<Vec<_>>().join("\n");
     format!(
         r##"<section aria-label="{title} alerts">
   <h2>{title}</h2>
   <table><thead>
-    <tr><th scope="col">Level</th><th scope="col">Title</th><th scope="col">Detail</th><th scope="col" class="num">Raised (unix)</th></tr>
+    <tr><th scope="col">Level</th><th scope="col">Title</th><th scope="col">Detail</th><th scope="col" class="num">Raised</th></tr>
   </thead><tbody>
 {rows}
   </tbody></table>
