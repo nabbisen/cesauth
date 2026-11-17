@@ -236,6 +236,34 @@ changelog-budget line prints the live number every run. Clippy 0 errors,
 backend check clean. Catalog unchanged at **314** arms — timestamps are
 locale-independent, so this cut adds no `MessageKey`.
 
+**Bundle, CI to CI**, with the code and the version bump in separate
+commits — which happened naturally this cut, since the implementation
+landed as its own commit before the bump:
+
+| commit | `Cargo.toml` | gzip |
+|---|---|---|
+| `996cd22` (`0.106.0` tag) | `0.106.0` | 906,093 B |
+| `06bf07e` (this cut's code, both slices) | `0.106.0` | 906,090 B |
+| `e7061b3` (`0.107.0` tag) | `0.107.0` | **906,075 B** |
+
+**Code delta at the pinned version: −3 B** — effectively zero, and for a
+reason worth recording: this cut *removes* duplicated formatting rather
+than adding copy. Twenty-three call sites gained a shared function call
+while two whole per-file formatters were deleted, so the two roughly
+cancel. Compare `0.106.0`'s **+1,516 B** for 33 catalog keys and their
+values in two locales: copy costs bytes, conformance does not.
+**Absolute at the tag: 906,075 B, −18 B** against `0.106.0`, **34%** of
+the 2,621,440 B budget. **The version string accounts for −15 B.**
+
+**CI: 14 push workflow runs, all `success`, and 16 check runs — the
+sixteenth being `Security audit`, exactly the composition `0.106.0`'s
+entry predicted.** No scheduled workflow fired on this tip, so this cut
+is the clean case that correction described: 15 check runs from 14
+workflows (`worker-build.yml` emits two jobs), plus the extra check run
+`rustsec/audit-check` creates through the Checks API, which is not any
+workflow's job. The wait condition remains a stable count with nothing
+pending and no failures.
+
 ---
 
 ## [0.106.0] - 2026-11-17
