@@ -16,9 +16,16 @@ changes will always be called out here.
 
 **v0.92.x and earlier are in [`docs/changelog-archive/`](docs/changelog-archive/README.md)**,
 split by minor range and never edited after creation. This file holds
-**0.93 and later**, 45 KB of the ~80 KB budget RFC 028 set — the 0.92 split at
-the 0.95.0 cut took it from 74,482 B to 30,034 B, split to a floor rather than to
-just under the ceiling.
+**0.93 and later** — the 0.92 split at the 0.95.0 cut took it from 74,482 B to
+30,034 B, split to a floor rather than to just under the ceiling.
+
+**At this cut it is over RFC 028's ~80 KB budget by about a fifth** — ~97 KB
+against ~80 KB — and the *"45 KB of the ~80 KB budget"* this paragraph used to
+claim went stale as the entries accumulated. Stated rather than quietly re-estimated,
+because the budget is the one half of RFC 028's rule that was never derived
+from anything else. **The next split is a cut of its own**, not a line in a
+release commit: it moves a minor range into `docs/changelog-archive/`, and the
+note below says what to delete from RFC 028 at the same time.
 
 **Correction, 2026-11-07, at the 0.92.6 cut: there was never a conflict between
 two rules, and the previous note here was wrong twice.** It said RFC 028's
@@ -58,6 +65,158 @@ derived "~5 minor versions" figure, and build the gate Step 5 already specified.
 **That note's §4 also records that RFC 028's diagnosis of `ROADMAP.md` is
 wrong** — `## Planned (0.x)` is 93.3% of that file while `## Shipped`, the
 section Step 3 says to archive, is 3.3%.
+
+---
+
+## [0.106.0] - 2026-11-17
+
+**Minor** — the OIDC client manager answers `Accept-Language`, which makes
+**thirteen of thirteen** shell-rendering operator screens negotiate, and a
+new gate holds them there. RFC 185 §5.3 screen 5, one copy gate and two
+implementation rounds, all reviewed.
+
+### Added — the thirteenth screen, and the heaviest copy slice in the programme
+
+`/admin/console/clients` resolves its locale per request and renders from
+the catalog: **33 new `MessageKey`s** and **8 existing keys reused**,
+taking the catalog from **281 to 314** arms. Driven over real HTTP: three
+requests under `wrangler dev --local` — `en`, `ja`, no header — all `200`,
+`<html lang="en">` with *"OIDC clients — cesauth"* and twice
+`<html lang="ja">` with *"OIDC クライアント — cesauth"*.
+
+**This screen is the one whose code shape had to change**, because three of
+its strings could not be keyed as they stood:
+
+- **A sentence wrapped around interpolated markup.** The delete and
+  reissue confirmations were a Japanese prefix, a bold client name, and a
+  Japanese suffix — two halves that are only a sentence in Japanese word
+  order. Each is now one key with a `{name}` placeholder, split on the
+  placeholder at render time so the name stays bold. The split uses
+  `expect`, not a silent fallback: a delete confirmation that quietly drops
+  the client's name is worse than a panic, and the new test below makes the
+  panic unreachable.
+- **A noun slot with an interpolated verb.** The secret-reveal heading was
+  `format!("クライアント「{}」の{}", label, verb)` where `verb` was
+  `"再発行"` or `"作成"`. No English frame takes those two nouns in that
+  slot, so the struct field became the key — `Revealed.heading:
+  MessageKey` — and each call site now carries a whole heading.
+- **Three one-time-secret warnings in fragments**, each collapsed into a
+  single looked-up sentence.
+
+**Both one-time-secret warnings now say the whole consequence, in both
+places and in both locales.** An operator who reads the confirmation and
+an operator who reads the panel after the fact need the same four facts —
+the old secret dies immediately, every integration using it stops
+authenticating, the new one is shown once, copy it now — and neither
+sentence hedges *"cannot be shown again"*.
+
+### Added — a gate that keeps thirteen screens negotiating
+
+`drift-scan.sh` gained a section that enumerates every file under
+`routes/admin/{console,tenancy_console}/` calling a shell helper and
+requires each to contain `resolve_locale`, pinning the population at
+**13**. It fails in both directions: if the scanned count moves off 13 (a
+route started or stopped rendering a shell) or if any of the 13 stops
+negotiating. Review broke it three ways on a copy of both directories — a
+converted route losing `resolve_locale`, a well-behaved fourteenth
+shell-rendering file, and a route ceasing to render a shell — and it
+caught all three. Twelve routes earned a negotiated locale across five
+slices with nothing stopping any of them from regressing; that is now
+closed.
+
+**The gate's population is those two directories, which is §5.3's scope
+and not the whole tree.** Repo-wide, 22 files call one of the two shell
+helpers; six non-definers outside the scanned roots do not negotiate. The
+roots widen when the next family converts.
+
+### Added — one test the rest of the suite cannot make
+
+Four tests assert that each `{name}`-bearing key contains the placeholder
+**exactly once in both locales**. Nothing else checks this: the duplicate
+test compares whole values without looking inside them, and the literal
+ceiling only counts strings outside the catalog. A translator edit that
+drops the placeholder would silently drop the client's name; one that
+doubles it would leave `{name}` sitting in rendered prose.
+
+### Changed — four copy decisions, each visible
+
+- **A column header that hides its unit now states it.** `作成日時 (UTC)` /
+  *"Created (UTC)"*: the cell is built from `OffsetDateTime::from_unix_timestamp`,
+  which is UTC, and keying the header as *"Created"* would have cemented the
+  omission. Screen 1 reverted exactly this when a CSR rewrite turned
+  `時刻 (UTC)` into `時刻`.
+- **Both secret-reveal headings name the secret in Japanese too.** The
+  proposed Japanese said *client X's reissue* while the panel was showing a
+  **secret**, and the English already said *"Secret reissued for X"* — two
+  locales telling an operator different things on a credential screen.
+- **A dialog's button answers the dialog's question.** *"Yes, delete"* and
+  *"Yes, reissue"*, not a second *"Delete"* / *"Reissue secret"*: Japanese
+  distinguished the table's button from the dialog's by noun-versus-verb
+  form (`削除` / `削除する`), and English does not get that distinction for
+  free.
+- **A warning's leading space moved into the markup.** Whitespace inside a
+  catalog value is invisible to review, invisible to the duplicate check,
+  and the first thing a translation tool trims.
+
+OIDC wire values stay untranslated and are now named as such:
+`confidential`, `public`, `client_secret_basic`, `client_secret_post` go
+back to the API verbatim — the carve-out the cron identifiers already have.
+The file's literal ceiling went **60 → 2**, the two being the second pair
+above.
+
+### Fixed — one column header that five keyed siblings outvoted
+
+`<th scope="col">"ID"</th>` was a hardcoded literal while the other five
+headers in the same `<thead>` went through `lookup`. It is now
+`ClientsColId` (`ID` in both locales), because a hardcoded literal cannot
+be translated by a locale this catalog has not met yet, and an equal value
+today is a translation rather than an omission. Found by instrumenting the
+ceiling matcher to print its hits instead of counting them: the row said 3
+and the slice's report explained all three as wire values, which two of
+them were.
+
+### Not closed: §5.3, and the sign-in page
+
+RFC 185 §5.3 is the CSR surface converted per screen. **What closed is
+slice 3's thirteen shell-rendering operator screens.** Measured from the
+ceiling table at this cut, **65 files still carry 956 counted literals**:
+789 across the 44 server-rendered files under `admin/`,
+`tenancy_console/` and `tenant_admin/`; 22 across seven dormant RFC 180
+chrome components mounted by no page; 1 in `templates/chrome.rs`; 8
+declared carve-outs under `pages/operator/`; and **136 across ten live,
+routed CSR pages that no slice plan covers** — `security_center.rs` 31,
+`sessions.rs` 18, `totp.rs` 17, `pages/tenant_admin/*` 62, and
+`login.rs` **8**. Thirteen operator screens negotiate and **the sign-in
+page does not**. Recorded here rather than discovered later, because three
+earlier done-claims in this project had to be retracted against the tree.
+
+### Security answer
+
+The diff touches `crates/backend/src/routes/admin/`, which the release
+rubric's path list names, so the question fires. **No new
+security-relevant surface**, and this is what was checked: the one backend
+line changed hands `resolve_locale(&req)` to a shell helper whose
+`resolve_admin` gate is untouched and still runs first; no route, query
+parameter or payload moved (197 routes, 0 added, 0 removed);
+`crates/backend/src/i18n.rs` is untouched, so `Accept-Language` is parsed
+by the same code in use since `0.99.0`; and this screen's JSON `fetch()`
+mutations and their `X-CSRF-Token` header predate this cut and were not
+touched. Named explicitly because the screen handles a credential: the
+plaintext secret still renders into its own `readonly` field, and the two
+new heading keys interpolate the client **label** only — `{name}` is
+substituted from `client_label`, never from the secret — with the new
+placeholder tests pinning that each heading carries exactly one
+substitution point in each locale.
+
+### Gates
+
+Host tests **1,732 / 0 / 4 across 12 `test result:` lines** — **+4**, the
+four placeholder tests. Migration chain **39**. Route surface **197, 0
+added, 0 removed**, all seven coverage figures unchanged. `drift-scan`
+clean, i18n ceiling **103 scanned / 65 hit / 69 entries, 0 violations**,
+plus the new negotiation line at **13 scanned / 13 negotiating**. Clippy 0
+errors, `cargo deny` ok in all four sections, wasm32 backend check clean.
+Catalog **281 → 314** arms.
 
 ---
 
