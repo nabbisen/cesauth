@@ -162,10 +162,12 @@ the fact that a later walk came back clean and was refused.
 
 ### F-7: chain verification does not cover the indexed columns the console displays
 
-**Severity**: Medium · **Disposition: open — RFC written 2026-11-17,
-`rfcs/proposed/188-the-chain-vouches-for-the-payload-the-console-shows-the-columns.md`,
-awaiting the owner's acceptance. Nothing is built, so the finding stands as
-written below.**
+**Severity**: Medium · **Disposition: open — RFC accepted by the owner
+2026-11-17,
+`rfcs/accepted/188-the-chain-vouches-for-the-payload-the-console-shows-the-columns.md`.
+Queued for `0.108.0`'s scoping (`0.107.0` is in flight). Nothing is built, so
+the finding stands exactly as written below and this entry does not claim a
+fix.**
 **Surface**: `crates/core/src/audit/verifier.rs:409-431`, `migrations/0008_audit_chain.sql`
 
 `verify_chain` checks three things: `payload_hash` against the stored

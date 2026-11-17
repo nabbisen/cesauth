@@ -1,8 +1,11 @@
 # RFC 188 — The chain vouches for the payload; the console shows the columns
 
-**Status**: **Proposed**, 2026-11-17. Needs the owner's acceptance before
-anything is built. Nothing here is implemented and nothing is reversible-by-
-default: the proposal adds a check, not a schema.
+**Status**: **Accepted** by the owner, 2026-11-17. **Not yet dispatched** —
+`0.107.0` is in flight (RFC 111's formatter conformance and RFC 028's CHANGELOG
+budget), and this project does not dispatch the next release while a cut is
+pending. §6's three open questions are **resolved by that acceptance to the
+recommendations each carried**, recorded in §6 itself; all three are still
+reversible, because nothing is built.
 **Tier**: P1 · **Size**: Small (Phase 1), Medium (Phase 2)
 **Severity of the finding it closes**: Medium — `docs/src/expert/security-review-2026-q4.md` **F-7**
 **Found**: 2026-11-13, by the test RFC 187's handoff required as proof of the
@@ -231,7 +234,21 @@ changes where the values come from, not the surface contract.
   The mirror struct and the parse belong in core; nothing here may reach
   for D1 or KV types.
 
-## 6. Open questions for the owner
+## 6. Open questions — resolved by the owner's acceptance, 2026-11-17
+
+**The acceptance carried no separate answers, so each question is resolved
+to the recommendation it already stated.** They are written out below as
+decisions rather than left as questions, so a disagreement is visible
+against a position rather than an absence — and nothing here is built, so
+each remains reversible at the scoping of the cut that implements it.
+
+- **Resolved (1): Phase 1 ships alone, first.**
+- **Resolved (2): count in Phase 1; mark a divergent row in the viewer only
+  if Phase 2 lands.**
+- **Resolved (3): a divergence needs acknowledgement, on RFC 184's slot
+  discipline.**
+
+The reasoning for each is below, unchanged from the proposal.
 
 1. **Phases together or apart?** Phase 1 is a small cut (one walk, two
    result fields, a console line, a gate). Phase 2 changes what three
@@ -250,9 +267,19 @@ changes where the values come from, not the surface contract.
    recommendation: **yes, the same slot discipline** — a finding that
    clears itself on the next run is a finding nobody had to answer for.
 
-## 7. Acceptance
+## 7. Acceptance — granted 2026-11-17
 
-Accepting this RFC means accepting §3's nine decisions and the phase
-split in §6.1 — not scheduling it. The release it lands in, and the slice
-boundaries, stay the architect's to scope and the owner's to authorize.
-Nothing in §3 is built; the finding stays recorded as F-7 until it is.
+The owner accepted §3's nine decisions and the phase split, which is the
+**shape**, not the schedule. The release this lands in and the slice
+boundaries stay the architect's to scope and the owner's to authorize, and
+nothing in §3 is built — so **F-7 stays open in
+`docs/src/expert/security-review-2026-q4.md` until the code exists**, with
+its disposition naming this RFC rather than claiming a fix.
+
+**Scheduling note.** `0.107.0` is in flight, so this is queued for the
+`0.108.0` scoping, where Phase 1's slice boundaries get drawn: the walk's
+comparison, the two result fields, the console's three-state line with its
+`Ja`/`En` keys, the cross-crate pin test, the pre-`0015`/pre-`0021` corpus
+fixtures, and the gate. The acknowledgement half (§6's third resolution)
+rides Phase 1, because a finding that clears itself on the next run is a
+finding nobody had to answer for.
