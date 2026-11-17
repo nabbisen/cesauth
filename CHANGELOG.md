@@ -19,7 +19,7 @@ split by minor range and never edited after creation. This file holds
 **0.93 and later** — the 0.92 split at the 0.95.0 cut took it from 74,482 B to
 30,034 B, split to a floor rather than to just under the ceiling.
 
-**At this cut it is over RFC 028's ~80 KB budget by about a fifth** — ~97 KB
+**At this cut it is over RFC 028's ~80 KB budget by a quarter** — ~100 KB
 against ~80 KB — and the *"45 KB of the ~80 KB budget"* this paragraph used to
 claim went stale as the entries accumulated. Stated rather than quietly re-estimated,
 because the budget is the one half of RFC 028's rule that was never derived
@@ -217,6 +217,56 @@ clean, i18n ceiling **103 scanned / 65 hit / 69 entries, 0 violations**,
 plus the new negotiation line at **13 scanned / 13 negotiating**. Clippy 0
 errors, `cargo deny` ok in all four sections, wasm32 backend check clean.
 Catalog **281 → 314** arms.
+
+**Bundle, CI to CI**, with the code and the version bump in separate
+commits as the rule requires:
+
+| commit | `Cargo.toml` | gzip |
+|---|---|---|
+| `1c242b7` (`0.105.0` tag) | `0.105.0` | 904,367 B |
+| `c55ba60` (this cut's code, round 2) | `0.105.0` | 905,883 B |
+| `996cd22` (`0.106.0` tag) | `0.106.0` | **906,093 B** |
+
+**Code delta at the pinned version: +1,516 B** — the programme's largest
+copy slice, 33 keys and their values in two locales. **Absolute at the tag:
+906,093 B, +1,726 B** over `0.105.0`, **34%** of the 2,621,440 B budget.
+**The version string accounts for +210 B** — and it is *up* this time,
+against −104 B at `0.105.0`, −144 B at `0.104.0` and −829 B at `0.101.0`,
+which is a reminder that the version-string effect is an artifact of
+compression neighbourhoods rather than a trend.
+
+**A local sum agreed with CI to 3 B this time** (905,880 B against
+905,883 B on `c55ba60`), where this programme's history had 31–293 B of
+disagreement. It changes nothing about the rule — CI is the authority and
+the local figure is declared not comparable — but the spread is worth
+recording in both directions.
+
+**This release's check-run total was 16, and the composition is not what
+`0.105.0`'s note implied.** That note explained its own 16 as 15 plus a
+scheduled workflow firing on the same tip, which was true there — a
+`deny.yml` `schedule:` run. It is not the general rule. Measured across
+seven recent commits:
+
+- **14 push workflow runs** on every push to `main`, all `success`. This
+  is the only stable number, and it is the one the release-gate manifest
+  pins.
+- **15 check runs** as the base, because `worker-build.yml` emits two jobs
+  (`worker-build`, `runtime-smoke`).
+- **A sixteenth, named *"Security audit"*, appears on some commits and not
+  others** — present on `c55ba60`, `5b3df94` and this release commit,
+  absent on `d129545`, `38e736d`, `5483791` and `1c242b7`. It is not a job
+  of any workflow: `audit.yml` declares one job, named `cargo audit`, and
+  `rustsec/audit-check@v2.0.0` holds `checks: write` and creates a check
+  run of its own through the Checks API, which GitHub attaches to whichever
+  check suite is at hand (here, `docs.yml`'s — whose file declares exactly
+  one job, `mdbook`).
+- **Plus any workflow whose own `schedule:` fires on that tip**, which is
+  how `5483791` reached 17.
+
+So the condition to wait on is what it already was — a **stable** count
+with nothing pending and no failures — but the reason is broader than one
+scheduled workflow, and a release whose check-run total differs from the
+last one's by one is not evidence of anything on its own.
 
 ---
 
