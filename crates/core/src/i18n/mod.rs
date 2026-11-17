@@ -622,6 +622,81 @@ pub enum MessageKey {
     /// names itself in its own `<h1>`, so this only has to say the status.
     ConsoleNotImplementedNote,
 
+    // ---- RFC 185 §5.3 screen 5: the OIDC client manager
+    // (`ConsoleClients`/`ClientRow`/`SecretReveal`/`CreateClientForm`,
+    // `/admin/console/clients`). G1 reviewed and ruled
+    // (`.git-exclude/reviewed/185-slice3-screen5-g1-decision.md`): the
+    // created-at column names its unit (R1 — RFC 111's own UTC-disclosure
+    // policy, applied here the same way screen 1 applied it); the two
+    // secret-reveal headings name the secret in both locales, not just
+    // English (R3); the delete/reissue sentences keep the client name bold
+    // via `split_once("{name}")` (S1); the reissue/create headings have no
+    // such split — the source `<h2>` never bolded the name (S2); each
+    // three-fragment warning collapses to one key (S3). The two
+    // one-time-secret warnings land exactly as proposed, word for word. ----
+    ClientsManagementAriaLabel,
+    ClientsDeleteConfirmAriaLabel,
+    /// `{name}` substituted via `split_once` so the client name stays
+    /// bold in the rendered confirm panel (S1) — see `T6` for the test
+    /// asserting the placeholder appears exactly once in both locales.
+    ClientsDeleteConfirmBody,
+    ClientsRowRotateButton,
+    ClientsRowDeleteButton,
+    /// **Not `"Delete"` again** — G1 Q2: the dialog's button answers the
+    /// dialog's own question rather than restating the table's label,
+    /// which is what keeps the pair distinguishable once English loses
+    /// Japanese's noun/verb-form distinction (`削除`/`削除する`).
+    ClientsDeleteConfirmButton,
+    ClientsRotateConfirmAriaLabel,
+    ClientsRotateConfirmBody,
+    ClientsRotateConfirmWarning,
+    /// **Not `"Reissue secret"` again** — same reasoning as
+    /// `ClientsDeleteConfirmButton`.
+    ClientsRotateConfirmButton,
+    ClientsShowCreateFormButton,
+    ClientsEmptyState,
+    ClientsColName,
+    ClientsColType,
+    ClientsColRedirectUri,
+    /// **`(UTC)` is load-bearing, not decoration** — G1 R1:
+    /// `format_created_at` builds the cell from
+    /// `OffsetDateTime::from_unix_timestamp`, which is UTC, and keying
+    /// this column without the unit would cement a header that hides it.
+    /// Screen 1 reverted the identical omission (`時刻 (UTC)` → `時刻`) on
+    /// RFC 111's own grounds; same policy, four screens apart.
+    ClientsColCreatedAt,
+    ClientsReloadButton,
+    /// `{name}` via plain `.replace`, no bold-split — the source `<h2>`
+    /// never wrapped the name in `<strong>` (S2), so there is no emphasis
+    /// to preserve. **Names the secret in both locales** (R3): the
+    /// Japanese said only "client X's reissue"; the panel is showing a
+    /// secret, and the English already said so.
+    ClientsSecretRevealHeadingRotate,
+    ClientsSecretRevealHeadingCreate,
+    ClientsSecretWarningHeading,
+    /// **No leading space in the value** — R2: the separator between this
+    /// and `ClientsSecretWarningHeading`'s `</strong>` is an explicit `" "`
+    /// text node in the markup, not whitespace baked into the catalog
+    /// value, which `no_two_keys_share_text_within_a_locale` cannot see
+    /// and a translation tool trims on sight (the lesson screen 3's own
+    /// `TenancyOverviewTenantCountLabel` cost a round over).
+    ClientsSecretWarningBody,
+    ClientsSecretFieldLabel,
+    ClientsSecretDismissButton,
+    ClientsCreateFormHeading,
+    ClientsCreateIdLabel,
+    ClientsCreateConfidentialWarning,
+    ClientsCreateTokenAuthLabel,
+    ClientsCreateRedirectUrisLabel,
+    ClientsCreateScopesLabel,
+    ClientsCreateSubmitBusy,
+    ClientsCreateSubmitButton,
+    /// A different condition from `FetchFailed`/`GenericErrorOccurred`/
+    /// `ConsoleStatusCheckFailed` — the request succeeded and the body
+    /// didn't parse — in the same `"Failed to …"` register as all three
+    /// (G1 Q3).
+    ClientsResponseParseFailed,
+
     // ---- RFC 180 (R2b): dormant CSR component chrome imported from the
     // mockup at df3d9d0 -- operator/tenant-admin shells, role-impact
     // preview, permission-denied/suspended notices, sign-in volume
@@ -2200,6 +2275,135 @@ fn lookup_audit_chain(key: &MessageKey, locale: Locale) -> Option<&'static str> 
         ConsoleNotImplementedNote => match locale {
             Locale::Ja => "この画面はまだ実装されていません(RFC 161)。",
             Locale::En => "This screen is not yet implemented (RFC 161).",
+        },
+
+        ClientsManagementAriaLabel => match locale {
+            Locale::Ja => "OIDC クライアント管理",
+            Locale::En => "OIDC client management",
+        },
+        ClientsDeleteConfirmAriaLabel => match locale {
+            Locale::Ja => "削除の確認",
+            Locale::En => "Confirm delete",
+        },
+        ClientsDeleteConfirmBody => match locale {
+            Locale::Ja => "クライアント {name} を削除します。この操作は元に戻せません。",
+            Locale::En => "This deletes the client {name}. This action cannot be undone.",
+        },
+        ClientsRowRotateButton => match locale {
+            Locale::Ja => "シークレット再発行",
+            Locale::En => "Reissue secret",
+        },
+        ClientsRowDeleteButton => match locale {
+            Locale::Ja => "削除",
+            Locale::En => "Delete",
+        },
+        ClientsDeleteConfirmButton => match locale {
+            Locale::Ja => "削除する",
+            Locale::En => "Yes, delete",
+        },
+        ClientsRotateConfirmAriaLabel => match locale {
+            Locale::Ja => "シークレット再発行の確認",
+            Locale::En => "Confirm secret reissue",
+        },
+        ClientsRotateConfirmBody => match locale {
+            Locale::Ja => "クライアント {name} のシークレットを再発行します。",
+            Locale::En => "This reissues the secret for the client {name}.",
+        },
+        ClientsRotateConfirmWarning => match locale {
+            Locale::Ja => "現在のシークレットは直ちに無効になり、このクライアントを使っているすべての連携先が認証できなくなります。新しいシークレットは次の画面で一度だけ表示されます — その場で必ずコピーしてください。後から再度表示することはできません。",
+            Locale::En => "The current secret is invalidated immediately, and every integration using this client will be unable to authenticate. The new secret is shown only once, on the next screen — be sure to copy it then. It cannot be shown again afterward.",
+        },
+        ClientsRotateConfirmButton => match locale {
+            Locale::Ja => "再発行する",
+            Locale::En => "Yes, reissue",
+        },
+        ClientsShowCreateFormButton => match locale {
+            Locale::Ja => "+ 新しいクライアントを登録",
+            Locale::En => "+ Register a new client",
+        },
+        ClientsEmptyState => match locale {
+            Locale::Ja => "登録されたクライアントはありません。",
+            Locale::En => "No clients are registered.",
+        },
+        ClientsColName => match locale {
+            Locale::Ja => "名前",
+            Locale::En => "Name",
+        },
+        ClientsColType => match locale {
+            Locale::Ja => "種別",
+            Locale::En => "Type",
+        },
+        ClientsColRedirectUri => match locale {
+            Locale::Ja => "リダイレクトURI",
+            Locale::En => "Redirect URI",
+        },
+        ClientsColCreatedAt => match locale {
+            Locale::Ja => "作成日時 (UTC)",
+            Locale::En => "Created (UTC)",
+        },
+        ClientsReloadButton => match locale {
+            Locale::Ja => "再読み込み",
+            Locale::En => "Reload",
+        },
+        ClientsSecretRevealHeadingRotate => match locale {
+            Locale::Ja => "クライアント「{name}」のシークレットを再発行しました",
+            Locale::En => "Secret reissued for {name}",
+        },
+        ClientsSecretRevealHeadingCreate => match locale {
+            Locale::Ja => "クライアント「{name}」のシークレットを発行しました",
+            Locale::En => "New secret created for {name}",
+        },
+        ClientsSecretWarningHeading => match locale {
+            Locale::Ja => "このシークレットは今だけ表示されます。",
+            Locale::En => "This secret is shown only this once.",
+        },
+        ClientsSecretWarningBody => match locale {
+            Locale::Ja => "このページを離れると二度と表示できません。今すぐ下の値をコピーしてください。",
+            Locale::En => "Leave this page and it cannot be shown again. Copy the value below right now.",
+        },
+        ClientsSecretFieldLabel => match locale {
+            Locale::Ja => "クライアントシークレット(クリックで選択)",
+            Locale::En => "Client secret (click to select)",
+        },
+        ClientsSecretDismissButton => match locale {
+            Locale::Ja => "コピーしました — 閉じる",
+            Locale::En => "Copied — close",
+        },
+        ClientsCreateFormHeading => match locale {
+            Locale::Ja => "新しいクライアントを登録",
+            Locale::En => "Register a new client",
+        },
+        ClientsCreateIdLabel => match locale {
+            Locale::Ja => "クライアントID",
+            Locale::En => "Client ID",
+        },
+        ClientsCreateConfidentialWarning => match locale {
+            Locale::Ja => "機密クライアント(confidential)を作成すると、シークレットが発行されます。シークレットは作成後に一度だけ表示されます — その場で必ずコピーしてください。後から再度表示することはできません(再発行は可能です)。",
+            Locale::En => "Creating a confidential client issues a secret. The secret is shown only once, right after creation — be sure to copy it then. It cannot be shown again afterward (though it can be reissued).",
+        },
+        ClientsCreateTokenAuthLabel => match locale {
+            Locale::Ja => "トークン認証方式",
+            Locale::En => "Token auth method",
+        },
+        ClientsCreateRedirectUrisLabel => match locale {
+            Locale::Ja => "リダイレクトURI(1行に1つ)",
+            Locale::En => "Redirect URIs (one per line)",
+        },
+        ClientsCreateScopesLabel => match locale {
+            Locale::Ja => "許可スコープ(空白区切り)",
+            Locale::En => "Allowed scopes (space-separated)",
+        },
+        ClientsCreateSubmitBusy => match locale {
+            Locale::Ja => "登録中…",
+            Locale::En => "Registering…",
+        },
+        ClientsCreateSubmitButton => match locale {
+            Locale::Ja => "登録する",
+            Locale::En => "Register",
+        },
+        ClientsResponseParseFailed => match locale {
+            Locale::Ja => "応答の解析に失敗しました。",
+            Locale::En => "Failed to parse the response.",
         },
 
         _ => return None,

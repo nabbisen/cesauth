@@ -166,7 +166,18 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         ConsoleAlertsPageTitle | ConsoleSafetyPageTitle |
         ConsoleOverviewHeading | ConsoleSafetyHeading | ConsoleStatusOk |
         ConsoleStatusCheckFailed | ConsoleOperationsCronNote | ConsoleTokensIssueLink |
-        ConsoleTokensDisableNote | GenericErrorOccurred | ConsoleNotImplementedNote
+        ConsoleTokensDisableNote | GenericErrorOccurred | ConsoleNotImplementedNote |
+        ClientsManagementAriaLabel | ClientsDeleteConfirmAriaLabel | ClientsDeleteConfirmBody |
+        ClientsRowRotateButton | ClientsRowDeleteButton | ClientsDeleteConfirmButton |
+        ClientsRotateConfirmAriaLabel | ClientsRotateConfirmBody | ClientsRotateConfirmWarning |
+        ClientsRotateConfirmButton | ClientsShowCreateFormButton | ClientsEmptyState |
+        ClientsColName | ClientsColType | ClientsColRedirectUri | ClientsColCreatedAt |
+        ClientsReloadButton | ClientsSecretRevealHeadingRotate | ClientsSecretRevealHeadingCreate |
+        ClientsSecretWarningHeading | ClientsSecretWarningBody | ClientsSecretFieldLabel |
+        ClientsSecretDismissButton | ClientsCreateFormHeading | ClientsCreateIdLabel |
+        ClientsCreateConfidentialWarning | ClientsCreateTokenAuthLabel |
+        ClientsCreateRedirectUrisLabel | ClientsCreateScopesLabel | ClientsCreateSubmitBusy |
+        ClientsCreateSubmitButton | ClientsResponseParseFailed
             => {}  // exhaustiveness pin — body is irrelevant
     }
     // Now actually iterate. The list below mirrors the match
@@ -301,6 +312,17 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         ConsoleOverviewHeading, ConsoleSafetyHeading, ConsoleStatusOk,
         ConsoleStatusCheckFailed, ConsoleOperationsCronNote, ConsoleTokensIssueLink,
         ConsoleTokensDisableNote, GenericErrorOccurred, ConsoleNotImplementedNote,
+        ClientsManagementAriaLabel, ClientsDeleteConfirmAriaLabel, ClientsDeleteConfirmBody,
+        ClientsRowRotateButton, ClientsRowDeleteButton, ClientsDeleteConfirmButton,
+        ClientsRotateConfirmAriaLabel, ClientsRotateConfirmBody, ClientsRotateConfirmWarning,
+        ClientsRotateConfirmButton, ClientsShowCreateFormButton, ClientsEmptyState,
+        ClientsColName, ClientsColType, ClientsColRedirectUri, ClientsColCreatedAt,
+        ClientsReloadButton, ClientsSecretRevealHeadingRotate, ClientsSecretRevealHeadingCreate,
+        ClientsSecretWarningHeading, ClientsSecretWarningBody, ClientsSecretFieldLabel,
+        ClientsSecretDismissButton, ClientsCreateFormHeading, ClientsCreateIdLabel,
+        ClientsCreateConfidentialWarning, ClientsCreateTokenAuthLabel,
+        ClientsCreateRedirectUrisLabel, ClientsCreateScopesLabel, ClientsCreateSubmitBusy,
+        ClientsCreateSubmitButton, ClientsResponseParseFailed,
     ];
     for k in all { f(k); }
 }

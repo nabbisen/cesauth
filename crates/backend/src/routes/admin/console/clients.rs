@@ -92,8 +92,9 @@ fn op_error_response(e: ClientOpError) -> Result<Response> {
 // -------------------------------------------------------------------------
 
 pub async fn list<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
+    let locale = crate::i18n::resolve_locale(&req);
     crate::routes::admin::operator_json_api::shell(
-        &req, &ctx, cesauth_core::i18n::MessageKey::OidcClientsTitle, cesauth_core::i18n::Locale::Ja,
+        &req, &ctx, cesauth_core::i18n::MessageKey::OidcClientsTitle, locale,
     ).await
 }
 

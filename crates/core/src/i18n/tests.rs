@@ -61,3 +61,4 @@ mod lookup_completeness;
 mod accept_language;
 mod plural;
 mod screen3_titles;
+mod screen5_placeholders;

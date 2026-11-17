@@ -1,6 +1,5 @@
-//! OIDC クライアント管理コンソール (`/admin/console/clients`) — RFC 141 cycle 2.
-//!
-//! ADR-013 準拠: 日本語のみ。ロケールネゴシエーションなし。
+//! OIDC client manager console (`/admin/console/clients`) — RFC 141
+//! cycle 2, converted to a negotiated locale by RFC 185 §5.3 screen 5.
 //!
 //! The backend has been complete since v0.85.0; this is a screen on top of
 //! it — list, create, update, rotate-secret, delete, all against JSON
@@ -22,6 +21,9 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
+use cesauth_core::i18n::{lookup, Locale, MessageKey};
+
+use crate::app::mounted_locale;
 
 // ─── Data shapes ────────────────────────────────────────────────────────────
 
@@ -65,13 +67,17 @@ enum PendingConfirm {
     Rotate { id: String, name: String },
 }
 
-/// What [`SecretReveal`] is showing. `verb` distinguishes the two call
-/// sites in copy only ("作成" vs "再発行").
+/// What [`SecretReveal`] is showing. `heading` names which of the two
+/// call sites produced it (RFC 185 §5.3 screen 5, S2) — the two Japanese
+/// originals were a single interpolated word distinguishing "created"
+/// from "reissued", and English has no frame that takes either word in
+/// the same slot, so each call site now carries a whole heading key
+/// instead of one word.
 #[derive(Debug, Clone, PartialEq)]
 struct Revealed {
     client_label: String,
     secret:       String,
-    verb:         &'static str,
+    heading:      MessageKey,
 }
 
 // ─── Pure decision helpers (host-testable — see crates/frontend/src/pages/
@@ -97,11 +103,11 @@ fn classify_list_status(status: u16) -> Result<(), String> {
     }
 }
 
-fn list_error_message(error: &str) -> &'static str {
+fn list_error_message(error: &str, locale: Locale) -> &'static str {
     if error == "unauthorized" {
-        "権限がありません。再度サインインしてください。"
+        lookup(MessageKey::FetchUnauthorized, locale)
     } else {
-        "読み込みに失敗しました。再読み込みしてください。"
+        lookup(MessageKey::FetchFailed, locale)
     }
 }
 
@@ -113,7 +119,7 @@ fn list_error_message(error: &str) -> &'static str {
 /// empty body — kept pure (no network type) so this three-way decision is
 /// under test on its own, not only indirectly through whichever caller
 /// happens to exercise the mutation.
-fn error_message_from_body(text: &str) -> String {
+fn error_message_from_body(text: &str, locale: Locale) -> String {
     let trimmed = text.trim();
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
         if let Some(msg) = v.get("error").and_then(|e| e.as_str()) {
@@ -123,7 +129,7 @@ fn error_message_from_body(text: &str) -> String {
         }
     }
     if trimmed.is_empty() {
-        "エラーが発生しました。".to_owned()
+        lookup(MessageKey::GenericErrorOccurred, locale).to_owned()
     } else {
         trimmed.to_owned()
     }
@@ -172,9 +178,10 @@ async fn post_with_csrf(url: &str, csrf: &str, body: &serde_json::Value) -> Resu
 
 // ─── Top-level page component ──────────────────────────────────────────────
 
-/// OIDC クライアント一覧・管理 (`/admin/console/clients`)
+/// OIDC client list and management (`/admin/console/clients`).
 #[component]
 pub fn ConsoleClients() -> impl IntoView {
+    let locale = mounted_locale();
     let clients     = RwSignal::new(Vec::<ClientView>::new());
     let csrf        = RwSignal::new(String::new());
     let loading     = RwSignal::new(true);
@@ -213,7 +220,7 @@ pub fn ConsoleClients() -> impl IntoView {
                     clients.update(|cs| cs.retain(|c| c.id != id));
                     confirm.set(None);
                 }
-                Ok((_, body)) => action_error.set(Some(error_message_from_body(&body))),
+                Ok((_, body)) => action_error.set(Some(error_message_from_body(&body, locale))),
                 Err(e) => action_error.set(Some(e)),
             }
             action_busy.set(false);
@@ -234,14 +241,14 @@ pub fn ConsoleClients() -> impl IntoView {
                             revealed.set(Some(Revealed {
                                 client_label: client_label(&name, &id),
                                 secret: r.client_secret,
-                                verb: "再発行",
+                                heading: MessageKey::ClientsSecretRevealHeadingRotate,
                             }));
                             confirm.set(None);
                         }
-                        Err(_) => action_error.set(Some("応答の解析に失敗しました。".into())),
+                        Err(_) => action_error.set(Some(lookup(MessageKey::ClientsResponseParseFailed, locale).to_owned())),
                     }
                 }
-                Ok((_, body)) => action_error.set(Some(error_message_from_body(&body))),
+                Ok((_, body)) => action_error.set(Some(error_message_from_body(&body, locale))),
                 Err(e) => action_error.set(Some(e)),
             }
             action_busy.set(false);
@@ -249,16 +256,16 @@ pub fn ConsoleClients() -> impl IntoView {
     };
 
     view! {
-        <main lang="ja" aria-label="OIDC クライアント管理">
-            <h1>"OIDC クライアント"</h1>
-            <p><a href="/admin/console">"← コンソール"</a></p>
+        <main lang=locale.bcp47() aria-label=lookup(MessageKey::ClientsManagementAriaLabel, locale)>
+            <h1>{lookup(MessageKey::OidcClientsTitle, locale)}</h1>
+            <p><a href="/admin/console">{lookup(MessageKey::OperatorConsoleBackLink, locale)}</a></p>
 
             {move || revealed.get().map(|r| view! {
                 <SecretReveal revealed=r on_dismiss={move || revealed.set(None)} />
             })}
 
             {move || load_error.get().map(|e| view! {
-                <p role="alert">{list_error_message(&e)}</p>
+                <p role="alert">{list_error_message(&e, locale)}</p>
             })}
             {move || action_error.get().map(|e| view! {
                 <p role="alert" class="form-error">{e}</p>
@@ -270,33 +277,37 @@ pub fn ConsoleClients() -> impl IntoView {
                     PendingConfirm::Delete { id, name } => {
                         let id2 = id.clone();
                         let label = client_label(&name, &id);
+                        let body = lookup(MessageKey::ClientsDeleteConfirmBody, locale);
+                        let (pre, post) = body.split_once("{name}")
+                            .expect("ClientsDeleteConfirmBody must carry a {name} placeholder — T6 asserts this in both locales");
                         view! {
-                            <div role="alertdialog" aria-label="削除の確認" class="confirm-panel">
-                                <p>"クライアント "<strong>{label}</strong>" を削除します。この操作は元に戻せません。"</p>
+                            <div role="alertdialog" aria-label=lookup(MessageKey::ClientsDeleteConfirmAriaLabel, locale) class="confirm-panel">
+                                <p>{pre}<strong>{label}</strong>{post}</p>
                                 <button type="button" class="btn-danger" disabled=busy
                                     on:click=move |_| on_delete_confirmed(id.clone(), name.clone())>
-                                    "削除する"
+                                    {lookup(MessageKey::ClientsDeleteConfirmButton, locale)}
                                 </button>
-                                <button type="button" disabled=busy on:click=move |_| confirm.set(None)>"キャンセル"</button>
+                                <button type="button" disabled=busy on:click=move |_| confirm.set(None)>{lookup(MessageKey::TenantDeletionCancelButton, locale)}</button>
                                 <p class="sr-only">{id2}</p>
                             </div>
                         }.into_any()
                     }
                     PendingConfirm::Rotate { id, name } => {
                         let label = client_label(&name, &id);
+                        let body = lookup(MessageKey::ClientsRotateConfirmBody, locale);
+                        let (pre, post) = body.split_once("{name}")
+                            .expect("ClientsRotateConfirmBody must carry a {name} placeholder — T6 asserts this in both locales");
                         view! {
-                            <div role="alertdialog" aria-label="シークレット再発行の確認" class="confirm-panel">
-                                <p>"クライアント "<strong>{label}</strong>" のシークレットを再発行します。"</p>
+                            <div role="alertdialog" aria-label=lookup(MessageKey::ClientsRotateConfirmAriaLabel, locale) class="confirm-panel">
+                                <p>{pre}<strong>{label}</strong>{post}</p>
                                 <p role="alert">
-                                    "現在のシークレットは直ちに無効になり、このクライアントを使っているすべての"
-                                    "連携先が認証できなくなります。新しいシークレットは次の画面で一度だけ表示されます — "
-                                    "その場で必ずコピーしてください。後から再度表示することはできません。"
+                                    {lookup(MessageKey::ClientsRotateConfirmWarning, locale)}
                                 </p>
                                 <button type="button" class="btn-danger" disabled=busy
                                     on:click=move |_| on_rotate_confirmed(id.clone(), name.clone())>
-                                    "再発行する"
+                                    {lookup(MessageKey::ClientsRotateConfirmButton, locale)}
                                 </button>
-                                <button type="button" disabled=busy on:click=move |_| confirm.set(None)>"キャンセル"</button>
+                                <button type="button" disabled=busy on:click=move |_| confirm.set(None)>{lookup(MessageKey::TenantDeletionCancelButton, locale)}</button>
                             </div>
                         }.into_any()
                     }
@@ -306,7 +317,7 @@ pub fn ConsoleClients() -> impl IntoView {
             <Show when=move || !show_create.get()>
                 <p>
                     <button type="button" on:click=move |_| show_create.set(true)>
-                        "+ 新しいクライアントを登録"
+                        {lookup(MessageKey::ClientsShowCreateFormButton, locale)}
                     </button>
                 </p>
             </Show>
@@ -322,7 +333,7 @@ pub fn ConsoleClients() -> impl IntoView {
                             revealed.set(Some(Revealed {
                                 client_label: client_label(&new_client.name, &new_client.id),
                                 secret,
-                                verb: "作成",
+                                heading: MessageKey::ClientsSecretRevealHeadingCreate,
                             }));
                         }
                     }}
@@ -331,23 +342,23 @@ pub fn ConsoleClients() -> impl IntoView {
             </Show>
 
             <Show when=move || loading.get()>
-                <p aria-busy="true" aria-live="polite">"読み込み中…"</p>
+                <p aria-busy="true" aria-live="polite">{lookup(MessageKey::FetchLoading, locale)}</p>
             </Show>
 
             <Show when=move || !loading.get() && load_error.get().is_none()>
                 <Show
                     when=move || !clients.get().is_empty()
-                    fallback=|| view! { <p class="muted">"登録されたクライアントはありません。"</p> }
+                    fallback=move || view! { <p class="muted">{lookup(MessageKey::ClientsEmptyState, locale)}</p> }
                 >
                     <table>
                         <thead>
                             <tr>
                                 <th scope="col">"ID"</th>
-                                <th scope="col">"名前"</th>
-                                <th scope="col">"種別"</th>
-                                <th scope="col">"リダイレクトURI"</th>
-                                <th scope="col">"作成日時"</th>
-                                <th scope="col"><span class="sr-only">"操作"</span></th>
+                                <th scope="col">{lookup(MessageKey::ClientsColName, locale)}</th>
+                                <th scope="col">{lookup(MessageKey::ClientsColType, locale)}</th>
+                                <th scope="col">{lookup(MessageKey::ClientsColRedirectUri, locale)}</th>
+                                <th scope="col">{lookup(MessageKey::ClientsColCreatedAt, locale)}</th>
+                                <th scope="col"><span class="sr-only">{lookup(MessageKey::TenantDeletionColActions, locale)}</span></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -363,7 +374,7 @@ pub fn ConsoleClients() -> impl IntoView {
                 </Show>
             </Show>
 
-            <p><button type="button" on:click=move |_| refresh()>"再読み込み"</button></p>
+            <p><button type="button" on:click=move |_| refresh()>{lookup(MessageKey::ClientsReloadButton, locale)}</button></p>
         </main>
     }
 }
@@ -372,6 +383,7 @@ pub fn ConsoleClients() -> impl IntoView {
 
 #[component]
 fn ClientRow(client: ClientView, confirm: RwSignal<Option<PendingConfirm>>) -> impl IntoView {
+    let locale = mounted_locale();
     let id   = client.id.clone();
     let id2  = client.id.clone();
     let name = client.name.clone();
@@ -397,13 +409,13 @@ fn ClientRow(client: ClientView, confirm: RwSignal<Option<PendingConfirm>>) -> i
                             move |_| confirm.set(Some(PendingConfirm::Rotate { id: id.clone(), name: name.clone() }))
                         }
                     >
-                        "シークレット再発行"
+                        {lookup(MessageKey::ClientsRowRotateButton, locale)}
                     </button>
                 </Show>
                 <button type="button" class="btn-danger"
                     on:click=move |_| confirm.set(Some(PendingConfirm::Delete { id: id2.clone(), name: name2.clone() }))
                 >
-                    "削除"
+                    {lookup(MessageKey::ClientsRowDeleteButton, locale)}
                 </button>
             </td>
         </tr>
@@ -414,6 +426,7 @@ fn ClientRow(client: ClientView, confirm: RwSignal<Option<PendingConfirm>>) -> i
 
 #[component]
 fn SecretReveal(revealed: Revealed, on_dismiss: impl Fn() + 'static) -> impl IntoView {
+    let locale = mounted_locale();
     // A real Leptos event handler, not an inline `onclick="..."` HTML
     // attribute: this deployment's CSP has no 'unsafe-inline' for
     // script-src, and an inline event-handler attribute is blocked the
@@ -430,20 +443,22 @@ fn SecretReveal(revealed: Revealed, on_dismiss: impl Fn() + 'static) -> impl Int
         }
     };
 
+    let heading = lookup(revealed.heading, locale).replace("{name}", &revealed.client_label);
+
     view! {
         <div role="alert" class="secret-reveal-panel">
-            <h2>{format!("クライアント「{}」の{}", revealed.client_label, revealed.verb)}</h2>
+            <h2>{heading}</h2>
             <p>
-                <strong>"このシークレットは今だけ表示されます。"</strong>
-                " このページを離れると二度と表示できません。今すぐ下の値をコピーしてください。"
+                <strong>{lookup(MessageKey::ClientsSecretWarningHeading, locale)}</strong>
+                " "{lookup(MessageKey::ClientsSecretWarningBody, locale)}
             </p>
             <p>
-                <label for="revealed-secret">"クライアントシークレット(クリックで選択)"</label><br/>
+                <label for="revealed-secret">{lookup(MessageKey::ClientsSecretFieldLabel, locale)}</label><br/>
                 <input id="revealed-secret" type="text" readonly=true value=revealed.secret.clone()
                     on:click=select_secret />
             </p>
             <button type="button" on:click=move |_| on_dismiss()>
-                "コピーしました — 閉じる"
+                {lookup(MessageKey::ClientsSecretDismissButton, locale)}
             </button>
         </div>
     }
@@ -457,6 +472,7 @@ fn CreateClientForm(
     on_created: impl Fn(ClientView, Option<String>) + 'static + Clone,
     on_cancel: impl Fn() + 'static + Clone,
 ) -> impl IntoView {
+    let locale = mounted_locale();
     let id_v                = RwSignal::new(String::new());
     let name_v              = RwSignal::new(String::new());
     let client_type_v       = RwSignal::new("public".to_owned());
@@ -487,10 +503,10 @@ fn CreateClientForm(
                 Ok((201, resp_body)) => {
                     match serde_json::from_str::<CreateResponse>(&resp_body) {
                         Ok(r) => on_created(r.client, r.client_secret),
-                        Err(_) => error.set(Some("応答の解析に失敗しました。".into())),
+                        Err(_) => error.set(Some(lookup(MessageKey::ClientsResponseParseFailed, locale).to_owned())),
                     }
                 }
-                Ok((_, resp_body)) => error.set(Some(error_message_from_body(&resp_body))),
+                Ok((_, resp_body)) => error.set(Some(error_message_from_body(&resp_body, locale))),
                 Err(e) => error.set(Some(e)),
             }
             busy.set(false);
@@ -499,20 +515,20 @@ fn CreateClientForm(
 
     view! {
         <form on:submit=on_submit>
-            <h2>"新しいクライアントを登録"</h2>
+            <h2>{lookup(MessageKey::ClientsCreateFormHeading, locale)}</h2>
             {move || error.get().map(|e| view! { <p role="alert" class="form-error">{e}</p> })}
 
-            <label for="new-client-id">"クライアントID"</label>
+            <label for="new-client-id">{lookup(MessageKey::ClientsCreateIdLabel, locale)}</label>
             <input id="new-client-id" type="text" required
                 prop:value=move || id_v.get()
                 on:input=move |ev| id_v.set(event_target_value(&ev)) />
 
-            <label for="new-client-name">"名前"</label>
+            <label for="new-client-name">{lookup(MessageKey::ClientsColName, locale)}</label>
             <input id="new-client-name" type="text" required
                 prop:value=move || name_v.get()
                 on:input=move |ev| name_v.set(event_target_value(&ev)) />
 
-            <label for="new-client-type">"種別"</label>
+            <label for="new-client-type">{lookup(MessageKey::ClientsColType, locale)}</label>
             <select id="new-client-type"
                 on:change=move |ev| {
                     let v = event_target_value(&ev);
@@ -527,11 +543,9 @@ fn CreateClientForm(
             <Show when=is_confidential>
                 <div role="note">
                     <p>
-                        "機密クライアント(confidential)を作成すると、シークレットが発行されます。"
-                        "シークレットは作成後に一度だけ表示されます — その場で必ずコピーしてください。"
-                        "後から再度表示することはできません(再発行は可能です)。"
+                        {lookup(MessageKey::ClientsCreateConfidentialWarning, locale)}
                     </p>
-                    <label for="new-client-tam">"トークン認証方式"</label>
+                    <label for="new-client-tam">{lookup(MessageKey::ClientsCreateTokenAuthLabel, locale)}</label>
                     <select id="new-client-tam"
                         on:change=move |ev| token_auth_method_v.set(event_target_value(&ev))
                     >
@@ -541,23 +555,23 @@ fn CreateClientForm(
                 </div>
             </Show>
 
-            <label for="new-client-redirects">"リダイレクトURI(1行に1つ)"</label>
+            <label for="new-client-redirects">{lookup(MessageKey::ClientsCreateRedirectUrisLabel, locale)}</label>
             <textarea id="new-client-redirects" required
                 prop:value=move || redirect_uris_v.get()
                 on:input=move |ev| redirect_uris_v.set(event_target_value(&ev))
             ></textarea>
 
-            <label for="new-client-scopes">"許可スコープ(空白区切り)"</label>
+            <label for="new-client-scopes">{lookup(MessageKey::ClientsCreateScopesLabel, locale)}</label>
             <input id="new-client-scopes" type="text" required
                 prop:value=move || scopes_v.get()
                 on:input=move |ev| scopes_v.set(event_target_value(&ev)) />
 
             <button type="submit" disabled=move || busy.get()>
-                {move || if busy.get() { "登録中…" } else { "登録する" }}
+                {move || if busy.get() { lookup(MessageKey::ClientsCreateSubmitBusy, locale) } else { lookup(MessageKey::ClientsCreateSubmitButton, locale) }}
             </button>
             <button type="button" disabled=move || busy.get()
                 on:click={let on_cancel = on_cancel.clone(); move |_| on_cancel()}>
-                "キャンセル"
+                {lookup(MessageKey::TenantDeletionCancelButton, locale)}
             </button>
         </form>
     }
@@ -585,12 +599,18 @@ mod tests {
 
     #[test]
     fn unauthorized_error_gets_the_specific_message() {
-        assert_eq!(list_error_message("unauthorized"), "権限がありません。再度サインインしてください。");
+        assert_eq!(
+            list_error_message("unauthorized", Locale::Ja),
+            lookup(MessageKey::FetchUnauthorized, Locale::Ja),
+        );
     }
 
     #[test]
     fn any_other_error_gets_the_generic_message() {
-        assert_eq!(list_error_message("http 500"), "読み込みに失敗しました。再読み込みしてください。");
+        assert_eq!(
+            list_error_message("http 500", Locale::Ja),
+            lookup(MessageKey::FetchFailed, Locale::Ja),
+        );
     }
 
     // ── error_message_from_body: the three shapes the four write routes
@@ -599,7 +619,7 @@ mod tests {
     #[test]
     fn json_error_body_extracts_the_message() {
         assert_eq!(
-            error_message_from_body(r#"{"error":"id is required"}"#),
+            error_message_from_body(r#"{"error":"id is required"}"#, Locale::Ja),
             "id is required",
         );
     }
@@ -609,7 +629,7 @@ mod tests {
         // What the CSRF check and the early field-presence checks return
         // (`Response::error`, not `op_error_response`) -- not JSON at all.
         assert_eq!(
-            error_message_from_body("missing or invalid CSRF token"),
+            error_message_from_body("missing or invalid CSRF token", Locale::Ja),
             "missing or invalid CSRF token",
         );
     }
@@ -623,22 +643,22 @@ mod tests {
         // `op_error_response`'s `ClientOpError::Conflict` arm), the screen
         // must show the operator the real reason, not a generic failure.
         assert_eq!(
-            error_message_from_body("a client with that id already exists"),
+            error_message_from_body("a client with that id already exists", Locale::Ja),
             "a client with that id already exists",
         );
     }
 
     #[test]
     fn empty_body_gets_a_generic_message() {
-        assert_eq!(error_message_from_body(""), "エラーが発生しました。");
-        assert_eq!(error_message_from_body("   "), "エラーが発生しました。");
+        assert_eq!(error_message_from_body("", Locale::Ja), lookup(MessageKey::GenericErrorOccurred, Locale::Ja));
+        assert_eq!(error_message_from_body("   ", Locale::Ja), lookup(MessageKey::GenericErrorOccurred, Locale::Ja));
     }
 
     #[test]
     fn json_body_with_no_error_field_falls_back_to_the_raw_text() {
         // Defensive: a shape this cycle's four routes don't actually
         // return, but the parser must not panic or silently swallow it.
-        assert_eq!(error_message_from_body(r#"{"ok":true}"#), r#"{"ok":true}"#);
+        assert_eq!(error_message_from_body(r#"{"ok":true}"#, Locale::Ja), r#"{"ok":true}"#);
     }
 
     #[test]

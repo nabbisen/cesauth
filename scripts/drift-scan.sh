@@ -1404,7 +1404,7 @@ declare -a I18N_CEILINGS=(
     "pages/login.rs	8"
     "pages/operator/audit_chain.rs	0"
     "pages/operator/audit.rs	2"
-    "pages/operator/clients.rs	60"
+    "pages/operator/clients.rs	3"
     "pages/operator/console.rs	4"
     "pages/operator/tenancy.rs	0"
     "pages/security_center.rs	31"
@@ -1738,6 +1738,72 @@ if [[ -n "$i18n_ceiling_stale" ]]; then
 fi
 
 if [[ "$i18n_failed" -eq 1 ]]; then
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# RFC 185 §5.3 screen 5, T7 -- the operator-console negotiation gate.
+#
+# Twelve routes earned a negotiated locale across five slices (screens
+# 1-5); nothing stopped any of them from regressing back to a hardcoded
+# `Locale::Ja`, and nothing caught a thirteenth shell-rendering route
+# landing without ever negotiating at all. This closes both directions by
+# enumerating the population mechanically rather than trusting a count:
+# every file under crates/backend/src/routes/admin/{console,tenancy_console}/
+# that calls `operator_json_api::shell(` or `leptos_html_shell(` (excluding
+# the helper files that define those functions) must also contain
+# `resolve_locale`. The expected count is pinned at 13; a route dropping
+# out or a new one never starting moves that number, and the gate fails
+# either way until the change is deliberate -- in the same commit, with
+# the new or reverted route actually negotiating.
+# ---------------------------------------------------------------------------
+
+negotiation_scanned=0
+negotiation_ok=0
+negotiation_pinned=""
+
+while IFS= read -r -d '' file; do
+    case "$file" in
+        */routes/leptos_shell.rs|*/routes/admin/operator_json_api.rs) continue ;;
+    esac
+    grep -q "operator_json_api::shell(\|leptos_html_shell(" "$file" || continue
+    negotiation_scanned=$((negotiation_scanned + 1))
+    rel="${file#${REPO_ROOT}/}"
+    if grep -q "resolve_locale" "$file"; then
+        negotiation_ok=$((negotiation_ok + 1))
+    else
+        negotiation_pinned="${negotiation_pinned}${rel}\n"
+    fi
+done < <(find "${REPO_ROOT}/crates/backend/src/routes/admin/console" \
+               "${REPO_ROOT}/crates/backend/src/routes/admin/tenancy_console" \
+               -name "*.rs" -print0)
+
+echo "ℹ️   operator console negotiation: scanned ${negotiation_scanned} shell-rendering" \
+     "route file(s) -- ${negotiation_ok} negotiating, want 13"
+
+if [[ "$negotiation_scanned" -ne 13 ]]; then
+    echo ""
+    echo "operator console negotiation: scanned ${negotiation_scanned} shell-rendering" \
+         "route(s), expected exactly 13 -- a route started or stopped calling" \
+         "operator_json_api::shell(/leptos_html_shell( since this gate was pinned."
+    echo ""
+    echo "  Update the pinned count (13, just above this check in" \
+         "scripts/drift-scan.sh) in the SAME commit as whatever route" \
+         "change moved it, with the new or remaining route(s) actually" \
+         "negotiating -- never raise or lower it to paper over a regression."
+    exit 1
+fi
+
+if [[ -n "$negotiation_pinned" ]]; then
+    echo ""
+    echo "shell-rendering route(s) that do NOT call resolve_locale (still" \
+         "pinned to a hardcoded Locale):"
+    printf '%b' "$negotiation_pinned" | while IFS= read -r line; do [[ -n "$line" ]] && echo "    $line"; done
+    echo ""
+    echo "  Either this route is meant to negotiate and a conversion" \
+         "regressed, or it is a deliberately-pinned route this gate's" \
+         "expected-13 count must then exclude -- named here, not silently" \
+         "dropped."
     exit 1
 fi
 
