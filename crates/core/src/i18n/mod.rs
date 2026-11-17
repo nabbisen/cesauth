@@ -658,6 +658,14 @@ pub enum MessageKey {
     ClientsColName,
     ClientsColType,
     ClientsColRedirectUri,
+    /// **Round 2 (review).** Keyed although both locales say `ID`: a
+    /// hardcoded literal cannot be translated by a locale this catalog
+    /// has not met yet, and an equal value today is a translation, not a
+    /// missing one. The sibling `ClientsCreateIdLabel` says `クライアント
+    /// ID` because the create form has several fields to tell apart;
+    /// this column sits beside Name in a table that is already the
+    /// client list, so `ID` is the whole label.
+    ClientsColId,
     /// **`(UTC)` is load-bearing, not decoration** — G1 R1:
     /// `format_created_at` builds the cell from
     /// `OffsetDateTime::from_unix_timestamp`, which is UTC, and keying
@@ -2336,6 +2344,10 @@ fn lookup_audit_chain(key: &MessageKey, locale: Locale) -> Option<&'static str> 
         ClientsColRedirectUri => match locale {
             Locale::Ja => "リダイレクトURI",
             Locale::En => "Redirect URI",
+        },
+        ClientsColId => match locale {
+            Locale::Ja => "ID",
+            Locale::En => "ID",
         },
         ClientsColCreatedAt => match locale {
             Locale::Ja => "作成日時 (UTC)",

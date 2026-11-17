@@ -1404,7 +1404,7 @@ declare -a I18N_CEILINGS=(
     "pages/login.rs	8"
     "pages/operator/audit_chain.rs	0"
     "pages/operator/audit.rs	2"
-    "pages/operator/clients.rs	3"
+    "pages/operator/clients.rs	2"
     "pages/operator/console.rs	4"
     "pages/operator/tenancy.rs	0"
     "pages/security_center.rs	31"

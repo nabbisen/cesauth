@@ -171,7 +171,7 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         ClientsRowRotateButton | ClientsRowDeleteButton | ClientsDeleteConfirmButton |
         ClientsRotateConfirmAriaLabel | ClientsRotateConfirmBody | ClientsRotateConfirmWarning |
         ClientsRotateConfirmButton | ClientsShowCreateFormButton | ClientsEmptyState |
-        ClientsColName | ClientsColType | ClientsColRedirectUri | ClientsColCreatedAt |
+        ClientsColName | ClientsColType | ClientsColRedirectUri | ClientsColId | ClientsColCreatedAt |
         ClientsReloadButton | ClientsSecretRevealHeadingRotate | ClientsSecretRevealHeadingCreate |
         ClientsSecretWarningHeading | ClientsSecretWarningBody | ClientsSecretFieldLabel |
         ClientsSecretDismissButton | ClientsCreateFormHeading | ClientsCreateIdLabel |
@@ -316,7 +316,7 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         ClientsRowRotateButton, ClientsRowDeleteButton, ClientsDeleteConfirmButton,
         ClientsRotateConfirmAriaLabel, ClientsRotateConfirmBody, ClientsRotateConfirmWarning,
         ClientsRotateConfirmButton, ClientsShowCreateFormButton, ClientsEmptyState,
-        ClientsColName, ClientsColType, ClientsColRedirectUri, ClientsColCreatedAt,
+        ClientsColName, ClientsColType, ClientsColRedirectUri, ClientsColId, ClientsColCreatedAt,
         ClientsReloadButton, ClientsSecretRevealHeadingRotate, ClientsSecretRevealHeadingCreate,
         ClientsSecretWarningHeading, ClientsSecretWarningBody, ClientsSecretFieldLabel,
         ClientsSecretDismissButton, ClientsCreateFormHeading, ClientsCreateIdLabel,

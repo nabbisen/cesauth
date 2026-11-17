@@ -353,7 +353,7 @@ pub fn ConsoleClients() -> impl IntoView {
                     <table>
                         <thead>
                             <tr>
-                                <th scope="col">"ID"</th>
+                                <th scope="col">{lookup(MessageKey::ClientsColId, locale)}</th>
                                 <th scope="col">{lookup(MessageKey::ClientsColName, locale)}</th>
                                 <th scope="col">{lookup(MessageKey::ClientsColType, locale)}</th>
                                 <th scope="col">{lookup(MessageKey::ClientsColRedirectUri, locale)}</th>
