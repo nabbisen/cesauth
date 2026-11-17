@@ -17,13 +17,14 @@ changes will always be called out here.
 **v0.101.x and earlier are in [`docs/changelog-archive/`](docs/changelog-archive/README.md)**,
 split by minor range and never edited after creation. This file holds
 **0.102 and later** — the 0.93–0.101 split at the 0.107.0 cut (RFC 028
-slice B) took it from 99,916 B to 40,081 B before this masthead's own
-rewrite; with the rewrite, this file measures **≈ 40,929 B**, 50% of
-budget, leaving **≈ 40,991 B of headroom** and the most recent five
-minors in the root (the exact figure shifts by a handful of bytes with
-each pass of editing this self-describing paragraph, so it is given as
-measured at commit time, not guaranteed exact by the time anyone reads
-it). See the archive README's own dated note for the split's own byte
+slice B) took it from 99,916 B to 40,081 B. With that cut's own entry and
+this paragraph, the file measures **≈ 49 KB** — around 60% of budget,
+leaving **≈ 33 KB of headroom**, roughly four more entries at this cut's sizes
+— and holds the most recent six minors (the figure shifts with every
+edit to this self-describing paragraph and with every entry added, so it
+is given as measured at the commit that wrote it; `drift-scan`'s
+changelog-budget line prints the live number every run and is the
+authority). See the archive README's own dated note for the split's own byte
 reconciliation, computed against the pre-rewrite size.
 
 **The budget is now gated**, not just stated here: `scripts/drift-scan.sh`'s
@@ -80,6 +81,160 @@ that build. **That note's §4 also records that RFC 028's diagnosis of
 itself gets no gate this cut — D2 of the RFC 028 slice B handoff says
 why, and `ROADMAP.md` carries its own dated row recording its size
 (414,711 B, 10.1× its own ~40 KB budget) instead.
+
+---
+
+## [0.107.0] - 2026-11-18
+
+**Minor** — two rules this project had already decided, now actually
+enforced: every visible timestamp goes through the one formatter, and the
+CHANGELOG's byte budget fails the build instead of being restated. RFC 111
+slice A (three review rounds) and RFC 028 slice B (two), both reviewed and
+closed.
+
+### Fixed — the audit viewer printed a raw epoch under a column headed "Time (UTC)"
+
+RFC 111 settled in v0.73.0 that **every visible timestamp is UTC ISO-8601
+in the `Z` form**, produced by
+`cesauth_core::util::format_unix_as_iso8601`. Its Status line has said
+since then that the per-file formatters were removed. **Twenty-three
+render sites disagreed**, and the three worst were:
+
+- **`pages/operator/audit.rs`** rendered `{e.ts}` — the integer — in the
+  column whose own key reads `時刻 (UTC)` / *"Time (UTC)"*, while its
+  sibling screen `audit_chain.rs` formatted the same kind of value
+  correctly two files away.
+- **`pages/sessions.rs` and `pages/operator/clients.rs`** each carried
+  their own formatter emitting `2024-01-01 00:00` — no `T`, no seconds, no
+  `Z` — and `sessions.rs`'s comment claimed *"For now emit ISO-8601"*
+  about a format that is not ISO-8601. The server-rendered security centre
+  shows **the same session timestamps** through the canonical formatter,
+  so two surfaces disagreed about one user's data.
+- **Twenty more raw-epoch cells** across the `admin/`, `tenancy_console/`
+  and `tenant_admin/` templates, five of them in files a live route
+  renders today.
+
+All 23 now go through the canonical formatter. Both per-file formatters
+are **deleted**, not left wrapping it. **Seven stale `(unix)` column
+labels** are dropped, because the value under them no longer is one.
+
+**This is a visible change in both locales.** `/me/security/sessions`,
+the OIDC client list, the audit viewer, and the tenancy/admin tables now
+read `2024-01-01T00:00:00Z` where they read `2024-01-01 00:00` or a bare
+integer. Timestamps remain locale-independent by RFC 111's own design.
+
+### Added — the gate RFC 111's acceptance criteria specified and nobody built
+
+`scripts/drift-scan.sh` gains a timestamp-rendering section that **fails
+five distinct ways**: a reverted conversion, a new conforming site that
+moves the pinned count, a raw timestamp-field access written as a
+binding, the same written as an HTML interpolation, and a stale
+exemption. It pins **24 canonical-formatter calls across 15 files** and
+carries **five named exemptions**, each with its reason.
+
+**Why five ways and not one.** RFC 111's own acceptance criteria grepped
+for `OffsetDateTime::from_unix_timestamp` and `fn format_unix_local` — and
+a raw `{ts}` interpolation matches **neither**. The RFC verified the
+absence of two spellings and claimed the absence of a class. Two
+successive drafts of this gate's matcher reproduced that same error in
+miniature (one matched only a format-string shape; one treated every line
+ending in `>` — i.e. every HTML render line in this codebase — as a
+comparison to skip), and each was caught the same way: by planting a
+regression in the shape the codebase actually writes, not the shape the
+matcher was written against.
+
+### Fixed — RFC 111's Status line, with the history it got wrong
+
+The *"per-file legacy formatters removed"* claim now carries three facts
+instead of one: it was **already false when written** (at tag `0.73.0`,
+`crates/ui/src/admin/overview.rs` rendered raw epochs at three lines);
+RFC 111 **did** remove the formatter it named; and the pattern **regrew
+twice afterwards**, with CSR migrations at `0.79.3` and `0.92.0`. The
+record now says *why a gate is needed* — the class comes back every time a
+screen is rewritten — rather than implying a one-time miscount.
+
+### Added — the CHANGELOG byte budget, gated
+
+RFC 028 specified a CI-shaped budget check **in full, as runnable bash**,
+and five enforcement notes over seven months recorded that it did not
+exist. It exists now: `drift-scan.sh` fails the moment root
+`CHANGELOG.md` exceeds **81,920 B** — the same KiB definition the split
+script's own guard uses, so a gate and its remedy tool cannot disagree by
+1,920 B — and names the remedy with the right parameter.
+
+**The file was a quarter over budget at this cut's start** (99,916 B
+against ~80 KB), so the split ran too: **v0.93–v0.101 archived**, nine
+entries, **59,836 B moved byte-identically** into
+`docs/changelog-archive/CHANGELOG-0.93-to-0.101.md`, root down to **~41 KB**
+— half the budget, about six releases of headroom at this cut's entry
+sizes.
+
+**The split tool had three recorded defects and had never been run.** Both
+previous splits were done by hand, which is exactly why the defects
+survived two opportunities to be found. All three are fixed — an invalid
+README-index `sed` whose failure was swallowed by `|| true`, a duplicated
+*"Older releases"* block, and root-relative links breaking two levels
+down — **plus a fourth that only running it could reveal**: the archive
+README's *"Current releases (vX.Y.Z and newer)"* sentence, which the
+script never updated and both previous splits fixed by hand without
+folding the fix back.
+
+### Changed — two stale derived figures deleted from RFC 028
+
+Requirement 1's *"~5 minor versions"* and Step 1's *"50-100 KB range"* are
+gone, each with an amendment line. The 2026-11-07 enforcement note had
+already ruled the five was derived **from** the byte budget rather than
+standing beside it, and that releases per minor had risen from ~1 to ~4
+while the figure stayed fixed. **The rule is the byte budget; how many
+minors it holds is an outcome.**
+
+**`ROADMAP.md` is 10.4× its own ~40 KB budget and is deliberately
+ungated.** Its only real remedy is condensing shipped rows to summary +
+link, which RFC 028 itself calls *"judgement rather than a shell loop"* —
+and a gate whose remedy is an unscoped judgement job would be red the day
+it lands. `drift-scan` prints the number every run instead, and the
+ROADMAP carries a row that points at that line rather than a figure which
+goes stale the moment the row is edited.
+
+### Added — one environment fact that cost an hour
+
+`docs/src/expert/contributing.md` now records that `wrangler dev
+--local`'s fetch-handler D1 binding and its bundled Local Explorer API can
+resolve the same `--persist-to` directory and binding name to **two
+different physical `.sqlite` files**, so rows seeded through the Explorer
+API are invisible to the real route handlers. Every earlier G2 in this
+programme exercised CSR shells, which is why nobody had met it before.
+
+### Security answer
+
+The diff touches no file under `crates/backend/src/routes/`,
+`crates/core/src/{jwt,totp,webauthn,oidc,authz,session,audit}` or
+`migrations/`, so the release rubric's path list does not fire. Stated
+anyway, because this cut changes a surface operators read for integrity:
+the audit viewer's time column now renders the same instant, in the same
+form, as the chain-status screen beside it, which **strengthens** an
+operator-facing surface rather than changing what any route accepts. No
+route, query parameter, payload or permission moved — **197 routes, 0
+added, 0 removed**, all seven coverage figures unchanged. No migration, no
+schema change, no dependency change.
+
+### Gates
+
+Host tests **1,737 / 0 / 4 across 12 `test result:` lines** — **+5** over
+`0.106.0` (six new caller tests, one obsolete test deleted with the
+function it called). Migration chain **39**. Route surface **197, 0 added,
+0 removed**. `drift-scan` clean: i18n ceiling **103 / 65 / 69, 0
+violations**, operator-console negotiation **13 / 13**, release
+reconciliation **163 tags / 162 entries, 0 unexempted** (plus `0.107.0`,
+the release being cut), timestamp
+rendering **24 / 15 with 5 named exemptions**, changelog budget
+green — the root file at **≈ 49 KB of its 81,920 B budget**, ≈ 33 KB of
+headroom. No exact byte figure is quoted here on purpose: this entry is
+inside the file it would be measuring, and `drift-scan`'s own
+changelog-budget line prints the live number every run. Clippy 0 errors,
+`cargo deny` ok in all four sections, wasm32
+backend check clean. Catalog unchanged at **314** arms — timestamps are
+locale-independent, so this cut adds no `MessageKey`.
 
 ---
 
