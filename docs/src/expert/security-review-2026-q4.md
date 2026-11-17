@@ -162,7 +162,10 @@ the fact that a later walk came back clean and was refused.
 
 ### F-7: chain verification does not cover the indexed columns the console displays
 
-**Severity**: Medium · **Disposition: open, rowed as its own RFC**
+**Severity**: Medium · **Disposition: open — RFC written 2026-11-17,
+`rfcs/proposed/188-the-chain-vouches-for-the-payload-the-console-shows-the-columns.md`,
+awaiting the owner's acceptance. Nothing is built, so the finding stands as
+written below.**
 **Surface**: `crates/core/src/audit/verifier.rs:409-431`, `migrations/0008_audit_chain.sql`
 
 `verify_chain` checks three things: `payload_hash` against the stored
@@ -187,6 +190,14 @@ rather than rewritten to pass. The gap predates `actor` by eleven minor
 versions and is not introduced by it — `actor` is simply the first column
 whose payload copy was added deliberately, which is what makes the check
 below possible for it.
+
+**What the RFC proposes, in one line**: the payload already carries a twin of
+every indexed column, the writer populates the columns from those same fields
+unmodified, and `AuditEventRow` already holds both halves — so the verifier can
+compare them inside the existing walk, with **no migration, no new hash input
+and no re-chaining**. The seven cross-checkable columns are `subject`, `actor`,
+`client_id`, `ip`, `user_agent`, `reason` and `request_id`; `created_at` has no
+payload twin by design and is declared uncovered.
 
 **The fix is detection, not prevention.** Access control over the column
 would make such an edit harder, not evident afterwards. The check is: compare
