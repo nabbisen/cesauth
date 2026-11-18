@@ -165,9 +165,27 @@ reached.
 **D6. The genesis row is exempt by shape.** `seq = 1` has `payload = '{}'`
 and all-`NULL` columns, and the walk already treats it as a sentinel.
 
+### Amendment, 2026-11-18 (scoping `0.108.0`): D7 moves into Phase 1
+
+**The console line ships with the detection, not after it.** §3's Phase 1
+heading already promised *"and the console says so separately"*, while D7
+sat under Phase 2 — an inconsistency in this RFC, resolved here in favour
+of the heading. The reason is not tidiness: Phase 1 without D7 detects a
+divergence and shows it to nobody, which is **F-6** of the same security
+review (*"a refused clean walk has no console reader"*) recreated in the
+same subsystem by the cut that was meant to close F-7. A finding with no
+reader is not a finding.
+
+So **Phase 1 = D1–D7**, and Phase 2 = D8–D9 (the viewer, the admin search
+and the export sourcing their values from the payload). The owner's
+acceptance covered the phase split; this moves one decision across the
+line without changing any decision's content, and it is reversible at the
+scoping of the cut that implements it.
+
 ### Phase 2 — the readers read the evidence
 
-**D7. The console gets a line of its own, in both locales.** Not folded
+**D7 (now Phase 1 — see the amendment above). The console gets a line of
+its own, in both locales.** Not folded
 into *"✓ Chain valid"*: the whole finding is that one claim was read as
 covering the other. The chain-status screen already negotiates
 (RFC 185 §5.3 screen 2), so this is new `MessageKey`s in `Ja` and `En`,
