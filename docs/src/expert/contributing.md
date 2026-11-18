@@ -218,7 +218,7 @@ submodules in a subdirectory.
 ### A date or time test must sweep, or cover all four positions of a leap-year group
 
 **One anchor repeated across a suite is one data point, not independent
-evidence.** `0.108.0` slice A added six caller assertions for the
+evidence.** `0.107.0` (RFC 111 slice A) added six caller assertions for the
 canonical `cesauth_core::util::format_unix_as_iso8601` formatter and
 every one used the same anchor, `1_704_067_200` (`2024-01-01`) — and
 the formatter's `days_to_ymd` was wrong for 45.5% of all days at the
