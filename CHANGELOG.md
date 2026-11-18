@@ -252,6 +252,38 @@ cross-checked, 1 declared uncovered**. Clippy 0 errors, `cargo deny` ok
 in all four sections, wasm32 backend check clean. Catalog **314 → 325**
 arms.
 
+**Bundle, CI to CI**, code and version bump in separate commits:
+
+| commit | `Cargo.toml` | gzip |
+|---|---|---|
+| `e7061b3` (`0.107.0` tag) | `0.107.0` | 906,075 B |
+| `877be6a` (this cut's code) | `0.107.0` | 918,916 B |
+| `c76eafc` (`0.108.0` tag) | `0.108.0` | **918,966 B** |
+
+**Code delta at the pinned version: +12,841 B** — **35%** of the
+2,621,440 B budget, up from 34%. Absolute at the tag **+12,891 B**; the
+version string accounts for **+50 B**.
+
+**That delta is larger than this cut's visible surface explains, and it
+is recorded as a question rather than a cause.** `0.106.0` cost
+**+1,516 B** for 33 catalog keys and their values in two locales; this
+cut adds 11 keys (one with a long note) and a console section, and costs
+**8.5×** that. The frontend links `cesauth-core` and does not call the
+verifier — the only mention is a doc comment — so the likely explanation
+is core-side code reaching the CSR wasm: `verifier.rs` grew 234 lines,
+`payload.rs` is new with its own `serde` derive, and nine core files
+gained 742 lines between them. Whether dead-code elimination is leaving
+verifier or `serde_json` paths in the bundle is checkable (symbol-level
+sizing, or feature-gating the verifier out of the wasm target) and is
+rowed. No conclusion is drawn here from one measurement.
+
+**CI: 14 push workflow runs, all `success`, 16 check runs, nothing
+pending** — the sixteenth again being `Security audit`, the check run
+`rustsec/audit-check` creates through the Checks API rather than as any
+workflow's job. No scheduled workflow fired on this tip. Second
+consecutive release with that composition, which is what `0.106.0`'s
+correction predicted.
+
 ---
 
 ## [0.107.0] - 2026-11-18
