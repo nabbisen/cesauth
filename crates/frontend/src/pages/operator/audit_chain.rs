@@ -88,6 +88,14 @@ struct ChainStatusView {
     #[serde(default)]
     checkpoint_at:              Option<i64>,
     growth_since_checkpoint:    bool,
+    #[serde(default)]
+    column_check_performed:            bool,
+    #[serde(default)]
+    column_divergence_count:           usize,
+    #[serde(default)]
+    column_divergences:                Vec<cesauth_core::ports::audit_chain::ColumnDivergence>,
+    #[serde(default)]
+    column_divergences_acknowledged:   Option<bool>,
     csrf_token:                 String,
 }
 
@@ -167,6 +175,30 @@ fn alarm_needs_acknowledgement(valid: Option<bool>, acknowledged: Option<bool>) 
     valid == Some(false) && acknowledged != Some(true)
 }
 
+/// RFC 188 Phase 1, S5's three states for the column cross-check line:
+/// not yet checked (this run predates cross-checking, or hasn't reached
+/// this row yet), checked and clean, or checked and `n` columns diverge.
+/// `performed=false` must win regardless of `divergence_count` — an old
+/// stored blob deserializes `column_check_performed` as `false` via
+/// `#[serde(default)]`, and an empty divergence list on such a blob must
+/// never render as "clean" (the state it would be confused with is the
+/// opposite of what happened: no claim was made, not a claim of zero).
+/// Returns `(css class, text)`, same reason as `status_badge` above (D2).
+fn columns_status_badge(performed: bool, divergence_count: usize, locale: Locale) -> (&'static str, String) {
+    match (performed, divergence_count) {
+        (false, _) => ("badge", lookup(MessageKey::AuditChainColumnsStatusNotChecked, locale).to_owned()),
+        (true, 0)  => ("badge badge--success", lookup(MessageKey::AuditChainColumnsStatusClean, locale).to_owned()),
+        (true, n)  => ("badge badge--danger", lookup(MessageKey::AuditChainColumnsStatusDiverging, locale).replace("{n}", &n.to_string())),
+    }
+}
+
+/// S3's column-class analogue of `alarm_needs_acknowledgement` above —
+/// independent of it: a standing chain alarm must not gate whether the
+/// columns-class control shows, and vice versa.
+fn columns_divergence_needs_acknowledgement(divergence_count: usize, acknowledged: Option<bool>) -> bool {
+    divergence_count > 0 && acknowledged != Some(true)
+}
+
 // ─── Network calls ─────────────────────────────────────────────────────────
 
 async fn fetch_status() -> Result<ChainStatusView, String> {
@@ -234,6 +266,14 @@ pub fn ConsoleAuditChain() -> impl IntoView {
                     let csrf_verify = s.csrf_token.clone();
                     let csrf_ack    = s.csrf_token.clone();
 
+                    let columns_performed = s.column_check_performed;
+                    let columns_count     = s.column_divergence_count;
+                    let (columns_class, columns_text) = columns_status_badge(columns_performed, columns_count, locale);
+                    let divergences_shown = s.column_divergences.clone();
+                    let divergences_more  = columns_count.saturating_sub(divergences_shown.len());
+                    let columns_needs_ack = columns_divergence_needs_acknowledgement(columns_count, s.column_divergences_acknowledged);
+                    let csrf_columns_ack  = s.csrf_token.clone();
+
                     view! {
                         // ── summary ──────────────────────────────────────
                         <section aria-label=lookup(MessageKey::AuditChainSummaryTitle, locale)>
@@ -256,10 +296,49 @@ pub fn ConsoleAuditChain() -> impl IntoView {
                                 <p class="note">{lookup(MessageKey::AuditChainAckNote, locale)}</p>
                                 <form method="post" action="/admin/console/audit/chain/acknowledge">
                                     <input type="hidden" name="csrf" value=csrf_ack.clone() />
+                                    <input type="hidden" name="class" value="chain" />
                                     <button type="submit" class="warning">{lookup(MessageKey::AuditChainAckButton, locale)}</button>
                                 </form>
                             </section>
                         </Show>
+
+                        // ── column cross-check (RFC 188 Phase 1) ─────────
+                        <section aria-label=lookup(MessageKey::AuditChainColumnsSectionTitle, locale)>
+                            <h2>{lookup(MessageKey::AuditChainColumnsSectionTitle, locale)}</h2>
+                            <p class="note">{lookup(MessageKey::AuditChainColumnsNote, locale)}</p>
+                            <table>
+                                <tr><th scope="row">{lookup(MessageKey::Status, locale)}</th><td><span class=columns_class>{columns_text}</span></td></tr>
+                            </table>
+                            <Show when=move || (columns_count > 0)>
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">{lookup(MessageKey::AuditChainColumnsColRow, locale)}</th>
+                                            <th scope="col">{lookup(MessageKey::AuditChainColumnsColColumn, locale)}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {divergences_shown.clone().into_iter().map(|d| view! {
+                                            <tr><td><code>{d.seq}</code></td><td><code>{d.column}</code></td></tr>
+                                        }).collect_view()}
+                                    </tbody>
+                                </table>
+                                <Show when=move || (divergences_more > 0)>
+                                    <p class="note">{lookup(MessageKey::AuditChainColumnsMoreNote, locale).replace("{n}", &divergences_more.to_string())}</p>
+                                </Show>
+                            </Show>
+                            <Show when=move || columns_needs_ack>
+                                <section aria-label=lookup(MessageKey::AuditChainColumnsAckTitle, locale)>
+                                    <h3>{lookup(MessageKey::AuditChainColumnsAckTitle, locale)}</h3>
+                                    <p class="note">{lookup(MessageKey::AuditChainColumnsAckNote, locale)}</p>
+                                    <form method="post" action="/admin/console/audit/chain/acknowledge">
+                                        <input type="hidden" name="csrf" value=csrf_columns_ack.clone() />
+                                        <input type="hidden" name="class" value="columns" />
+                                        <button type="submit" class="warning">{lookup(MessageKey::AuditChainColumnsAckButton, locale)}</button>
+                                    </form>
+                                </section>
+                            </Show>
+                        </section>
 
                         // ── checkpoint ───────────────────────────────────
                         {if checkpoint_seq.is_none() {
@@ -431,5 +510,44 @@ mod tests {
     #[test]
     fn no_run_yet_needs_no_acknowledgement() {
         assert!(!alarm_needs_acknowledgement(None, None));
+    }
+
+    // ── columns_status_badge / columns_divergence_needs_acknowledgement
+    // (RFC 188 Phase 1, S5/S3) ───────────────────────────────────────────
+
+    #[test]
+    fn columns_not_checked_badge_wins_regardless_of_count() {
+        let (class, text) = columns_status_badge(false, 0, Locale::Ja);
+        assert_eq!(class, "badge");
+        assert!(text.contains("未チェック"));
+        // An old stored blob with no RFC 188 fields deserializes
+        // `column_check_performed` as `false` via `#[serde(default)]`
+        // and an empty divergence list — must not read as "clean".
+        let (class2, text2) = columns_status_badge(false, 0, Locale::En);
+        assert_eq!(class2, "badge");
+        assert!(text2.contains("Not yet checked"));
+    }
+
+    #[test]
+    fn columns_clean_badge() {
+        let (class, text) = columns_status_badge(true, 0, Locale::En);
+        assert_eq!(class, "badge badge--success");
+        assert!(text.contains("Columns match payload"));
+    }
+
+    #[test]
+    fn columns_diverging_badge_substitutes_n() {
+        let (class, text) = columns_status_badge(true, 3, Locale::En);
+        assert_eq!(class, "badge badge--danger");
+        assert!(text.contains("3 column(s) diverge from payload"));
+    }
+
+    #[test]
+    fn columns_divergence_needing_acknowledgement() {
+        assert!(columns_divergence_needs_acknowledgement(1, Some(false)));
+        assert!(columns_divergence_needs_acknowledgement(1, None));
+        assert!(!columns_divergence_needs_acknowledgement(1, Some(true)));
+        assert!(!columns_divergence_needs_acknowledgement(0, None),
+            "nothing standing -- nothing to acknowledge");
     }
 }

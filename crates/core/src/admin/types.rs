@@ -582,6 +582,26 @@ pub struct AuditChainStatus {
     /// the UI as a "verifier hasn't seen the latest rows yet"
     /// hint — informational, not an error.
     pub growth_since_checkpoint: bool,
+
+    /// **RFC 188 Phase 1.** `false` means "did not look" — either no
+    /// run has completed since this cut deployed, or (pre-cut) the
+    /// field is absent from an old stored blob. The console must
+    /// never read an empty [`Self::column_divergences`] as "clean"
+    /// while this is `false` (S5's three states).
+    pub column_check_performed: bool,
+    /// Total divergent (row, column) pairs standing and not yet
+    /// acknowledged — the number the three-state line reports.
+    /// Uncapped; may exceed [`Self::column_divergences`]`.len()`.
+    pub column_divergence_count: usize,
+    /// The first divergences to investigate, capped at 50. Empty
+    /// when [`Self::column_divergence_count`] is `0`.
+    pub column_divergences: Vec<crate::ports::audit_chain::ColumnDivergence>,
+    /// `Some(false)` is the state that needs the columns-class
+    /// acknowledgement control — mirrors
+    /// [`Self::last_run_acknowledged`] for the chain class. `None`
+    /// only when [`Self::column_divergence_count`] is `0` (nothing to
+    /// acknowledge).
+    pub column_divergences_acknowledged: Option<bool>,
 }
 
 // -------------------------------------------------------------------------

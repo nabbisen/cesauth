@@ -215,6 +215,25 @@ submodules in a subdirectory.
 
 **Language**: English for all documentation and code comments.
 
+### A date or time test must sweep, or cover all four positions of a leap-year group
+
+**One anchor repeated across a suite is one data point, not independent
+evidence.** `0.108.0` slice A added six caller assertions for the
+canonical `cesauth_core::util::format_unix_as_iso8601` formatter and
+every one used the same anchor, `1_704_067_200` (`2024-01-01`) — and
+the formatter's `days_to_ymd` was wrong for 45.5% of all days at the
+time (RFC 111 slice C; `docs/src/expert/security-review-2026-q4.md`
+F-8). 2024 happens to be one of the two leap-year-group positions the
+bug got right; the other two positions (the year following a leap
+year, wholly, and 31 December of the leap year itself) were both
+wrong, and no test anywhere used either one.
+
+A new date/time test must do one of: sweep the full range it claims to
+cover (as `days_to_ymd`'s own round-trip test now does), or — when a
+sweep is impractical — assert at least one case from each of the four
+leap-year-group positions, not four copies of the same position with
+different cosmetic values.
+
 ## Design-first development
 
 **Important design decisions must not be made implicitly during

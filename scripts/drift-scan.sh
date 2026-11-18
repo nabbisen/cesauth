@@ -2072,6 +2072,101 @@ if [[ "$ts_failed" -eq 1 ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# RFC 188 Phase 1, T8/G2 (`.git-exclude/reviewed/188-phase1-g1-g2-decisions.md`):
+# the schema<->verifier column-coverage gate. Every column
+# `audit_events` actually has (bucket 1, derived from the migrations --
+# never hand-listed) must land in exactly one of three buckets: the
+# seven cross-checked columns (bucket 2, derived from verifier.rs's own
+# `CROSS_CHECKED_COLUMNS` const -- never hand-copied, per G2's explicit
+# instruction), the eight chain-hash inputs (bucket 3, pinned), or
+# `created_at` (bucket 4, pinned, declared uncovered by design).
+#
+# Buckets 3 and 4 are pinned rather than derived -- two alternatives
+# were tried and rejected (G2 ruling): parsing `compute_chain_hash`'s
+# signature derives only 6 of the 8 chain-input names (it omits
+# `payload`, whose bytes feed `payload_hash`, and `chain_hash`, the
+# stored output column) and would still need a human to add the other
+# two by hand -- looking derived while still needing a decision for 2 of
+# 8 names; and computing chain inputs as "whatever's left"
+# (all - cross_checked - uncovered) would make any new column become a
+# chain input by construction, silently hiding the exact case this gate
+# exists to catch -- a new column must land in NO bucket by default, not
+# fall into one.
+# ---------------------------------------------------------------------------
+
+declare -a CHAIN_INPUT_COLUMNS=(seq id ts kind payload payload_hash previous_hash chain_hash)
+declare -a DECLARED_UNCOVERED_COLUMNS=(created_at)
+
+audit_columns_py_out=$(python3 - "${REPO_ROOT}" "${CHAIN_INPUT_COLUMNS[*]}" "${DECLARED_UNCOVERED_COLUMNS[*]}" <<'PYEOF'
+import re, sys, glob
+
+repo_root, chain_inputs_raw, declared_uncovered_raw = sys.argv[1], sys.argv[2], sys.argv[3]
+chain_inputs = chain_inputs_raw.split()
+declared_uncovered = declared_uncovered_raw.split()
+
+create_cols = []
+alter_cols = []
+for f in sorted(glob.glob(f"{repo_root}/migrations/*.sql")):
+    with open(f) as fh:
+        text = fh.read()
+    m = re.search(r'CREATE TABLE audit_events\s*\((.*?)\n\);', text, re.DOTALL)
+    if m:
+        for line in m.group(1).splitlines():
+            line = line.split('--')[0].strip()
+            mm = re.match(r'([A-Za-z_][A-Za-z0-9_]*)\s+(INTEGER|TEXT)\b', line)
+            if mm:
+                create_cols.append(mm.group(1))
+    for mm in re.finditer(r'ALTER TABLE audit_events ADD COLUMN\s+([A-Za-z_][A-Za-z0-9_]*)', text):
+        alter_cols.append(mm.group(1))
+all_columns = create_cols + alter_cols
+
+with open(f"{repo_root}/crates/core/src/audit/verifier.rs") as fh:
+    vtext = fh.read()
+m = re.search(r'pub const CROSS_CHECKED_COLUMNS: \[&str; \d+\] = \[(.*?)\];', vtext, re.DOTALL)
+if not m:
+    print("FAIL could not find CROSS_CHECKED_COLUMNS const in verifier.rs")
+    sys.exit(0)
+cross_checked = re.findall(r'"([a-zA-Z_]+)"', m.group(1))
+
+print(f"INFO audit column coverage: {len(all_columns)} column(s) in audit_events -- "
+      f"{len(chain_inputs)} chain input(s), {len(cross_checked)} cross-checked, "
+      f"{len(declared_uncovered)} declared uncovered ({', '.join(declared_uncovered)})")
+
+for col in all_columns:
+    buckets = []
+    if col in chain_inputs: buckets.append("chain_input")
+    if col in cross_checked: buckets.append("cross_checked")
+    if col in declared_uncovered: buckets.append("declared_uncovered")
+    if len(buckets) == 0:
+        print(f"FAIL column {col!r} is in NONE of the three buckets -- a new column landed with no decision")
+    elif len(buckets) > 1:
+        print(f"FAIL column {col!r} is in {len(buckets)} buckets ({', '.join(buckets)}) -- a contradiction")
+
+for name, bucket in (list((c, "chain_input") for c in chain_inputs)
+                     + list((c, "declared_uncovered") for c in declared_uncovered)
+                     + list((c, "cross_checked") for c in cross_checked)):
+    if name not in all_columns:
+        print(f"FAIL {bucket} column {name!r} is declared but no longer in the schema (staleness)")
+PYEOF
+)
+
+audit_columns_info=$(printf '%s\n' "$audit_columns_py_out" | grep '^INFO ' | sed 's/^INFO //')
+audit_columns_fails=$(printf '%s\n' "$audit_columns_py_out" | grep '^FAIL ' || true)
+
+echo "ℹ️   ${audit_columns_info}"
+
+audit_columns_failed=0
+if [[ -n "$audit_columns_fails" ]]; then
+    echo ""
+    printf '%s\n' "$audit_columns_fails" | sed 's/^FAIL /  FAIL: /'
+    audit_columns_failed=1
+fi
+
+if [[ "$audit_columns_failed" -eq 1 ]]; then
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
 # Documentation self-containment (owner's instruction 2026-11-14; the rule is
 # in docs/src/expert/contributing.md §Documentation self-containment).
 #

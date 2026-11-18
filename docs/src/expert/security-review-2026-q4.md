@@ -162,13 +162,26 @@ the fact that a later walk came back clean and was refused.
 
 ### F-7: chain verification does not cover the indexed columns the console displays
 
-**Severity**: Medium · **Disposition: open — RFC accepted by the owner
-2026-11-17,
-`rfcs/accepted/188-the-chain-vouches-for-the-payload-the-console-shows-the-columns.md`.
-Queued for `0.108.0`'s scoping (`0.107.0` is in flight). Nothing is built, so
-the finding stands exactly as written below and this entry does not claim a
-fix.**
-**Surface**: `crates/core/src/audit/verifier.rs:409-431`, `migrations/0008_audit_chain.sql`
+**Severity**: Medium · **Disposition: closed by `0.108.0` Phase 1**
+(`rfcs/accepted/188-the-chain-vouches-for-the-payload-the-console-shows-the-columns.md`,
+accepted by the owner 2026-11-17). `walk_and_verify` now parses each
+row's payload and compares all seven cross-checkable columns against
+it; a divergence is reported (count + the first 50 rows/columns,
+console-visible in both locales) without flipping `valid` — a column
+edit is not a chain break, and the finding stays standing until an
+operator acknowledges it, independently of any chain-alarm. **Not fully
+closed**: Phase 2 (not in `0.108.0`) is the admin search, audit viewer
+and CSV/JSONL export switching to read the payload instead of the
+indexed columns directly — until that lands, a tampered column can
+still make a row **invisible to a filter** (e.g. editing `subject` so a
+search for the real subject misses it) even though Phase 1's own
+verification screen would separately report the divergence. The finding
+below is left as written for the historical record of what Phase 1
+closed and what it did not.
+**Surface**: `crates/core/src/audit/verifier.rs::walk_and_verify` (the
+row loop, `:475-583` as of `0.108.0` Phase 1 — line numbers moved when
+this finding's own fix landed; recorded against the finding it closes,
+not against a fixed position in the file), `migrations/0008_audit_chain.sql`
 
 `verify_chain` checks three things: `payload_hash` against the stored
 `payload` bytes, `chain_hash` against `compute_chain_hash(previous_hash,
@@ -209,6 +222,33 @@ is absent from every pre-`0021` payload and `request_id` from every pre-`0015`
 one. That compatibility rule is why this is its own change with its own
 review rather than a line added to the verifier here. `docs/src/expert/adr/
 010-audit-log-hash-chain.md` now states the scope limitation outright.
+
+### F-8: every audit export taken before 0.108.0 misstates dates for whole years
+
+**Severity**: Medium · **Disposition: fixed in `0.108.0` (slice C)**
+**Surface**: `crates/core/src/util.rs::days_to_ymd`, reached by
+`crates/core/src/admin/service/audit_export.rs` (CSV and JSON) and
+`crates/backend/src/cron_status.rs`
+
+`days_to_ymd` omitted the 1 March epoch shift the 400/100/4-year
+decomposition requires, so it returned the wrong civil date for
+**45.5% of all days** between 1970 and 2200 — the whole of each year
+following a leap year (2021, 2025, 2029 …) off by one day, 31 December
+of each leap year off by one, and 31 December of 1973, 1977, 1981 …
+rendered as **month 13**. Present since `0.66.0`; found 2026-11-18 by
+the measurement RFC 111 slice B required before documenting the
+function's range.
+
+**The chain was never affected.** `payload_hash` and `chain_hash` cover
+`ts` as an integer; only its rendering was wrong. The consequence is to
+**evidence**: an operator correlating an incident from an exported CSV
+read the wrong day for any row in an affected year, and archives taken
+before this fix still do.
+
+**Why no test caught it**: the two pre-existing unit tests and all six
+of `0.107.0`'s caller tests used dates in the two safe positions of the
+leap-year group — one shared anchor (`1_704_067_200`) across an entire
+suite is one data point.
 
 ---
 

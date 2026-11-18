@@ -543,6 +543,43 @@ pub enum MessageKey {
     AuditChainVerifyNote,
     AuditChainVerifyButton,
 
+    // ---- RFC 188 Phase 1 (`0.108.0`): the column cross-check section on
+    // the chain-status screen. G1 reviewed and ruled
+    // (`.git-exclude/reviewed/188-phase1-g1-g2-decisions.md`): all new
+    // (S5's three states postdate everything on this screen), except
+    // `Status` reused as the summary row's label and `AuditChainAckButton`
+    // NOT reused here (see `AuditChainColumnsAckButton` below) — one
+    // control clearing two different findings under one button label is
+    // the F-7-at-the-UI-layer defect S3 made `class` required to avoid. ----
+    AuditChainColumnsStatusNotChecked,
+    AuditChainColumnsStatusClean,
+    /// Carries `{n}`, substituted via `.replace("{n}", &n.to_string())` —
+    /// `AuditChainStatusTamperAtSeq`'s own `{seq}` convention. An operator
+    /// count in a status line, not a grammatical plural needing
+    /// `lookup_plural`.
+    AuditChainColumnsStatusDiverging,
+    AuditChainColumnsSectionTitle,
+    /// The single most important sentence in this section (G1 ruling):
+    /// states plainly that this check does **not** reach the admin search
+    /// or audit viewer, which still read the columns directly — Phase 2's
+    /// residual, stated where an operator would otherwise assume the
+    /// opposite.
+    AuditChainColumnsNote,
+    AuditChainColumnsColRow,
+    AuditChainColumnsColColumn,
+    AuditChainColumnsAckTitle,
+    AuditChainColumnsAckNote,
+    /// Carries `{n}`. **Does not restate S7's 50-row cap** (G1 ruling,
+    /// change 2) — that number lives in `verifier.rs`'s own const, and
+    /// copy that repeats a constant drifts from it silently the first
+    /// time the constant moves.
+    AuditChainColumnsMoreNote,
+    /// **Not a reuse of `AuditChainAckButton`** (G1 ruling, change 1): the
+    /// chain-class and columns-class acknowledgement forms sit on one
+    /// screen and clear two independent findings (S3); two identical
+    /// button labels is the same defect F-7 was, moved to the UI.
+    AuditChainColumnsAckButton,
+
     // ---- RFC 185 §5.3 screen 3: the tenancy console
     // (`TenancyOverview`/`TenancyTenants`/`TenancyTenantDetail`,
     // `/admin/tenancy*`). G1 reviewed and ruled
@@ -2155,6 +2192,51 @@ fn lookup_audit_chain(key: &MessageKey, locale: Locale) -> Option<&'static str> 
         AuditChainVerifyButton => match locale {
             Locale::Ja => "今すぐ検証する（全体再検証）",
             Locale::En => "Verify now (full re-walk)",
+        },
+
+        AuditChainColumnsStatusNotChecked => match locale {
+            Locale::Ja => "未チェック — この実行はカラム照合に対応する前のものです",
+            Locale::En => "Not yet checked — this run predates column cross-checking",
+        },
+        AuditChainColumnsStatusClean => match locale {
+            Locale::Ja => "✓ カラムはペイロードと一致",
+            Locale::En => "✓ Columns match payload",
+        },
+        AuditChainColumnsStatusDiverging => match locale {
+            Locale::Ja => "⛔ {n} 件のカラムがペイロードと不一致",
+            Locale::En => "⛔ {n} column(s) diverge from payload",
+        },
+        AuditChainColumnsSectionTitle => match locale {
+            Locale::Ja => "カラム照合",
+            Locale::En => "Column cross-check",
+        },
+        AuditChainColumnsNote => match locale {
+            Locale::Ja => "重複している7つのカラム（subject、actor、client_id、ip、user_agent、reason、request_id）を、ペイロード内の対応するフィールドと比較します。不一致は、インデックス用カラムが直接書き換えられたことを意味します — ペイロード自体とチェーンは健全なままです。この照合は管理検索や監査ビューアには及びません。これらは今も直接カラムを読み取っているため、不一致のカラムは次のカットまでそれらの表示を誤らせる可能性があります。",
+            Locale::En => "Compares the seven duplicated columns (subject, actor, client_id, ip, user_agent, reason, request_id) against the payload's own copy of each field. A divergence means an indexed column was edited directly — the payload itself, and the chain, remain intact. This does not reach the admin search or audit viewer, which still read the columns directly today; a diverged column can still mislead those views until a later cut.",
+        },
+        AuditChainColumnsColRow => match locale {
+            Locale::Ja => "行（seq）",
+            Locale::En => "Row (seq)",
+        },
+        AuditChainColumnsColColumn => match locale {
+            Locale::Ja => "カラム",
+            Locale::En => "Column",
+        },
+        AuditChainColumnsAckTitle => match locale {
+            Locale::Ja => "カラム不一致の確認",
+            Locale::En => "Column divergence acknowledgement",
+        },
+        AuditChainColumnsAckNote => match locale {
+            Locale::Ja => "この不一致はまだ確認されていません。確認するまで、チェックポイントはその行を通過しますが、次回の実行でもこの画面に検出が残ります。確認しても監査ログの記録やカラムの値は復元されません — 確認する前に、カラムをペイロードと比較して行を直接調査してください。",
+            Locale::En => "This divergence has not yet been acknowledged. Until it is, the checkpoint advances past the row, but the finding stays on this screen on the next run too. Acknowledging does not restore the column or erase the audit log record — investigate the row directly (compare the column against its payload) before acknowledging.",
+        },
+        AuditChainColumnsMoreNote => match locale {
+            Locale::Ja => "他 {n} 件は表示していません",
+            Locale::En => "+{n} more not shown",
+        },
+        AuditChainColumnsAckButton => match locale {
+            Locale::Ja => "カラム不一致を確認済みにする",
+            Locale::En => "Acknowledge column divergence",
         },
 
         TenancyOverviewPageTitle => match locale {

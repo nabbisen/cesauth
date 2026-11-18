@@ -73,10 +73,11 @@
 use crate::audit::chain::{
     compute_chain_hash, verify_payload_hash, GENESIS_HASH,
 };
+use crate::audit::payload::AuditPayloadMirror;
 use crate::ports::audit::AuditEventRepository;
 use crate::ports::audit_chain::{
     AuditChainCheckpoint, AuditChainCheckpointStore,
-    AuditVerificationResult,
+    AuditVerificationResult, ColumnDivergence,
 };
 use crate::ports::PortResult;
 
@@ -85,6 +86,24 @@ use crate::ports::PortResult;
 /// pages comfortably under a Workers cron's CPU budget while
 /// keeping memory bounded.
 const PAGE_SIZE: u32 = 200;
+
+/// The seven `audit_events` columns cross-checked against the
+/// payload's own copy of each field (RFC 188 Phase 1, D4). The
+/// single source of truth for both
+/// [`crate::audit::payload::AuditPayloadMirror`]'s JSON shape (pinned
+/// by that module's own `json_keys_equal_cross_checked_columns` test)
+/// and the schema↔verifier gate (T8, `scripts/drift-scan.sh`), which
+/// parses this array's literal source text rather than having its own
+/// hand-written copy.
+pub const CROSS_CHECKED_COLUMNS: [&str; 7] = [
+    "subject", "actor", "client_id", "ip", "user_agent", "reason", "request_id",
+];
+
+/// Column name used for a row whose `payload` could not be parsed at
+/// all (RFC 188 Phase 1, S6) — distinct from a genuine column
+/// mismatch, and deliberately not one of [`CROSS_CHECKED_COLUMNS`] so
+/// it is self-describing in the console's divergence table.
+const PAYLOAD_UNPARSEABLE: &str = "payload_unparseable";
 
 /// What a verification run actually did (RFC 184 round 2 §2) —
 /// distinguishes "the walk found the chain invalid" from "the walk
@@ -172,6 +191,17 @@ where
         rows_walked:           outcome.rows_walked,
         acknowledged:          false,
         clean_walk_refused_at: None,
+        // RFC 188 Phase 1: this run's own fresh findings, unmerged.
+        // `persist_result` merges these forward against any standing
+        // unacknowledged set (S2) — the same place the chain alarm's
+        // own stickiness lives, so the two classes stay visibly
+        // independent in one function rather than duplicated here and
+        // in `verify_chain_full`.
+        column_check_performed:        true,
+        column_divergence_count:       outcome.column_divergences.len(),
+        column_divergences:            outcome.column_divergences.clone(),
+        column_divergences_acknowledged: false,
+        columns_clean_refused_at:       None,
     };
 
     // Resolve the checkpoint this run WOULD advance to, if it is
@@ -234,6 +264,11 @@ where
         rows_walked:           outcome.rows_walked,
         acknowledged:          false,
         clean_walk_refused_at: None,
+        column_check_performed:          true,
+        column_divergence_count:         outcome.column_divergences.len(),
+        column_divergences:              outcome.column_divergences.clone(),
+        column_divergences_acknowledged: false,
+        columns_clean_refused_at:        None,
     };
 
     let new_checkpoint = if result.valid {
@@ -301,6 +336,23 @@ where
     C: AuditChainCheckpointStore + ?Sized,
 {
     let prior_result = checkpoints.read_last_result().await?;
+
+    // RFC 188 Phase 1, S2/S3: merge this run's fresh column findings
+    // against the standing set BEFORE the chain-alarm branching below,
+    // so a standing CHAIN alarm refusing to overwrite `valid` cannot
+    // also suppress a genuinely new COLUMN finding (S3's independence
+    // requirement) — both branches below write the merged fields, not
+    // `computed`'s raw unmerged ones.
+    let (merged_count, merged_divergences, merged_acked, columns_clean_refused_at) =
+        merge_column_divergences(prior_result.as_ref(), &computed.column_divergences, computed.run_at);
+    let computed = AuditVerificationResult {
+        column_divergence_count:         merged_count,
+        column_divergences:              merged_divergences,
+        column_divergences_acknowledged: merged_acked,
+        columns_clean_refused_at,
+        ..computed
+    };
+
     let sticky_alarm_outstanding =
         prior_result.as_ref().is_some_and(|r| !r.valid && !r.acknowledged);
 
@@ -309,7 +361,16 @@ where
             "sticky_alarm_outstanding is only true when prior_result is Some",
         );
         let stamped = AuditVerificationResult {
-            clean_walk_refused_at: Some(computed.run_at),
+            clean_walk_refused_at:            Some(computed.run_at),
+            // The chain refusal keeps `valid`/`first_mismatch_seq` from
+            // `alarm` (RFC 184), but the column fields come from the
+            // merge above, not from `alarm`'s own stale copies — a
+            // standing chain alarm must not freeze column reporting.
+            column_check_performed:           computed.column_check_performed,
+            column_divergence_count:          computed.column_divergence_count,
+            column_divergences:               computed.column_divergences.clone(),
+            column_divergences_acknowledged:  computed.column_divergences_acknowledged,
+            columns_clean_refused_at:          computed.columns_clean_refused_at,
             ..alarm
         };
         checkpoints.write_last_result(&stamped).await?;
@@ -326,6 +387,53 @@ where
         }
     }
     Ok(VerificationOutcome { stored: computed, refused_clean_walk: None })
+}
+
+/// RFC 188 Phase 1, S2/S3/S7 — merge this run's freshly-found column
+/// divergences against the standing (unacknowledged or not) set from
+/// the prior result, independent of whatever the chain-alarm logic in
+/// [`persist_result`] decides. Deduplicates by `(seq, column)` so a
+/// FULL re-walk (which re-examines every row every time) does not
+/// double-count a divergence it already knew about, and does not
+/// un-acknowledge a finding the operator already dealt with merely by
+/// rediscovering the same tampered row again.
+///
+/// Returns `(merged_count, merged_divergences_capped_at_50,
+/// merged_acknowledged, columns_clean_refused_at)`.
+fn merge_column_divergences(
+    prior:              Option<&AuditVerificationResult>,
+    fresh_divergences:  &[ColumnDivergence],
+    run_at:             i64,
+) -> (usize, Vec<ColumnDivergence>, bool, Option<i64>) {
+    use std::collections::BTreeSet;
+
+    let prior_set: BTreeSet<(i64, String)> = prior
+        .map(|p| p.column_divergences.iter().map(|d| (d.seq, d.column.clone())).collect())
+        .unwrap_or_default();
+    let prior_acked  = prior.map(|p| p.column_divergences_acknowledged).unwrap_or(true);
+    let prior_count  = prior.map(|p| p.column_divergence_count).unwrap_or(0);
+    let prior_standing_unacked = prior.is_some_and(|p| p.column_divergence_count > 0 && !p.column_divergences_acknowledged);
+
+    let fresh_set: BTreeSet<(i64, String)> =
+        fresh_divergences.iter().map(|d| (d.seq, d.column.clone())).collect();
+
+    // Pairs this walk found that were not already in the standing set
+    // — the ones that actually need a fresh acknowledgement.
+    let genuinely_new: Vec<&(i64, String)> = fresh_set.difference(&prior_set).collect();
+
+    let merged_set: BTreeSet<(i64, String)> = prior_set.union(&fresh_set).cloned().collect();
+    let merged_count  = prior_count + genuinely_new.len();
+    let merged_acked  = if genuinely_new.is_empty() { prior_acked } else { false };
+    let merged_list: Vec<ColumnDivergence> = merged_set
+        .into_iter()
+        .take(50)
+        .map(|(seq, column)| ColumnDivergence { seq, column })
+        .collect();
+
+    let columns_clean_refused_at =
+        if prior_standing_unacked && genuinely_new.is_empty() { Some(run_at) } else { None };
+
+    (merged_count, merged_list, merged_acked, columns_clean_refused_at)
 }
 
 // ---------------------------------------------------------------------
@@ -345,6 +453,12 @@ struct WalkOutcome {
     chain_length:   i64,
     /// How many rows were walked + verified in this run.
     rows_walked:    u64,
+    /// **RFC 188 Phase 1.** (seq, column) pairs where an indexed
+    /// column disagreed with the payload's own copy of that field,
+    /// found in rows this walk reached. Uncapped, unmerged with any
+    /// prior run's standing set — `persist_result`'s
+    /// `merge_column_divergences` does both.
+    column_divergences: Vec<ColumnDivergence>,
 }
 
 /// Page-paginated walk over rows with `seq > from_seq`.
@@ -374,6 +488,7 @@ where
     let mut last_good:       Option<i64> = prev_for_anchor.as_ref().map(|c| c.last_verified_seq);
     let mut first_mismatch:  Option<i64> = None;
     let mut rows_walked:     u64         = 0;
+    let mut column_divergences: Vec<ColumnDivergence> = Vec::new();
     let mut prev_chain_hash: String      = match prev_for_anchor {
         Some(cp) => cp.chain_hash.clone(),
         None     => GENESIS_HASH.to_owned(),
@@ -432,6 +547,28 @@ where
                 break 'outer;
             }
 
+            // RFC 188 Phase 1, T2/D6: cross-check the seven indexed
+            // columns against the payload's own copy of each field.
+            // The genesis row never reaches here (it `continue`d
+            // above) — D6's "exempt by shape" needs no second
+            // mechanism. S6: a payload that fails to parse is its own
+            // finding, not a column mismatch, and does not abort the
+            // walk.
+            match AuditPayloadMirror::parse(&row.payload) {
+                Ok(mirror) => {
+                    if row.subject    != mirror.subject    { column_divergences.push(ColumnDivergence { seq: row.seq, column: "subject".to_owned() }); }
+                    if row.actor      != mirror.actor      { column_divergences.push(ColumnDivergence { seq: row.seq, column: "actor".to_owned() }); }
+                    if row.client_id  != mirror.client_id  { column_divergences.push(ColumnDivergence { seq: row.seq, column: "client_id".to_owned() }); }
+                    if row.ip         != mirror.ip         { column_divergences.push(ColumnDivergence { seq: row.seq, column: "ip".to_owned() }); }
+                    if row.user_agent != mirror.user_agent { column_divergences.push(ColumnDivergence { seq: row.seq, column: "user_agent".to_owned() }); }
+                    if row.reason     != mirror.reason     { column_divergences.push(ColumnDivergence { seq: row.seq, column: "reason".to_owned() }); }
+                    if row.request_id != mirror.request_id { column_divergences.push(ColumnDivergence { seq: row.seq, column: "request_id".to_owned() }); }
+                }
+                Err(_) => {
+                    column_divergences.push(ColumnDivergence { seq: row.seq, column: PAYLOAD_UNPARSEABLE.to_owned() });
+                }
+            }
+
             last_good = Some(row.seq);
             prev_chain_hash = row.chain_hash.clone();
         }
@@ -443,7 +580,7 @@ where
         }
     }
 
-    Ok(WalkOutcome { last_good, first_mismatch, chain_length, rows_walked })
+    Ok(WalkOutcome { last_good, first_mismatch, chain_length, rows_walked, column_divergences })
 }
 
 // End-to-end tests for the verifier live in
@@ -453,3 +590,94 @@ where
 // produce duplicate trait artifacts in Rust's compilation
 // model. Co-locating the tests with the in-memory adapters is
 // the idiomatic workaround.
+
+#[cfg(test)]
+mod tests {
+    // `merge_column_divergences` is a pure function (no port traits),
+    // so it is unit-tested directly here rather than in adapter-test —
+    // the circular-dependency reason above only applies to the walk
+    // itself.
+    use super::*;
+
+    fn result_with(
+        divergences: Vec<(i64, &str)>,
+        count: usize,
+        acked: bool,
+    ) -> AuditVerificationResult {
+        AuditVerificationResult {
+            run_at: 1, chain_length: 1, valid: true, first_mismatch_seq: None,
+            checkpoint_consistent: None, rows_walked: 0, acknowledged: false,
+            clean_walk_refused_at: None,
+            column_check_performed: true,
+            column_divergence_count: count,
+            column_divergences: divergences.into_iter()
+                .map(|(seq, column)| ColumnDivergence { seq, column: column.to_owned() })
+                .collect(),
+            column_divergences_acknowledged: acked,
+            columns_clean_refused_at: None,
+        }
+    }
+
+    #[test]
+    fn no_prior_no_fresh_is_empty_and_not_refused() {
+        let (count, list, acked, refused) = merge_column_divergences(None, &[], 100);
+        assert_eq!(count, 0);
+        assert!(list.is_empty());
+        assert!(acked); // nothing to acknowledge
+        assert_eq!(refused, None);
+    }
+
+    #[test]
+    fn fresh_divergence_with_no_prior_is_new_and_unacknowledged() {
+        let fresh = [ColumnDivergence { seq: 5, column: "actor".to_owned() }];
+        let (count, list, acked, refused) = merge_column_divergences(None, &fresh, 100);
+        assert_eq!(count, 1);
+        assert_eq!(list, vec![ColumnDivergence { seq: 5, column: "actor".to_owned() }]);
+        assert!(!acked);
+        assert_eq!(refused, None); // nothing was standing to refuse
+    }
+
+    #[test]
+    fn a_clean_walk_does_not_clear_a_standing_unacknowledged_set_and_stamps_refusal() {
+        let prior = result_with(vec![(5, "actor")], 1, false);
+        let (count, list, acked, refused) = merge_column_divergences(Some(&prior), &[], 200);
+        assert_eq!(count, 1, "the standing divergence survives a clean walk");
+        assert_eq!(list, vec![ColumnDivergence { seq: 5, column: "actor".to_owned() }]);
+        assert!(!acked, "still not acknowledged");
+        assert_eq!(refused, Some(200), "the clean walk is stamped as refused, not silent");
+    }
+
+    #[test]
+    fn a_genuinely_new_divergence_un_acknowledges_an_already_acknowledged_set() {
+        let prior = result_with(vec![(5, "actor")], 1, true); // already acked
+        let fresh = [ColumnDivergence { seq: 9, column: "reason".to_owned() }];
+        let (count, list, acked, refused) = merge_column_divergences(Some(&prior), &fresh, 300);
+        assert_eq!(count, 2, "old acknowledged entry plus the new one");
+        assert_eq!(list.len(), 2);
+        assert!(!acked, "a new finding needs its own acknowledgement");
+        assert_eq!(refused, None, "this was a genuine new finding, not a refusal");
+    }
+
+    #[test]
+    fn rediscovering_the_same_pair_on_a_full_rewalk_does_not_double_count_or_unacknowledge() {
+        // A full re-walk starts from seq=0 every time, so it re-finds
+        // every standing divergence on every run — this must not
+        // inflate the count or keep flipping acknowledged back to false.
+        let prior = result_with(vec![(5, "actor")], 1, true);
+        let fresh = [ColumnDivergence { seq: 5, column: "actor".to_owned() }]; // same pair again
+        let (count, list, acked, refused) = merge_column_divergences(Some(&prior), &fresh, 400);
+        assert_eq!(count, 1, "not double-counted");
+        assert_eq!(list.len(), 1);
+        assert!(acked, "rediscovering an already-acknowledged pair does not un-acknowledge it");
+        assert_eq!(refused, None, "this run DID find something (even if already known), so it is not a 'clean' refusal");
+    }
+
+    #[test]
+    fn stored_list_is_capped_at_fifty_but_count_is_not() {
+        let prior_divergences: Vec<(i64, &str)> = (0..60).map(|i| (i, "actor")).collect();
+        let prior = result_with(prior_divergences, 60, false);
+        let (count, list, _, _) = merge_column_divergences(Some(&prior), &[], 500);
+        assert_eq!(count, 60, "the count is never capped");
+        assert_eq!(list.len(), 50, "the stored list is capped at 50");
+    }
+}

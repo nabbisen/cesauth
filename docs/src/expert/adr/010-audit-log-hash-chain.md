@@ -147,22 +147,53 @@ in the hash chain.
 `payload_hash`, `seq`, `ts`, `kind`, and `id` only). A tamper
 that edits one of them directly, leaving `payload` and
 `chain_hash` alone, changes what admin search and the viewer
-display without being caught by `verify_chain`/`verify_chain_full`.
-Closing that gap means **detecting** the disagreement, not
-preventing the edit: the verifier would have to compare each
-indexed column against the payload's own copy of the same
-field, which is a check it does not perform today. That check
-has to treat an *absent* payload key as no claim rather than a
-mismatch — `actor` is absent from every pre-0021 payload and
-`request_id` from every pre-0015 one — so it is its own change
-with its own compatibility question, not a line added here.
-(Access control over the column is a different property. It
-would make such an edit harder to perform; it would not make
-one evident after the fact, which is what this ADR is about.)
-RFC 187's G2 test
-(`cesauth-adapter-test::audit_chain::tests`) demonstrates this
-for `actor`; the finding generalizes to every column in the
-list above.
+display without, by itself, breaking the chain.
+
+**RFC 188 Phase 1 (`0.108.0`) closes the detection half of this
+gap, not the prevention half — detection was always the right
+fix** (access control over the column would make the edit
+harder to perform, not evident after the fact, which is what
+this ADR is about). `walk_and_verify` now parses each row's
+`payload` and compares it against the seven indexed columns
+that have a payload twin — `subject`, `actor`, `client_id`,
+`ip`, `user_agent`, `reason`, `request_id` — treating an
+*absent* payload key as no claim rather than a mismatch
+(`actor` is absent from every pre-`0021` payload, `request_id`
+from every pre-`0015` one). A divergence is reported — count
+plus the first 50 affected rows, surfaced on the chain-status
+console in both locales — **without setting `valid: false`**:
+the chain itself is still intact, and conflating "an index
+disagrees with its payload" with "the chain broke" is the exact
+confusion this detection exists to resolve, not reproduce.
+
+**What Phase 1 still does not cover, stated rather than implied:**
+
+- **`created_at` has no payload twin, by design** (see the
+  comment on that column above) — it stays permanently outside
+  this check, not a gap to close later.
+- **A row is covered once**, the walk that reaches it — an
+  incremental run checks only the rows past the last checkpoint;
+  a full re-verify (`verify_chain_full`) re-checks everything,
+  which is also why a column divergence found once does not
+  reappear as a "new" finding on every subsequent full re-walk
+  (the finding is deduplicated and merged forward, not
+  rediscovered as fresh each time).
+- **Phase 2, not yet built**: the admin search, the audit viewer,
+  and the CSV/JSONL export all still read the indexed columns
+  directly, not the payload. A tampered column can still make a
+  row **invisible to a filter** on those surfaces today, even
+  though Phase 1's own verification screen would separately
+  report the divergence — the two facts live on different pages
+  until Phase 2 lands.
+- **Nothing outside `audit_events` is covered.** This is a
+  property of this one table's own write path, not a general
+  tamper-evidence mechanism for other D1 tables.
+
+RFC 187's G2 test, now inverted to assert the closed behaviour
+(`cesauth-adapter-test::audit_chain::tests::g2_tampering_the_actor_column_alone_is_now_caught_as_a_column_divergence`),
+is joined by one such test per cross-checked column — the
+finding this section originally recorded generalized to all
+seven, and now all seven are proven, not just `actor`.
 
 ## Hash calculation
 

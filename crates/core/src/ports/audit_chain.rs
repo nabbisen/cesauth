@@ -138,6 +138,64 @@ pub struct AuditVerificationResult {
     /// pre-release-KV-blob reason as `acknowledged` above.
     #[serde(default)]
     pub clean_walk_refused_at:  Option<i64>,
+
+    /// **RFC 188 Phase 1, S5.** Distinguishes "did not look" from
+    /// "looked, found none" — the console must never read an empty
+    /// [`Self::column_divergences`] as "clean" when this is `false`.
+    /// `#[serde(default)]` so a blob written before this cut
+    /// deserializes as `false` (did not look), never as a false
+    /// "looked and found nothing" claim. Once a post-cut run sets this
+    /// `true`, it never reverts to `false` — see
+    /// [`crate::audit::verifier::persist_result`].
+    #[serde(default)]
+    pub column_check_performed: bool,
+    /// **RFC 188 Phase 1, S7.** Total divergent (row, column) pairs
+    /// found and not yet acknowledged, UNCAPPED — the number the
+    /// console's three-state line reports. May exceed
+    /// `column_divergences.len()` once more than 50 have accumulated.
+    #[serde(default)]
+    pub column_divergence_count: usize,
+    /// **RFC 188 Phase 1, S7.** The first (row, column) pairs to
+    /// investigate, capped at 50 so a wholesale column rewrite cannot
+    /// produce an unbounded stored blob. [`Self::column_divergence_count`]
+    /// is the number that matters for the status line; this list is for
+    /// naming where to start looking.
+    #[serde(default)]
+    pub column_divergences: Vec<ColumnDivergence>,
+    /// **RFC 188 Phase 1, S3.** Mirrors [`Self::acknowledged`] for the
+    /// `columns` class — set via
+    /// `POST /admin/console/audit/chain/acknowledge` with
+    /// `class=columns`. Acknowledging does NOT clear
+    /// [`Self::column_divergences`]/[`Self::column_divergence_count`]
+    /// (the record stays, same as the chain class's own
+    /// `first_mismatch_seq`); a later run finding a genuinely NEW
+    /// divergence resets this to `false` — a new finding needs its own
+    /// acknowledgement, same rule as the chain class.
+    #[serde(default)]
+    pub column_divergences_acknowledged: bool,
+    /// **RFC 188 Phase 1, S2.** Unix-seconds of the most recent run
+    /// whose own walk found no NEW column divergence while a standing
+    /// unacknowledged set already existed — the column-class analogue of
+    /// [`Self::clean_walk_refused_at`]. `None` if no such run has
+    /// happened since the standing set's oldest unacknowledged entry.
+    #[serde(default)]
+    pub columns_clean_refused_at: Option<i64>,
+}
+
+/// One divergent (row, column) pair — an indexed `audit_events` column
+/// whose value disagrees with the same field inside that row's own
+/// `payload` JSON. **RFC 188 Phase 1.**
+///
+/// `column` is one of [`crate::audit::verifier::CROSS_CHECKED_COLUMNS`],
+/// or the sentinel `"payload_unparseable"` when the row's payload could
+/// not be parsed at all (S6) — a distinct finding from a column
+/// mismatch, deliberately given a column name no real column has so it
+/// is self-describing in the console's divergence table rather than
+/// needing a second list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ColumnDivergence {
+    pub seq:    i64,
+    pub column: String,
 }
 
 /// Storage trait for the chain head checkpoint + last
@@ -172,4 +230,32 @@ pub trait AuditChainCheckpointStore {
     /// Persist a verification result. Called by the verifier on
     /// every run, success or failure.
     async fn write_last_result(&self, r: &AuditVerificationResult) -> PortResult<()>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// RFC 188 Phase 1 S5: a KV blob written before this cut has none
+    /// of the five new fields in its JSON at all. It must deserialize
+    /// as "did not look", not as a false "looked, found nothing" claim.
+    #[test]
+    fn pre_rfc_188_blob_deserializes_as_not_checked() {
+        let pre_cut_json = r#"{
+            "run_at": 1700000000,
+            "chain_length": 10,
+            "valid": true,
+            "first_mismatch_seq": null,
+            "checkpoint_consistent": true,
+            "rows_walked": 10,
+            "acknowledged": false,
+            "clean_walk_refused_at": null
+        }"#;
+        let r: AuditVerificationResult = serde_json::from_str(pre_cut_json).unwrap();
+        assert!(!r.column_check_performed, "absent field must read as 'did not look'");
+        assert_eq!(r.column_divergence_count, 0);
+        assert!(r.column_divergences.is_empty());
+        assert!(!r.column_divergences_acknowledged);
+        assert_eq!(r.columns_clean_refused_at, None);
+    }
 }

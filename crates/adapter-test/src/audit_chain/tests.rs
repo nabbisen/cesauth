@@ -536,37 +536,20 @@ async fn g2_chain_with_pre_and_post_migration_actor_rows_verifies_valid() {
 }
 
 #[tokio::test]
-async fn g2_tampering_the_actor_column_alone_is_not_caught_by_chain_verification() {
-    // **This is the required pair's second half, and it does NOT prove
-    // what the handoff's §10 says it proves.** Read `verify_chain`'s own
-    // module doc (`crates/core/src/audit/verifier.rs:7-30`): verification
-    // checks exactly three things — payload_hash integrity, chain_hash
-    // integrity, and chain linkage (previous_hash). None of the three
-    // reads any indexed column (actor, subject, client_id, ...) and
-    // compares it against the payload's own copy of that field. So
-    // editing ONLY the `actor` column, leaving `payload`/`payload_hash`/
-    // `chain_hash` untouched, changes nothing any of those three checks
-    // look at — `valid` stays `true`.
-    //
-    // This is not new to `actor`: the SAME gap exists for `subject`,
-    // `client_id`, `ip`, `user_agent`, and `reason` today, for every row
-    // in the table, and predates this cut. RFC 187's own text ("the
-    // actor becomes tamper-evident for free — provided you put it in
-    // the payload") reads as a claim about the automated verifier; what
-    // D1 actually buys is narrower: a HUMAN comparing the displayed
-    // column against the archived `payload` blob (via `wrangler d1
-    // execute` or an export) CAN notice the mismatch, because the
-    // evidence is there to compare against. No code path does that
-    // comparison automatically today.
-    //
-    // Per the handoff's own instruction ("if the chain breaks, stop and
-    // report — that refutes the RFC's design and is worth more than an
-    // implementation"): the chain does not break (see the companion
-    // test above), so this is not that stop condition. But the
-    // specific claim in §10 ("fails verification... the proof D1
-    // bought") is reported here as not reproducing, rather than this
-    // test being written to silently assert the opposite of what it
-    // measures.
+async fn g2_tampering_the_actor_column_alone_is_now_caught_as_a_column_divergence() {
+    // **Inverted at RFC 188 Phase 1 (0.108.0).** Until this cut, this
+    // test documented the actual (gap) behaviour: a column-only tamper
+    // did not fail chain verification, because `verify_chain` checked
+    // exactly three things (payload_hash, chain_hash, previous_hash
+    // linkage) and none of them read any indexed column. RFC 187's own
+    // text ("the actor becomes tamper-evident for free") was a claim
+    // about the automated verifier that the code did not back up — see
+    // the RFC 188 slice A handoff's §1 and RFC 187's own round-3 G2
+    // finding this test originally recorded. Phase 1 closes exactly
+    // this gap: `walk_and_verify` now parses the payload and compares
+    // all seven cross-checked columns against it. `valid` stays `true`
+    // (S1 — a column divergence is not a chain break), but the
+    // divergence is now reported.
     let repo = InMemoryAuditEventRepository::with_genesis();
     let payload = r#"{"subject":"user-2","actor":"admin-1"}"#;
     let h = compute_payload_hash(payload.as_bytes());
@@ -587,10 +570,256 @@ async fn g2_tampering_the_actor_column_alone_is_not_caught_by_chain_verification
 
     let checkpoints = InMemoryAuditChainCheckpointStore::new();
     let outcome = verify_chain_full(&repo, &checkpoints, NOW).await.unwrap();
-    assert!(
-        outcome.stored.valid,
-        "documents the actual behaviour: a column-only tamper does not fail \
-         chain verification today, contrary to the handoff's §10 claim — see \
-         this test's own comment and the G2 finding in the implementation report",
+    assert!(outcome.stored.valid, "S1: a column divergence must not break the chain");
+    assert_eq!(outcome.stored.column_divergence_count, 1);
+    assert_eq!(
+        outcome.stored.column_divergences,
+        vec![cesauth_core::ports::audit_chain::ColumnDivergence { seq: 2, column: "actor".to_owned() }],
     );
+}
+
+// =====================================================================
+// RFC 188 Phase 1 — column cross-check
+// =====================================================================
+
+/// §10 test 1: each of the seven columns, tampered one at a time,
+/// reported as a divergence naming the column and the seq, with
+/// `valid` still `true` and the checkpoint still advancing.
+///
+/// **Iterates `verifier::CROSS_CHECKED_COLUMNS` itself** (round 2 ruling,
+/// `.git-exclude/reviewed/188-phase1-review.md` §1) rather than a
+/// hand-written copy of its seven names: that copy was the one link in
+/// this design's chain of agreements with nothing structural pinning it
+/// to the const, so a column added to the const (and the schema, and the
+/// mirror) with its `if` statement in `walk_and_verify` forgotten would
+/// have passed every other gate silently. Driving the loop from the const
+/// itself means a missing `if` now fails this test directly.
+#[tokio::test]
+async fn each_of_the_seven_columns_tampered_alone_is_reported_by_name() {
+    for column in cesauth_core::audit::verifier::CROSS_CHECKED_COLUMNS {
+        let repo = InMemoryAuditEventRepository::with_genesis();
+        let payload = r#"{"subject":"user-1","client_id":"c1","ip":"203.0.113.1","user_agent":"ua","reason":"r","request_id":"rid"}"#;
+        let h = compute_payload_hash(payload.as_bytes());
+        repo.append(&NewAuditEvent {
+            id: "e1", ts: 200, kind: "test_event",
+            subject: Some("user-1"), actor: None,
+            client_id: Some("c1"), ip: Some("203.0.113.1"),
+            user_agent: Some("ua"), reason: Some("r"),
+            payload, payload_hash: &h, created_at: 200, request_id: Some("rid"),
+        }).await.unwrap();
+
+        repo.tamper_set_column(2, column, Some("tampered-value".to_owned()));
+
+        let checkpoints = InMemoryAuditChainCheckpointStore::new();
+        let outcome = verify_chain_full(&repo, &checkpoints, NOW).await.unwrap();
+        assert!(outcome.stored.valid, "tampering {column} alone must not break the chain");
+        assert_eq!(outcome.stored.column_divergence_count, 1, "tampering {column}");
+        assert_eq!(outcome.stored.column_divergences[0].seq, 2);
+        assert_eq!(outcome.stored.column_divergences[0].column, column);
+        // The checkpoint still advances past a divergent row (S2).
+        let cp = checkpoints.read_checkpoint().await.unwrap();
+        assert_eq!(cp.map(|c| c.last_verified_seq), Some(2), "tampering {column}");
+    }
+}
+
+/// `actor` has its own test above (the inverted F-7 test); included
+/// here too for a single place that proves all seven, not six-plus-one.
+#[tokio::test]
+async fn actor_tampered_alone_is_reported_by_name() {
+    let repo = InMemoryAuditEventRepository::with_genesis();
+    let payload = r#"{"actor":"admin-1"}"#;
+    let h = compute_payload_hash(payload.as_bytes());
+    repo.append(&NewAuditEvent {
+        id: "e1", ts: 200, kind: "test_event",
+        subject: None, actor: Some("admin-1"),
+        client_id: None, ip: None, user_agent: None, reason: None,
+        payload, payload_hash: &h, created_at: 200, request_id: None,
+    }).await.unwrap();
+    repo.tamper_set_actor(2, Some("admin-2".to_owned()));
+
+    let checkpoints = InMemoryAuditChainCheckpointStore::new();
+    let outcome = verify_chain_full(&repo, &checkpoints, NOW).await.unwrap();
+    assert!(outcome.stored.valid);
+    assert_eq!(outcome.stored.column_divergence_count, 1);
+    assert_eq!(outcome.stored.column_divergences[0].column, "actor");
+}
+
+/// §10 test 3: pre-`0015`/pre-`0021` payloads (D5) — the column is
+/// `NULL` because the row predates the migration that added it, and
+/// the payload JSON genuinely omits the key (not `null`). This must
+/// NOT be reported as a divergence; it is this slice's most important
+/// false-positive case.
+#[tokio::test]
+async fn pre_migration_rows_with_the_column_null_and_the_key_absent_from_payload_are_not_divergences() {
+    let repo = InMemoryAuditEventRepository::with_genesis();
+
+    // Pre-0021 (no `actor` column existed yet): payload omits the key.
+    let payload_a = r#"{"subject":"user-1"}"#;
+    let h_a = compute_payload_hash(payload_a.as_bytes());
+    repo.append(&NewAuditEvent {
+        id: "pre-actor", ts: 100, kind: "legacy_event",
+        subject: Some("user-1"), actor: None,
+        client_id: None, ip: None, user_agent: None, reason: None,
+        payload: payload_a, payload_hash: &h_a, created_at: 100, request_id: None,
+    }).await.unwrap();
+
+    // Pre-0015 (no `request_id` column existed yet): payload omits it too.
+    let payload_b = r#"{"subject":"user-2"}"#;
+    let h_b = compute_payload_hash(payload_b.as_bytes());
+    repo.append(&NewAuditEvent {
+        id: "pre-request-id", ts: 101, kind: "legacy_event",
+        subject: Some("user-2"), actor: None,
+        client_id: None, ip: None, user_agent: None, reason: None,
+        payload: payload_b, payload_hash: &h_b, created_at: 101, request_id: None,
+    }).await.unwrap();
+
+    let checkpoints = InMemoryAuditChainCheckpointStore::new();
+    let outcome = verify_chain_full(&repo, &checkpoints, NOW).await.unwrap();
+    assert!(outcome.stored.valid);
+    assert_eq!(
+        outcome.stored.column_divergence_count, 0,
+        "an absent payload key and a NULL column must read as equal (D5), not a divergence",
+    );
+}
+
+/// §10 test 4: stickiness (S2). Run 1 finds a divergence; run 2
+/// (incremental, past the checkpoint) finds nothing new → the standing
+/// set survives and the refusal is stamped.
+#[tokio::test]
+async fn stickiness_a_later_clean_incremental_run_does_not_clear_the_standing_divergence() {
+    let repo = InMemoryAuditEventRepository::with_genesis();
+    let payload = r#"{"actor":"admin-1"}"#;
+    let h = compute_payload_hash(payload.as_bytes());
+    repo.append(&NewAuditEvent {
+        id: "e1", ts: 200, kind: "test_event",
+        subject: None, actor: Some("admin-1"),
+        client_id: None, ip: None, user_agent: None, reason: None,
+        payload, payload_hash: &h, created_at: 200, request_id: None,
+    }).await.unwrap();
+    repo.tamper_set_actor(2, Some("admin-2".to_owned()));
+
+    let checkpoints = InMemoryAuditChainCheckpointStore::new();
+
+    // Run 1: incremental, cold start — finds the divergence.
+    let run1 = verify_chain(&repo, &checkpoints, 1_000).await.unwrap();
+    assert_eq!(run1.stored.column_divergence_count, 1);
+    assert!(!run1.stored.column_divergences_acknowledged);
+
+    // Append a clean row after the checkpoint.
+    repo.append(&NewAuditEvent {
+        id: "e2", ts: 300, kind: "test_event",
+        subject: None, actor: None, client_id: None, ip: None,
+        user_agent: None, reason: None,
+        payload: "{}", payload_hash: &compute_payload_hash(b"{}"),
+        created_at: 300, request_id: None,
+    }).await.unwrap();
+
+    // Run 2: incremental, resumes past seq=2 (the divergent row is not
+    // re-walked), finds nothing new in what it walks.
+    let run2 = verify_chain(&repo, &checkpoints, 2_000).await.unwrap();
+    assert_eq!(
+        run2.stored.column_divergence_count, 1,
+        "the standing divergence from run 1 survives a clean run 2",
+    );
+    assert!(!run2.stored.column_divergences_acknowledged);
+    assert_eq!(
+        run2.stored.columns_clean_refused_at, Some(2_000),
+        "the clean run is stamped as refused, not silently dropped",
+    );
+}
+
+/// §10 test 5: the four-way independence table (S3/T3). Chain alarm
+/// standing × divergence standing, acknowledged in each class — each
+/// acknowledgement must clear only its own class.
+#[tokio::test]
+async fn chain_alarm_and_column_divergence_are_independently_acknowledged() {
+    let repo = InMemoryAuditEventRepository::with_genesis();
+    let payload = r#"{"actor":"admin-1"}"#;
+    let h = compute_payload_hash(payload.as_bytes());
+    repo.append(&NewAuditEvent {
+        id: "e1", ts: 200, kind: "test_event",
+        subject: None, actor: Some("admin-1"),
+        client_id: None, ip: None, user_agent: None, reason: None,
+        payload, payload_hash: &h, created_at: 200, request_id: None,
+    }).await.unwrap();
+    // A column tamper (does not break the chain)...
+    repo.tamper_set_actor(2, Some("admin-2".to_owned()));
+    // ...and a chain tamper on a different row entirely (breaks it).
+    repo.append(&NewAuditEvent {
+        id: "e2", ts: 300, kind: "test_event",
+        subject: None, actor: None, client_id: None, ip: None,
+        user_agent: None, reason: None,
+        payload: "{}", payload_hash: &compute_payload_hash(b"{}"),
+        created_at: 300, request_id: None,
+    }).await.unwrap();
+    repo.tamper_set_chain_hash(3, "0".repeat(64));
+
+    let checkpoints = InMemoryAuditChainCheckpointStore::new();
+
+    // Run 1: finds BOTH the chain break (seq 3) and the column
+    // divergence (seq 2, which is walked before the break is hit).
+    let run1 = verify_chain_full(&repo, &checkpoints, 1_000).await.unwrap();
+    assert!(!run1.stored.valid, "chain alarm standing");
+    assert_eq!(run1.stored.first_mismatch_seq, Some(3));
+    assert_eq!(run1.stored.column_divergence_count, 1, "column divergence also standing");
+    assert!(!run1.stored.acknowledged);
+    assert!(!run1.stored.column_divergences_acknowledged);
+
+    // Acknowledge ONLY the columns class.
+    let r = checkpoints.read_last_result().await.unwrap().unwrap();
+    let ack_columns = cesauth_core::ports::audit_chain::AuditVerificationResult {
+        column_divergences_acknowledged: true,
+        ..r
+    };
+    checkpoints.write_last_result(&ack_columns).await.unwrap();
+
+    let after_columns_ack = checkpoints.read_last_result().await.unwrap().unwrap();
+    assert!(after_columns_ack.column_divergences_acknowledged, "columns class cleared");
+    assert!(!after_columns_ack.acknowledged, "chain class untouched by the columns ack");
+
+    // Acknowledge ONLY the chain class on top of that.
+    let ack_chain = cesauth_core::ports::audit_chain::AuditVerificationResult {
+        acknowledged: true,
+        ..after_columns_ack
+    };
+    checkpoints.write_last_result(&ack_chain).await.unwrap();
+
+    let after_both = checkpoints.read_last_result().await.unwrap().unwrap();
+    assert!(after_both.acknowledged, "chain class now cleared");
+    assert!(after_both.column_divergences_acknowledged, "columns class stays cleared — the chain ack did not touch it");
+}
+
+/// §10 test 7: a malformed payload (S6) is its own finding, not a
+/// column mismatch, and does not abort the walk.
+#[tokio::test]
+async fn a_malformed_payload_is_reported_as_payload_unparseable_and_the_walk_completes() {
+    let repo = InMemoryAuditEventRepository::with_genesis();
+    // A payload that isn't a JSON object at all — note array inputs
+    // deserialize positionally under serde (see
+    // `cesauth_core::audit::payload`'s own test comment on this), so
+    // this uses genuinely invalid JSON syntax instead.
+    let bad_payload = "not valid json";
+    let h = compute_payload_hash(bad_payload.as_bytes());
+    repo.append(&NewAuditEvent {
+        id: "e1", ts: 200, kind: "test_event",
+        subject: None, actor: None, client_id: None, ip: None,
+        user_agent: None, reason: None,
+        payload: bad_payload, payload_hash: &h, created_at: 200, request_id: None,
+    }).await.unwrap();
+    // A clean row after it, to confirm the walk did not abort.
+    repo.append(&NewAuditEvent {
+        id: "e2", ts: 300, kind: "test_event",
+        subject: None, actor: None, client_id: None, ip: None,
+        user_agent: None, reason: None,
+        payload: "{}", payload_hash: &compute_payload_hash(b"{}"),
+        created_at: 300, request_id: None,
+    }).await.unwrap();
+
+    let checkpoints = InMemoryAuditChainCheckpointStore::new();
+    let outcome = verify_chain_full(&repo, &checkpoints, NOW).await.unwrap();
+    assert!(outcome.stored.valid, "an unparseable payload is not a chain break");
+    assert_eq!(outcome.stored.rows_walked, 3, "the walk completed past the bad row, not aborted");
+    assert_eq!(outcome.stored.column_divergence_count, 1);
+    assert_eq!(outcome.stored.column_divergences[0].column, "payload_unparseable");
+    assert_eq!(outcome.stored.column_divergences[0].seq, 2);
 }

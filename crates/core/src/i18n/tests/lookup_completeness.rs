@@ -156,6 +156,12 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         AuditChainColLastVerifiedSeq | AuditChainColRecordedChainHash |
         AuditChainColRecordedAt | AuditChainColConsistency |
         AuditChainVerifyTitle | AuditChainVerifyNote | AuditChainVerifyButton |
+        // RFC 188 Phase 1 — column cross-check section, chain-status screen
+        AuditChainColumnsStatusNotChecked | AuditChainColumnsStatusClean |
+        AuditChainColumnsStatusDiverging | AuditChainColumnsSectionTitle |
+        AuditChainColumnsNote | AuditChainColumnsColRow | AuditChainColumnsColColumn |
+        AuditChainColumnsAckTitle | AuditChainColumnsAckNote | AuditChainColumnsMoreNote |
+        AuditChainColumnsAckButton |
         TenancyOverviewPageTitle | TenancyTenantsPageTitle | TenancyTenantDetailPageTitle |
         TenancyCreateTenantLink | TenancyOverviewTenantCountLabel |
         TenancyOverviewTenantCountFetchFailed | TenancyTenantsBackLink | TenancyTenantsEmpty |
@@ -301,6 +307,12 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         AuditChainColLastVerifiedSeq, AuditChainColRecordedChainHash,
         AuditChainColRecordedAt, AuditChainColConsistency,
         AuditChainVerifyTitle, AuditChainVerifyNote, AuditChainVerifyButton,
+        // RFC 188 Phase 1
+        AuditChainColumnsStatusNotChecked, AuditChainColumnsStatusClean,
+        AuditChainColumnsStatusDiverging, AuditChainColumnsSectionTitle,
+        AuditChainColumnsNote, AuditChainColumnsColRow, AuditChainColumnsColColumn,
+        AuditChainColumnsAckTitle, AuditChainColumnsAckNote, AuditChainColumnsMoreNote,
+        AuditChainColumnsAckButton,
         TenancyOverviewPageTitle, TenancyTenantsPageTitle, TenancyTenantDetailPageTitle,
         TenancyCreateTenantLink, TenancyOverviewTenantCountLabel,
         TenancyOverviewTenantCountFetchFailed, TenancyTenantsBackLink, TenancyTenantsEmpty,

@@ -29,6 +29,14 @@ pub type Id = String;
 /// Unix epoch seconds. We use `i64` everywhere (not `u64`) because SQLite
 /// D1 returns signed integers and negative-before-epoch is a legitimate
 /// corner case for imported data.
+///
+/// **RFC 111 slice C** (`0.108.0`): a negative value is *storable* here
+/// but not *displayable as itself* — [`crate::util::format_unix_as_iso8601`]
+/// clamps every negative input to the epoch rather than rendering a
+/// pre-1970 date (a decision, recorded there, not an omission). No
+/// importer of pre-1970 data exists today; if one ever lands, the
+/// formatter must handle negatives before it ships, or the display will
+/// silently rewrite history to 1970.
 pub type UnixSeconds = i64;
 
 /// A user as stored in D1. `email` is optional to support username-less

@@ -556,8 +556,12 @@ mod rfc_111 {
 
     #[test]
     fn canonical_formatter_handles_negative_as_epoch() {
-        // Defensive: negative inputs (rare but possible from i64 fields)
-        // clamp to epoch, not panic.
+        // Policy, not a defensive fallback: RFC 111 D1 (recorded in
+        // `cesauth_core::types::UnixSeconds`'s doc comment and the
+        // formatter's own) decided that a negative input clamps to the
+        // epoch rather than rendering a pre-1970 date. No importer of
+        // pre-1970 data exists today; if one ever lands, the formatter
+        // must handle negatives before it ships.
         assert_eq!(format_unix_as_iso8601(-1), "1970-01-01T00:00:00Z");
     }
 }

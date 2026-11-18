@@ -221,6 +221,13 @@ pub enum EventKind {
     /// this fact cannot itself be overwritten by the next button press:
     /// the audit log is hash-chained and append-only.
     AdminAuditChainAlarmAcknowledged,
+    /// **RFC 188 Phase 1, S3.** An operator acknowledged the `columns`
+    /// class via `POST /admin/console/audit/chain/acknowledge`
+    /// (`class=columns`) — distinct from
+    /// [`EventKind::AdminAuditChainAlarmAcknowledged`] (the `chain`
+    /// class): one control, two independently-acknowledgeable findings,
+    /// and each acknowledgement clears only its own class.
+    AdminAuditColumnDivergenceAcknowledged,
     AdminBucketSafetyVerified,
     AdminBucketSafetyChanged,
     AdminThresholdUpdated,
@@ -551,6 +558,7 @@ impl EventKind {
             Self::AdminConsoleViewed           => "admin_console_viewed",
             Self::AdminAuditChainVerified      => "admin_audit_chain_verified",
             Self::AdminAuditChainAlarmAcknowledged => "admin_audit_chain_alarm_acknowledged",
+            Self::AdminAuditColumnDivergenceAcknowledged => "admin_audit_column_divergence_acknowledged",
             Self::AdminBucketSafetyVerified    => "admin_bucket_safety_verified",
             Self::AdminBucketSafetyChanged     => "admin_bucket_safety_changed",
             Self::AdminThresholdUpdated        => "admin_threshold_updated",

@@ -86,6 +86,55 @@ use crate::require_system_admin;
 use crate::routes::admin::auth;
 
 // -------------------------------------------------------------------------
+// RFC 188 Phase 1, S3/S4/T5 — the acknowledge route's required `class`
+// -------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AckClass {
+    Chain,
+    Columns,
+}
+
+/// Parses the `class` form field. `None` for absent or unknown — the
+/// caller maps that to a 400 with no write and no audit event (S3: "no
+/// default, ever"). Pulled out as a pure function so the four required
+/// cases (`chain`, `columns`, absent, unknown) are host-testable
+/// without a real `worker::Request`.
+fn parse_ack_class(class: &str) -> Option<AckClass> {
+    match class {
+        "chain"   => Some(AckClass::Chain),
+        "columns" => Some(AckClass::Columns),
+        _         => None,
+    }
+}
+
+#[cfg(test)]
+mod ack_class_tests {
+    use super::*;
+
+    #[test]
+    fn chain_parses() {
+        assert_eq!(parse_ack_class("chain"), Some(AckClass::Chain));
+    }
+
+    #[test]
+    fn columns_parses() {
+        assert_eq!(parse_ack_class("columns"), Some(AckClass::Columns));
+    }
+
+    #[test]
+    fn absent_class_is_none() {
+        assert_eq!(parse_ack_class(""), None);
+    }
+
+    #[test]
+    fn unknown_class_is_none() {
+        assert_eq!(parse_ack_class("bogus"), None);
+        assert_eq!(parse_ack_class("Chain"), None, "case-sensitive, no silent normalization");
+    }
+}
+
+// -------------------------------------------------------------------------
 // GET /admin/console/audit/chain
 // -------------------------------------------------------------------------
 
@@ -210,6 +259,12 @@ pub async fn verify_now<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Res
 /// been dealt with, not an inspection of the chain. A no-op when there
 /// is nothing unacknowledged to clear: no write, no audit event,
 /// idempotent redirect.
+/// **RFC 188 Phase 1, S3.** `class` is now required: `chain` or
+/// `columns`. Absent or unknown value → 400, no write, no audit event
+/// — the same no-write-no-event discipline the pre-existing "nothing
+/// to clear" path already demonstrated, extended to the new failure
+/// shape. Each class clears only its own standing finding; one
+/// acknowledgement never clears both.
 pub async fn acknowledge<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Response> {
     require_system_admin!(req, ctx, principal, AdminAction::AcknowledgeTamperAlarm);
 
@@ -224,32 +279,70 @@ pub async fn acknowledge<D>(mut req: Request, ctx: RouteContext<D>) -> Result<Re
         return Response::error("Bad Request", 400);
     }
 
+    let class = match form.get("class") {
+        Some(worker::FormEntry::Field(v)) => v,
+        _ => String::new(),
+    };
+    let class = match parse_ack_class(&class) {
+        Some(c) => c,
+        None    => return Response::error("Bad Request", 400),
+    };
+
     let checkpoints = CloudflareAuditChainCheckpointStore::new(&ctx.env);
     let current = checkpoints.read_last_result().await
         .map_err(|e| worker::Error::RustError(format!("checkpoint last_result read failed: {e:?}")))?;
 
-    if let Some(r) = current {
-        if !r.valid && !r.acknowledged {
-            let first_mismatch_seq = r.first_mismatch_seq;
-            let run_at             = r.run_at;
-            let acked = AuditVerificationResult {
-                acknowledged: true,
-                ..r
-            };
-            checkpoints.write_last_result(&acked).await
-                .map_err(|e| worker::Error::RustError(format!("checkpoint last_result write failed: {e:?}")))?;
+    match class {
+        AckClass::Chain => {
+            if let Some(r) = current {
+                if !r.valid && !r.acknowledged {
+                    let first_mismatch_seq = r.first_mismatch_seq;
+                    let run_at             = r.run_at;
+                    let acked = AuditVerificationResult {
+                        acknowledged: true,
+                        ..r
+                    };
+                    checkpoints.write_last_result(&acked).await
+                        .map_err(|e| worker::Error::RustError(format!("checkpoint last_result write failed: {e:?}")))?;
 
-            audit::write_owned(
-                &ctx.env,
-                EventKind::AdminAuditChainAlarmAcknowledged,
-                Some(principal.id.clone()),
-                None,
-                Some(format!(
-                    "acknowledged_run_at={run_at} first_mismatch_seq={first_mismatch_seq:?}",
-                )),
-            ).await.ok();
+                    audit::write_owned(
+                        &ctx.env,
+                        EventKind::AdminAuditChainAlarmAcknowledged,
+                        Some(principal.id.clone()),
+                        None,
+                        Some(format!(
+                            "acknowledged_run_at={run_at} first_mismatch_seq={first_mismatch_seq:?}",
+                        )),
+                    ).await.ok();
+                }
+                // `r.valid` or already `r.acknowledged` — nothing to do.
+            }
         }
-        // `r.valid` or already `r.acknowledged` — nothing to do.
+        AckClass::Columns => {
+            if let Some(r) = current {
+                if r.column_divergence_count > 0 && !r.column_divergences_acknowledged {
+                    let run_at    = r.run_at;
+                    let divergence_count = r.column_divergence_count;
+                    let acked = AuditVerificationResult {
+                        column_divergences_acknowledged: true,
+                        ..r
+                    };
+                    checkpoints.write_last_result(&acked).await
+                        .map_err(|e| worker::Error::RustError(format!("checkpoint last_result write failed: {e:?}")))?;
+
+                    audit::write_owned(
+                        &ctx.env,
+                        EventKind::AdminAuditColumnDivergenceAcknowledged,
+                        Some(principal.id.clone()),
+                        None,
+                        Some(format!(
+                            "acknowledged_run_at={run_at} column_divergence_count={divergence_count}",
+                        )),
+                    ).await.ok();
+                }
+                // already acknowledged, or nothing standing — nothing to do.
+            }
+        }
     }
 
     let mut resp = Response::empty()?.with_status(302);
@@ -277,6 +370,17 @@ async fn read_status(env: &worker::Env) -> Result<AuditChainStatus> {
         _                  => false,
     };
 
+    // RFC 188 Phase 1: `Some(bool)` only when there is something to
+    // acknowledge at all (S5's "did not look"/"found none" states have
+    // nothing standing, same reasoning `last_run_acknowledged` would
+    // use if the chain class distinguished "no run" that way).
+    let column_divergence_count = last.as_ref().map(|r| r.column_divergence_count).unwrap_or(0);
+    let column_divergences_acknowledged = if column_divergence_count > 0 {
+        last.as_ref().map(|r| r.column_divergences_acknowledged)
+    } else {
+        None
+    };
+
     Ok(AuditChainStatus {
         current_chain_length,
         last_run_at:               last.as_ref().map(|r| r.run_at),
@@ -289,5 +393,9 @@ async fn read_status(env: &worker::Env) -> Result<AuditChainStatus> {
         checkpoint_chain_hash:     cp.as_ref().map(|c| c.chain_hash.clone()),
         checkpoint_at:             cp.as_ref().map(|c| c.verified_at),
         growth_since_checkpoint,
+        column_check_performed:          last.as_ref().map(|r| r.column_check_performed).unwrap_or(false),
+        column_divergence_count,
+        column_divergences:              last.as_ref().map(|r| r.column_divergences.clone()).unwrap_or_default(),
+        column_divergences_acknowledged,
     })
 }

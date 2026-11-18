@@ -378,3 +378,50 @@ fn event_with_actor_carries_it_in_the_serialized_payload() {
     assert_eq!(parsed["actor"], "admin-1");
     assert_eq!(parsed["subject"], "user-2", "subject and actor are independent fields");
 }
+
+// RFC 188 Phase 1, D4 — the cross-crate pin. `cesauth-core` cannot see
+// `Event` (it would be a dependency cycle), so its own
+// `AuditPayloadMirror` is a second, independently-declared struct
+// reading the same JSON shape. This is the one place both halves are
+// visible at once: if a future `Event` field is added without a
+// matching `AuditPayloadMirror` field (or vice versa), this is the
+// test that catches it, not a human reading two files side by side.
+#[test]
+fn event_json_keys_are_exactly_what_auditpayloadmirror_expects() {
+    let ev = super::Event::new(super::EventKind::DeletionExecuted)
+        .with_subject("user-2")
+        .with_actor("admin-1")
+        .with_client("client-9")
+        .with_ip("203.0.113.5")
+        .with_user_agent("curl/8")
+        .with_reason("pkce_mismatch")
+        .with_request_id("cf-ray-abc");
+    let json = serde_json::to_string(&ev).unwrap();
+
+    // Round-trips through the real mirror type, not a hand-copied list
+    // of field names.
+    let mirror = cesauth_core::audit::payload::AuditPayloadMirror::parse(&json).unwrap();
+    assert_eq!(mirror.subject, Some("user-2".to_owned()));
+    assert_eq!(mirror.actor, Some("admin-1".to_owned()));
+    assert_eq!(mirror.client_id, Some("client-9".to_owned()));
+    assert_eq!(mirror.ip, Some("203.0.113.5".to_owned()));
+    assert_eq!(mirror.user_agent, Some("curl/8".to_owned()));
+    assert_eq!(mirror.reason, Some("pkce_mismatch".to_owned()));
+    assert_eq!(mirror.request_id, Some("cf-ray-abc".to_owned()));
+
+    // And the key SET agrees exactly with the seven cross-checked
+    // columns — `Event` carries exactly these seven plus the chain-input
+    // fields (ts, id, kind), nothing extra that `AuditPayloadMirror`
+    // would silently ignore.
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let mut event_keys: Vec<&str> = parsed.as_object().unwrap().keys().map(String::as_str).collect();
+    event_keys.sort_unstable();
+    let chain_input_keys = ["ts", "id", "kind"];
+    let cross_checked_present: Vec<&str> = event_keys.iter()
+        .filter(|k| !chain_input_keys.contains(k))
+        .copied()
+        .collect();
+    let mut expected: Vec<&str> = cesauth_core::audit::verifier::CROSS_CHECKED_COLUMNS.to_vec();
+    expected.sort_unstable();
+    assert_eq!(cross_checked_present, expected);
+}

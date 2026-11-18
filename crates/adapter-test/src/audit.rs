@@ -131,6 +131,39 @@ impl InMemoryAuditEventRepository {
         }
     }
 
+    /// Replace any of the seven cross-checked columns at `seq`
+    /// (`subject`, `client_id`, `ip`, `user_agent`, `reason`,
+    /// `request_id`, and `actor` — delegating to
+    /// [`Self::tamper_set_actor`], kept as its own named helper for the
+    /// RFC 187 G2 test that already calls it by name). **RFC 188 Phase
+    /// 1, T7.** Leaves `payload`/`payload_hash`/`chain_hash` untouched,
+    /// same discipline as [`Self::tamper_set_actor`] — this is exactly
+    /// the column-only tamper Phase 1's cross-check exists to catch.
+    /// Taking `actor` here too lets a test iterate
+    /// `verifier::CROSS_CHECKED_COLUMNS` directly rather than hand-listing
+    /// six of its seven names. Panics on an unknown column name: a typo
+    /// here is a test bug, not a case to silently ignore.
+    pub fn tamper_set_column(&self, seq: i64, column: &str, new_value: Option<String>) {
+        match column {
+            "actor" => self.tamper_set_actor(seq, new_value),
+            "subject" | "client_id" | "ip" | "user_agent" | "reason" | "request_id" => {
+                let mut g = self.rows.lock().unwrap();
+                if let Some(row) = g.iter_mut().find(|r| r.seq == seq) {
+                    match column {
+                        "subject"    => row.subject    = new_value,
+                        "client_id"  => row.client_id  = new_value,
+                        "ip"         => row.ip         = new_value,
+                        "user_agent" => row.user_agent = new_value,
+                        "reason"     => row.reason     = new_value,
+                        "request_id" => row.request_id = new_value,
+                        _ => unreachable!(),
+                    }
+                }
+            }
+            other => panic!("tamper_set_column: unknown column {other:?}"),
+        }
+    }
+
     /// Remove the row at `seq`. Simulates an intermediate-row
     /// deletion attack.
     pub fn tamper_delete_seq(&self, seq: i64) {
