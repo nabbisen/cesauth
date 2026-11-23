@@ -1,11 +1,27 @@
 //! `GET /admin/tenancy/tenants/:tid` — single tenant view.
 //!
-//! Fans out reads to: tenants, organizations under that tenant,
-//! tenant memberships, current subscription, and the subscription's
-//! plan. Each is independent; we issue them serially because D1's
-//! Workers binding doesn't expose parallel statements yet, but the
-//! whole page renders well under a hundred milliseconds at typical
-//! sizes.
+//! **This doc described behaviour that stopped happening at `0.80.0`,
+//! and said so until 2026-11-23.** It claimed the route fans out reads
+//! to tenants, organizations, memberships, the current subscription and
+//! its plan. It does not. `page` serves the Leptos CSR shell, and
+//! `page_json` below returns **only a CSRF token** — no tenant, no
+//! subscription, no members. The component behind it
+//! (`cesauth_frontend::pages::operator::tenancy::TenancyTenantDetail`)
+//! renders four action links and nothing about the tenant, because its
+//! own `TenantDetailData` is `{ csrf_token }`.
+//!
+//! The fan-out this doc described, and the Summary / Subscription /
+//! organizations panels it fed, still exist as
+//! `cesauth_frontend::tenancy_console::tenant_detail` — a template no
+//! route reaches (47 of the 253 unreachable i18n literals ruled in
+//! `.git-exclude/reviewed/i18n-dead-template-liveness-ruling.md`). It is
+//! the specification of what this screen is missing, which is why it has
+//! not been deleted.
+//!
+//! Whether this screen is finished or unfinished is a scope question, not
+//! a bug to fix quietly — see the ROADMAP row. What is fixed here is the
+//! doc: `routes/admin/console/overview.rs` has stated its own equivalent
+//! gap honestly since the same migration, and this file now does too.
 
 use worker::{Request, Response, Result, RouteContext};
 

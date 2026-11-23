@@ -1,4 +1,28 @@
-//! `GET /admin/tenancy` — landing page with deployment-wide counters.
+//! `GET /admin/tenancy` — landing page.
+//!
+//! **"Deployment-wide counters" is what this file was built to serve and
+//! not what it serves.** `page_json` returns a single
+//! `{"tenant_count": n}`, and the CSR component renders that one number.
+//!
+//! `read_counts`, `read_plan_breakdown` and `scalar_count` below —
+//! tenants by status, organizations, groups, active plans, and the
+//! per-plan subscriber breakdown — are **dead code the compiler warns
+//! about on every build**: their caller went away at `580eeba`
+//! ("RFC-115 Phase C complete: old string templates removed", first
+//! tagged **`0.80.0`**, 2026-07-07), and nothing has called them for 28
+//! minor versions since. They are kept, not deleted, for the same reason
+//! `tenancy_console/tenant_detail.rs`'s dead template is kept: this is
+//! the data half of a screen whose migration stopped halfway, and
+//! deleting it would destroy the only statement of what the screen was
+//! for. `dead_code` is not denied in this crate — RFC 157 gated
+//! `unused_imports`/`unused_variables` and deliberately left this class
+//! warning-only (`docs/src/expert/contributing.md`), which is why six
+//! warnings here have been visible and unaddressed rather than hidden.
+//!
+//! Whether to finish the port or declare the one counter sufficient is a
+//! scope question; see the ROADMAP row. **Do not quietly delete these
+//! functions to clear the warnings** — that turns an unfinished screen
+//! into a screen nobody knows was unfinished.
 
 use cesauth_frontend::tenancy_console::overview::{OverviewCounts, PlanBreakdownRow};
 use serde::Deserialize;
