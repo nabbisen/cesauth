@@ -96,6 +96,11 @@ struct ChainStatusView {
     column_divergences:                Vec<cesauth_core::ports::audit_chain::ColumnDivergence>,
     #[serde(default)]
     column_divergences_acknowledged:   Option<bool>,
+    /// **0.110.0-signals-get-readers, F-6.** `Some(run_at)` when a
+    /// later walk found the chain clean but was refused permission to
+    /// clear the standing alarm above because it is unacknowledged.
+    #[serde(default)]
+    clean_walk_refused_at:     Option<i64>,
     csrf_token:                 String,
 }
 
@@ -199,6 +204,19 @@ fn columns_divergence_needs_acknowledgement(divergence_count: usize, acknowledge
     divergence_count > 0 && acknowledged != Some(true)
 }
 
+/// **0.110.0-signals-get-readers, F-6, required test (3).** Renders
+/// only when `refused_at` is `Some` — the standing alarm already has
+/// its own badge and acknowledgement control; this is a sentence
+/// attached to it, not a state of its own. `{ts}` substitutes the
+/// canonical-formatted timestamp, same convention
+/// `AuditChainStatusTamperAtSeq`'s `{seq}` already uses.
+fn clean_walk_refused_note(refused_at: Option<i64>, locale: Locale) -> Option<String> {
+    refused_at.map(|ts| {
+        let formatted = cesauth_core::util::format_unix_as_iso8601(ts);
+        lookup(MessageKey::AuditChainCleanWalkRefusedNote, locale).replace("{ts}", &formatted)
+    })
+}
+
 // ─── Network calls ─────────────────────────────────────────────────────────
 
 async fn fetch_status() -> Result<ChainStatusView, String> {
@@ -263,6 +281,7 @@ pub fn ConsoleAuditChain() -> impl IntoView {
                         .unwrap_or_else(|| "—".to_owned());
                     let (consistency_class, consistency_text) = consistency_badge(checkpoint_seq, s.last_run_checkpoint_match, locale);
                     let needs_ack = alarm_needs_acknowledgement(s.last_run_valid, s.last_run_acknowledged);
+                    let refused_note = clean_walk_refused_note(s.clean_walk_refused_at, locale);
                     let csrf_verify = s.csrf_token.clone();
                     let csrf_ack    = s.csrf_token.clone();
 
@@ -284,6 +303,12 @@ pub fn ConsoleAuditChain() -> impl IntoView {
                                 <tr><th scope="row">{lookup(MessageKey::AuditChainColLastVerification, locale)}</th><td>{last_run_at}</td></tr>
                                 <tr><th scope="row">{lookup(MessageKey::AuditChainColRowsWalked, locale)}</th><td><code>{rows_walked}</code></td></tr>
                             </table>
+                            // F-6: beside the standing alarm, not its own
+                            // section — renders only when a later clean
+                            // walk was refused permission to clear it.
+                            {refused_note.clone().map(|note| view! {
+                                <p class="note" role="alert">{note}</p>
+                            })}
                             <Show when=move || growth_hint>
                                 <p class="note">{lookup(MessageKey::AuditChainGrowthHint, locale)}</p>
                             </Show>
@@ -386,6 +411,32 @@ mod tests {
     #[test]
     fn status_200_is_let_through() {
         assert_eq!(classify_status(200), Ok(()));
+    }
+
+    // ── 0.110.0-signals-get-readers, required test (3): the refusal
+    // line renders only when the field is `Some`, and the timestamp
+    // substitutes in place ───────────────────────────────────────────
+
+    #[test]
+    fn clean_walk_refused_note_is_none_when_nothing_was_refused() {
+        assert_eq!(clean_walk_refused_note(None, Locale::En), None);
+    }
+
+    #[test]
+    fn clean_walk_refused_note_renders_the_timestamp_in_place() {
+        let note = clean_walk_refused_note(Some(1_700_000_000), Locale::En).unwrap();
+        assert!(note.contains("2023-11-14T22:13:20Z"), "got: {note}");
+        assert!(!note.contains("{ts}"), "placeholder must be substituted, got: {note}");
+    }
+
+    #[test]
+    fn clean_walk_refused_note_says_the_chain_was_clean_not_broken() {
+        // The literal fact ("a clean walk was refused") reads as
+        // "verification is broken" unless the copy says the opposite
+        // explicitly: the walk found the chain CLEAN.
+        let note = clean_walk_refused_note(Some(1_700_000_000), Locale::En).unwrap();
+        assert!(note.contains("found the chain clean"), "got: {note}");
+        assert!(note.contains("not allowed to clear this alarm"), "got: {note}");
     }
 
     #[test]

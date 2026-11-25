@@ -106,6 +106,14 @@ struct AuditResponse {
     #[serde(default)]
     older_cursor: Option<String>,
     has_newer:    bool,
+    /// **0.110.0-signals-get-readers, F-5.** The deployment's actual
+    /// export row cap — `crate::routes::admin::console::resolve_max_rows`,
+    /// the same number the export route itself uses. `#[serde(default)]`
+    /// guards a transient version-skew response the same way the
+    /// tenancy list's new field does; `0` renders no cap line rather
+    /// than a wrong one.
+    #[serde(default)]
+    export_max_rows: u64,
 }
 
 // ─── Pure decision helpers (host-testable — same reason clients.rs's own
@@ -126,6 +134,14 @@ fn error_message(error: &str, locale: Locale) -> &'static str {
     } else {
         lookup(MessageKey::FetchFailed, locale)
     }
+}
+
+/// **0.110.0-signals-get-readers, F-5, required test (4).** `{n}`
+/// substitutes the deployment's actual cap — never a literal baked
+/// into the string (0.108.0's ruling against copy that restates a
+/// code constant).
+fn export_cap_note(max_rows: u64, locale: Locale) -> String {
+    lookup(MessageKey::AuditViewerExportCapNote, locale).replace("{n}", &max_rows.to_string())
 }
 
 /// Build the `audit.json` query string from the current filter + cursor
@@ -205,6 +221,9 @@ pub fn ConsoleAudit() -> impl IntoView {
     let has_newer    = RwSignal::new(false);
     let loading      = RwSignal::new(true);
     let load_error   = RwSignal::new(Option::<String>::None);
+    // F-5: 0 renders no cap line (never a wrong one) until the first
+    // successful fetch sets the deployment's real cap.
+    let export_max_rows = RwSignal::new(0u64);
 
     let refresh = move || {
         loading.set(true);
@@ -221,6 +240,7 @@ pub fn ConsoleAudit() -> impl IntoView {
                     csrf.set(r.csrf_token);
                     older_cursor.set(r.older_cursor);
                     has_newer.set(r.has_newer);
+                    export_max_rows.set(r.export_max_rows);
                 }
                 Err(e) => load_error.set(Some(e)),
             }
@@ -348,6 +368,13 @@ pub fn ConsoleAudit() -> impl IntoView {
                     // locales deliberately — file-format names, not
                     // natural-language UI (same carve-out as the old
                     // server template's `render_export_form`).
+                    // F-5(a): state the cap before the operator clicks,
+                    // not after — the best version of "users must not
+                    // be confused" is the one where there is nothing to
+                    // explain. 0 (not yet fetched) renders nothing.
+                    <Show when=move || (export_max_rows.get() > 0)>
+                        <p class="note">{move || export_cap_note(export_max_rows.get(), locale)}</p>
+                    </Show>
                     <button type="submit" name="format" value="csv" class="secondary" style="margin-right:4px">"Export CSV"</button>
                     <button type="submit" name="format" value="jsonl" class="secondary">"Export JSONL"</button>
                 </form>
@@ -481,6 +508,15 @@ mod tests {
     // locale parameter nothing reads: the two locales must disagree.
     // The rendered English screen itself is `observed`/`reviewed`, not
     // `exercised` (no browser here); this is what IS exercised.
+    #[test]
+    fn export_cap_note_carries_the_actual_cap_not_a_literal() {
+        assert!(export_cap_note(10_000, Locale::En).contains("10000"),
+            "got: {}", export_cap_note(10_000, Locale::En));
+        assert!(export_cap_note(500, Locale::En).contains("500"),
+            "a different deployment's cap must render that cap, got: {}", export_cap_note(500, Locale::En));
+        assert!(!export_cap_note(500, Locale::En).contains("10000"));
+    }
+
     #[test]
     fn error_message_follows_the_locale_argument() {
         assert_eq!(error_message("unauthorized", Locale::En), "You do not have permission. Please sign in again.");

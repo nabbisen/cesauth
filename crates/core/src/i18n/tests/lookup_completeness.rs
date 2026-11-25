@@ -128,7 +128,7 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         // RFC 188 Phase 2, T4 — the divergence mark (G1-ruled)
         AuditViewerColDivergence | AuditViewerDivergenceMark |
         AuditViewerDivergenceMarkLabel | AuditViewerUnparseableMarker |
-        AuditViewerNoteFilterResidual |
+        AuditViewerNoteFilterResidual | AuditViewerExportCapNote |
         // RFC 180 (R2b) — dormant CSR component chrome
         ActionBack | ActionCopy | ActionCopied | ActionSignOut |
         PoweredBy | Privacy | Terms | Status |
@@ -155,7 +155,7 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         AuditChainConsistencyColdStart | AuditChainConsistencyNotApplicable |
         AuditChainSummaryTitle | AuditChainColChainLength | AuditChainChainLengthUnit |
         AuditChainColLastVerification | AuditChainColRowsWalked | AuditChainGrowthHint |
-        AuditChainAckTitle | AuditChainAckNote | AuditChainAckButton |
+        AuditChainAckTitle | AuditChainAckNote | AuditChainAckButton | AuditChainCleanWalkRefusedNote |
         AuditChainCheckpointTitle | AuditChainCheckpointEmpty | AuditChainCheckpointNote |
         AuditChainColLastVerifiedSeq | AuditChainColRecordedChainHash |
         AuditChainColRecordedAt | AuditChainColConsistency |
@@ -169,7 +169,10 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         TenancyOverviewPageTitle | TenancyTenantsPageTitle | TenancyTenantDetailPageTitle |
         TenancyCreateTenantLink | TenancyOverviewTenantCountLabel |
         TenancyOverviewTenantCountFetchFailed | TenancyTenantsBackLink | TenancyTenantsEmpty |
+        TenancyTenantsFetchFailed |
         TenancyTenantsColSlug | TenancyTenantsColDisplayName | TenancyTenantsRowDetailLink |
+        TenancyTenantsColCreated |
+        TenantStatusPending | TenantStatusActive | TenantStatusDeleted |
         TenancyTenantDetailBackLink | TenancyTenantDetailStatusChangeLink |
         TenancyTenantDetailSubscriptionHistoryLink | TenancyTenantDetailPlanChangeLink |
         TenancyTenantDetailAddMemberLink | ConsoleOverviewPageTitle | ConsoleCostPageTitle |
@@ -283,7 +286,7 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         // RFC 188 Phase 2, T4 — the divergence mark (G1-ruled)
         AuditViewerColDivergence, AuditViewerDivergenceMark,
         AuditViewerDivergenceMarkLabel, AuditViewerUnparseableMarker,
-        AuditViewerNoteFilterResidual,
+        AuditViewerNoteFilterResidual, AuditViewerExportCapNote,
         // RFC 180 (R2b)
         ActionBack, ActionCopy, ActionCopied, ActionSignOut,
         PoweredBy, Privacy, Terms, Status,
@@ -310,7 +313,7 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         AuditChainConsistencyColdStart, AuditChainConsistencyNotApplicable,
         AuditChainSummaryTitle, AuditChainColChainLength, AuditChainChainLengthUnit,
         AuditChainColLastVerification, AuditChainColRowsWalked, AuditChainGrowthHint,
-        AuditChainAckTitle, AuditChainAckNote, AuditChainAckButton,
+        AuditChainAckTitle, AuditChainAckNote, AuditChainAckButton, AuditChainCleanWalkRefusedNote,
         AuditChainCheckpointTitle, AuditChainCheckpointEmpty, AuditChainCheckpointNote,
         AuditChainColLastVerifiedSeq, AuditChainColRecordedChainHash,
         AuditChainColRecordedAt, AuditChainColConsistency,
@@ -324,7 +327,10 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         TenancyOverviewPageTitle, TenancyTenantsPageTitle, TenancyTenantDetailPageTitle,
         TenancyCreateTenantLink, TenancyOverviewTenantCountLabel,
         TenancyOverviewTenantCountFetchFailed, TenancyTenantsBackLink, TenancyTenantsEmpty,
+        TenancyTenantsFetchFailed,
         TenancyTenantsColSlug, TenancyTenantsColDisplayName, TenancyTenantsRowDetailLink,
+        TenancyTenantsColCreated,
+        TenantStatusPending, TenantStatusActive, TenantStatusDeleted,
         TenancyTenantDetailBackLink, TenancyTenantDetailStatusChangeLink,
         TenancyTenantDetailSubscriptionHistoryLink, TenancyTenantDetailPlanChangeLink,
         TenancyTenantDetailAddMemberLink, ConsoleOverviewPageTitle, ConsoleCostPageTitle,

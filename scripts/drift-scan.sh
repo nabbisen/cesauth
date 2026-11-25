@@ -1910,7 +1910,7 @@ done < <(grep -rlZ "format_unix_as_iso8601(" "${REPO_ROOT}/crates/frontend/src")
 ts_files_count=$(printf '%b' "$ts_files_list" | grep -c . || true)
 
 echo "ℹ️   timestamp rendering: ${ts_total_calls} canonical-formatter call(s)" \
-     "across ${ts_files_count} file(s) (want 24 / 15; census population 23," \
+     "across ${ts_files_count} file(s) (want 26 / 17; census population 23," \
      "RFC 111 slice A), ${#TIMESTAMP_RENDERING_EXEMPT[@]} named exemptions"
 
 ts_failed=0
@@ -2016,10 +2016,10 @@ if [[ -n "$ts_raw_hits" ]]; then
     ts_failed=1
 fi
 
-if [[ "$ts_total_calls" -ne 24 ]] || [[ "$ts_files_count" -ne 15 ]]; then
+if [[ "$ts_total_calls" -ne 26 ]] || [[ "$ts_files_count" -ne 17 ]]; then
     echo ""
     echo "timestamp rendering: ${ts_total_calls} call(s) across" \
-         "${ts_files_count} file(s), expected exactly 24 calls across 15" \
+         "${ts_files_count} file(s), expected exactly 26 calls across 17" \
          "files -- a conversion reverted, a new raw-epoch render site" \
          "landed, or a genuinely new conforming site was added since this" \
          "gate was pinned. Current file list:"
@@ -2027,7 +2027,7 @@ if [[ "$ts_total_calls" -ne 24 ]] || [[ "$ts_files_count" -ne 15 ]]; then
     printf '%b' "$ts_files_list" | sort | while IFS= read -r line; do [[ -n "$line" ]] && echo "    $line"; done
     echo ""
     echo "  If a site reverted: convert it back and re-run. If a new" \
-         "conforming site was added deliberately: update the pinned 24/15" \
+         "conforming site was added deliberately: update the pinned 26/17" \
          "(just above this check in scripts/drift-scan.sh) in the SAME" \
          "commit, and add a TIMESTAMP_RENDERING_EXEMPT entry instead if the" \
          "new site is a String/arithmetic-only field that should never have" \

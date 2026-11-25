@@ -483,6 +483,12 @@ pub enum MessageKey {
     /// schema note — read before the results table, where an operator
     /// meets a marked row.
     AuditViewerNoteFilterResidual,
+    /// **0.110.0-signals-get-readers, F-5, G1-ruled.** The export
+    /// form's cap line. `{n}` substitutes the deployment's actual
+    /// `export_max_rows` (served by `audit.json`, never a literal
+    /// `10,000` baked into the string — 0.108.0's ruling against copy
+    /// that restates a code constant).
+    AuditViewerExportCapNote,
 
     // ---- RFC 185 §5.3 screen 2: the chain-status screen
     // (`/admin/console/audit/chain`). G1 reviewed and approved
@@ -552,6 +558,14 @@ pub enum MessageKey {
     /// `0.98.0` existed to prevent.
     AuditChainAckNote,
     AuditChainAckButton,
+    /// **0.110.0-signals-get-readers, F-6, G1-ruled.** Rendered beside
+    /// the standing alarm (the row this describes), not as a state of
+    /// its own — only when `AuditChainStatus::clean_walk_refused_at`
+    /// is `Some`. `{ts}` substitutes the canonical-formatted timestamp
+    /// in place; must not read as "verification is broken" — a later
+    /// run *did* find the chain clean, and was refused permission to
+    /// clear this standing, unacknowledged alarm.
+    AuditChainCleanWalkRefusedNote,
     /// Serves the section `aria-label` and the `<h2>` in **both**
     /// branches of the empty/populated checkpoint split — one key,
     /// three call sites.
@@ -633,9 +647,31 @@ pub enum MessageKey {
     TenancyOverviewTenantCountFetchFailed,
     TenancyTenantsBackLink,
     TenancyTenantsEmpty,
+    /// **0.110.0-tenancy-console-slice-1, D5/G1.** The list's third
+    /// state: the read itself failed, distinct from a legitimately
+    /// empty deployment (`TenancyTenantsEmpty`). G1 ruling: two
+    /// clauses, what happened and what to do — not a third clause
+    /// pre-empting the "zero tenants" misreading, since the separate
+    /// message already carries that distinction by existing.
+    TenancyTenantsFetchFailed,
     TenancyTenantsColSlug,
     TenancyTenantsColDisplayName,
+    /// **0.110.0-tenancy-console-slice-1, T4.** The list's `Created`
+    /// column, dropped since the superseded template. The `Id` column
+    /// reuses `ClientsColId` — the same generic concept (a row
+    /// identifier column header), not a new key.
+    TenancyTenantsColCreated,
     TenancyTenantsRowDetailLink,
+    /// **0.110.0-tenancy-console-slice-1, D6/G1.** `TenantStatus`'s
+    /// four variants, keyed so `format!("{:?}", status)` stops reaching
+    /// the screen. `Suspended` reuses `StatusSuspended` (same concept
+    /// as `SuspendedNotice`'s tenant-suspended fact, not a new key) —
+    /// see the G1 submission for why that is a reuse and not a
+    /// duplicate, unlike `TenantInviteStatusPending`/
+    /// `TenantDeletionStatusPending`'s deliberate text-only overlap.
+    TenantStatusPending,
+    TenantStatusActive,
+    TenantStatusDeleted,
     TenancyTenantDetailBackLink,
     TenancyTenantDetailStatusChangeLink,
     TenancyTenantDetailSubscriptionHistoryLink,
@@ -1853,6 +1889,10 @@ fn lookup_admin(key: &MessageKey, locale: Locale) -> Option<&'static str> {
             Locale::Ja => "表示されている値は封印された値です。絞り込みはインデックス用カラムに対して行われるため、カラムが変更された行は、検索した値では表示されないことがあります。",
             Locale::En => "The values shown here are the sealed ones. Filtering matches the indexed column, so a row whose column changed may not appear for the value you searched.",
         },
+        AuditViewerExportCapNote => match locale {
+            Locale::Ja => "エクスポートは最大 {n} 件までです。これを超える場合は切り捨てられます（ファイル名にその旨が記載されます）。",
+            Locale::En => "Exports are capped at {n} rows; larger result sets are truncated (and the downloaded filename says so).",
+        },
 
         _ => return None,
     })
@@ -2209,6 +2249,10 @@ fn lookup_audit_chain(key: &MessageKey, locale: Locale) -> Option<&'static str> 
             Locale::Ja => "検出を確認済みにする",
             Locale::En => "Mark as acknowledged",
         },
+        AuditChainCleanWalkRefusedNote => match locale {
+            Locale::Ja => "{ts} に実行された後続の検証では、チェーンに問題はありませんでしたが、このアラームはまだ確認されていないため、解除が許可されませんでした。上記の検出結果は依然として有効です。対応が完了したら確認済みにしてください。次回の実行でチェックポイントを進められるようになります。",
+            Locale::En => "A later verification run at {ts} found the chain clean and was not allowed to clear this alarm, because the alarm has not been acknowledged. The finding above still stands. Acknowledge it once you have dealt with it, and the next run will be able to advance the checkpoint again.",
+        },
         AuditChainCheckpointTitle => match locale {
             Locale::Ja => "チェックポイント",
             Locale::En => "Checkpoint",
@@ -2337,6 +2381,13 @@ fn lookup_audit_chain(key: &MessageKey, locale: Locale) -> Option<&'static str> 
             Locale::Ja => "テナントがまだ登録されていません。",
             Locale::En => "No tenants are registered yet.",
         },
+        // 0.110.0-tenancy-console-slice-1, G1 ruling: two clauses, what
+        // happened and what to do -- not a third clause pre-empting the
+        // "zero tenants" misreading.
+        TenancyTenantsFetchFailed => match locale {
+            Locale::Ja => "テナント一覧を読み込めませんでした。再読み込みしてください。",
+            Locale::En => "Could not load the tenant list. Please reload.",
+        },
         TenancyTenantsColSlug => match locale {
             Locale::Ja => "スラッグ",
             Locale::En => "Slug",
@@ -2345,9 +2396,25 @@ fn lookup_audit_chain(key: &MessageKey, locale: Locale) -> Option<&'static str> 
             Locale::Ja => "表示名",
             Locale::En => "Display name",
         },
+        TenancyTenantsColCreated => match locale {
+            Locale::Ja => "作成日時",
+            Locale::En => "Created",
+        },
         TenancyTenantsRowDetailLink => match locale {
             Locale::Ja => "詳細",
             Locale::En => "Details",
+        },
+        TenantStatusPending => match locale {
+            Locale::Ja => "保留中",
+            Locale::En => "Pending",
+        },
+        TenantStatusActive => match locale {
+            Locale::Ja => "アクティブ",
+            Locale::En => "Active",
+        },
+        TenantStatusDeleted => match locale {
+            Locale::Ja => "削除済み",
+            Locale::En => "Deleted",
         },
         TenancyTenantDetailBackLink => match locale {
             Locale::Ja => "← テナント一覧",
