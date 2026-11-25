@@ -117,9 +117,11 @@ jobs:
       # catalog keys and one console section, 8.5x the per-key cost
       # 0.106.0 measured. Attributes that growth to named symbols instead
       # of theorising. **Does not change what is linked** (§7 of the
-      # handoff) — this rebuilds the frontend a SECOND time, into a
-      # throwaway directory, purely to measure; the artifact checked above
-      # and uploaded above is the one that ships, untouched by this step.
+      # handoff) — this rebuilds `crates/frontend/dist` a SECOND time,
+      # AFTER the artifact above is already uploaded, purely to measure;
+      # nothing downstream in this job reads `dist/` again, so
+      # overwriting it here is safe, and the artifact that was checked
+      # and uploaded above is the one that ships.
       #
       # Why a second build, not the shipped one: `[profile.release] strip
       # = true` (root Cargo.toml) removes the wasm "name" custom section
@@ -131,16 +133,20 @@ jobs:
       # build restores the name section without editing the checked-in
       # profile. This measurement build is ~10x larger on disk (the name
       # section itself dominates it) and is never uploaded or deployed.
+      #
+      # Must build in place, inside the workspace: `crates/frontend/
+      # Cargo.toml` inherits `edition` from the workspace root manifest
+      # (`workspace.package.edition`), so copying the crate out to a
+      # standalone directory breaks `cargo metadata`/`trunk build`
+      # ("failed to find a workspace root") — found running this exact
+      # step in CI the first time.
       - name: Symbol-level size attribution (twiggy, measurement only)
         run: |
           set -euo pipefail
           # DEPENDENCIES.md pin (added by this handoff).
           cargo install twiggy --version 0.8.0 --locked
 
-          rm -rf /tmp/twiggy-measure
-          mkdir -p /tmp/twiggy-measure
-          cp -r crates/frontend /tmp/twiggy-measure/frontend
-          cd /tmp/twiggy-measure/frontend
+          cd crates/frontend
           rm -rf dist
           CARGO_PROFILE_RELEASE_STRIP=none trunk build --release --filehash false
 
@@ -150,13 +156,13 @@ jobs:
             exit 1
           fi
           echo "Measuring $wasm (unstripped, pre-wasm-opt — for symbol names only; not the shipped artifact)"
-          mkdir -p /tmp/twiggy-measure/report
-          twiggy top -n 40 "$wasm" | tee /tmp/twiggy-measure/report/twiggy-top-40.txt
+          mkdir -p /tmp/twiggy-report
+          twiggy top -n 40 "$wasm" | tee /tmp/twiggy-report/twiggy-top-40.txt
 
       - name: Upload symbol attribution report
         uses: actions/upload-artifact@v4
         with:
           name: twiggy-top-40
-          path: /tmp/twiggy-measure/report/twiggy-top-40.txt
+          path: /tmp/twiggy-report/twiggy-top-40.txt
           retention-days: 30
           if-no-files-found: error
