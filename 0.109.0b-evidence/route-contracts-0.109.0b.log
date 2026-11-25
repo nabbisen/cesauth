@@ -1,8 +1,0 @@
-ℹ️   E3 coverage: scanned 47 server-declared route(s) -- 0 calling the shell unexempted, 2 exempted, 0 unresolved
-ℹ️   GATE_42 coverage: scanned 24 client-declared GET route(s) -- 0 shadowed, 0 absent, 0 exempted
-ℹ️   NONCE coverage: scanned 13 Response::from_html call site(s) -- 0 violations, 0 exempted, 0 unresolved
-ℹ️   E4 coverage: scanned 219 pub async fn under routes/ -- 195 classified as handlers (184 RouteContext-shaped, 11 Env-shaped), 24 named non-handlers, 0 unclassified
-ℹ️   E5 coverage: scanned 19 .json URL(s) fetched by the frontend -- 19 resolved exactly, 0 resolved via capture (defect), 0 unresolved
-ℹ️   E6 coverage: scanned 95 mutating row(s) repo-wide -- 86 make a CSRF/bearer claim E6 checks (66 resolved, 0 unresolved, 20 exempted -- RFC 152 half C finding, not this cycle's fix), 9 declared as legitimately uncheckable, 0 unclassified. Distinct CSRF field name(s) in use: 2 (csrf,csrf_token)
-ℹ️   E7 coverage: scanned 156 port method(s) across 36 PortResult-returning trait(s) -- 8 resolved, 31 DEFECT (5 written + 26 chokepoint, all exempted-by-name), 117 no_caller (8 + 31 + 117 = 156)
-✅  All 197 routes are documented in route-contracts.md, and every handler-shaped fn in routes/ is reachable from lib.rs

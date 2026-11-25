@@ -1,6 +1,0 @@
-Token-free check across all five captured transcripts (grep -ciE "bearer|authorization"):
-  g2-1-login-confirmation-get.txt: 0
-  g2-2-login-post.txt: 0
-  g2-3-audit-json-clean-and-diverged.txt: 0
-  g2-4-export.csv: 0
-  g2-5-export.jsonl: 0
