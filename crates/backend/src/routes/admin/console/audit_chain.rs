@@ -76,7 +76,7 @@ use cesauth_cf::ports::audit_chain::CloudflareAuditChainCheckpointStore;
 use cesauth_core::admin::types::{AdminAction, AuditChainStatus};
 use cesauth_core::audit::verifier::verify_chain_full;
 use cesauth_core::ports::audit::AuditEventRepository;
-use cesauth_core::ports::audit_chain::{AuditChainCheckpointStore, AuditVerificationResult};
+use cesauth_core::ports::audit_chain::{AuditChainCheckpoint, AuditChainCheckpointStore, AuditVerificationResult};
 use time::OffsetDateTime;
 use worker::{Request, Response, Result, RouteContext};
 
@@ -361,8 +361,20 @@ async fn read_status(env: &worker::Env) -> Result<AuditChainStatus> {
     let cp = checkpoints.read_checkpoint().await
         .map_err(|e| worker::Error::RustError(format!("checkpoint read failed: {e:?}")))?;
 
-    let current_chain_length = tail.as_ref().map(|t| t.seq).unwrap_or(0);
-    let growth_since_checkpoint = match (cp.as_ref(), tail.as_ref()) {
+    Ok(build_chain_status(tail.as_ref(), last.as_ref(), cp.as_ref()))
+}
+
+/// Pure projection from the three already-fetched pieces onto
+/// [`AuditChainStatus`] — split out of `read_status` (RFC 184 round 2 /
+/// F-6, `0.110.0`-signals-get-readers) so the round trip from a stored
+/// [`AuditVerificationResult`] is host-testable without `worker::Env`.
+fn build_chain_status(
+    tail: Option<&cesauth_core::ports::audit::AuditEventRow>,
+    last: Option<&AuditVerificationResult>,
+    cp:   Option<&AuditChainCheckpoint>,
+) -> AuditChainStatus {
+    let current_chain_length = tail.map(|t| t.seq).unwrap_or(0);
+    let growth_since_checkpoint = match (cp, tail) {
         (Some(c), Some(t)) => t.seq > c.last_verified_seq,
         // No checkpoint yet → growth is "everything", show the
         // hint only if there are rows to walk.
@@ -374,28 +386,77 @@ async fn read_status(env: &worker::Env) -> Result<AuditChainStatus> {
     // acknowledge at all (S5's "did not look"/"found none" states have
     // nothing standing, same reasoning `last_run_acknowledged` would
     // use if the chain class distinguished "no run" that way).
-    let column_divergence_count = last.as_ref().map(|r| r.column_divergence_count).unwrap_or(0);
+    let column_divergence_count = last.map(|r| r.column_divergence_count).unwrap_or(0);
     let column_divergences_acknowledged = if column_divergence_count > 0 {
-        last.as_ref().map(|r| r.column_divergences_acknowledged)
+        last.map(|r| r.column_divergences_acknowledged)
     } else {
         None
     };
 
-    Ok(AuditChainStatus {
+    AuditChainStatus {
         current_chain_length,
-        last_run_at:               last.as_ref().map(|r| r.run_at),
-        last_run_valid:            last.as_ref().map(|r| r.valid),
-        last_run_first_mismatch:   last.as_ref().and_then(|r| r.first_mismatch_seq),
-        last_run_checkpoint_match: last.as_ref().and_then(|r| r.checkpoint_consistent),
-        last_run_acknowledged:     last.as_ref().map(|r| r.acknowledged),
-        last_run_rows_walked:      last.as_ref().map(|r| r.rows_walked),
-        checkpoint_seq:            cp.as_ref().map(|c| c.last_verified_seq),
-        checkpoint_chain_hash:     cp.as_ref().map(|c| c.chain_hash.clone()),
-        checkpoint_at:             cp.as_ref().map(|c| c.verified_at),
+        last_run_at:               last.map(|r| r.run_at),
+        last_run_valid:            last.map(|r| r.valid),
+        last_run_first_mismatch:   last.and_then(|r| r.first_mismatch_seq),
+        last_run_checkpoint_match: last.and_then(|r| r.checkpoint_consistent),
+        last_run_acknowledged:     last.map(|r| r.acknowledged),
+        last_run_rows_walked:      last.map(|r| r.rows_walked),
+        checkpoint_seq:            cp.map(|c| c.last_verified_seq),
+        checkpoint_chain_hash:     cp.map(|c| c.chain_hash.clone()),
+        checkpoint_at:             cp.map(|c| c.verified_at),
         growth_since_checkpoint,
-        column_check_performed:          last.as_ref().map(|r| r.column_check_performed).unwrap_or(false),
+        column_check_performed:          last.map(|r| r.column_check_performed).unwrap_or(false),
         column_divergence_count,
-        column_divergences:              last.as_ref().map(|r| r.column_divergences.clone()).unwrap_or_default(),
+        column_divergences:              last.map(|r| r.column_divergences.clone()).unwrap_or_default(),
         column_divergences_acknowledged,
-    })
+        clean_walk_refused_at:           last.and_then(|r| r.clean_walk_refused_at),
+    }
+}
+
+#[cfg(test)]
+mod build_chain_status_tests {
+    use super::*;
+    use cesauth_core::ports::audit_chain::ColumnDivergence;
+
+    fn result_with_refusal(refused_at: Option<i64>) -> AuditVerificationResult {
+        AuditVerificationResult {
+            run_at: 500,
+            chain_length: 10,
+            valid: true,
+            first_mismatch_seq: None,
+            checkpoint_consistent: Some(true),
+            rows_walked: 10,
+            acknowledged: false,
+            clean_walk_refused_at: refused_at,
+            column_check_performed: true,
+            column_divergence_count: 0,
+            column_divergences: Vec::<ColumnDivergence>::new(),
+            column_divergences_acknowledged: true,
+            columns_clean_refused_at: None,
+        }
+    }
+
+    /// Required test (2), slice B: `clean_walk_refused_at` survives the
+    /// round trip from a stored `AuditVerificationResult` into
+    /// `AuditChainStatus` — the layer that did not exist before this
+    /// field was added.
+    #[test]
+    fn clean_walk_refused_at_round_trips_from_the_stored_result() {
+        let stored = result_with_refusal(Some(999));
+        let status = build_chain_status(None, Some(&stored), None);
+        assert_eq!(status.clean_walk_refused_at, Some(999));
+    }
+
+    #[test]
+    fn clean_walk_refused_at_is_none_when_nothing_was_refused() {
+        let stored = result_with_refusal(None);
+        let status = build_chain_status(None, Some(&stored), None);
+        assert_eq!(status.clean_walk_refused_at, None);
+    }
+
+    #[test]
+    fn clean_walk_refused_at_is_none_when_no_run_has_completed() {
+        let status = build_chain_status(None, None, None);
+        assert_eq!(status.clean_walk_refused_at, None);
+    }
 }

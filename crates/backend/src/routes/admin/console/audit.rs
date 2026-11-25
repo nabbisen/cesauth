@@ -143,11 +143,17 @@ pub async fn page_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
         .map_err(|_| worker::Error::RustError("csrf rng failed".into()))?;
     let set_cookie = csrf::set_cookie_header(&csrf_token);
 
+    // F-5 (`0.110.0`-signals-get-readers): the export form's cap line
+    // reads this instead of restating the number as copy — same
+    // resolution `audit_export::post` uses, so the two cannot drift.
+    let export_max_rows = super::resolve_max_rows(&ctx.env);
+
     let mut resp = Response::from_json(&serde_json::json!({
         "entries":      entries,
         "csrf_token":   csrf_token,
         "older_cursor": older_cursor,
         "has_newer":    has_newer,
+        "export_max_rows": export_max_rows,
     }))?;
     resp.headers_mut().append("set-cookie", &set_cookie).ok();
     resp.headers_mut().set("cache-control", "no-store").ok();

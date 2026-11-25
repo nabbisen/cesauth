@@ -5,6 +5,7 @@
 //! handler stays backward-compatible — the v0.31.x form fields (`kind`,
 //! `subject`, `limit`) still work, and unrecognised fields are ignored.
 
+use time::OffsetDateTime;
 use worker::{Request, Response, RouteContext};
 
 use cesauth_core::admin::{
@@ -118,11 +119,11 @@ pub async fn export<D>(mut req: Request, ctx: RouteContext<D>) -> worker::Result
     // slice 2 follow-up §1). Moved rather than the query built first:
     // `max_rows` has no other dependency, so there was no reason for the
     // read to come after.
-    let max_rows: usize = ctx.env
-        .var("AUDIT_EXPORT_MAX_ROWS")
-        .ok()
-        .and_then(|v| v.to_string().parse().ok())
-        .unwrap_or(10_000);
+    //
+    // `0.110.0`-signals-get-readers F-5: shared with `audit::page_json`
+    // (`super::resolve_max_rows`) so the viewer's cap line and this
+    // route's actual cap cannot drift apart.
+    let max_rows: usize = super::resolve_max_rows(&ctx.env);
 
     let query = AuditQuery {
         // v0.31.x compat fields.
@@ -144,7 +145,8 @@ pub async fn export<D>(mut req: Request, ctx: RouteContext<D>) -> worker::Result
     };
 
     let audit_repo = cesauth_cf::admin::CloudflareAuditQuerySource::new(&ctx.env);
-    let result = export_audit(&audit_repo, &query, format, max_rows).await
+    let now_unix = OffsetDateTime::now_utc().unix_timestamp();
+    let result = export_audit(&audit_repo, &query, format, max_rows, now_unix).await
         .map_err(|e| worker::Error::RustError(format!("audit export failed: {e:?}")))?;
 
     // Emit audit event for the export operation itself. RFC 187 round 2

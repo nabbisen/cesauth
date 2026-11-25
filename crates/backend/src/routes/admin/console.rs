@@ -41,3 +41,23 @@ pub mod overview;
 pub mod render;
 pub mod safety;
 pub mod tokens;
+
+/// Default `AUDIT_EXPORT_MAX_ROWS` when the env var is unset or
+/// unparseable. The one place both [`audit_export`] and [`audit`] read
+/// this from — `0.110.0`-signals-get-readers F-5: the export form's cap
+/// line must read the cap from here too, not restate the number as
+/// copy.
+pub const DEFAULT_AUDIT_EXPORT_MAX_ROWS: usize = 10_000;
+
+/// The effective export row cap for this deployment — the env var if
+/// set and parseable, [`DEFAULT_AUDIT_EXPORT_MAX_ROWS`] otherwise. The
+/// single source [`audit_export::post`] already used privately;
+/// shared here so [`audit::page_json`] can serve the same number to
+/// the viewer's export-cap line without a second, possibly-drifting
+/// copy of the resolution logic.
+pub fn resolve_max_rows(env: &worker::Env) -> usize {
+    env.var("AUDIT_EXPORT_MAX_ROWS")
+        .ok()
+        .and_then(|v| v.to_string().parse().ok())
+        .unwrap_or(DEFAULT_AUDIT_EXPORT_MAX_ROWS)
+}

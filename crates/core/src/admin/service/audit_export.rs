@@ -55,11 +55,17 @@ pub struct ExportResult {
 /// An `AuditExported` event is *not* emitted here; the worker handler
 /// is responsible for calling `audit::write_owned` after a successful
 /// export (keeping `core` free of Cloudflare deps).
+///
+/// **`now_unix` is the export moment** (F-9, `0.110.0`-signals-get-readers):
+/// the caller's own clock read, not derived from the rows — it names
+/// *when this file was produced*, carried into the filename so two
+/// exports of the same filter can be told apart on disk.
 pub async fn export_audit<A>(
     audit:    &A,
     query:    &crate::admin::types::AuditQuery,
     format:   ExportFormat,
     max_rows: usize,
+    now_unix: i64,
 ) -> crate::ports::PortResult<ExportResult>
 where
     A: crate::admin::ports::AuditQuerySource,
@@ -73,7 +79,7 @@ where
         ExportFormat::Jsonl => render_jsonl(&rows),
     };
 
-    let filename = build_export_filename(query, format);
+    let filename = build_export_filename(query, format, now_unix, truncated);
 
     Ok(ExportResult {
         body,
@@ -177,12 +183,42 @@ fn json_string_opt(s: Option<&str>) -> String {
 
 // RFC 096: format_unix_as_iso8601 and days_to_ymd moved to crate::util
 
-fn build_export_filename(query: &crate::admin::types::AuditQuery, format: ExportFormat) -> String {
-    let filter = query.kind_contains.as_deref().unwrap_or("all");
-    let safe: String = filter.chars()
+/// Filesystem-safe form of an arbitrary string: non-alphanumeric,
+/// non-`_` bytes become `-`. The one sanitiser this builder has always
+/// used for the filter token (`build_export_filename`'s original
+/// shape); F-9 reuses it for the moment too rather than writing a
+/// second one — a `:` in the ISO-8601 timestamp becomes `-`, same as
+/// any other disallowed character.
+fn filename_safe(s: &str) -> String {
+    s.chars()
         .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '-' })
-        .collect();
-    format!("cesauth-audit-{safe}.{}", format.extension())
+        .collect()
+}
+
+/// **F-9** (`0.110.0`-signals-get-readers): two exports of the same
+/// event kind with different subjects, actors or date ranges used to
+/// produce the same filename — an archive of evidence files that
+/// could not be told apart. The filename now carries the export
+/// moment (UTC ISO-8601 through the canonical formatter, sanitised)
+/// and, when the row cap was hit, the truncation marker — **not**
+/// every query dimension: a filename encoding subject, actor and a
+/// date range becomes unreadable and filesystem-hostile, and the
+/// file's own contents already carry the rows (the export's audit
+/// record already carries the filter, `build_filter_desc`, RFC 187
+/// round 2). Two exports a second apart with identical filters still
+/// collide — stated, not solved, per the design note this RFC
+/// transcribes.
+fn build_export_filename(
+    query:     &crate::admin::types::AuditQuery,
+    format:    ExportFormat,
+    now_unix:  i64,
+    truncated: bool,
+) -> String {
+    let filter = query.kind_contains.as_deref().unwrap_or("all");
+    let safe_filter = filename_safe(filter);
+    let safe_moment = filename_safe(&crate::util::format_unix_as_iso8601(now_unix));
+    let marker = if truncated { "-TRUNCATED" } else { "" };
+    format!("cesauth-audit-{safe_filter}-{safe_moment}{marker}.{}", format.extension())
 }
 
 #[cfg(test)]
@@ -391,9 +427,38 @@ mod export_tests {
         let mut q = crate::admin::types::AuditQuery::default();
         q.kind_contains = Some("LoginSuccess".to_owned());
         assert_eq!(
-            build_export_filename(&q, ExportFormat::Csv),
-            "cesauth-audit-LoginSuccess.csv"
+            build_export_filename(&q, ExportFormat::Csv, 1_700_000_000, false),
+            "cesauth-audit-LoginSuccess-2023-11-14T22-13-20Z.csv"
         );
+    }
+
+    // ── F-9, required test (1): the filename, as a pure-function test ──
+
+    #[test]
+    fn export_filename_carries_the_moment() {
+        let q = crate::admin::types::AuditQuery::default();
+        assert_eq!(
+            build_export_filename(&q, ExportFormat::Csv, 1_700_000_000, false),
+            "cesauth-audit-all-2023-11-14T22-13-20Z.csv",
+            "every ':' in the ISO-8601 moment becomes '-', via the same \
+             sanitiser the filter token already used",
+        );
+    }
+
+    #[test]
+    fn export_filename_carries_the_truncation_marker_when_truncated() {
+        let q = crate::admin::types::AuditQuery::default();
+        assert_eq!(
+            build_export_filename(&q, ExportFormat::Jsonl, 1_700_000_000, true),
+            "cesauth-audit-all-2023-11-14T22-13-20Z-TRUNCATED.jsonl",
+        );
+    }
+
+    #[test]
+    fn export_filename_omits_the_marker_when_not_truncated() {
+        let q = crate::admin::types::AuditQuery::default();
+        let name = build_export_filename(&q, ExportFormat::Csv, 1_700_000_000, false);
+        assert!(!name.contains("TRUNCATED"), "got: {name}");
     }
 
     #[test]
@@ -463,7 +528,7 @@ mod service_tests {
     #[tokio::test]
     async fn export_audit_csv_roundtrip() {
         let audit = MemAudit(vec![entry(1_700_000_000, "LoginSuccess")]);
-        let result = export_audit(&audit, &AuditQuery::default(), ExportFormat::Csv, 100)
+        let result = export_audit(&audit, &AuditQuery::default(), ExportFormat::Csv, 100, 1_700_000_000)
             .await.unwrap();
         assert_eq!(result.row_count, 1);
         assert!(!result.truncated);
@@ -475,7 +540,7 @@ mod service_tests {
     #[tokio::test]
     async fn export_audit_jsonl_roundtrip() {
         let audit = MemAudit(vec![entry(1_700_000_000, "TokenIssued")]);
-        let result = export_audit(&audit, &AuditQuery::default(), ExportFormat::Jsonl, 100)
+        let result = export_audit(&audit, &AuditQuery::default(), ExportFormat::Jsonl, 100, 1_700_000_000)
             .await.unwrap();
         assert!(result.body.contains("TokenIssued"));
         assert_eq!(result.content_type, "application/x-ndjson; charset=utf-8");
@@ -486,16 +551,17 @@ mod service_tests {
     async fn export_audit_truncates_at_max_rows() {
         let entries: Vec<AdminAuditEntry> = (0..10).map(|i| entry(i, "E")).collect();
         let audit = MemAudit(entries);
-        let result = export_audit(&audit, &AuditQuery::default(), ExportFormat::Csv, 5)
+        let result = export_audit(&audit, &AuditQuery::default(), ExportFormat::Csv, 5, 1_700_000_000)
             .await.unwrap();
         assert_eq!(result.row_count, 5);
         assert!(result.truncated);
+        assert!(result.filename.contains("TRUNCATED"), "got: {}", result.filename);
     }
 
     #[tokio::test]
     async fn export_audit_not_truncated_when_under_limit() {
         let audit = MemAudit(vec![entry(0, "E1"), entry(1, "E2")]);
-        let result = export_audit(&audit, &AuditQuery::default(), ExportFormat::Csv, 100)
+        let result = export_audit(&audit, &AuditQuery::default(), ExportFormat::Csv, 100, 1_700_000_000)
             .await.unwrap();
         assert_eq!(result.row_count, 2);
         assert!(!result.truncated);

@@ -681,6 +681,19 @@ pub struct AuditChainStatus {
     /// only when [`Self::column_divergence_count`] is `0` (nothing to
     /// acknowledge).
     pub column_divergences_acknowledged: Option<bool>,
+    /// **RFC 184 round 2, surfaced in `0.110.0`-signals-get-readers
+    /// (F-6).** Mirrors
+    /// [`crate::ports::audit_chain::AuditVerificationResult::clean_walk_refused_at`]
+    /// verbatim — `Some(run_at)` when a later walk found the chain
+    /// clean but was refused permission to clear the standing alarm
+    /// because it is unacknowledged (`persist_result`'s rule). Until
+    /// this field, that fact was stamped durably and read by nothing:
+    /// `grep` across this file, the route that populates it, and the
+    /// chain-status view all returned nothing. Render it beside the
+    /// standing alarm it describes, not as a state of its own — see
+    /// the design note this RFC transcribes
+    /// (`.git-exclude/reviewed/f5-f6-the-signal-exists-the-reader-does-not.md`).
+    pub clean_walk_refused_at: Option<i64>,
 }
 
 // -------------------------------------------------------------------------
