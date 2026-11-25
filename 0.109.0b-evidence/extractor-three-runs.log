@@ -1,0 +1,20 @@
+=== bash scripts/changelog-release-notes.sh 0.108.0 (root CHANGELOG.md) ===
+## [0.108.0] - 2026-11-18
+
+**Minor** — the audit log's indexed columns are now verified against the
+payload they duplicate, and a date-formatting bug that had been wrong for
+45% of all days since `0.66.0` is fixed. RFC 188 Phase 1 and RFC 111
+... [full output: 0.109.0b-evidence/extractor-0.108.0.md, 200 lines] ...
+exit=0
+
+=== bash scripts/changelog-release-notes.sh 0.95.0 (archive) ===
+## [0.95.0] - 2026-11-10
+
+**Minor, earned** — it adds `GET /admin/console/audit.json`, a new route surface.
+**An operator can browse and export the audit log again.** Both halves of that
+feature had existed and been tested for releases; only the call between them was
+exit=0
+
+=== bash scripts/changelog-release-notes.sh 9.9.9 (not found) ===
+error: no CHANGELOG entry found for version 9.9.9 (searched 16 file(s))
+exit=3

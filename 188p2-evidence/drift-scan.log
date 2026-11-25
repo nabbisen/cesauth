@@ -1,0 +1,17 @@
+ℹ️   docs coverage: scanned 84 page(s) under docs/src -- 82 in-book, 2 declared out, 0 unreachable
+ℹ️   docs link integrity: saw 197 .md link(s) in in-book pages -- 184 checked, 7 absolute/http, 6 resolving outside docs/src (out of scope), 0 unresolvable; 0 broken
+ℹ️   rfcs/ link sweep: saw 223 .md link(s) across rfcs/**/*.md -- 223 checked, 0 absolute/http, 0 unresolvable; 0 broken, 0 declared out
+ℹ️   release reconciliation: compared 165 tag(s) against 163 CHANGELOG entr(y|ies) -- 0 tagged-never-documented unexempted, 0 documented-never-tagged unexempted
+ℹ️   changelog budget: CHANGELOG.md is 61206 bytes of 81920 (74% of budget, 20714 bytes headroom)
+ℹ️   roadmap size (not gated, D2): ROADMAP.md is 465337 bytes against its own ~40960-byte (~40 KB) budget (11.4x over)
+ℹ️   route surface vs 0.108.0: 197 pairs -- 0 added, 0 removed
+ℹ️   level backstop: 0.108.0 equals the latest tag (0.108.0) -- not a release commit
+ℹ️   colour contrast: scanned 22 token(s) -- 19 checked against 7.0:1 (AAA), 3 declared out, 0 unclassified -- 0 below threshold
+ℹ️   RFC 183 pilot: verification/totp_truncation.rs's marked region matches crates/core/src/totp.rs:253-257 byte-for-byte -- the proof is about the code that actually runs
+ℹ️   i18n literal ceiling: scanned 103 file(s) under crates/frontend/src/{pages,components,admin,templates,tenancy_console,tenant_admin} -- 65 hit by the matcher, 69 ceiling entr(y|ies), 0 violation(s), 0 stale ceiling entr(y|ies)
+ℹ️   operator console negotiation: scanned 13 shell-rendering route file(s) -- 13 negotiating, want 13
+ℹ️   timestamp rendering: 24 canonical-formatter call(s) across 15 file(s) (want 24 / 15; census population 23, RFC 111 slice A), 5 named exemptions
+ℹ️   audit column coverage: 16 column(s) in audit_events -- 8 chain input(s), 7 cross-checked, 1 declared uncovered (created_at)
+ℹ️   documentation self-containment: ADR-020 present with all 8 definition tokens, 0 tracked citation(s) of a normative .git-exclude path (want 0)
+ℹ️   private document manifest: 11 row(s) classified, in-repo authorities all present, full
+drift-scan: clean — no stale phrases detected.

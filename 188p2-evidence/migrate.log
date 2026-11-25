@@ -1,0 +1,101 @@
+warning: unused import: `ClientId`
+  --> crates/core/src/service/revoke.rs:55:20
+   |
+55 | use crate::types::{ClientId, FamilyId};
+   |                    ^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `cesauth-core` (lib) generated 1 warning (run `cargo fix --lib -p cesauth-core` to apply 1 suggestion)
+   Compiling cesauth-migrate-test v0.108.0 (/home/nabbisen/Desktop/cesauth/cesauth-git/crates/migrate-test)
+warning: unused import: `rusqlite::Connection`
+ --> crates/migrate-test/tests/migration_chain/foundation.rs:4:5
+  |
+4 | use rusqlite::Connection;
+  |     ^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `rusqlite::Connection`
+ --> crates/migrate-test/tests/migration_chain/rfc_023_cross_tenant.rs:4:5
+  |
+4 | use rusqlite::Connection;
+  |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `rusqlite::Connection`
+ --> crates/migrate-test/tests/migration_chain/repair_and_fks.rs:4:5
+  |
+4 | use rusqlite::Connection;
+  |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `rusqlite::Connection`
+ --> crates/migrate-test/tests/migration_chain/rfc_050_sql.rs:4:5
+  |
+4 | use rusqlite::Connection;
+  |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `rusqlite::Connection`
+ --> crates/migrate-test/tests/migration_chain/rfc_051_authenticators.rs:4:5
+  |
+4 | use rusqlite::Connection;
+  |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `rusqlite::Connection`
+ --> crates/migrate-test/tests/migration_chain/rfc_148_scrub.rs:8:5
+  |
+8 | use rusqlite::Connection;
+  |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `rusqlite::Connection`
+ --> crates/migrate-test/tests/migration_chain/rfc_187_audit_actor.rs:3:5
+  |
+3 | use rusqlite::Connection;
+  |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: `cesauth-migrate-test` (test "migration_chain") generated 7 warnings (run `cargo fix --test "migration_chain" -p cesauth-migrate-test` to apply 7 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.57s
+     Running tests/migration_chain.rs (target/debug/deps/migration_chain-0ba428519bdf95a8)
+
+running 39 tests
+test rfc_050_sql::invitation_mark_accepted_sql ... ok
+test rfc_023_cross_tenant::cross_tenant_group_organization_reference_rejected ... ok
+test repair_and_fks::groups_fk_on_delete_is_restrict_not_set_null ... ok
+test rfc_024_indexes::tenant_scoped_user_listing_uses_index ... ok
+test rfc_024_indexes::active_sessions_cron_scan_uses_partial_index ... ok
+test rfc_148_scrub::a_shared_tombstone_collides_but_the_real_scrub_does_not ... ok
+test rfc_050_sql::invitation_list_pending_by_tenant_excludes_expired ... ok
+test rfc_050_sql::deletion_find_pending_by_user_sql ... ok
+test rfc_024_indexes::created_at_index_exists_on_users ... ok
+test foundation::system_admin_role_is_superset_of_all_built_in_roles ... ok
+test foundation::same_email_allowed_in_different_tenants ... ok
+test rfc_024_indexes::anonymous_expired_sweep_uses_partial_index ... ok
+test foundation::permission_catalog_all_present_in_database ... ok
+test foundation::email_uniqueness_is_case_insensitive_within_tenant ... ok
+test rfc_050_sql::invitation_mark_revoked_sql ... ok
+test rfc_051_authenticators::authenticators_tenant_index_exists_after_0020 ... ok
+test rfc_050_sql::deletion_list_due_sql ... ok
+test rfc_051_authenticators::authenticators_has_tenant_id_after_0020 ... ok
+test rfc_050_sql::deletion_mark_executed_sql ... ok
+test foundation::no_dangling_foreign_keys_after_full_chain ... ok
+test foundation::schema_meta_version_matches_migration_count ... ok
+test foundation::authenticators_fk_does_not_reference_users_pre_0004 ... ok
+test rfc_023_cross_tenant::same_tenant_group_organization_reference_accepted ... ok
+test foundation::migration_chain_applies_to_fresh_database ... ok
+test repair_and_fks::repair_migration_collate_nocase_survives_full_chain ... ok
+test repair_and_fks::repair_migration_authenticators_fk_points_at_users ... ok
+test repair_and_fks::invitation_tokens_table_exists_after_0018 ... ok
+test repair_and_fks::invitation_tokens_unique_pending_per_email_tenant ... ok
+test repair_and_fks::deletion_requests_unique_pending_per_user ... ok
+test rfc_050_sql::invitation_find_pending_by_tenant_email_sql ... ok
+test rfc_050_sql::deletion_mark_cancelled_sql ... ok
+test repair_and_fks::deletion_requests_table_exists_after_0019 ... ok
+test rfc_148_scrub::scrub_matches_case_insensitively_and_leaves_other_addresses_untouched ... ok
+test rfc_148_scrub::one_deletion_scrubbing_two_rows_in_the_same_tenant_still_gets_distinct_tombstones ... ok
+test rfc_187_audit_actor::migration_0021_does_not_backfill_existing_rows ... ok
+test rfc_187_audit_actor::audit_events_accepts_a_null_actor_after_0021 ... ok
+test rfc_187_audit_actor::audit_events_accepts_a_non_null_actor_after_0021 ... ok
+test rfc_187_audit_actor::audit_events_actor_index_exists_after_0021 ... ok
+test rfc_148_scrub::scrub_replaces_email_and_preserves_the_administrative_columns ... ok
+
+test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.32s
+
