@@ -89,4 +89,24 @@ ignore = [
     # revisit when the `elliptic-curve`/`ecdsa`/`p256` upgrade happens
     # for any other reason — take the fix then, don't re-justify this.
     "RUSTSEC-2026-0387",
+
+    # ── RUSTSEC-2026-0543 — `chrono` 0.4.44, unmaintained ─────────────
+    #
+    # 0.110.0-advisory-dispositions handoff, D3. An `unmaintained`
+    # advisory, not a vulnerability, dated 2026-09-14 — red in
+    # `audit.yml` for over two months before this entry, which is
+    # exactly why an unmaintained warning (not a build failure) needs a
+    # row the moment it appears rather than whenever someone happens to
+    # read the whole check output.
+    #
+    # `worker` is the only dependant (verified against `Cargo.lock`:
+    # `chrono` reaches this tree solely through the `worker` crate), so
+    # there is no upgrade of our own to make — the fix is upstream, in
+    # `worker`, or nothing. cesauth's own code never depends on `chrono`
+    # directly.
+    #
+    # Revisit when: `worker` drops `chrono` (upgrade and this ignore
+    # retires with it), or a maintained fork becomes the ecosystem's
+    # recommended replacement and `worker` adopts it.
+    "RUSTSEC-2026-0543",
 ]

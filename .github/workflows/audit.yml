@@ -19,8 +19,8 @@ name: audit
 #   mean "no known CVEs in our dep tree". If a finding turns out
 #   to be a false positive or doesn't apply to our usage, we
 #   add it to the `ignore` list in .cargo/audit.toml with a
-#   one-line justification (we don't have one yet; create it
-#   only when the first ignore is actually needed).
+#   justification block — see that file, which has carried
+#   entries since 2026-09-02 and has four as of 0.110.0.
 #
 # Why we don't run `cargo audit` directly via a step that
 # installs the binary: the rustsec/audit-check action caches
