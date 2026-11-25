@@ -2512,7 +2512,7 @@ SubscriptionRepository::set_plan
 SubscriptionRepository::set_status
 SubscriptionHistoryRepository::list_for_subscription
 TenantRepository::get
-TenantRepository::list_active
+TenantRepository::list_non_deleted
 TenantRepository::set_status
 TenantRepository::update_display_name
 OrganizationRepository::get

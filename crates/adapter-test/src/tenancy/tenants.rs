@@ -25,7 +25,7 @@ impl TenantRepository for InMemoryTenantRepository {
     async fn find_by_slug(&self, slug: &str) -> PortResult<Option<Tenant>> {
         Ok(self.rows.lock().unwrap().values().find(|r| r.slug == slug).cloned())
     }
-    async fn list_active(&self) -> PortResult<Vec<Tenant>> {
+    async fn list_non_deleted(&self) -> PortResult<Vec<Tenant>> {
         Ok(self.rows.lock().unwrap().values()
            .filter(|r| !matches!(r.status, TenantStatus::Deleted))
            .cloned().collect())

@@ -122,7 +122,7 @@ pub async fn list<D>(req: Request, ctx: RouteContext<D>) -> Result<Response> {
         return Ok(r);
     }
     let tenants = CloudflareTenantRepository::new(&ctx.env);
-    match tenants.list_active().await {
+    match tenants.list_non_deleted().await {
         Ok(rows) => json(200, &rows),
         Err(e)   => port_error_response(e),
     }

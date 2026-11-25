@@ -32,7 +32,15 @@ pub trait TenantRepository {
     /// omitted for 0.5.0 — the operator surface that consumes this
     /// expects O(10-100) tenants. Pagination lands with the tenancy
     /// control plane.
-    async fn list_active(&self) -> PortResult<Vec<Tenant>>;
+    ///
+    /// **Renamed from `list_active` in `0.110.0`-tenancy-console-slice-1
+    /// (disclosed surface-contract change).** The query is
+    /// `WHERE status != 'deleted'`, which returns `Pending` and
+    /// `Suspended` tenants too — `list_active` said the opposite of
+    /// what it does, and the slice that first makes those statuses
+    /// visible on screen is the one where that name starts actively
+    /// misleading the next reader.
+    async fn list_non_deleted(&self) -> PortResult<Vec<Tenant>>;
 
     async fn set_status(
         &self,

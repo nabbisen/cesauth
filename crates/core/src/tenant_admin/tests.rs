@@ -34,7 +34,7 @@ impl TenantRepository for StubTenants {
         if *self.fail.borrow() { return Err(PortError::Unavailable); }
         Ok(self.rows.borrow().iter().find(|t| t.slug == slug).cloned())
     }
-    async fn list_active(&self) -> PortResult<Vec<Tenant>> {
+    async fn list_non_deleted(&self) -> PortResult<Vec<Tenant>> {
         Ok(self.rows.borrow().clone())
     }
     async fn set_status(&self, _: &str, _: TenantStatus, _: i64) -> PortResult<()> { Ok(()) }

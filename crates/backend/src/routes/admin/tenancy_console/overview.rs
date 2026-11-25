@@ -45,7 +45,7 @@ pub async fn page_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
     use cesauth_cf::tenancy::CloudflareTenantRepository;
     use cesauth_core::tenancy::TenantRepository;
     let repo = CloudflareTenantRepository::new(&ctx.env);
-    let tenants = repo.list_active().await.unwrap_or_default();
+    let tenants = repo.list_non_deleted().await.unwrap_or_default();
     let mut resp = Response::from_json(&serde_json::json!({
         "tenant_count": tenants.len(),
     }))?;

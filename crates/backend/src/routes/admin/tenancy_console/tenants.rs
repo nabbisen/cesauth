@@ -18,7 +18,18 @@ pub async fn page_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
     use cesauth_cf::tenancy::CloudflareTenantRepository;
     use cesauth_core::tenancy::TenantRepository;
     let repo = CloudflareTenantRepository::new(&ctx.env);
-    let tenants = repo.list_active().await.unwrap_or_default();
+    // RFC 188 Phase 1's D5, applied here: a value that could be real
+    // (an empty list) must never stand in for a value we do not have
+    // (a failed read). `unwrap_or_default()` used to do exactly that —
+    // a D1 outage rendered as "no tenants are registered yet", a
+    // confident sentence about the deployment rather than a fact about
+    // this request. Fail loud instead; the CSR component's existing
+    // fetch-failure path (a non-`TenantsData`-shaped body collapses to
+    // `None` via `.ok()`) renders the third state.
+    let tenants = match repo.list_non_deleted().await {
+        Ok(t)  => t,
+        Err(_) => return Response::error("storage error", 500),
+    };
     let mut resp = Response::from_json(&serde_json::json!({ "tenants": tenants }))?;
     resp.headers_mut().set("cache-control", "no-store").ok();
     Ok(resp)

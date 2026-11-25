@@ -156,10 +156,10 @@ async fn soft_deleted_tenant_status_reflects_correctly() {
     assert!(still_exists.is_some(), "soft-deleted tenant row must persist");
     assert_eq!(still_exists.unwrap().status, TenantStatus::Deleted);
 
-    // Active list excludes it.
-    let active = tenants.list_active().await.unwrap();
+    // Non-deleted list excludes it.
+    let active = tenants.list_non_deleted().await.unwrap();
     assert!(active.iter().all(|t| t.id != tenant.id),
-        "deleted tenant must not appear in list_active");
+        "deleted tenant must not appear in list_non_deleted");
 }
 
 /// §16.6: Negative paths — duplicate slug, cross-tenant group, expired role.

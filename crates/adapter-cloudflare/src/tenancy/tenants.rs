@@ -106,7 +106,7 @@ impl TenantRepository for CloudflareTenantRepository<'_> {
         rows.into_iter().next().map(TenantRow::into_domain).transpose()
     }
 
-    async fn list_active(&self) -> PortResult<Vec<Tenant>> {
+    async fn list_non_deleted(&self) -> PortResult<Vec<Tenant>> {
         let db = db(self.env)?;
         let rows = db.prepare(&format!(
             "SELECT {COLS} FROM tenants WHERE status != 'deleted' ORDER BY created_at DESC"
