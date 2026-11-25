@@ -235,6 +235,37 @@ audit viewer's row still pinned at **2**, operator-console negotiation
 changelog budget green. Clippy 0 errors, `cargo deny` ok in all four
 sections, wasm32 checks clean. Catalog **325 → 330** arms.
 
+**Bundle, CI to CI**, code and version bump in separate commits:
+
+| commit | `Cargo.toml` | gzip |
+|---|---|---|
+| `c76eafc` (`0.108.0` tag) | `0.108.0` | 918,966 B |
+| `ac12d5b` (this cut's code) | `0.108.0` | 919,080 B |
+| `2ccb523` (`0.109.0` tag) | `0.109.0` | **919,071 B** |
+
+**Code delta at the pinned version: +114 B**, absolute **+105 B**, **35%**
+of the 2,621,440 B budget; the version string accounts for **−9 B**.
+
+**That number is the other half of `0.108.0`'s answer.** This cut changed
+a mapper, added five catalog keys and a table column, and cost **+114 B**
+— against `0.108.0`'s **+12,841 B** for eleven keys and one console
+section. The difference is not the number of keys: it is that `0.108.0`
+widened a **shared type** (`AuditChainStatus`) and paid for a second
+instantiation of its deserialization machinery, which is exactly what
+this release's `twiggy` measurement found. Two cuts of similar surface
+area, two orders of magnitude apart in cost, with a named cause.
+
+**CI: 15 push workflow runs, 17 check runs, nothing pending** — the
+predicted count for a release tip, measured on the first release that
+has one. **Two of the seventeen are red, both from `audit.yml`, and
+deliberately so**: see the security answer above.
+
+**`cargo deny check` and `cargo audit` disagree on this tree** — the
+former reports advisories ok, the latter reports RUSTSEC-2026-0592.
+Both are in the gate set, and the disagreement (different advisory
+sources and fetch timing) is now recorded rather than discovered again
+next release.
+
 ---
 
 ## [0.108.0] - 2026-11-18
