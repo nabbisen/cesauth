@@ -29,20 +29,34 @@ if [ ! -f "$MANIFEST" ]; then
   exit 1
 fi
 
-mapfile -t REQUIRED < <(jq -r '.release[]' "$MANIFEST" | sort)
-mapfile -t EXEMPT    < <(jq -r '.not_on_release_path[].workflow' "$MANIFEST" | sort)
+mapfile -t REQUIRED    < <(jq -r '.release[]' "$MANIFEST" | sort)
+mapfile -t EXEMPT       < <(jq -r '.not_on_release_path[].workflow' "$MANIFEST" | sort)
+# 0.109.0-release-machinery handoff D7/D8: a third, independent list for a
+# workflow that DOES run on a release (so `not_on_release_path` would be a
+# lie) but is not required on every push to main (so `release` would make
+# it a gate, which it must never be). A tag push shares its head SHA with
+# the branch push, so this workflow appears in the same `actions/runs?
+# head_sha=` query `release` and `not_on_release_path` entries do — D8
+# requires it be accounted for whether or not it has registered yet.
+mapfile -t ON_TAG_PUSH  < <(jq -r '.on_tag_push[].workflow' "$MANIFEST" | sort)
 
 if [ "${#REQUIRED[@]}" -eq 0 ]; then
   echo "❌ manifest's 'release' list is empty — refusing to pass trivially" >&2
   exit 1
 fi
 
-# Every entry in `not_on_release_path` must carry a non-empty reason — the
-# same discipline as E3_EXEMPT / GATE_42_EXEMPT / NONCE_EXEMPT in
-# route-contracts-check.sh. An exemption with no reason is not an exemption.
+# Every entry in `not_on_release_path` AND `on_tag_push` must carry a
+# non-empty reason — the same discipline as E3_EXEMPT / GATE_42_EXEMPT /
+# NONCE_EXEMPT in route-contracts-check.sh. An exemption with no reason is
+# not an exemption.
 unreasoned=$(jq -r '.not_on_release_path[] | select((.reason // "") | length == 0) | .workflow' "$MANIFEST")
 if [ -n "$unreasoned" ]; then
   echo "❌ not_on_release_path entries with no reason: $unreasoned" >&2
+  exit 1
+fi
+unreasoned_tag=$(jq -r '.on_tag_push[] | select((.reason // "") | length == 0) | .workflow' "$MANIFEST")
+if [ -n "$unreasoned_tag" ]; then
+  echo "❌ on_tag_push entries with no reason: $unreasoned_tag" >&2
   exit 1
 fi
 
@@ -80,7 +94,7 @@ done
 
 UNEXPECTED=()
 for w in "${TRIGGERED[@]}"; do
-  if ! contains "$w" "${REQUIRED[@]}" && ! contains "$w" "${EXEMPT[@]}"; then
+  if ! contains "$w" "${REQUIRED[@]}" && ! contains "$w" "${EXEMPT[@]}" && ! contains "$w" "${ON_TAG_PUSH[@]}"; then
     UNEXPECTED+=("$w")
   fi
 done
@@ -96,4 +110,4 @@ if [ "${#MISSING[@]}" -gt 0 ] || [ "${#UNEXPECTED[@]}" -gt 0 ]; then
   exit 1
 fi
 
-echo "✅ release gate manifest: ${#TRIGGERED[@]} workflows triggered for $SHA, all ${#REQUIRED[@]} required present, ${#EXEMPT[@]} exempt accounted for."
+echo "✅ release gate manifest: ${#TRIGGERED[@]} workflows triggered for $SHA, all ${#REQUIRED[@]} required present, ${#EXEMPT[@]} exempt accounted for, ${#ON_TAG_PUSH[@]} tag-triggered accounted for."

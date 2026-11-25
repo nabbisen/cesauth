@@ -119,6 +119,28 @@ every source — **not** `…/branches/main/protection`, which sees only legacy
 branch protection and answers `404` even when a ruleset governs the branch
 (RFC 142 §12).
 
+**`github-release.yml` (0.109.0-release-machinery handoff) is a sixteenth
+workflow file, and it is counted separately from the fourteen above, not folded
+into them.** It triggers on `push: tags:` matching a bare `X.Y.Z`, a different
+event from the `push: branches: [main]` the fourteen share — a tag push and the
+branch push that precedes it land on the same commit but are two separate
+triggers, and `github-release.yml` only ever fires from the first. It is in
+neither the manifest's `release` list (not required on every push to `main`)
+nor its `not_on_release_path` list (it *does* run on a release) — it is the
+manifest's third list, `on_tag_push`, added for exactly this shape of workflow
+(RFC-less 0.109.0-release-machinery handoff D7/D8). **It is not a gate**: it
+publishes a GitHub Release from the CHANGELOG entry and must never block
+anything, the same "no check blocks anything" rule as every other workflow here.
+
+**Check-run count, corrected for a release tip.** A push to `main` triggers the
+fourteen workflows above, but produces **sixteen** check runs, not fourteen:
+`worker-build.yml` emits two jobs (two check runs for one workflow run), and
+`rustsec/audit-check` creates its own `Security audit` check run through the
+Checks API, separate from `audit.yml`'s own run — 14 − 1 + 2 + 1 = 16. **On a
+release tip** — the commit is both pushed to `main` and tagged — the tag push
+additionally triggers `github-release.yml`, adding one more workflow run and
+one more check run: **17** check runs, not 16, on that one commit.
+
 | Gate (as described) | Where CI runs it | Difference |
 |---|---|---|
 | Host tests — the five-crate `cargo test` above | `test.yml` | none |
@@ -596,6 +618,21 @@ than rewording the rule.
   (`0.79.1`–`0.79.6`, during RFC 115 Phase C); no patch has ever added a
   migration, and the MSRV has never moved. [RFC 168](https://github.com/nabbisen/cesauth/blob/main/rfcs/accepted/168-the-release-record-does-not-reconcile.md)
   proposes the three checks.
+
+- **The tag push publishes a GitHub Release** (0.109.0-release-machinery
+  handoff, `.github/workflows/github-release.yml`), titled with the bare
+  version, whose body is `scripts/changelog-release-notes.sh`'s output for that
+  tag — byte-identical to the CHANGELOG entry plus one appended line naming the
+  signed tag as the authority (`git verify-tag <tag>`), never GitHub's
+  auto-generated notes. **This is not a gate and cannot become one**: a missing
+  or unparseable CHANGELOG entry fails the *workflow*, not the release that was
+  already cut and tagged by the time it runs. If a Release already exists for
+  the tag, the step fails rather than overwriting it (no `--clobber`); the
+  one-line reversal is `gh release delete <tag>`. No build artifacts are
+  attached — the Worker is deployed, not distributed. The backfill question
+  (publishing a Release for one of the 164 tags that predate this workflow) is
+  rowed, not answered by this entry; `0.108.0` is the one tag with a Release so
+  far, published by hand once this workflow landed.
 
 ## Documentation self-containment
 

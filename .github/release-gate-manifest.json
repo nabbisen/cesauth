@@ -23,5 +23,12 @@
       "workflow": "fuzz.yml",
       "reason": "Triggers on pull_request (path-filtered to crates/core/src/jwt/** and fuzz/**), a weekly schedule, and workflow_dispatch — never on push, so no release commit is covered by it. RFC 156 §4.1: a fuzz run is non-deterministic, and a release gate that can fail for reasons unrelated to the change under release is a bad release gate. The JWT parser (RFC 005) is independently-implemented code processing adversarial tokens on every request, so coverage still matters — the PR path filter plus the weekly schedule provide it without putting a non-deterministic job on the release path."
     }
+  ],
+
+  "on_tag_push": [
+    {
+      "workflow": "github-release.yml",
+      "reason": "0.109.0-release-machinery handoff, D7: triggers on `push: tags:` (plus workflow_dispatch), not on the branch push to main — but a tag push carries the same head SHA as the release commit it tags, so this workflow DOES appear in the head_sha-keyed actions/runs query release-gate-manifest-check.sh makes, and would be misreported UNEXPECTED if left out of every list. It is not `not_on_release_path` (that would be false — it does run on a release) and not `release` (it is not required on every push to main; D7 of the handoff also says it must never gate a release). D8: the branch push's own manifest check runs seconds before the tag push typically registers, so this entry is accounted for whether or not the query has seen it yet — never required, never unexpected, in either case."
+    }
   ]
 }

@@ -1,0 +1,96 @@
+name: GitHub Release
+
+# 0.109.0-release-machinery handoff
+# (rfcs/handoffs/0.109.0-release-machinery/github-release-and-bundle-attribution-handoff.md).
+#
+# Publishes a GitHub Release whose body is the tag's own CHANGELOG entry
+# (scripts/changelog-release-notes.sh, D1) — never GitHub's
+# `--generate-notes`, which would be a fourth, independently-derived
+# account of what shipped (§2 of the handoff).
+#
+# **D3: this is the first workflow in this repository that writes to the
+# repository** (every other one is read-only apart from audit.yml's
+# `issues: write`). The `contents: write` permission is scoped to this one
+# job, not the file-level default, and the trigger set is exactly two
+# named events — no `pull_request`: a write-capable workflow reachable
+# from a fork's PR is a posture this project does not want
+# (contributing.md "How a change reaches main").
+#
+# D2: the tag filter matches bare X.Y.Z only — this repository's tag
+# format (no `v` prefix, per the project's own convention) and nothing
+# else it might ever tag.
+#
+# D4: the Release is derived; the signed tag stays the authority. The
+# body's last line says so and names `git verify-tag` rather than implying
+# the Release itself is signed.
+#
+# D5: no artifacts attached — the Worker is deployed, not distributed.
+#
+# D6: not a draft, not a prerelease, no `--clobber`. If a Release already
+# exists for the tag, `gh release create` fails on its own; this workflow
+# does not retry or overwrite — a second publish attempt for one version
+# means something unexpected happened.
+#
+# D7/D8: this workflow is deliberately in NEITHER the manifest's `release`
+# list (it is not required on every push to main) NOR its
+# `not_on_release_path` list (it DOES run on a release) — it is the
+# manifest's third list, `on_tag_push`. It is not a gate: it publishes,
+# and it must never block anything (§10 of the handoff).
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Already-tagged version to publish a Release for (e.g. 0.108.0). For re-running by hand only — a normal release publishes via the tag push above.'
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # fetch-depth: 0 — same reason drift-scan.yml uses it: the extractor
+      # needs to read docs/changelog-archive/*.md for a backfilled tag,
+      # and a shallow clone has neither the archive's full history context
+      # nor (for workflow_dispatch against an older tag) the tag itself.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve the tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract the CHANGELOG entry (D1) — fails the workflow if not found, empty, or duplicated
+        run: |
+          bash scripts/changelog-release-notes.sh "${{ steps.tag.outputs.tag }}" > /tmp/release-notes.md
+
+      - name: Append the D4 provenance line
+        run: |
+          {
+            echo
+            echo "---"
+            echo
+            echo "This Release is generated from the CHANGELOG entry above. The signed tag is the authority — verify it with \`git verify-tag ${{ steps.tag.outputs.tag }}\`."
+          } >> /tmp/release-notes.md
+
+      # D6: no --clobber, no --draft left set, no --prerelease. A Release
+      # already existing for this tag fails this step as-is, which is the
+      # point — see the module note above.
+      - name: Publish the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.tag.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --title "${{ steps.tag.outputs.tag }}" \
+            --notes-file /tmp/release-notes.md

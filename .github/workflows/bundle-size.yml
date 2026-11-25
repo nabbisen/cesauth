@@ -110,3 +110,53 @@ jobs:
           name: worker-bundle
           path: bundled/
           retention-days: 30
+
+      # 0.109.0-release-machinery handoff, T5 — answers 0.108.0's own open
+      # question (its CHANGELOG entry and this file's history above): the
+      # bundle grew +12,841 B for a cut whose visible surface was 11
+      # catalog keys and one console section, 8.5x the per-key cost
+      # 0.106.0 measured. Attributes that growth to named symbols instead
+      # of theorising. **Does not change what is linked** (§7 of the
+      # handoff) — this rebuilds the frontend a SECOND time, into a
+      # throwaway directory, purely to measure; the artifact checked above
+      # and uploaded above is the one that ships, untouched by this step.
+      #
+      # Why a second build, not the shipped one: `[profile.release] strip
+      # = true` (root Cargo.toml) removes the wasm "name" custom section
+      # before wasm-opt even runs, so twiggy can attribute size only to
+      # bare `code[N]`/`data[N]` indices on the artifact this job already
+      # built (verified locally: `twiggy top` on the shipped,
+      # wasm-opt'd *and* on the pre-wasm-opt artifact both report zero
+      # named symbols). `CARGO_PROFILE_RELEASE_STRIP=none` on a fresh
+      # build restores the name section without editing the checked-in
+      # profile. This measurement build is ~10x larger on disk (the name
+      # section itself dominates it) and is never uploaded or deployed.
+      - name: Symbol-level size attribution (twiggy, measurement only)
+        run: |
+          set -euo pipefail
+          # DEPENDENCIES.md pin (added by this handoff).
+          cargo install twiggy --version 0.8.0 --locked
+
+          rm -rf /tmp/twiggy-measure
+          mkdir -p /tmp/twiggy-measure
+          cp -r crates/frontend /tmp/twiggy-measure/frontend
+          cd /tmp/twiggy-measure/frontend
+          rm -rf dist
+          CARGO_PROFILE_RELEASE_STRIP=none trunk build --release --filehash false
+
+          wasm=$(find dist -maxdepth 1 -name '*_bg.wasm' | head -1)
+          if [ -z "$wasm" ]; then
+            echo "::error::twiggy measurement build produced no *_bg.wasm" >&2
+            exit 1
+          fi
+          echo "Measuring $wasm (unstripped, pre-wasm-opt — for symbol names only; not the shipped artifact)"
+          mkdir -p /tmp/twiggy-measure/report
+          twiggy top -n 40 "$wasm" | tee /tmp/twiggy-measure/report/twiggy-top-40.txt
+
+      - name: Upload symbol attribution report
+        uses: actions/upload-artifact@v4
+        with:
+          name: twiggy-top-40
+          path: /tmp/twiggy-measure/report/twiggy-top-40.txt
+          retention-days: 30
+          if-no-files-found: error

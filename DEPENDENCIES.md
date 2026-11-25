@@ -45,6 +45,7 @@ here and the install sites reference this section.
 | `axe-playwright` | `2.2.2` | `e2e/package.json` + committed `package-lock.json` | RFC 131 R5 §9 |
 | `mdbook` | **0.5.4** | `.github/workflows/docs.yml` | RFC 138 D1 |
 | `wrangler` | **4.131.2** | root `package.json` + committed `package-lock.json`; `wranglerVersion` in `bundle-size.yml` | RFC 138 D2 |
+| `twiggy` | **0.8.0** | `.github/workflows/bundle-size.yml` (`cargo install twiggy --version 0.8.0 --locked`) | 0.109.0-release-machinery handoff T5. **0.7.0 (the then-latest at install time) panics** ("should not parse the same key into multiple items") on this project's wasm, built with `--enable-bulk-memory`; 0.8.0 does not. Pinned past that finding, not picked arbitrarily. |
 
 **wrangler, 4.131.2 (RFC 138 D2, 2026-09-15).** wrangler is the deploy tool,
 and the one that governs the Workers Static Assets defaults behind RFC 131
