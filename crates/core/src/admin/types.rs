@@ -498,18 +498,85 @@ pub struct AdminAuditEntry {
     /// the row. v0.32.0+: the chain sequence number formatted as
     /// `seq=N`. The UI renders this verbatim; treat as opaque.
     pub key:     String,
-    /// **RFC 188 Phase 2, D3.** `true` when any of the seven
-    /// cross-checked columns (`subject`, `actor`, `client_id`, `ip`,
-    /// `user_agent`, `reason`, `request_id` —
-    /// [`crate::audit::verifier::CROSS_CHECKED_COLUMNS`]) disagrees with
-    /// the row's own payload, or the payload would not parse at all.
+    /// **RFC 188 Phase 2, D3, amended by the G1 ruling's Change 1.**
+    /// `Diverges` when any of the seven cross-checked columns
+    /// (`subject`, `actor`, `client_id`, `ip`, `user_agent`, `reason`,
+    /// `request_id` — [`crate::audit::verifier::CROSS_CHECKED_COLUMNS`])
+    /// disagrees with the row's own payload; `PayloadUnreadable` when the
+    /// payload itself would not parse at all; `Clean` otherwise.
     /// `subject`/`actor`/`client`/`reason` above are always the
-    /// payload's values, never the column's (D1/D2) — this flag is what
+    /// payload's values, never the column's (D1/D2) — this field is what
     /// tells the reader that fact is load-bearing for this particular
-    /// row, not decoration. Set by the mapper that builds this struct,
-    /// from a full seven-column comparison even though only four of
-    /// those columns are displayed (T2).
-    pub diverges_from_payload: bool,
+    /// row, not decoration.
+    ///
+    /// **Three states, not a bool plus an inference.** A row that
+    /// diverges only on a column this struct doesn't display (`ip`,
+    /// `user_agent`, `request_id`) and whose four shown fields are
+    /// legitimately absent is, under a bare divergence flag,
+    /// indistinguishable from a row whose payload would not parse —
+    /// both are "marked, four fields absent". The G1 ruling found this
+    /// inference already wrong at the point it would have been made:
+    /// the mapper that builds this struct *knows* which case it is (the
+    /// payload parse's `Ok`/`Err`), and discarding that distinction here
+    /// only to re-guess it in the view loses information the mapper
+    /// already had for free.
+    pub diverges_from_payload: PayloadDivergence,
+}
+
+/// The three states [`AdminAuditEntry::diverges_from_payload`] carries,
+/// per the RFC 188 Phase 2 G1 ruling's Change 1. Serialized in
+/// `snake_case` — `"clean"` / `"diverges"` / `"payload_unreadable"` — the
+/// same word on the wire as the CSV/JSON export's appended column (T3)
+/// and the viewer's JSON (T4): one fact, one vocabulary across every
+/// surface that carries it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PayloadDivergence {
+    /// All seven cross-checked columns agree with the payload.
+    Clean,
+    /// At least one of the seven cross-checked columns disagrees with
+    /// the payload. The four display fields above still carry the
+    /// payload's own values (D1/D2) — this state says they are not what
+    /// the row's indexed columns say.
+    Diverges,
+    /// The payload itself would not parse (D2) — the four display
+    /// fields above are `None`, not a fallback to the columns. Always
+    /// implies a divergence by the same seven-column standard (an
+    /// unparseable payload cannot agree with anything), but the two
+    /// facts answer different operator questions and must not be
+    /// collapsed into one word.
+    PayloadUnreadable,
+}
+
+impl PayloadDivergence {
+    /// The wire word — matches the `#[serde(rename_all = "snake_case")]`
+    /// tag exactly, so the CSV export (a plain, unquoted token) and the
+    /// JSON export/viewer JSON (this string, quoted) never disagree
+    /// with what `Serialize`/`Deserialize` would produce.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PayloadDivergence::Clean             => "clean",
+            PayloadDivergence::Diverges           => "diverges",
+            PayloadDivergence::PayloadUnreadable  => "payload_unreadable",
+        }
+    }
+}
+
+#[cfg(test)]
+mod payload_divergence_tests {
+    use super::PayloadDivergence;
+
+    /// `as_str`'s manual match must agree with what `Serialize` actually
+    /// produces — the CSV export calls `as_str` directly (no serde on
+    /// that path), and this is what keeps it from drifting against the
+    /// JSON export/viewer JSON, which both go through `Serialize`.
+    #[test]
+    fn as_str_agrees_with_serde_for_every_variant() {
+        for v in [PayloadDivergence::Clean, PayloadDivergence::Diverges, PayloadDivergence::PayloadUnreadable] {
+            let json = serde_json::to_string(&v).unwrap();
+            assert_eq!(json, format!("{:?}", v.as_str()), "as_str()/Serialize disagree for {v:?}");
+        }
+    }
 }
 
 /// Filter applied when searching audit events.

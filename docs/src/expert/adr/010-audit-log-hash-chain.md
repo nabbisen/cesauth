@@ -184,12 +184,15 @@ confusion this detection exists to resolve, not reproduce.
   fields (`subject`, `actor`, `client`, `reason`) from each row's
   own `payload` via `AuditPayloadMirror::parse`, never from the
   indexed columns, and mark a row whose columns diverge from its
-  payload (`AdminAuditEntry::diverges_from_payload`, set by a full
-  seven-column comparison even though only four columns are
-  shown). A payload that will not parse renders those four fields
-  as absent and is always marked — it does not fall back to the
-  columns. **The filters themselves still match on the indexed
-  columns** (that is what the indexes are for): a tampered column
+  payload (`AdminAuditEntry::diverges_from_payload`, a three-state
+  field — `clean` / `diverges` / `payload_unreadable`, G1 ruling
+  Change 1, not a bare flag — set by a full seven-column comparison
+  even though only four columns are shown). A payload that will not
+  parse renders those four fields as absent and carries its own
+  `payload_unreadable` state, distinct from an ordinary `diverges` —
+  the two answer different operator questions even though neither
+  falls back to the columns. **The filters themselves still match on
+  the indexed columns** (that is what the indexes are for): a tampered column
   can still make a row **invisible to a filter** on those same
   surfaces — e.g. editing `subject` so a search for the payload's
   real subject misses the row — even though the row, if found

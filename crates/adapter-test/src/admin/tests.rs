@@ -256,23 +256,23 @@ async fn alert_center_emits_missing_baseline_on_first_view() {
 
 #[tokio::test]
 async fn audit_search_filters_and_limits() {
-    use cesauth_core::admin::types::{AdminAuditEntry, AuditQuery};
+    use cesauth_core::admin::types::{AdminAuditEntry, AuditQuery, PayloadDivergence};
     let audit = InMemoryAuditQuerySource::default();
     audit.seed(vec![
         AdminAuditEntry {
             ts: 1000, id: "1".into(), kind: "token_issued".into(),
             subject: Some("alice".into()), actor: None, client: Some("c1".into()),
-            reason: None, key: "k1".into(), diverges_from_payload: false,
+            reason: None, key: "k1".into(), diverges_from_payload: PayloadDivergence::Clean,
         },
         AdminAuditEntry {
             ts: 1001, id: "2".into(), kind: "magic_link_verified".into(),
             subject: Some("bob".into()), actor: None, client: None, reason: None, key: "k2".into(),
-            diverges_from_payload: false,
+            diverges_from_payload: PayloadDivergence::Clean,
         },
         AdminAuditEntry {
             ts: 1002, id: "3".into(), kind: "auth_failed".into(),
             subject: Some("bob".into()), actor: None, client: None, reason: Some("pkce".into()), key: "k3".into(),
-            diverges_from_payload: false,
+            diverges_from_payload: PayloadDivergence::Clean,
         },
     ]);
     let only_bob = service::search_audit(&audit, &AuditQuery {

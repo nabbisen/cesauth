@@ -27,7 +27,7 @@ use std::sync::Mutex;
 
 use cesauth_core::admin::ports::AuditQuerySource;
 use cesauth_core::admin::service::audit_pagination::decode_cursor;
-use cesauth_core::admin::types::{AdminAuditEntry, AuditQuery};
+use cesauth_core::admin::types::{AdminAuditEntry, AuditQuery, PayloadDivergence};
 use cesauth_core::audit::payload::AuditPayloadMirror;
 use cesauth_core::ports::audit::AuditEventRow;
 use cesauth_core::ports::{PortError, PortResult};
@@ -38,11 +38,13 @@ use cesauth_core::ports::{PortError, PortResult};
 /// four display fields come from the payload mirror (D1), never the
 /// row's columns, and `diverges_from_payload` is set by a full
 /// seven-column comparison (D3) — including the three fields this
-/// screen never displays (`ip`, `user_agent`, `request_id`). An
-/// unparseable payload does not fall back to the columns (D2): it
-/// renders the four fields as `None` and is always flagged.
+/// screen never displays (`ip`, `user_agent`, `request_id`). **G1
+/// ruling, Change 1**: an unparseable payload is its own
+/// `PayloadDivergence::PayloadUnreadable` state, not folded into
+/// `Diverges` — it does not fall back to the columns (D2): it renders
+/// the four fields as `None` and carries that state, distinctly.
 pub fn map_row(row: &AuditEventRow) -> AdminAuditEntry {
-    let (mirror, diverges) = match AuditPayloadMirror::parse(&row.payload) {
+    let (mirror, state) = match AuditPayloadMirror::parse(&row.payload) {
         Ok(mirror) => {
             let diverges = row.subject    != mirror.subject
                 || row.actor      != mirror.actor
@@ -51,9 +53,10 @@ pub fn map_row(row: &AuditEventRow) -> AdminAuditEntry {
                 || row.user_agent != mirror.user_agent
                 || row.reason     != mirror.reason
                 || row.request_id != mirror.request_id;
-            (mirror, diverges)
+            let state = if diverges { PayloadDivergence::Diverges } else { PayloadDivergence::Clean };
+            (mirror, state)
         }
-        Err(_) => (AuditPayloadMirror::default(), true),
+        Err(_) => (AuditPayloadMirror::default(), PayloadDivergence::PayloadUnreadable),
     };
     AdminAuditEntry {
         ts:      row.ts,
@@ -64,7 +67,7 @@ pub fn map_row(row: &AuditEventRow) -> AdminAuditEntry {
         client:  mirror.client_id,
         reason:  mirror.reason,
         key:     format!("seq={}", row.seq),
-        diverges_from_payload: diverges,
+        diverges_from_payload: state,
     }
 }
 
@@ -151,7 +154,7 @@ mod tests {
             client:  None,
             reason:  None,
             key:     format!("seq={ts}"),
-            diverges_from_payload: false,
+            diverges_from_payload: PayloadDivergence::Clean,
         }
     }
 
@@ -297,7 +300,7 @@ mod tests {
     #[test]
     fn map_row_clean_row_is_unmarked_and_renders_the_payload() {
         let out = map_row(&clean_row(1));
-        assert!(!out.diverges_from_payload);
+        assert_eq!(out.diverges_from_payload, PayloadDivergence::Clean);
         assert_eq!(out.subject, Some("user-1".to_owned()));
         assert_eq!(out.actor,   Some("admin-1".to_owned()));
         assert_eq!(out.client,  Some("client-9".to_owned()));
@@ -319,7 +322,7 @@ mod tests {
             let mut row = clean_row(1);
             mutate_column(&mut row);
             let out = map_row(&row);
-            assert!(out.diverges_from_payload);
+            assert_eq!(out.diverges_from_payload, PayloadDivergence::Diverges);
             let shown = [&out.subject, &out.actor, &out.client, &out.reason]
                 .into_iter().flatten().any(|v| v == payload_value);
             assert!(shown, "the mapped entry must show the payload's value {payload_value}");
@@ -340,7 +343,7 @@ mod tests {
             let mut row = clean_row(1);
             mutate(&mut row);
             let out = map_row(&row);
-            assert!(out.diverges_from_payload,
+            assert_eq!(out.diverges_from_payload, PayloadDivergence::Diverges,
                 "a divergence in a non-displayed column must still flag the row");
             // Nothing on screen changed.
             assert_eq!(out.subject, Some("user-1".to_owned()));
@@ -355,7 +358,8 @@ mod tests {
         let mut row = clean_row(1);
         row.payload = "not json".to_owned();
         let out = map_row(&row);
-        assert!(out.diverges_from_payload);
+        assert_eq!(out.diverges_from_payload, PayloadDivergence::PayloadUnreadable,
+            "an unparseable payload is its own state, not folded into Diverges (G1 Change 1)");
         assert_eq!(out.subject, None);
         assert_eq!(out.actor,   None);
         assert_eq!(out.client,  None);
@@ -402,7 +406,7 @@ mod tests {
         let row = repo.rows().into_iter().find(|r| r.seq == 1).unwrap();
         let mapped = map_row(&row);
         assert_eq!(mapped.subject, Some("payload-subject".to_owned()));
-        assert!(mapped.diverges_from_payload);
+        assert_eq!(mapped.diverges_from_payload, PayloadDivergence::Diverges);
 
         // The filter's half: a search for the payload's own subject
         // value finds nothing, because the SQL-equivalent filter here

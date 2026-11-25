@@ -61,6 +61,7 @@
 //! ignoring it.
 
 use cesauth_core::admin::service::audit_pagination::parse_rfc3339_to_unix;
+use cesauth_core::admin::types::PayloadDivergence;
 use cesauth_core::i18n::{lookup, Locale, MessageKey};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -83,6 +84,19 @@ struct AuditEntryView {
     #[serde(default)]
     reason:  Option<String>,
     key:     String,
+    /// **RFC 188 Phase 2, T4 (G1 ruling, Change 1).** `#[serde(default)]`
+    /// guards a transient backend/frontend version skew the same way
+    /// `subject`/`actor`/`reason` above do — a brand-new field, same
+    /// deployment-rollout concern. Defaults to `PayloadUnreadable`, not
+    /// `Clean`: an absent field is missing information, and treating
+    /// missing information as "nothing to see" is the sentinel-that-
+    /// looks-like-data mistake this project has already ruled against.
+    #[serde(default = "default_payload_divergence")]
+    diverges_from_payload: PayloadDivergence,
+}
+
+fn default_payload_divergence() -> PayloadDivergence {
+    PayloadDivergence::PayloadUnreadable
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -341,6 +355,9 @@ pub fn ConsoleAudit() -> impl IntoView {
 
             // ── render_schema_note ───────────────────────────────────────
             <p class="note">{lookup(MessageKey::AuditViewerNoteSchemaTenant, locale)}</p>
+            // RFC 188 Phase 2, T4, D4 — the filter residual, read before
+            // the results table where a marked row will be seen.
+            <p class="note">{lookup(MessageKey::AuditViewerNoteFilterResidual, locale)}</p>
 
             // ── render_results ───────────────────────────────────────────
             <Show when=move || loading.get()>
@@ -361,21 +378,46 @@ pub fn ConsoleAudit() -> impl IntoView {
                                     <th scope="col">{lookup(MessageKey::AuditViewerColEvent, locale)}</th>
                                     <th scope="col">{lookup(MessageKey::AuditViewerColReason, locale)}</th>
                                     <th scope="col">{lookup(MessageKey::AuditViewerColSeq, locale)}</th>
+                                    // RFC 188 Phase 2, T4 (G1-ruled).
+                                    <th scope="col">{lookup(MessageKey::AuditViewerColDivergence, locale)}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <For
                                     each=move || entries.get()
                                     key=|e| e.key.clone()
-                                    children=move |e: AuditEntryView| view! {
-                                        <tr>
-                                            <td class="num muted">{cesauth_core::util::format_unix_as_iso8601(e.ts)}</td>
-                                            <td class="muted">{e.subject.clone().unwrap_or_else(|| "—".to_owned())}</td>
-                                            <td class="muted">{e.actor.clone().unwrap_or_else(|| "—".to_owned())}</td>
-                                            <td><code>{e.kind.clone()}</code></td>
-                                            <td class="muted">{e.reason.clone().unwrap_or_default()}</td>
-                                            <td class="muted">{e.key.clone()}</td>
-                                        </tr>
+                                    children=move |e: AuditEntryView| {
+                                        // G1 Change 1: the unreadable marker replaces a
+                                        // display field's own value only when the wire
+                                        // state says so — never inferred from the field
+                                        // being absent (a row that diverges only on a
+                                        // column this screen doesn't show can have a
+                                        // legitimately-absent subject/actor/reason too).
+                                        let unreadable = e.diverges_from_payload == PayloadDivergence::PayloadUnreadable;
+                                        let marked = unreadable || e.diverges_from_payload == PayloadDivergence::Diverges;
+                                        let field = move |v: Option<String>| if unreadable {
+                                            lookup(MessageKey::AuditViewerUnparseableMarker, locale).to_owned()
+                                        } else {
+                                            v.unwrap_or_else(|| "—".to_owned())
+                                        };
+                                        view! {
+                                            <tr>
+                                                <td class="num muted">{cesauth_core::util::format_unix_as_iso8601(e.ts)}</td>
+                                                <td class="muted">{field(e.subject.clone())}</td>
+                                                <td class="muted">{field(e.actor.clone())}</td>
+                                                <td><code>{e.kind.clone()}</code></td>
+                                                <td class="muted">{if unreadable { lookup(MessageKey::AuditViewerUnparseableMarker, locale).to_owned() } else { e.reason.clone().unwrap_or_default() }}</td>
+                                                <td class="muted">{e.key.clone()}</td>
+                                                <td class="muted">
+                                                    <Show when=move || marked>
+                                                        <span
+                                                            title=lookup(MessageKey::AuditViewerDivergenceMarkLabel, locale)
+                                                            aria-label=lookup(MessageKey::AuditViewerDivergenceMarkLabel, locale)
+                                                        >{lookup(MessageKey::AuditViewerDivergenceMark, locale)}</span>
+                                                    </Show>
+                                                </td>
+                                            </tr>
+                                        }
                                     }
                                 />
                             </tbody>

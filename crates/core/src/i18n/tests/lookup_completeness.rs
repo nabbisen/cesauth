@@ -125,6 +125,10 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         AuditViewerNoteSchemaTenant | AuditViewerChainLink |
         // RFC 187 round 2 (T6 §3) — the real actor filter/column
         AuditViewerActorLabel | AuditViewerColActor |
+        // RFC 188 Phase 2, T4 — the divergence mark (G1-ruled)
+        AuditViewerColDivergence | AuditViewerDivergenceMark |
+        AuditViewerDivergenceMarkLabel | AuditViewerUnparseableMarker |
+        AuditViewerNoteFilterResidual |
         // RFC 180 (R2b) — dormant CSR component chrome
         ActionBack | ActionCopy | ActionCopied | ActionSignOut |
         PoweredBy | Privacy | Terms | Status |
@@ -276,6 +280,10 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         AuditViewerColEvent, AuditViewerColReason, AuditViewerColSeq,
         AuditViewerNoteSchemaTenant, AuditViewerChainLink,
         AuditViewerActorLabel, AuditViewerColActor,
+        // RFC 188 Phase 2, T4 — the divergence mark (G1-ruled)
+        AuditViewerColDivergence, AuditViewerDivergenceMark,
+        AuditViewerDivergenceMarkLabel, AuditViewerUnparseableMarker,
+        AuditViewerNoteFilterResidual,
         // RFC 180 (R2b)
         ActionBack, ActionCopy, ActionCopied, ActionSignOut,
         PoweredBy, Privacy, Terms, Status,

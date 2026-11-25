@@ -8,8 +8,8 @@ warning: unused import: `ClientId`
    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
 
 warning: `cesauth-core` (lib) generated 1 warning (run `cargo fix --lib -p cesauth-core` to apply 1 suggestion)
-    Checking cesauth-frontend v0.108.0 (/home/nabbisen/Desktop/cesauth/cesauth-git/crates/frontend)
     Checking cesauth-adapter-cloudflare v0.108.0 (/home/nabbisen/Desktop/cesauth/cesauth-git/crates/adapter-cloudflare)
+    Checking cesauth-frontend v0.108.0 (/home/nabbisen/Desktop/cesauth/cesauth-git/crates/frontend)
 warning: unused import: `js_string_literal`
  --> crates/frontend/src/templates/login.rs:3:21
   |
@@ -85,4 +85,4 @@ warning: function `read_plan_breakdown` is never used
     |          ^^^^^^^^^^^^^^^^^^^
 
 warning: `cesauth-backend` (lib) generated 7 warnings
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.87s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.72s

@@ -575,7 +575,7 @@ mod rfc_111 {
 
 mod rfc_111_callers {
     use super::*;
-    use cesauth_core::admin::types::AdminAuditEntry;
+    use cesauth_core::admin::types::{AdminAuditEntry, PayloadDivergence};
 
     const ANCHOR_UNIX: i64 = 1_704_067_200;
     const ANCHOR_ISO:  &str = "2024-01-01T00:00:00Z";
@@ -592,7 +592,7 @@ mod rfc_111_callers {
             client:  None,
             reason:  None,
             key:     "seq=1".into(),
-            diverges_from_payload: false,
+            diverges_from_payload: PayloadDivergence::Clean,
         });
         let out = overview_page(&s);
         assert!(out.contains(ANCHOR_ISO),

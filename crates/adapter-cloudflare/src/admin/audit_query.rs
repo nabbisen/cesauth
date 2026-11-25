@@ -32,17 +32,18 @@
 //! columns — the columns are what an in-place `UPDATE` can change; the
 //! payload is sealed by the hash chain. A payload that will not parse
 //! does **not** fall back to the column (D2): the four fields render
-//! as `None` and the row is flagged, same as any other divergence.
-//! `row_diverges` below is this mapper's own seven-column comparison —
-//! it is not imported from [`cesauth_core::audit::verifier`], per the
-//! handoff's D7 ("no change to Phase 1's verifier") — and counts the
-//! three fields this screen never displays (`ip`, `user_agent`,
-//! `request_id`) toward the flag: the row is divergent even when the
-//! diverging field is not on screen.
+//! as `None` and the row carries its own state
+//! (`PayloadDivergence::PayloadUnreadable`, G1 ruling Change 1), distinct
+//! from an ordinary `Diverges`. `payload_and_divergence` below is this
+//! mapper's own seven-column comparison — it is not imported from
+//! [`cesauth_core::audit::verifier`], per the handoff's D7 ("no change
+//! to Phase 1's verifier") — and counts the three fields this screen
+//! never displays (`ip`, `user_agent`, `request_id`) toward the state:
+//! the row diverges even when the diverging field is not on screen.
 
 use cesauth_core::admin::ports::AuditQuerySource;
 use cesauth_core::admin::service::audit_pagination;
-use cesauth_core::admin::types::{AdminAuditEntry, AuditQuery};
+use cesauth_core::admin::types::{AdminAuditEntry, AuditQuery, PayloadDivergence};
 use cesauth_core::audit::payload::AuditPayloadMirror;
 use cesauth_core::ports::audit::{AuditEventRepository, AuditEventRow, AuditSearch};
 use cesauth_core::ports::{PortError, PortResult};
@@ -52,13 +53,17 @@ use crate::ports::audit::CloudflareAuditEventRepository;
 
 /// RFC 188 Phase 2, T2: this mapper's own seven-column comparison
 /// (D7 — the verifier's `CROSS_CHECKED_COLUMNS`-driven walk is not
-/// imported or reused). An unparseable payload counts as divergent
-/// (D2), matching the verifier's own `payload_unparseable` treatment.
+/// imported or reused). **G1 ruling, Change 1**: an unparseable payload
+/// is its own state (`PayloadUnreadable`), not folded into `Diverges` —
+/// the two answer different operator questions even though an
+/// unreadable payload also, definitionally, cannot agree with its
+/// columns.
 ///
-/// Returns `(mirror, diverges)`, where `mirror` is `AuditPayloadMirror::default()`
-/// (all `None`) when the payload would not parse — the four display
-/// fields then render as `None`, never falling back to `row`'s columns.
-fn payload_and_divergence(row: &AuditEventRow) -> (AuditPayloadMirror, bool) {
+/// Returns `(mirror, state)`, where `mirror` is
+/// `AuditPayloadMirror::default()` (all `None`) when the payload would
+/// not parse — the four display fields then render as `None`, never
+/// falling back to `row`'s columns.
+fn payload_and_divergence(row: &AuditEventRow) -> (AuditPayloadMirror, PayloadDivergence) {
     match AuditPayloadMirror::parse(&row.payload) {
         Ok(mirror) => {
             let diverges = row.subject    != mirror.subject
@@ -68,9 +73,10 @@ fn payload_and_divergence(row: &AuditEventRow) -> (AuditPayloadMirror, bool) {
                 || row.user_agent != mirror.user_agent
                 || row.reason     != mirror.reason
                 || row.request_id != mirror.request_id;
-            (mirror, diverges)
+            let state = if diverges { PayloadDivergence::Diverges } else { PayloadDivergence::Clean };
+            (mirror, state)
         }
-        Err(_) => (AuditPayloadMirror::default(), true),
+        Err(_) => (AuditPayloadMirror::default(), PayloadDivergence::PayloadUnreadable),
     }
 }
 
@@ -130,7 +136,7 @@ impl AuditQuerySource for CloudflareAuditQuerySource<'_> {
             .map_err(|_| PortError::Unavailable)?;
 
         Ok(rows.into_iter().map(|r| {
-            let (mirror, diverges) = payload_and_divergence(&r);
+            let (mirror, state) = payload_and_divergence(&r);
             AdminAuditEntry {
                 ts:      r.ts,
                 id:      r.id,
@@ -146,7 +152,7 @@ impl AuditQuerySource for CloudflareAuditQuerySource<'_> {
                 // Operators who need the raw row can `wrangler d1
                 // execute "SELECT * FROM audit_events WHERE seq=N"`.
                 key:     format!("seq={}", r.seq),
-                diverges_from_payload: diverges,
+                diverges_from_payload: state,
             }
         }).collect())
     }

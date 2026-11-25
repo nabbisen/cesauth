@@ -99,9 +99,11 @@ where
 /// **RFC 188 Phase 2, D5: `diverges_from_payload` is APPENDED last**,
 /// same discipline as `actor` above — this is the slice's own
 /// surface-contract change, disclosed in the report and the CHANGELOG
-/// the same way `class` was in `0.108.0`. `true`/`false`, lowercase,
-/// unquoted — a plain token, same shape as every other machine-read
-/// boolean this project emits.
+/// the same way `class` was in `0.108.0`. **G1 ruling, Change 1**: the
+/// value is one of three words (`clean` / `diverges` /
+/// `payload_unreadable`, [`crate::admin::types::PayloadDivergence::as_str`]),
+/// not a bool — a plain, unquoted token here, the same word quoted as a
+/// JSON string in the JSONL export below and in the viewer's own JSON.
 ///
 /// The `reason` field passes through `audit::redaction` before
 /// serialization so that no secret material leaks into the export.
@@ -124,7 +126,7 @@ fn render_csv(rows: &[crate::admin::types::AdminAuditEntry]) -> String {
         out.push(',');
         out.push_str(&csv_field(row.actor.as_deref().unwrap_or("")));
         out.push(',');
-        out.push_str(if row.diverges_from_payload { "true" } else { "false" });
+        out.push_str(row.diverges_from_payload.as_str());
         out.push_str("\r\n");
     }
     out
@@ -138,10 +140,10 @@ fn render_jsonl(rows: &[crate::admin::types::AdminAuditEntry]) -> String {
         // belt-and-suspenders clarity rather than a real constraint).
         // RFC 187 D4: actor appended, same surface-contract discipline as
         // the CSV header above. RFC 188 Phase 2, D5: diverges_from_payload
-        // appended after it, same discipline again — a real JSON bool,
-        // not a quoted string.
+        // appended after it, same discipline again — a quoted JSON string
+        // (G1 ruling Change 1: the three-word state, not a bool).
         format!(
-            r#"{{"seq":{seq:?},"timestamp":{ts:?},"kind":{kind:?},"subject":{subj},"client":{cli},"reason":{rsn},"actor":{actor},"diverges_from_payload":{diverges}}}"#,
+            r#"{{"seq":{seq:?},"timestamp":{ts:?},"kind":{kind:?},"subject":{subj},"client":{cli},"reason":{rsn},"actor":{actor},"diverges_from_payload":{diverges:?}}}"#,
             seq      = row.key,
             ts       = crate::util::format_unix_as_iso8601(row.ts),
             kind     = row.kind,
@@ -149,7 +151,7 @@ fn render_jsonl(rows: &[crate::admin::types::AdminAuditEntry]) -> String {
             cli      = json_string_opt(row.client.as_deref()),
             rsn      = json_string_opt(row.reason.as_deref()),
             actor    = json_string_opt(row.actor.as_deref()),
-            diverges = row.diverges_from_payload,
+            diverges = row.diverges_from_payload.as_str(),
         )
     }).collect::<Vec<_>>().join("\n")
 }
@@ -186,7 +188,7 @@ fn build_export_filename(query: &crate::admin::types::AuditQuery, format: Export
 #[cfg(test)]
 mod export_tests {
     use super::*;
-    use crate::admin::types::AdminAuditEntry;
+    use crate::admin::types::{AdminAuditEntry, PayloadDivergence};
 
     fn entry(ts: i64, kind: &str, subject: Option<&str>) -> AdminAuditEntry {
         AdminAuditEntry {
@@ -198,7 +200,7 @@ mod export_tests {
             client:  None,
             reason:  None,
             key:     "seq=1".to_owned(),
-            diverges_from_payload: false,
+            diverges_from_payload: PayloadDivergence::Clean,
         }
     }
 
@@ -292,12 +294,12 @@ mod export_tests {
                 ts: 1_700_000_000, id: "id-1".into(), kind: "LoginSuccess".into(),
                 subject: Some("u-1".into()), actor: Some("admin-1".into()),
                 client: Some("client-9".into()), reason: Some("ok".into()),
-                key: "seq=1".into(), diverges_from_payload: false,
+                key: "seq=1".into(), diverges_from_payload: PayloadDivergence::Clean,
             },
             AdminAuditEntry {
                 ts: 1_700_001_000, id: "id-2".into(), kind: "TokenIssued".into(),
                 subject: None, actor: None, client: None, reason: None,
-                key: "seq=2".into(), diverges_from_payload: false,
+                key: "seq=2".into(), diverges_from_payload: PayloadDivergence::Clean,
             },
         ]
     }
@@ -311,15 +313,15 @@ mod export_tests {
             expected.push_str(&pre_0_109_0_csv_row(e));
         }
         // Prove byte-identity up to the new column, not merely assert it:
-        // strip "false\r\n" from the end of every current line and the
+        // strip "clean\r\n" from the end of every current line and the
         // appended ",diverges_from_payload" from the header, then compare.
         let header_rest = csv.strip_prefix("seq,timestamp,kind,subject,client,reason,actor,diverges_from_payload\r\n")
             .expect("header must still start with the unchanged seven columns plus the new one");
         let mut reconstructed = String::from("seq,timestamp,kind,subject,client,reason,actor\r\n");
         for line in header_rest.split_inclusive("\r\n") {
             if line.is_empty() { continue; }
-            let without_flag = line.strip_suffix(",false\r\n")
-                .expect("every clean row must end with the new column's false value, unquoted");
+            let without_flag = line.strip_suffix(",clean\r\n")
+                .expect("every clean row must end with the new column's clean value, unquoted");
             reconstructed.push_str(without_flag);
             reconstructed.push_str("\r\n");
         }
@@ -332,8 +334,8 @@ mod export_tests {
         let rows = clean_corpus();
         let jsonl = render_jsonl(&rows);
         for (line, e) in jsonl.lines().zip(rows.iter()) {
-            let without_field = line.strip_suffix(r#","diverges_from_payload":false}"#)
-                .expect("every clean row must end with the new field's false value")
+            let without_field = line.strip_suffix(r#","diverges_from_payload":"clean"}"#)
+                .expect("every clean row must end with the new field's clean value")
                 .to_owned() + "}";
             assert_eq!(without_field, pre_0_109_0_jsonl_row(e),
                 "every byte before the appended field must match 0.108.0's output exactly");
@@ -341,18 +343,36 @@ mod export_tests {
     }
 
     #[test]
-    fn a_diverged_row_carries_the_flag_in_both_export_formats() {
+    fn a_diverged_row_carries_the_state_in_both_export_formats() {
         let diverged = AdminAuditEntry {
             ts: 1_700_000_000, id: "id-3".into(), kind: "LoginSuccess".into(),
             subject: Some("u-1".into()), actor: None, client: None, reason: None,
-            key: "seq=3".into(), diverges_from_payload: true,
+            key: "seq=3".into(), diverges_from_payload: PayloadDivergence::Diverges,
         };
         let csv = render_csv(&[diverged.clone()]);
-        assert!(csv.trim_end().ends_with(",true"), "diverged row's CSV must carry true, got: {csv}");
+        assert!(csv.trim_end().ends_with(",diverges"), "diverged row's CSV must carry diverges, got: {csv}");
 
         let jsonl = render_jsonl(&[diverged]);
-        assert!(jsonl.ends_with(r#""diverges_from_payload":true}"#),
-            "diverged row's JSON must carry true, got: {jsonl}");
+        assert!(jsonl.ends_with(r#""diverges_from_payload":"diverges"}"#),
+            "diverged row's JSON must carry \"diverges\", got: {jsonl}");
+    }
+
+    #[test]
+    fn a_payload_unreadable_row_carries_that_state_in_both_export_formats() {
+        // G1 ruling, Change 1: the third state must round-trip through
+        // the export distinctly from an ordinary divergence.
+        let unreadable = AdminAuditEntry {
+            ts: 1_700_000_000, id: "id-4".into(), kind: "LoginSuccess".into(),
+            subject: None, actor: None, client: None, reason: None,
+            key: "seq=4".into(), diverges_from_payload: PayloadDivergence::PayloadUnreadable,
+        };
+        let csv = render_csv(&[unreadable.clone()]);
+        assert!(csv.trim_end().ends_with(",payload_unreadable"),
+            "unreadable row's CSV must carry payload_unreadable, got: {csv}");
+
+        let jsonl = render_jsonl(&[unreadable]);
+        assert!(jsonl.ends_with(r#""diverges_from_payload":"payload_unreadable"}"#),
+            "unreadable row's JSON must carry \"payload_unreadable\", got: {jsonl}");
     }
 
     #[test]
@@ -391,7 +411,7 @@ mod export_tests {
 mod service_tests {
     use super::*;
     use crate::admin::ports::AuditQuerySource;
-    use crate::admin::types::{AdminAuditEntry, AuditQuery};
+    use crate::admin::types::{AdminAuditEntry, AuditQuery, PayloadDivergence};
     use crate::ports::PortResult;
 
     // ── InMemory audit stub ───────────────────────────────────────────────
@@ -414,7 +434,7 @@ mod service_tests {
             client:  None,
             reason:  None,
             key:     "seq=1".to_owned(),
-            diverges_from_payload: false,
+            diverges_from_payload: PayloadDivergence::Clean,
         }
     }
 

@@ -3,7 +3,7 @@
 ℹ️   rfcs/ link sweep: saw 223 .md link(s) across rfcs/**/*.md -- 223 checked, 0 absolute/http, 0 unresolvable; 0 broken, 0 declared out
 ℹ️   release reconciliation: compared 165 tag(s) against 163 CHANGELOG entr(y|ies) -- 0 tagged-never-documented unexempted, 0 documented-never-tagged unexempted
 ℹ️   changelog budget: CHANGELOG.md is 61206 bytes of 81920 (74% of budget, 20714 bytes headroom)
-ℹ️   roadmap size (not gated, D2): ROADMAP.md is 465337 bytes against its own ~40960-byte (~40 KB) budget (11.4x over)
+ℹ️   roadmap size (not gated, D2): ROADMAP.md is 470420 bytes against its own ~40960-byte (~40 KB) budget (11.5x over)
 ℹ️   route surface vs 0.108.0: 197 pairs -- 0 added, 0 removed
 ℹ️   level backstop: 0.108.0 equals the latest tag (0.108.0) -- not a release commit
 ℹ️   colour contrast: scanned 22 token(s) -- 19 checked against 7.0:1 (AAA), 3 declared out, 0 unclassified -- 0 below threshold

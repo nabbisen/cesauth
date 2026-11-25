@@ -455,6 +455,35 @@ pub enum MessageKey {
     AuditViewerActorLabel,
     AuditViewerColActor,
 
+    // ---- RFC 188 Phase 2, T4 (G1 ruled:
+    // `.git-exclude/reviewed/0.109.0-slice-b-review-and-phase2-g1-decision.md`
+    // Part 2) — the divergence mark on this same screen's results
+    // table. `AuditViewerDivergenceMarkLabel` is Change 2's short form
+    // (three sentences rejected: a screen reader reads it per marked
+    // row, and the long explanation already lives once in
+    // `AuditViewerNoteFilterResidual`, read before the table).
+    // `AuditViewerUnparseableMarker`'s value is Change 3's: it names the
+    // artefact that failed (the payload), not the field it sits in.
+    /// New last column's header, next to the existing `seq` one.
+    AuditViewerColDivergence,
+    /// The visible mark rendered in that column for a diverged row
+    /// (`PayloadDivergence::Diverges` or `PayloadUnreadable`); empty
+    /// cell for `Clean`, same convention `reason`'s `None` already uses.
+    AuditViewerDivergenceMark,
+    /// `title`/`aria-label` on the mark's `<span>` — Change 2: short,
+    /// not an explanation. The explanation is
+    /// `AuditViewerNoteFilterResidual`, read once, before the table.
+    AuditViewerDivergenceMarkLabel,
+    /// Rendered in place of `subject`/`actor`/`client`/`reason` for a
+    /// row whose state is `PayloadDivergence::PayloadUnreadable` — never
+    /// inferred from an absent field (G1 Change 1: the state is carried
+    /// on the wire, not re-derived in the view).
+    AuditViewerUnparseableMarker,
+    /// The filter-residual sentence (D4), placed under the existing
+    /// schema note — read before the results table, where an operator
+    /// meets a marked row.
+    AuditViewerNoteFilterResidual,
+
     // ---- RFC 185 §5.3 screen 2: the chain-status screen
     // (`/admin/console/audit/chain`). G1 reviewed and approved
     // (`.git-exclude/reviewed/185-slice3-screen2-g1-decision.md`); every
@@ -1796,6 +1825,33 @@ fn lookup_admin(key: &MessageKey, locale: Locale) -> Option<&'static str> {
         AuditViewerColActor => match locale {
             Locale::Ja => "Actor",
             Locale::En => "Actor",
+        },
+
+        // RFC 188 Phase 2, T4 — G1-ruled (Part 2 of
+        // `.git-exclude/reviewed/0.109.0-slice-b-review-and-phase2-g1-decision.md`).
+        AuditViewerColDivergence => match locale {
+            Locale::Ja => "差異",
+            Locale::En => "Divergence",
+        },
+        AuditViewerDivergenceMark => match locale {
+            Locale::Ja => "⚠ 差異あり",
+            Locale::En => "⚠ Diverges",
+        },
+        // Change 2: short — the explanation lives once, in
+        // AuditViewerNoteFilterResidual, not per marked row.
+        AuditViewerDivergenceMarkLabel => match locale {
+            Locale::Ja => "差異あり（ペイロードと不一致）",
+            Locale::En => "Diverges from payload",
+        },
+        // Change 3: names the artefact that failed (the payload), not
+        // the field it's rendered in place of.
+        AuditViewerUnparseableMarker => match locale {
+            Locale::Ja => "（ペイロード読み取り不可）",
+            Locale::En => "(payload unreadable)",
+        },
+        AuditViewerNoteFilterResidual => match locale {
+            Locale::Ja => "表示されている値は封印された値です。絞り込みはインデックス用カラムに対して行われるため、カラムが変更された行は、検索した値では表示されないことがあります。",
+            Locale::En => "The values shown here are the sealed ones. Filtering matches the indexed column, so a row whose column changed may not appear for the value you searched.",
         },
 
         _ => return None,

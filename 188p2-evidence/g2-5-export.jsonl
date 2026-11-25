@@ -1,0 +1,14 @@
+HTTP/1.1 200 OK
+Content-Length: 740
+Content-Type: application/x-ndjson; charset=utf-8
+Cache-Control: no-store
+Content-Disposition: attachment; filename="cesauth-audit-all.jsonl"
+Strict-Transport-Security: max-age=63072000; includeSubDomains
+Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=(), midi=(), serial=(), bluetooth=(), fullscreen=(), picture-in-picture=()
+Referrer-Policy: strict-origin-when-cross-origin
+X-Content-Type-Options: nosniff
+
+{"seq":"seq=4","timestamp":"2026-11-25T09:24:29Z","kind":"audit_exported","subject":"super-bootstrap","client":null,"reason":"format=csv rows=3 truncated=false filter=*","actor":"super-bootstrap","diverges_from_payload":"clean"}
+{"seq":"seq=3","timestamp":"2024-11-25T02:01:40Z","kind":"LoginSuccess","subject":"bob","client":"client-9","reason":"ok","actor":"admin-1","diverges_from_payload":"diverges"}
+{"seq":"seq=2","timestamp":"2024-11-25T02:00:00Z","kind":"LoginSuccess","subject":"alice","client":"client-9","reason":"ok","actor":"admin-1","diverges_from_payload":"clean"}
+{"seq":"seq=1","timestamp":"2026-11-25T09:22:43Z","kind":"ChainGenesis","subject":null,"client":null,"reason":null,"actor":null,"diverges_from_payload":"clean"}

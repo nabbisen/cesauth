@@ -1,4 +1,3 @@
-    Checking cesauth-core v0.108.0 (/home/nabbisen/Desktop/cesauth/cesauth-git/crates/core)
 warning: unused import: `ClientId`
   --> crates/core/src/service/revoke.rs:55:20
    |
@@ -8,7 +7,6 @@ warning: unused import: `ClientId`
    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
 
 warning: `cesauth-core` (lib) generated 1 warning (run `cargo fix --lib -p cesauth-core` to apply 1 suggestion)
-    Checking cesauth-frontend v0.108.0 (/home/nabbisen/Desktop/cesauth/cesauth-git/crates/frontend)
 warning: unused import: `js_string_literal`
  --> crates/frontend/src/templates/login.rs:3:21
   |
@@ -112,6 +110,6 @@ warning: type does not implement `Debug`; consider adding `#[derive(Debug)]` or 
    | |_^
 
 warning: `cesauth-frontend` (lib) generated 10 warnings (run `cargo fix --lib -p cesauth-frontend` to apply 4 suggestions)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.76s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
 warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
 note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
