@@ -83,6 +83,160 @@ why, and `ROADMAP.md` carries its own dated row recording its size
 
 ---
 
+## [0.109.0] - 2026-11-25
+
+**Minor** — the audit log's readers now show the sealed payload instead of
+the indexed columns that duplicate it, and a tag push publishes its own
+GitHub Release from this file. RFC 188 Phase 2 and the release-machinery
+slice, two review rounds each.
+
+### Changed — the audit viewer, the admin search and the exports read the evidence
+
+RFC 188 Phase 1 (`0.108.0`) made the verifier compare the seven
+duplicated columns against the payload and gave the finding a reader. It
+changed nothing about **what the readers read**: the audit viewer, the
+admin search and both export formats still displayed the indexed
+columns — the values an in-place `UPDATE` can change.
+
+They now display the **payload's own copy**. One mapper
+(`adapter-cloudflare/src/admin/audit_query.rs`) sources `subject`,
+`actor`, `client` and `reason` from the sealed record; everything
+downstream — the viewer's JSON, the CSR table, the CSV and the JSONL —
+inherits it, because all three consume one type. `ts`, `kind` and the
+sequence number keep coming from the row: they are chain inputs, already
+covered.
+
+**An unparseable payload does not fall back to the column.** A silent
+fallback would restore exactly the gap Phase 1 closed, so the four
+fields render a marker instead and the row is flagged.
+
+### Added — a diverged row says so, and says what a filter still does
+
+The viewer gains a **Divergence** column. A row whose indexed columns
+disagree with its payload carries `⚠ Diverges` / `⚠ 差異あり`, labelled
+for screen readers, in both locales. The mark is set by comparing **all
+seven** cross-checked columns, so a row is marked even when the
+disagreeing field is not one of the four on screen.
+
+**The residual this release does not close is stated on the screen that
+could otherwise mislead**: the values shown are the sealed ones, but
+**filtering matches the indexed column**, so a row whose column was
+changed may not appear for the value you searched. Phase 1's divergence
+count on the chain-status screen is what surfaces that; this note is what
+stops a clean-looking filtered result from reading as a clean audit log.
+
+**Three states, not a flag.** `PayloadDivergence` is `clean`,
+`diverges` or `payload_unreadable` — because *"marked"* and *"the payload
+would not parse"* answer different operator questions, and a boolean
+that means two things is an API that confuses. The distinction is carried
+from the mapper to the wire rather than inferred from an absent field,
+which would have been wrong for a row that diverges only on a
+non-displayed column.
+
+**Surface-contract change**: the export's appended column
+(`diverges_from_payload`, added earlier in this same release) carries one
+of those three words rather than a boolean. The field name stays
+identical to the struct field and the viewer's JSON — one fact, one name
+across surfaces.
+
+### Added — a tag push publishes a GitHub Release, built from this file
+
+`.github/workflows/github-release.yml` extracts the `## [X.Y.Z]` entry
+from this CHANGELOG — or from `docs/changelog-archive/` for an older tag
+— and publishes it as the Release body, with a line naming the signed tag
+as the authority (`git verify-tag X.Y.Z`). **Not** GitHub's
+`--generate-notes`: a fourth, commit-derived account of what shipped,
+with no security answer and no gate figures, is the last thing this
+project needs. A missing or empty entry **fails the workflow** rather
+than publishing something else.
+
+`scripts/changelog-release-notes.sh` does the extraction and is runnable
+locally, with distinct exit codes for not-found, empty and duplicated
+entries. Nothing is attached to the Release: this project deploys a
+Worker, it does not distribute a build.
+
+**This is the first workflow here that writes to the repository.**
+`contents: write` is scoped to the single job, the triggers are the tag
+push and a manual dispatch, and there is deliberately no
+`pull_request` — a write-capable workflow reachable from a fork's PR is
+a posture this project does not want.
+
+`0.108.0`'s Release was published by this workflow before the cut, as its
+own proof.
+
+### Added — the release-gate manifest grew a third list
+
+`release-gate-manifest-check.sh` queries workflow runs **by head SHA with
+no event filter**, and a tag push carries the same head SHA as the
+release commit it tags — so the new workflow would have been reported
+`UNEXPECTED` and failed the check on the first real release. Filing it
+under `not_on_release_path` would have been false: it *does* run on a
+release. It gets its own `on_tag_push` list, with a reason, counted
+separately, and accounted for **whether or not the tag-triggered run has
+registered yet** — the branch push and the tag push race, and a gate
+whose result depends on which won is not a gate.
+
+**The check-run count on a release tip is now 17**: 14 push workflows,
+one of which emits two jobs, plus the `Security audit` check run
+`rustsec/audit-check` creates through the Checks API, plus the tag
+push's own run.
+
+### Fixed — the bundle question from `0.108.0`, answered with named symbols
+
+`0.108.0` grew the CSR bundle by **+12,841 B** for a cut whose visible
+surface was 11 catalog keys and one console section, and its entry
+recorded that as a question rather than a cause. `bundle-size.yml` now
+runs `twiggy` (pinned 0.8.0 — 0.7.0 panics on this project's wasm) on a
+measurement-only build and uploads the report.
+
+The answer: the growth concentrates in the **deserialization machinery
+for the one shared type Phase 1 widened** — `AuditChainStatus`'s
+frontend view and the new `ColumnDivergence` — at **12,615 B across 71
+symbol rows**, with the verifier itself **definitively absent** from the
+bundle (zero matches across all 10,963 rows). Stated with its unit
+caveat: those are proportions inside an unstripped measurement build,
+set against a delta measured in the shipped, optimized, gzipped
+artifact — it says where the growth concentrates, not a byte-exact
+reconciliation.
+
+### Security answer
+
+The diff touches `crates/core/src/admin/` and the audit export, so the
+rubric's path list fires. **No new security-relevant surface**, and what
+changed is *which copy of a value the readers trust* — from the indexed
+column to the sealed payload — which strengthens an evidence surface
+rather than widening an attack one.
+
+- **197 routes, 0 added, 0 removed.** No migration, no schema change, no
+  permission added, no change to `compute_chain_hash`.
+- **One disclosed surface-contract change**: the export column's three
+  words in place of a boolean, settled inside this uncut release rather
+  than after it.
+- **The residual, named**: `AuditSearch` still filters on the indexed
+  columns, so a tampered column can hide a row from a filter. A test
+  pins that behaviour so no later reader mistakes Phase 2 for having
+  closed it, and the viewer says so where an operator would otherwise
+  assume otherwise.
+- **One advisory left open deliberately**: `RUSTSEC-2026-0592` (`url`,
+  stack overflow in `Url::origin()`). `url` is a direct dependency, but
+  **`Url::origin()` is called nowhere in this codebase**; whether
+  `worker`, `leptos_router` or `server_fn` reaches it with
+  attacker-controlled input is the open question, and the bump is
+  scheduled behind that check rather than ahead of it.
+
+### Gates
+
+Host tests **1,779 / 0 / 4 across 12 `test result:` lines** — +10 over
+`0.108.0`. Migration chain **39**. Route surface **197, 0 added, 0
+removed**. `drift-scan` clean: i18n ceiling **103 / 65 / 69** with the
+audit viewer's row still pinned at **2**, operator-console negotiation
+**13 / 13**, timestamp rendering **24 / 15**, audit column coverage
+**16 — 8 chain inputs / 7 cross-checked / 1 declared uncovered**,
+changelog budget green. Clippy 0 errors, `cargo deny` ok in all four
+sections, wasm32 checks clean. Catalog **325 → 330** arms.
+
+---
+
 ## [0.108.0] - 2026-11-18
 
 **Minor** — the audit log's indexed columns are now verified against the
