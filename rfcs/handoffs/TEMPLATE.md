@@ -144,18 +144,26 @@ baseline with the substituted command made both figures agree and hid the gap.
 **The canonical host-test command is this one, and it is 12 `test result:`
 lines:**
 
+**Write the evidence path in full, every time: `.git-exclude/review-request/<name>-evidence/`,
+never a bare `evidence/`.** A bare path is how 570 KB of logs (24 files,
+two directories) landed in the tracked tree at the repository root for
+0.109.0 — the handoff said `evidence/cargo-test.log` and the dev team
+took it literally instead of resolving it the way every earlier round
+had. `<name>` is this handoff's own slug (match the review-request
+file it names in §15), substituted below, not left as a placeholder:
+
 ```sh
 cargo test -p cesauth-core -p cesauth-adapter-test -p cesauth-frontend \
            -p cesauth-backend -p cesauth-adapter-cloudflare \
-           --features cesauth-frontend/csr         > evidence/cargo-test.log 2>&1
-cargo check -p cesauth-backend --target wasm32-unknown-unknown > evidence/wasm32-check.log 2>&1
-cargo check -p cesauth-frontend --features csr --target wasm32-unknown-unknown > evidence/csr-check.log 2>&1
+           --features cesauth-frontend/csr         > .git-exclude/review-request/<name>-evidence/cargo-test.log 2>&1
+cargo check -p cesauth-backend --target wasm32-unknown-unknown > .git-exclude/review-request/<name>-evidence/wasm32-check.log 2>&1
+cargo check -p cesauth-frontend --features csr --target wasm32-unknown-unknown > .git-exclude/review-request/<name>-evidence/csr-check.log 2>&1
 cargo clippy -p cesauth-core -p cesauth-adapter-test -p cesauth-migrate-test \
-             -p cesauth-frontend --all-targets -- -D clippy::correctness > evidence/cargo-clippy.log 2>&1
-cargo deny check   > evidence/cargo-deny.log 2>&1
-cargo audit        > evidence/cargo-audit.log 2>&1
-bash scripts/route-contracts-check.sh > evidence/route-contracts.log 2>&1
-bash scripts/drift-scan.sh            > evidence/drift-scan.log 2>&1
+             -p cesauth-frontend --all-targets -- -D clippy::correctness > .git-exclude/review-request/<name>-evidence/cargo-clippy.log 2>&1
+cargo deny check   > .git-exclude/review-request/<name>-evidence/cargo-deny.log 2>&1
+cargo audit        > .git-exclude/review-request/<name>-evidence/cargo-audit.log 2>&1
+bash scripts/route-contracts-check.sh > .git-exclude/review-request/<name>-evidence/route-contracts.log 2>&1
+bash scripts/drift-scan.sh            > .git-exclude/review-request/<name>-evidence/drift-scan.log 2>&1
 ```
 
 State the expected result for each. Current baseline: **1,233 passed, 0
@@ -176,7 +184,8 @@ request side was specified; the response body was not. **Name the values, not
 just the file**: if a report will assert X from a log, the handoff says the log
 must show X.
 
-**Evidence policy.** Every file under `evidence/` is redirected command output.
+**Evidence policy.** Every file under `.git-exclude/review-request/<name>-evidence/`
+is redirected command output.
 A hand-written summary line is not evidence and is rejected at review: the
 v0.81.0 bundle shipped an 80-byte prose `cargo-fmt.log` asserting a clean run
 that no stable `rustfmt` could have produced.
