@@ -178,13 +178,24 @@ confusion this detection exists to resolve, not reproduce.
   reappear as a "new" finding on every subsequent full re-walk
   (the finding is deduplicated and merged forward, not
   rediscovered as fresh each time).
-- **Phase 2, not yet built**: the admin search, the audit viewer,
-  and the CSV/JSONL export all still read the indexed columns
-  directly, not the payload. A tampered column can still make a
-  row **invisible to a filter** on those surfaces today, even
-  though Phase 1's own verification screen would separately
-  report the divergence — the two facts live on different pages
-  until Phase 2 lands.
+- **RFC 188 Phase 2 (`0.109.0`) moved what the readers read, not
+  what the filters match.** The admin search's display, the audit
+  viewer, and the CSV/JSONL export now read the four display
+  fields (`subject`, `actor`, `client`, `reason`) from each row's
+  own `payload` via `AuditPayloadMirror::parse`, never from the
+  indexed columns, and mark a row whose columns diverge from its
+  payload (`AdminAuditEntry::diverges_from_payload`, set by a full
+  seven-column comparison even though only four columns are
+  shown). A payload that will not parse renders those four fields
+  as absent and is always marked — it does not fall back to the
+  columns. **The filters themselves still match on the indexed
+  columns** (that is what the indexes are for): a tampered column
+  can still make a row **invisible to a filter** on those same
+  surfaces — e.g. editing `subject` so a search for the payload's
+  real subject misses the row — even though the row, if found
+  another way, would now show the sealed value and carry the mark.
+  Before Phase 2: a tampered column could both lie to a reader
+  *and* hide a row. After: only the hiding remains.
 - **Nothing outside `audit_events` is covered.** This is a
   property of this one table's own write path, not a general
   tamper-evidence mechanism for other D1 tables.

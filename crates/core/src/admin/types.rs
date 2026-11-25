@@ -498,6 +498,18 @@ pub struct AdminAuditEntry {
     /// the row. v0.32.0+: the chain sequence number formatted as
     /// `seq=N`. The UI renders this verbatim; treat as opaque.
     pub key:     String,
+    /// **RFC 188 Phase 2, D3.** `true` when any of the seven
+    /// cross-checked columns (`subject`, `actor`, `client_id`, `ip`,
+    /// `user_agent`, `reason`, `request_id` —
+    /// [`crate::audit::verifier::CROSS_CHECKED_COLUMNS`]) disagrees with
+    /// the row's own payload, or the payload would not parse at all.
+    /// `subject`/`actor`/`client`/`reason` above are always the
+    /// payload's values, never the column's (D1/D2) — this flag is what
+    /// tells the reader that fact is load-bearing for this particular
+    /// row, not decoration. Set by the mapper that builds this struct,
+    /// from a full seven-column comparison even though only four of
+    /// those columns are displayed (T2).
+    pub diverges_from_payload: bool,
 }
 
 /// Filter applied when searching audit events.

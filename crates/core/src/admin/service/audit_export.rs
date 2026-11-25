@@ -87,7 +87,7 @@ where
 /// Render audit rows as CSV (RFC 4180).
 ///
 /// Column order is fixed to ensure stability across upgrades:
-/// `seq,timestamp,kind,subject,client,reason,actor`
+/// `seq,timestamp,kind,subject,client,reason,actor,diverges_from_payload`
 ///
 /// **RFC 187 D4 (owner-resolved): `actor` is APPENDED, not inserted next
 /// to `subject`.** This project has no published consumers of this
@@ -96,10 +96,17 @@ where
 /// as a surface-contract change in this cut's report even though the
 /// append-only choice is correct.
 ///
+/// **RFC 188 Phase 2, D5: `diverges_from_payload` is APPENDED last**,
+/// same discipline as `actor` above — this is the slice's own
+/// surface-contract change, disclosed in the report and the CHANGELOG
+/// the same way `class` was in `0.108.0`. `true`/`false`, lowercase,
+/// unquoted — a plain token, same shape as every other machine-read
+/// boolean this project emits.
+///
 /// The `reason` field passes through `audit::redaction` before
 /// serialization so that no secret material leaks into the export.
 fn render_csv(rows: &[crate::admin::types::AdminAuditEntry]) -> String {
-    let mut out = String::from("seq,timestamp,kind,subject,client,reason,actor\r\n");
+    let mut out = String::from("seq,timestamp,kind,subject,client,reason,actor,diverges_from_payload\r\n");
     for row in rows {
         out.push_str(&csv_field(&row.key));
         out.push(',');
@@ -116,6 +123,8 @@ fn render_csv(rows: &[crate::admin::types::AdminAuditEntry]) -> String {
         out.push_str(&csv_field(row.reason.as_deref().unwrap_or("")));
         out.push(',');
         out.push_str(&csv_field(row.actor.as_deref().unwrap_or("")));
+        out.push(',');
+        out.push_str(if row.diverges_from_payload { "true" } else { "false" });
         out.push_str("\r\n");
     }
     out
@@ -128,16 +137,19 @@ fn render_jsonl(rows: &[crate::admin::types::AdminAuditEntry]) -> String {
         // (serde is already a dep of cesauth-core via other modules, so this is
         // belt-and-suspenders clarity rather than a real constraint).
         // RFC 187 D4: actor appended, same surface-contract discipline as
-        // the CSV header above.
+        // the CSV header above. RFC 188 Phase 2, D5: diverges_from_payload
+        // appended after it, same discipline again — a real JSON bool,
+        // not a quoted string.
         format!(
-            r#"{{"seq":{seq:?},"timestamp":{ts:?},"kind":{kind:?},"subject":{subj},"client":{cli},"reason":{rsn},"actor":{actor}}}"#,
-            seq   = row.key,
-            ts    = crate::util::format_unix_as_iso8601(row.ts),
-            kind  = row.kind,
-            subj  = json_string_opt(row.subject.as_deref()),
-            cli   = json_string_opt(row.client.as_deref()),
-            rsn   = json_string_opt(row.reason.as_deref()),
-            actor = json_string_opt(row.actor.as_deref()),
+            r#"{{"seq":{seq:?},"timestamp":{ts:?},"kind":{kind:?},"subject":{subj},"client":{cli},"reason":{rsn},"actor":{actor},"diverges_from_payload":{diverges}}}"#,
+            seq      = row.key,
+            ts       = crate::util::format_unix_as_iso8601(row.ts),
+            kind     = row.kind,
+            subj     = json_string_opt(row.subject.as_deref()),
+            cli      = json_string_opt(row.client.as_deref()),
+            rsn      = json_string_opt(row.reason.as_deref()),
+            actor    = json_string_opt(row.actor.as_deref()),
+            diverges = row.diverges_from_payload,
         )
     }).collect::<Vec<_>>().join("\n")
 }
@@ -186,14 +198,16 @@ mod export_tests {
             client:  None,
             reason:  None,
             key:     "seq=1".to_owned(),
+            diverges_from_payload: false,
         }
     }
 
     #[test]
     fn csv_header_is_correct() {
         // RFC 187 D4: actor is APPENDED, not inserted next to subject.
+        // RFC 188 Phase 2, D5: diverges_from_payload is appended after it.
         let csv = render_csv(&[]);
-        assert!(csv.starts_with("seq,timestamp,kind,subject,client,reason,actor\r\n"));
+        assert!(csv.starts_with("seq,timestamp,kind,subject,client,reason,actor,diverges_from_payload\r\n"));
     }
 
     #[test]
@@ -235,6 +249,110 @@ mod export_tests {
         // Actual JSONL content: {"kind":"has\"quote",...}
         assert!(jsonl.contains("has\\\"quote"),
             "quote must be escaped in JSONL output, got: {jsonl}");
+    }
+
+    // ── RFC 188 Phase 2, required test (4)/(5) — byte-identity for the
+    // clean case, plus the diverged row carrying the flag in both
+    // export formats ──────────────────────────────────────────────────
+
+    /// `0.108.0`'s exact CSV output for one clean row with every field
+    /// populated — the pre-Phase-2 byte sequence this slice's export
+    /// must reproduce unchanged, column for column, before its own
+    /// appended column.
+    fn pre_0_109_0_csv_row(e: &AdminAuditEntry) -> String {
+        format!(
+            "{},{},{},{},{},{},{}\r\n",
+            csv_field(&e.key),
+            csv_field(&crate::util::format_unix_as_iso8601(e.ts)),
+            csv_field(&e.kind),
+            csv_field(e.subject.as_deref().unwrap_or("")),
+            csv_field(e.client.as_deref().unwrap_or("")),
+            csv_field(e.reason.as_deref().unwrap_or("")),
+            csv_field(e.actor.as_deref().unwrap_or("")),
+        )
+    }
+
+    /// `0.108.0`'s exact JSONL line for the same row.
+    fn pre_0_109_0_jsonl_row(e: &AdminAuditEntry) -> String {
+        format!(
+            r#"{{"seq":{seq:?},"timestamp":{ts:?},"kind":{kind:?},"subject":{subj},"client":{cli},"reason":{rsn},"actor":{actor}}}"#,
+            seq   = e.key,
+            ts    = crate::util::format_unix_as_iso8601(e.ts),
+            kind  = e.kind,
+            subj  = json_string_opt(e.subject.as_deref()),
+            cli   = json_string_opt(e.client.as_deref()),
+            rsn   = json_string_opt(e.reason.as_deref()),
+            actor = json_string_opt(e.actor.as_deref()),
+        )
+    }
+
+    fn clean_corpus() -> Vec<AdminAuditEntry> {
+        vec![
+            AdminAuditEntry {
+                ts: 1_700_000_000, id: "id-1".into(), kind: "LoginSuccess".into(),
+                subject: Some("u-1".into()), actor: Some("admin-1".into()),
+                client: Some("client-9".into()), reason: Some("ok".into()),
+                key: "seq=1".into(), diverges_from_payload: false,
+            },
+            AdminAuditEntry {
+                ts: 1_700_001_000, id: "id-2".into(), kind: "TokenIssued".into(),
+                subject: None, actor: None, client: None, reason: None,
+                key: "seq=2".into(), diverges_from_payload: false,
+            },
+        ]
+    }
+
+    #[test]
+    fn clean_corpus_csv_is_byte_identical_to_0_108_0_except_the_appended_column() {
+        let rows = clean_corpus();
+        let csv = render_csv(&rows);
+        let mut expected = String::from("seq,timestamp,kind,subject,client,reason,actor\r\n");
+        for e in &rows {
+            expected.push_str(&pre_0_109_0_csv_row(e));
+        }
+        // Prove byte-identity up to the new column, not merely assert it:
+        // strip "false\r\n" from the end of every current line and the
+        // appended ",diverges_from_payload" from the header, then compare.
+        let header_rest = csv.strip_prefix("seq,timestamp,kind,subject,client,reason,actor,diverges_from_payload\r\n")
+            .expect("header must still start with the unchanged seven columns plus the new one");
+        let mut reconstructed = String::from("seq,timestamp,kind,subject,client,reason,actor\r\n");
+        for line in header_rest.split_inclusive("\r\n") {
+            if line.is_empty() { continue; }
+            let without_flag = line.strip_suffix(",false\r\n")
+                .expect("every clean row must end with the new column's false value, unquoted");
+            reconstructed.push_str(without_flag);
+            reconstructed.push_str("\r\n");
+        }
+        assert_eq!(reconstructed, expected,
+            "every byte before the appended column must match 0.108.0's output exactly");
+    }
+
+    #[test]
+    fn clean_corpus_jsonl_is_byte_identical_to_0_108_0_except_the_appended_field() {
+        let rows = clean_corpus();
+        let jsonl = render_jsonl(&rows);
+        for (line, e) in jsonl.lines().zip(rows.iter()) {
+            let without_field = line.strip_suffix(r#","diverges_from_payload":false}"#)
+                .expect("every clean row must end with the new field's false value")
+                .to_owned() + "}";
+            assert_eq!(without_field, pre_0_109_0_jsonl_row(e),
+                "every byte before the appended field must match 0.108.0's output exactly");
+        }
+    }
+
+    #[test]
+    fn a_diverged_row_carries_the_flag_in_both_export_formats() {
+        let diverged = AdminAuditEntry {
+            ts: 1_700_000_000, id: "id-3".into(), kind: "LoginSuccess".into(),
+            subject: Some("u-1".into()), actor: None, client: None, reason: None,
+            key: "seq=3".into(), diverges_from_payload: true,
+        };
+        let csv = render_csv(&[diverged.clone()]);
+        assert!(csv.trim_end().ends_with(",true"), "diverged row's CSV must carry true, got: {csv}");
+
+        let jsonl = render_jsonl(&[diverged]);
+        assert!(jsonl.ends_with(r#""diverges_from_payload":true}"#),
+            "diverged row's JSON must carry true, got: {jsonl}");
     }
 
     #[test]
@@ -296,6 +414,7 @@ mod service_tests {
             client:  None,
             reason:  None,
             key:     "seq=1".to_owned(),
+            diverges_from_payload: false,
         }
     }
 

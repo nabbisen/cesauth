@@ -592,6 +592,7 @@ mod rfc_111_callers {
             client:  None,
             reason:  None,
             key:     "seq=1".into(),
+            diverges_from_payload: false,
         });
         let out = overview_page(&s);
         assert!(out.contains(ANCHOR_ISO),

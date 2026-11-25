@@ -169,15 +169,22 @@ row's payload and compares all seven cross-checkable columns against
 it; a divergence is reported (count + the first 50 rows/columns,
 console-visible in both locales) without flipping `valid` — a column
 edit is not a chain break, and the finding stays standing until an
-operator acknowledges it, independently of any chain-alarm. **Not fully
-closed**: Phase 2 (not in `0.108.0`) is the admin search, audit viewer
-and CSV/JSONL export switching to read the payload instead of the
-indexed columns directly — until that lands, a tampered column can
-still make a row **invisible to a filter** (e.g. editing `subject` so a
-search for the real subject misses it) even though Phase 1's own
-verification screen would separately report the divergence. The finding
-below is left as written for the historical record of what Phase 1
-closed and what it did not.
+operator acknowledges it, independently of any chain-alarm. **Residual,
+narrowed by `0.109.0` Phase 2** (RFC 188 Phase 2 handoff,
+`rfcs/handoffs/188-audit-column-divergence/`): the audit viewer, admin
+search's display and the CSV/JSONL export now read the four display
+fields (`subject`, `actor`, `client`, `reason`) from the row's own
+payload, not the indexed columns, and mark a row whose columns diverge
+from its payload — so a tampered column can no longer make a **shown**
+row lie, in any of those three surfaces. **What remains**: the filters
+themselves still match on the indexed columns (that is what the indexes
+are for, D4 of the Phase 2 handoff), so a tampered column can still make
+a row **invisible to a filter** (e.g. editing `subject` so a search for
+the real subject misses it), even though the row's own mark would say so
+if it were found another way. Before Phase 2: three surfaces displayed
+unverified values **and** a tampered column could hide a row. After:
+only the hiding remains. The finding below is left as written for the
+historical record of what Phase 1 closed and what it did not.
 **Surface**: `crates/core/src/audit/verifier.rs::walk_and_verify` (the
 row loop, `:475-583` as of `0.108.0` Phase 1 — line numbers moved when
 this finding's own fix landed; recorded against the finding it closes,

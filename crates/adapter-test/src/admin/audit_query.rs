@@ -9,13 +9,64 @@
 //!
 //! This matches the cloudflare D1 adapter's keyset semantics for the
 //! purposes of testing the service-layer pagination flow.
+//!
+//! **RFC 188 Phase 2, D6.** [`InMemoryAuditQuerySource`] above stores
+//! already-mapped [`AdminAuditEntry`] rows (tests seed the display
+//! shape directly) and has no row-vs-payload distinction to get wrong.
+//! The actual double of `CloudflareAuditQuerySource`'s mapper — the one
+//! D6 requires to agree with the real adapter — is [`map_row`] below:
+//! the identical seven-column comparison against
+//! [`cesauth_core::audit::payload::AuditPayloadMirror`], applied to a
+//! [`cesauth_core::ports::audit::AuditEventRow`] the same way the
+//! Cloudflare adapter's `payload_and_divergence` is. Kept as a
+//! duplicate, not a shared function, per this project's established
+//! cross-crate pattern (`AuditPayloadMirror`'s own module doc) — the
+//! agreement is asserted by tests, not structurally enforced.
 
 use std::sync::Mutex;
 
 use cesauth_core::admin::ports::AuditQuerySource;
 use cesauth_core::admin::service::audit_pagination::decode_cursor;
 use cesauth_core::admin::types::{AdminAuditEntry, AuditQuery};
+use cesauth_core::audit::payload::AuditPayloadMirror;
+use cesauth_core::ports::audit::AuditEventRow;
 use cesauth_core::ports::{PortError, PortResult};
+
+/// RFC 188 Phase 2, D6 — the double's own copy of
+/// `CloudflareAuditQuerySource`'s mapper (T2). Builds the
+/// [`AdminAuditEntry`] a real search would produce for one row: the
+/// four display fields come from the payload mirror (D1), never the
+/// row's columns, and `diverges_from_payload` is set by a full
+/// seven-column comparison (D3) — including the three fields this
+/// screen never displays (`ip`, `user_agent`, `request_id`). An
+/// unparseable payload does not fall back to the columns (D2): it
+/// renders the four fields as `None` and is always flagged.
+pub fn map_row(row: &AuditEventRow) -> AdminAuditEntry {
+    let (mirror, diverges) = match AuditPayloadMirror::parse(&row.payload) {
+        Ok(mirror) => {
+            let diverges = row.subject    != mirror.subject
+                || row.actor      != mirror.actor
+                || row.client_id  != mirror.client_id
+                || row.ip         != mirror.ip
+                || row.user_agent != mirror.user_agent
+                || row.reason     != mirror.reason
+                || row.request_id != mirror.request_id;
+            (mirror, diverges)
+        }
+        Err(_) => (AuditPayloadMirror::default(), true),
+    };
+    AdminAuditEntry {
+        ts:      row.ts,
+        id:      row.id.clone(),
+        kind:    row.kind.clone(),
+        subject: mirror.subject,
+        actor:   mirror.actor,
+        client:  mirror.client_id,
+        reason:  mirror.reason,
+        key:     format!("seq={}", row.seq),
+        diverges_from_payload: diverges,
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct InMemoryAuditQuerySource {
@@ -100,6 +151,7 @@ mod tests {
             client:  None,
             reason:  None,
             key:     format!("seq={ts}"),
+            diverges_from_payload: false,
         }
     }
 
@@ -216,5 +268,160 @@ mod tests {
         };
         let out = src.search(&q).await.unwrap();
         assert_eq!(out.len(), 2);
+    }
+
+    // ── RFC 188 Phase 2, D6/test(6) — `map_row` against clean/diverged
+    // rows, the double's half of required tests (1)-(4) ────────────────
+
+    fn clean_row(seq: i64) -> AuditEventRow {
+        AuditEventRow {
+            seq,
+            id:            format!("ev-{seq}"),
+            ts:             1_700_000_000 + seq,
+            kind:          "LoginSuccess".to_owned(),
+            subject:       Some("user-1".to_owned()),
+            actor:         Some("admin-1".to_owned()),
+            client_id:     Some("client-9".to_owned()),
+            ip:            Some("203.0.113.5".to_owned()),
+            user_agent:    Some("curl/8".to_owned()),
+            reason:        Some("pkce_mismatch".to_owned()),
+            payload: r#"{"subject":"user-1","actor":"admin-1","client_id":"client-9","ip":"203.0.113.5","user_agent":"curl/8","reason":"pkce_mismatch","request_id":"cf-ray-1"}"#.to_owned(),
+            payload_hash:  "deadbeef".to_owned(),
+            previous_hash: "prev".to_owned(),
+            chain_hash:    "chain".to_owned(),
+            created_at:    1_700_000_000 + seq,
+            request_id:    Some("cf-ray-1".to_owned()),
+        }
+    }
+
+    #[test]
+    fn map_row_clean_row_is_unmarked_and_renders_the_payload() {
+        let out = map_row(&clean_row(1));
+        assert!(!out.diverges_from_payload);
+        assert_eq!(out.subject, Some("user-1".to_owned()));
+        assert_eq!(out.actor,   Some("admin-1".to_owned()));
+        assert_eq!(out.client,  Some("client-9".to_owned()));
+        assert_eq!(out.reason,  Some("pkce_mismatch".to_owned()));
+    }
+
+    #[test]
+    fn map_row_diverged_display_field_shows_the_payload_value_not_the_column() {
+        // subject, actor, client, reason: one case each — the column
+        // disagrees with the payload, and the mapped entry must carry
+        // the payload's value, never the column's.
+        let cases: [(&dyn Fn(&mut AuditEventRow), &str); 4] = [
+            (&|r: &mut AuditEventRow| r.subject = Some("COLUMN-subject".to_owned()), "user-1"),
+            (&|r: &mut AuditEventRow| r.actor   = Some("COLUMN-actor".to_owned()),   "admin-1"),
+            (&|r: &mut AuditEventRow| r.client_id = Some("COLUMN-client".to_owned()), "client-9"),
+            (&|r: &mut AuditEventRow| r.reason  = Some("COLUMN-reason".to_owned()),  "pkce_mismatch"),
+        ];
+        for (mutate_column, payload_value) in cases {
+            let mut row = clean_row(1);
+            mutate_column(&mut row);
+            let out = map_row(&row);
+            assert!(out.diverges_from_payload);
+            let shown = [&out.subject, &out.actor, &out.client, &out.reason]
+                .into_iter().flatten().any(|v| v == payload_value);
+            assert!(shown, "the mapped entry must show the payload's value {payload_value}");
+            let shown_values: Vec<&str> = [&out.subject, &out.actor, &out.client, &out.reason]
+                .into_iter().flatten().map(String::as_str).collect();
+            assert!(!shown_values.iter().any(|v| v.starts_with("COLUMN-")),
+                "the column's value must not appear anywhere in the display fields, got {shown_values:?}");
+        }
+    }
+
+    #[test]
+    fn map_row_non_displayed_column_divergence_still_sets_the_flag() {
+        for mutate in [
+            (&|r: &mut AuditEventRow| r.ip = Some("9.9.9.9".to_owned())) as &dyn Fn(&mut AuditEventRow),
+            &|r: &mut AuditEventRow| r.user_agent = Some("other-agent".to_owned()),
+            &|r: &mut AuditEventRow| r.request_id = Some("cf-ray-other".to_owned()),
+        ] {
+            let mut row = clean_row(1);
+            mutate(&mut row);
+            let out = map_row(&row);
+            assert!(out.diverges_from_payload,
+                "a divergence in a non-displayed column must still flag the row");
+            // Nothing on screen changed.
+            assert_eq!(out.subject, Some("user-1".to_owned()));
+            assert_eq!(out.actor,   Some("admin-1".to_owned()));
+            assert_eq!(out.client,  Some("client-9".to_owned()));
+            assert_eq!(out.reason,  Some("pkce_mismatch".to_owned()));
+        }
+    }
+
+    #[test]
+    fn map_row_unparseable_payload_marks_all_four_fields_absent_and_flags() {
+        let mut row = clean_row(1);
+        row.payload = "not json".to_owned();
+        let out = map_row(&row);
+        assert!(out.diverges_from_payload);
+        assert_eq!(out.subject, None);
+        assert_eq!(out.actor,   None);
+        assert_eq!(out.client,  None);
+        assert_eq!(out.reason,  None);
+    }
+
+    // ── RFC 188 Phase 2, required test (7) — the filter residual (D4) ──
+    //
+    // A row whose `subject` column was changed is NOT returned by a
+    // search for the payload's subject, even though `map_row` would
+    // display (and flag) that very row with the payload's subject.
+    // This is the half of the residual Phase 2 deliberately does not
+    // close: the mark tells an operator reading the row that it
+    // diverges; it cannot make the row appear for a filter that never
+    // reaches it.
+    #[tokio::test]
+    async fn filter_by_payload_subject_misses_a_row_whose_column_was_changed() {
+        use cesauth_core::ports::audit::{AuditEventRepository, AuditSearch, NewAuditEvent};
+        use crate::audit::InMemoryAuditEventRepository;
+
+        let repo = InMemoryAuditEventRepository::new();
+        repo.append(&NewAuditEvent {
+            id:           "ev-1",
+            ts:           1_700_000_000,
+            kind:         "LoginSuccess",
+            subject:      Some("payload-subject"),
+            actor:        None,
+            client_id:    None,
+            ip:           None,
+            user_agent:   None,
+            reason:       None,
+            payload:      r#"{"subject":"payload-subject"}"#,
+            payload_hash: "irrelevant-to-this-test",
+            created_at:   1_700_000_000,
+            request_id:   None,
+        }).await.unwrap();
+        // Simulate the column-only tamper: the payload (the sealed
+        // record) still says "payload-subject"; the indexed column an
+        // SQL filter matches on now says something else.
+        repo.tamper_set_column(1, "subject", Some("COLUMN-subject".to_owned()));
+
+        // The viewer's half: map_row shows the payload's subject and
+        // flags the row (D1/D3) — the row the operator reads is correct.
+        let row = repo.rows().into_iter().find(|r| r.seq == 1).unwrap();
+        let mapped = map_row(&row);
+        assert_eq!(mapped.subject, Some("payload-subject".to_owned()));
+        assert!(mapped.diverges_from_payload);
+
+        // The filter's half: a search for the payload's own subject
+        // value finds nothing, because the SQL-equivalent filter here
+        // matches the column, not the payload (D4's residual).
+        let found = repo.search(&AuditSearch {
+            subject: Some("payload-subject".to_owned()),
+            ..Default::default()
+        }).await.unwrap();
+        assert!(found.is_empty(),
+            "a filter on the payload's subject must not find a row whose column diverges — \
+             that is exactly the residual D4 accepts, not a regression");
+
+        // And a search for the (wrong) column value DOES find it —
+        // confirming the miss above is the filter working as designed,
+        // not an unrelated bug.
+        let found_by_column = repo.search(&AuditSearch {
+            subject: Some("COLUMN-subject".to_owned()),
+            ..Default::default()
+        }).await.unwrap();
+        assert_eq!(found_by_column.len(), 1);
     }
 }
