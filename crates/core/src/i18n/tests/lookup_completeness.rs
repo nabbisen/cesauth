@@ -169,9 +169,7 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         TenancyOverviewPageTitle | TenancyTenantsPageTitle | TenancyTenantDetailPageTitle |
         TenancyCreateTenantLink | TenancyOverviewTenantCountLabel |
         TenancyOverviewTenantCountFetchFailed | TenancyTenantsBackLink | TenancyTenantsEmpty |
-        TenancyTenantsFetchFailed |
         TenancyTenantsColSlug | TenancyTenantsColDisplayName | TenancyTenantsRowDetailLink |
-        TenancyTenantsColCreated |
         TenantStatusPending | TenantStatusActive | TenantStatusDeleted |
         TenancyTenantDetailBackLink | TenancyTenantDetailStatusChangeLink |
         TenancyTenantDetailSubscriptionHistoryLink | TenancyTenantDetailPlanChangeLink |
@@ -327,9 +325,7 @@ fn for_each_key(mut f: impl FnMut(MessageKey)) {
         TenancyOverviewPageTitle, TenancyTenantsPageTitle, TenancyTenantDetailPageTitle,
         TenancyCreateTenantLink, TenancyOverviewTenantCountLabel,
         TenancyOverviewTenantCountFetchFailed, TenancyTenantsBackLink, TenancyTenantsEmpty,
-        TenancyTenantsFetchFailed,
         TenancyTenantsColSlug, TenancyTenantsColDisplayName, TenancyTenantsRowDetailLink,
-        TenancyTenantsColCreated,
         TenantStatusPending, TenantStatusActive, TenantStatusDeleted,
         TenancyTenantDetailBackLink, TenancyTenantDetailStatusChangeLink,
         TenancyTenantDetailSubscriptionHistoryLink, TenancyTenantDetailPlanChangeLink,

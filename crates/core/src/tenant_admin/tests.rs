@@ -34,8 +34,12 @@ impl TenantRepository for StubTenants {
         if *self.fail.borrow() { return Err(PortError::Unavailable); }
         Ok(self.rows.borrow().iter().find(|t| t.slug == slug).cloned())
     }
+    // Round 2 §7: must agree with the real adapter's `WHERE status !=
+    // 'deleted'` — a stub whose body contradicts the method's own name
+    // is how a future "a deleted tenant does not appear" test would
+    // pass against this double and fail against D1.
     async fn list_non_deleted(&self) -> PortResult<Vec<Tenant>> {
-        Ok(self.rows.borrow().clone())
+        Ok(self.rows.borrow().iter().filter(|t| t.status != TenantStatus::Deleted).cloned().collect())
     }
     async fn set_status(&self, _: &str, _: TenantStatus, _: i64) -> PortResult<()> { Ok(()) }
     async fn update_display_name(&self, _: &str, _: &str, _: i64) -> PortResult<()> { Ok(()) }

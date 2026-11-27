@@ -129,9 +129,13 @@ pub fn TenancyTenants() -> impl IntoView {
                         <p>{lookup(MessageKey::TenancyTenantsEmpty, locale)}</p>
                     }.into_any(),
                     // D5: a failed read is not an empty deployment —
-                    // its own message, never the line above.
+                    // its own message, never the line above. Round 2
+                    // §8: a whole-surface failure reuses FetchFailed,
+                    // the same rule TenancyTenantDetail already follows
+                    // (RFC 185 §5.3 screen 3) — a dedicated key never
+                    // carried any distinction this one didn't already.
                     TenantsListState::FetchFailed => view! {
-                        <p role="alert">{lookup(MessageKey::TenancyTenantsFetchFailed, locale)}</p>
+                        <p role="alert">{lookup(MessageKey::FetchFailed, locale)}</p>
                     }.into_any(),
                     TenantsListState::Populated(tenants) => view! {
                         <table>
@@ -139,7 +143,10 @@ pub fn TenancyTenants() -> impl IntoView {
                                 <th>{lookup(MessageKey::TenancyTenantsColSlug, locale)}</th>
                                 <th>{lookup(MessageKey::TenancyTenantsColDisplayName, locale)}</th>
                                 <th>{lookup(MessageKey::Status, locale)}</th>
-                                <th>{lookup(MessageKey::TenancyTenantsColCreated, locale)}</th>
+                                // Round 2 §4: reuses ClientsColCreatedAt
+                                // rather than a second "Created" wording
+                                // for the same formatter's output.
+                                <th>{lookup(MessageKey::ClientsColCreatedAt, locale)}</th>
                                 <th>{lookup(MessageKey::ClientsColId, locale)}</th>
                                 <th>{lookup(MessageKey::TenantDeletionColActions, locale)}</th>
                             </tr></thead>

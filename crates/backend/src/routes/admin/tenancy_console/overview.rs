@@ -45,7 +45,20 @@ pub async fn page_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
     use cesauth_cf::tenancy::CloudflareTenantRepository;
     use cesauth_core::tenancy::TenantRepository;
     let repo = CloudflareTenantRepository::new(&ctx.env);
-    let tenants = repo.list_non_deleted().await.unwrap_or_default();
+    // Round 2 §3: the sibling of tenants.rs's own fix (D5) -- this was
+    // the other of only two call sites, and the one T3 missed.
+    // `unwrap_or_default()` rendered a D1 outage as "Registered
+    // tenants: 0", a value that could be real standing in for one we
+    // do not have. The view's `None` branch already renders
+    // `TenancyOverviewTenantCountFetchFailed`; it was unreachable for
+    // a storage error until this fix.
+    let tenants = match repo.list_non_deleted().await {
+        Ok(t)  => t,
+        Err(e) => {
+            worker::console_error!("tenant overview count read failed: {e:?}");
+            return Response::error("storage error", 500);
+        }
+    };
     let mut resp = Response::from_json(&serde_json::json!({
         "tenant_count": tenants.len(),
     }))?;

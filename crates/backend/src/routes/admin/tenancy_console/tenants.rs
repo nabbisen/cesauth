@@ -28,7 +28,16 @@ pub async fn page_json<D>(req: Request, ctx: RouteContext<D>) -> Result<Response
     // `None` via `.ok()`) renders the third state.
     let tenants = match repo.list_non_deleted().await {
         Ok(t)  => t,
-        Err(_) => return Response::error("storage error", 500),
+        Err(e) => {
+            // Round 2 §6: the write routes already log their cause
+            // (`worker::console_error!`, twelve call sites); this is
+            // the first *read* route whose 500 an operator sees as its
+            // own distinct state (before this slice, a storage error
+            // rendered a cheerful empty list) -- without this line a
+            // reload that fails again has nothing anywhere about why.
+            worker::console_error!("tenant list read failed: {e:?}");
+            return Response::error("storage error", 500);
+        }
     };
     let mut resp = Response::from_json(&serde_json::json!({ "tenants": tenants }))?;
     resp.headers_mut().set("cache-control", "no-store").ok();

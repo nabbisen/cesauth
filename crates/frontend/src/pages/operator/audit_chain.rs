@@ -204,13 +204,26 @@ fn columns_divergence_needs_acknowledgement(divergence_count: usize, acknowledge
     divergence_count > 0 && acknowledged != Some(true)
 }
 
-/// **0.110.0-signals-get-readers, F-6, required test (3).** Renders
-/// only when `refused_at` is `Some` — the standing alarm already has
-/// its own badge and acknowledgement control; this is a sentence
-/// attached to it, not a state of its own. `{ts}` substitutes the
-/// canonical-formatted timestamp, same convention
-/// `AuditChainStatusTamperAtSeq`'s `{seq}` already uses.
-fn clean_walk_refused_note(refused_at: Option<i64>, locale: Locale) -> Option<String> {
+/// **0.110.0-signals-get-readers, F-6, required test (3); gated by
+/// round 2 §2.** Renders only when `refused_at` is `Some` **and**
+/// `needs_ack` — `acknowledge` (the route) writes `acknowledged: true`
+/// but *keeps* `clean_walk_refused_at` (the field is cleared only by
+/// the next verification run, which is the cron path's only trace of
+/// the refusal — the stored stamp must stay). Without the second
+/// condition, the window between an operator acknowledging the alarm
+/// and the next scheduled run would render this exact sentence —
+/// *"…was not allowed to clear this alarm, because the alarm has not
+/// been acknowledged… Acknowledge it…"* — about an alarm the operator
+/// just acknowledged, asking for a control the page no longer shows
+/// (`alarm_needs_acknowledgement` is false, so the ack form is gone).
+/// `needs_ack` is the exact same value the ack form's own `<Show>`
+/// uses, so the two can never disagree about whether that form is on
+/// screen. `{ts}` substitutes the canonical-formatted timestamp, same
+/// convention `AuditChainStatusTamperAtSeq`'s `{seq}` already uses.
+fn clean_walk_refused_note(refused_at: Option<i64>, needs_ack: bool, locale: Locale) -> Option<String> {
+    if !needs_ack {
+        return None;
+    }
     refused_at.map(|ts| {
         let formatted = cesauth_core::util::format_unix_as_iso8601(ts);
         lookup(MessageKey::AuditChainCleanWalkRefusedNote, locale).replace("{ts}", &formatted)
@@ -281,7 +294,7 @@ pub fn ConsoleAuditChain() -> impl IntoView {
                         .unwrap_or_else(|| "—".to_owned());
                     let (consistency_class, consistency_text) = consistency_badge(checkpoint_seq, s.last_run_checkpoint_match, locale);
                     let needs_ack = alarm_needs_acknowledgement(s.last_run_valid, s.last_run_acknowledged);
-                    let refused_note = clean_walk_refused_note(s.clean_walk_refused_at, locale);
+                    let refused_note = clean_walk_refused_note(s.clean_walk_refused_at, needs_ack, locale);
                     let csrf_verify = s.csrf_token.clone();
                     let csrf_ack    = s.csrf_token.clone();
 
@@ -306,8 +319,16 @@ pub fn ConsoleAuditChain() -> impl IntoView {
                             // F-6: beside the standing alarm, not its own
                             // section — renders only when a later clean
                             // walk was refused permission to clear it.
+                            // Round 2 §5: no role="alert" -- that means
+                            // "this page's fetch failed" on this screen
+                            // (the file's own convention, matching
+                            // clients.rs/the tenants list), and the
+                            // danger badge this note annotates has none.
+                            // A footnote the doc comment itself calls
+                            // "not a state of its own" must not be the
+                            // only alert on the page.
                             {refused_note.clone().map(|note| view! {
-                                <p class="note" role="alert">{note}</p>
+                                <p class="note">{note}</p>
                             })}
                             <Show when=move || growth_hint>
                                 <p class="note">{lookup(MessageKey::AuditChainGrowthHint, locale)}</p>
@@ -419,12 +440,12 @@ mod tests {
 
     #[test]
     fn clean_walk_refused_note_is_none_when_nothing_was_refused() {
-        assert_eq!(clean_walk_refused_note(None, Locale::En), None);
+        assert_eq!(clean_walk_refused_note(None, true, Locale::En), None);
     }
 
     #[test]
     fn clean_walk_refused_note_renders_the_timestamp_in_place() {
-        let note = clean_walk_refused_note(Some(1_700_000_000), Locale::En).unwrap();
+        let note = clean_walk_refused_note(Some(1_700_000_000), true, Locale::En).unwrap();
         assert!(note.contains("2023-11-14T22:13:20Z"), "got: {note}");
         assert!(!note.contains("{ts}"), "placeholder must be substituted, got: {note}");
     }
@@ -434,9 +455,23 @@ mod tests {
         // The literal fact ("a clean walk was refused") reads as
         // "verification is broken" unless the copy says the opposite
         // explicitly: the walk found the chain CLEAN.
-        let note = clean_walk_refused_note(Some(1_700_000_000), Locale::En).unwrap();
+        let note = clean_walk_refused_note(Some(1_700_000_000), true, Locale::En).unwrap();
         assert!(note.contains("found the chain clean"), "got: {note}");
         assert!(note.contains("not allowed to clear this alarm"), "got: {note}");
+    }
+
+    // ── round 2, §2: the note must not outlive the acknowledgement —
+    // `acknowledge` keeps `clean_walk_refused_at`, so the field alone
+    // cannot gate this; `needs_ack` is what the ack form itself uses ──
+
+    #[test]
+    fn clean_walk_refused_note_is_none_once_acknowledged_even_though_the_field_is_still_some() {
+        // Exactly the post-acknowledgement state: the stamp survives in
+        // storage (the cron path's only trace), but the alarm it
+        // describes has already been dealt with.
+        let note = clean_walk_refused_note(Some(1_700_000_000), false, Locale::En);
+        assert_eq!(note, None,
+            "the note must not tell an operator an alarm is unacknowledged right after they acknowledged it");
     }
 
     #[test]
