@@ -185,6 +185,42 @@ column coverage **16 — 8 chain inputs / 7 cross-checked / 1 declared
 uncovered**, changelog budget green. Clippy 0 errors, `cargo deny` ok in
 all four sections, wasm32 checks clean. Catalog **330 → 335** arms.
 
+**Bundle, CI to CI**, code and version bump in separate commits:
+
+| commit | `Cargo.toml` | gzip |
+|---|---|---|
+| `2ccb523` (`0.109.0` tag) | `0.109.0` | 919,071 B |
+| `e522ae3` (this cut's code) | `0.109.0` | 919,905 B |
+| `cdc1d58` (`0.110.0` tag) | `0.110.0` | **920,061 B** |
+
+**Code delta at the pinned version: +834 B**, absolute **+990 B**, **35%**
+of the 2,621,440 B budget; the version string accounts for **+156 B**
+(834 + 156 = 990, reconciled rather than reported twice).
+
+**This confirms `0.108.0`'s attribution rather than contradicting it.**
+That release paid **+12,841 B** and named the cause as widening the
+shared `AuditChainStatus` and paying for a second instantiation of its
+deserialization machinery. This release widens *the same type again* —
+`clean_walk_refused_at` — for a whole-cut total of +834 B. The cost was
+the second instantiation, not the field, which is what the named cause
+predicted.
+
+**CI: 15 push workflow runs, 16 check runs, every one green** — the
+first release tip in this sequence with nothing red. `0.109.0` shipped
+with two deliberate reds, both `audit.yml`; the dispositions above closed
+them.
+
+**And the check-run count corrects a fourth time, with a cause instead of
+a new number.** The doctrine has been re-pinned three times (15 → 16 →
+17), each time by measuring a tree that happened to have a particular
+advisory state. Diffing the two release tips' check-run *names* gives a
+one-line answer: they differ by exactly **`Security audit`**, the run
+`rustsec/audit-check` creates through the Checks API **only when it has a
+finding to report**. So the honest form is not a number but a rule —
+**16 check runs from 15 workflows, plus `Security audit` when, and only
+when, `cargo audit` has something to say.** `0.109.0`'s 17 was correct
+for a tip with an open advisory.
+
 ---
 
 ## [0.109.0] - 2026-11-25
