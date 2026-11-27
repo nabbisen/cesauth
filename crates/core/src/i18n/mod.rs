@@ -647,15 +647,6 @@ pub enum MessageKey {
     TenancyOverviewTenantCountFetchFailed,
     TenancyTenantsBackLink,
     TenancyTenantsEmpty,
-    /// **0.110.0-tenancy-console round 2, §8 (withdrawn
-    /// `TenancyTenantsFetchFailed`).** The list's third state (the read
-    /// itself failed) reuses `FetchFailed` — a whole-surface failure,
-    /// the same rule `TenancyTenantDetail` already follows by a
-    /// recorded G1 decision (RFC 185 §5.3 screen 3). A dedicated key
-    /// never carried any distinction `FetchFailed` didn't already: its
-    /// second clause was verbatim identical to `FetchFailed`'s in both
-    /// locales, and the two cannot be confused with this key, which
-    /// never claims a count.
     TenancyTenantsColSlug,
     TenancyTenantsColDisplayName,
     TenancyTenantsRowDetailLink,
@@ -2378,9 +2369,6 @@ fn lookup_audit_chain(key: &MessageKey, locale: Locale) -> Option<&'static str> 
             Locale::Ja => "テナントがまだ登録されていません。",
             Locale::En => "No tenants are registered yet.",
         },
-        // 0.110.0-tenancy-console-slice-1, G1 ruling: two clauses, what
-        // happened and what to do -- not a third clause pre-empting the
-        // "zero tenants" misreading.
         TenancyTenantsColSlug => match locale {
             Locale::Ja => "スラッグ",
             Locale::En => "Slug",
