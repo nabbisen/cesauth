@@ -83,6 +83,110 @@ why, and `ROADMAP.md` carries its own dated row recording its size
 
 ---
 
+## [0.110.0] - 2026-11-27
+
+**Minor** — the tenancy console's tenant list stops guessing, three audit
+signals that existed in storage get readers on screen, and two standing
+advisories get dispositions. Three slices, two review rounds on the views.
+
+### Fixed — a list that says what it knows
+
+`GET /admin/tenancy/tenants.json` called `list_active().unwrap_or_default()`,
+so a **D1 outage rendered as "No tenants are registered yet."** — a
+confident sentence about the deployment in place of a fact about the
+request. Both call sites of that read now fail loud and log their cause;
+the component's existing fetch-failure path renders instead. A value that
+could be real must never stand in for a value we do not have, which is
+the third application of that rule (RFC 187 D2, `0.108.0`'s formatter
+clamp, now a count).
+
+**`TenantRepository::list_active` is renamed `list_non_deleted`** — a
+disclosed rename of an internal port, no SQL change. The query was always
+`WHERE status != 'deleted'`, so the old name claimed that `Pending` and
+`Suspended` tenants were active. One test double still contradicted the
+new name and now agrees with the adapter.
+
+**`format!("{:?}", status)` no longer reaches the screen.** `TenantStatus`
+resolves through one exhaustive match — a fifth variant is a compile
+error, not a blank cell — and the list regains the `Created` and `Id`
+columns the superseded template had. Three more `{:?}`-into-a-view sites
+exist on screens this release does not own; they are reported rather than
+claimed fixed.
+
+### Added — three signals that existed get readers
+
+- **A refused clean walk says so.** When a later verification run finds
+  the chain clean but is not allowed to clear a standing unacknowledged
+  alarm, the chain-status screen says that, beside the alarm, in both
+  locales — and **stops saying it the moment the alarm is acknowledged**,
+  because `acknowledge` keeps the stored timestamp on purpose (it is the
+  cron path's only trace) and the sentence would otherwise tell an
+  operator an alarm is unacknowledged right after they acknowledged it.
+- **The export cap is stated before the click**, read from the same
+  `resolve_max_rows` the export route uses — one function, two callers,
+  so the page's number cannot disagree with the export's behaviour even
+  in principle.
+- **Export filenames carry their moment and their truncation.**
+  `cesauth-audit-{filter}-{moment}[-TRUNCATED].{ext}`. Two exports with
+  different subjects or date ranges used to produce the same filename, so
+  an archive of evidence files could not be told apart. Two exports a
+  second apart with identical filters still collide — stated, not solved.
+
+### Changed — two advisory dispositions
+
+`url` bumped to 2.5.9 (`RUSTSEC-2026-0592`, two crates moved in the
+lockfile; `Url::origin()` is called nowhere here, checked again). The
+`chrono` advisory is an **unmaintained** notice, not a vulnerability, and
+is ignored with its id, its class, its sole dependant, its date and a
+retirement condition. `cargo deny check` and the `cargo audit` CLI were
+both run, which closes `0.109.0`'s recorded tool disagreement for this
+pair.
+
+### Security answer
+
+The diff touches six files under `crates/backend/src/routes/admin/` and
+nothing else on the rubric's path list — `crates/core/src/{audit,authz,
+session,jwt,totp,webauthn,oidc}` and `migrations/` are untouched.
+**One new data flow, no new attack surface.**
+
+- **`audit.json` now serves `AUDIT_EXPORT_MAX_ROWS`** to the viewer. The
+  route is System-admin gated and the value is a row cap rather than a
+  secret, but it is a deployment configuration value crossing to the
+  client for the first time, so it is recorded as checked rather than
+  assumed.
+- **Two read routes changed from a quiet 200 to a 500.** An
+  availability-visible change, not an authorization one; both now log
+  their cause where neither did.
+- **Three changes make audit evidence more legible, not less**: the
+  refusal stamp gets a reader, exports carry their moment and truncation
+  marker, and the cap is stated before an operator relies on the file.
+- **197 routes, 0 added, 0 removed.** No migration, no schema change, no
+  permission added, no change to `compute_chain_hash`.
+- **Two disclosed surface-contract changes**: the export filename's new
+  shape, and `audit.json`'s additive field.
+- **What this answer does not claim.** The tenancy console's
+  authorization was **not** reviewed and found correct. Six read routes
+  there gate on authentication alone where the design requires an
+  explicit `AdminAction::ViewTenancy`. It is not exploitable today — every
+  valid admin role passes `ViewTenancy` by the v0.7.0 policy — and it is
+  not introduced by this release; it is required with the next tenancy
+  slice, so a future lower role or a changed tier fails closed.
+
+### Gates
+
+Host tests **1,794 / 0 / 4 across 12 `test result:` lines** — +15 over
+`0.109.0`. Migration chain **39**. Route surface **197, 0 added, 0
+removed**, all seven coverage figures identical to `0.109.0`'s record.
+`drift-scan` clean: i18n ceiling **103 / 65 / 69** with the audit
+viewer's row still pinned at **2** and the tenancy list's at **0**,
+operator-console negotiation **13 / 13**, timestamp rendering **26 / 17**
+(re-pinned in the same commit as the two new conforming sites), audit
+column coverage **16 — 8 chain inputs / 7 cross-checked / 1 declared
+uncovered**, changelog budget green. Clippy 0 errors, `cargo deny` ok in
+all four sections, wasm32 checks clean. Catalog **330 → 335** arms.
+
+---
+
 ## [0.109.0] - 2026-11-25
 
 **Minor** — the audit log's readers now show the sealed payload instead of
